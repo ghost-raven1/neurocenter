@@ -115,22 +115,27 @@ export class SystemRoleTargets {
         const legacy = acceptedRun?.agent_id === id && acceptedRun.snapshot === accepted ? acceptedLegacyDefinition(acceptedRun) : undefined;
         const previous = acceptedRun?.agent_id === id && acceptedRun.snapshot === accepted ? acceptedPreviousDefinition(acceptedRun) : undefined;
         const guidance = accepted === undefined ? this.guidanceEnabled ? {version: 1 as const, projectId: selection.projectId} : undefined : accepted.guidance;
-        selection = { projectId: selection.projectId, instruction: selection.instruction, diagnostics: selection.diagnostics, targets: selection.targets,...(selection.mcp?.length?{mcp:selection.mcp}:{}) };
+        selection = { projectId: selection.projectId, instruction: selection.instruction, diagnostics: selection.diagnostics, targets: selection.targets,...(selection.mcp?.length?{mcp:selection.mcp}:{}),...(selection.textContext?{textContext:selection.textContext}:{}) };
         const targets: RoleTargetSnapshot[] = [];
         for (const target of selection.targets) targets.push(await this.read(req, selection, target));
         if(selection.mcp?.length&&!acceptedMcp&&!this.mcp)throw new ConflictException('Исполнитель MCP системных агентов не настроен. Сохраните выбор и повторите позже.');
         const mcp=selection.mcp?.length?acceptedMcp??await this.mcp!.prepare(req,selection.projectId,selection.mcp):undefined;
         let projectContext = accepted?.projectContext;
+        if(selection.textContext&&!this.projectContext)throw new ConflictException('Исполнитель текстовой базы знаний недоступен.');
         if (accepted === undefined && selection.projectId && this.projectContext) {
-            const captured = await this.projectContext.capture(req, selection.projectId);
-            if (captured.searchEnabled) projectContext = { scope: 'project-index', projectId: selection.projectId,
+            const captured = selection.textContext?await this.projectContext.captureText(req,selection.projectId,selection.textContext):await this.projectContext.capture(req, selection.projectId);
+            if (captured.searchEnabled) projectContext = { scope: selection.textContext?'project-text':'project-index', projectId: selection.projectId,
                 projectName: captured.evidence.project!.name, identity: captured.identity,
                 recipients: [id, ...(id === 'agent-coordinator' ? coordinatorContext({ selection, targets, mcp }).roles.map(role => role.id) : [])],
+                ...(selection.textContext?{textContext:selection.textContext}:{}),
                 ...(captured.evidence.generation ? { generation: captured.evidence.generation } : {}), ...(captured.evidence.snapshot ? { snapshot: captured.evidence.snapshot } : {}) };
         }
         if (projectContext) {
             if (!this.projectContext || projectContext.projectId !== selection.projectId) throw new ConflictException('Разрешение базы знаний относится к другому проекту.');
-            await this.projectContext.assertIdentity(req, projectContext.projectId, projectContext.identity);
+            if(projectContext.scope==='project-text'){
+                if(!projectContext.textContext)throw new ConflictException('Текстовый корпус не закреплён.');
+                await this.projectContext.assertTextIdentity(req,projectContext.projectId,projectContext.textContext,projectContext.identity);
+            }else await this.projectContext.assertIdentity(req, projectContext.projectId, projectContext.identity);
         }
         const preview = JSON.stringify({ instruction: roleProjection(selection.instruction).content, diagnostics: selection.diagnostics,
             targets: targets.map(target => ({ key: target.key, kind: target.kind, version: target.version, content: target.modelContent })),

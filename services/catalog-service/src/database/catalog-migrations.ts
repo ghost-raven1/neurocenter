@@ -1,3 +1,5 @@
+import {PROJECT_TEXT_CONTEXT_SCHEMA_SQL} from '../project-text/project-text.schema';
+import {PROJECT_TEXT_CONTEXT_SCHEMA_ASSERT_SQL} from '../project-text/project-text.schema-verification';
 import {AGENT_TOOLS_SCHEMA_SQL} from '../agent-tools/agent-tools.schema';
 import {SERVICE_ROLE_CONVERSATIONS_SCHEMA_SQL} from '../system-role-chat/service-role-conversations.schema';
 import {METHOD_CHAT_WORKFLOWS_SCHEMA_SQL} from '../agent-method-workflows/chat-workflows.schema';
@@ -125,4 +127,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:44,name:'conditional-agent-response-summaries',sql:CHAT_SUMMARY_POLICY_SCHEMA_SQL+'\n'+CHAT_SUMMARY_POLICY_SCHEMA_ASSERT_SQL},
     {version:45,name:'durable-project-chat-method-workflows',sql:METHOD_CHAT_WORKFLOWS_SCHEMA_SQL+'\n'+METHOD_CHAT_WORKFLOWS_SCHEMA_ASSERT_SQL},
     {version:46,name:'per-user-model-token-quotas',sql:MODEL_TOKEN_QUOTAS_SCHEMA_SQL+'\n'+MODEL_TOKEN_QUOTAS_SCHEMA_ASSERT_SQL},
+    {version:47,name:'accepted-project-text-context',sql:PROJECT_TEXT_CONTEXT_SCHEMA_SQL+'\n'+PROJECT_TEXT_CONTEXT_SCHEMA_ASSERT_SQL},
 ];

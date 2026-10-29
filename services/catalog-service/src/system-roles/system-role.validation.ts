@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import {normalizeTextContext} from '../../../shared/project-text-knowledge.cjs';
 import {normalizeRoleMcpSelection} from '../../../shared/system-role-mcp.cjs';
 import { validateModelId } from '../models/model-validation';
 import { ROLE_BUDGET, ROLE_GUIDANCE_POLICY, SYSTEM_ROLE_DEFINITIONS, roleDefinitionPin, systemRole } from './system-role.definitions';
@@ -18,7 +19,7 @@ export const roleRequestId = (value: unknown): string => {
     if (typeof value !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)) return fail(); return value;
 };
 export function roleSelection(id: SystemRoleId, value: unknown, start = false): RoleSelection {
-    const raw = exact(value, ['projectId', 'instruction', 'diagnostics', 'targets', 'mcp', ...(start ? ['requestId', 'modelId', 'expectedModelPin', 'expectedDefinitionPin', 'consentDigest', 'sourceFeature', 'source'] : [])]);
+    const raw = exact(value, ['projectId', 'instruction', 'diagnostics', 'targets', 'mcp','textContext', ...(start ? ['requestId', 'modelId', 'expectedModelPin', 'expectedDefinitionPin', 'consentDigest', 'sourceFeature', 'source'] : [])]);
     const definition = systemRole(id);
     if (raw.projectId !== null && (!text(raw.projectId, 128) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(raw.projectId))
         || !text(raw.instruction, 2048) || !Array.isArray(raw.diagnostics) || raw.diagnostics.length > ROLE_BUDGET.diagnostics
@@ -34,7 +35,9 @@ export function roleSelection(id: SystemRoleId, value: unknown, start = false): 
     if (new Set(targets.map(item => JSON.stringify([item.kind, item.id]))).size !== targets.length) return fail();
     let mcp:RoleSelection['mcp'];try{mcp=normalizeRoleMcpSelection(raw.mcp);}catch{return fail();}
     if(mcp?.length&&!raw.projectId)return fail();
-    return { projectId: raw.projectId as string | null, instruction: raw.instruction, diagnostics: raw.diagnostics as RoleSelection['diagnostics'], targets,...(mcp?.length?{mcp}:{}) };
+    let textContext:RoleSelection['textContext'];try{textContext=raw.textContext===undefined?undefined:normalizeTextContext(raw.textContext);}catch{return fail();}
+    if(textContext&&!raw.projectId)return fail();
+    return { projectId: raw.projectId as string | null, instruction: raw.instruction, diagnostics: raw.diagnostics as RoleSelection['diagnostics'], targets,...(mcp?.length?{mcp}:{}),...(textContext?{textContext}:{}) };
 }
 /** A start repeats the preview selection; the server re-reads versions before checking the consent digest. */
 export function startRoleRun(id: SystemRoleId, value: unknown): StartRoleRun {

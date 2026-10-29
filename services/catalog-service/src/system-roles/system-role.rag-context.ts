@@ -21,14 +21,14 @@ const sourceReceipt = ({ id, path, title, startLine, endLine }: ChatProjectSourc
 /** One accepted grant and one memoized retrieval serve the whole durable run, including tools and delegates. */
 export class SystemRoleRagContext {
     private retrieval?: Promise<PreparedProjectContext>;
-    readonly requiredFeatures: readonly 'project_search'[];
+    readonly requiredFeatures: readonly ('project_search'|'project_text_knowledge')[];
     constructor(private readonly context: ModelChatProjectContext | undefined, private readonly req: Request, private readonly row: RoleRunRow,
         private readonly signal: AbortSignal, private readonly checkpoint: () => Promise<unknown>, private readonly embed: IModelInferenceRuntime['infer']) {
-        this.requiredFeatures = row.snapshot.projectContext ? ['project_search'] : [];
+        this.requiredFeatures = row.snapshot.projectContext ? [row.snapshot.projectContext.scope==='project-text'?'project_text_knowledge':'project_search'] : [];
     }
     private grant(): RoleProjectGrant | undefined {
         const grant = this.row.snapshot.projectContext;
-        if (grant && (!this.context || grant.scope !== 'project-index' || grant.projectId !== this.row.project_id
+        if (grant && (!this.context || !['project-index','project-text'].includes(grant.scope)||grant.scope==='project-text'&&!grant.textContext || grant.projectId !== this.row.project_id
             || !grant.recipients.length || grant.recipients.some(id => !SYSTEM_ROLE_DEFINITIONS.some(role => role.id === id)))) {
             throw new ConflictException('Разрешение базы знаний не соответствует принятому запуску. Подготовьте контекст заново.');
         }
@@ -36,17 +36,22 @@ export class SystemRoleRagContext {
     }
     async assertCurrent(db?: RoleDb): Promise<void> {
         this.signal.throwIfAborted(); const grant = this.grant();
-        if (grant) await this.context!.assertIdentity(this.req, grant.projectId, grant.identity, this.signal, db);
+        if (grant){
+            if(grant.scope==='project-text')await this.context!.assertTextIdentity(this.req,grant.projectId,grant.textContext!,grant.identity);
+            else await this.context!.assertIdentity(this.req, grant.projectId, grant.identity, this.signal, db);
+        }
     }
     async beforeInference(): Promise<void> {
-        if (this.grant()) { await requireFeatureEnabled('project_search'); await this.assertCurrent(); }
+        const grant=this.grant();if (grant) { await requireFeatureEnabled(grant.scope==='project-text'?'project_text_knowledge':'project_search'); await this.assertCurrent(); }
     }
     private load(grant: RoleProjectGrant, callSignal: AbortSignal): Promise<PreparedProjectContext> {
         return this.retrieval ??= withModelUsage({ purpose: 'agent', actorEmail: this.row.actor, actorRole: this.row.actor_role,
             projectId: grant.projectId, agentId: this.row.agent_id, operationId: this.row.id,
             requiredFeatures: [...this.requiredFeatures, systemRole(this.row.agent_id).flag,
                 ...(this.row.request.sourceFeature ? [this.row.request.sourceFeature] : [])],
-            beforeInference: async () => { await this.checkpoint(); await this.beforeInference(); } }, () => this.context!.prepare(this.req,
+            beforeInference: async () => { await this.checkpoint(); await this.beforeInference(); } }, () => grant.scope==='project-text'
+                ? this.context!.prepareText(this.req,grant.projectId,grant.textContext!,AbortSignal.any([this.signal,callSignal]))
+                : this.context!.prepare(this.req,
             grant.projectId, roleProjection(this.row.snapshot.selection.instruction).content, AbortSignal.any([this.signal, callSignal]), async () => {
                 await this.checkpoint(); await requireFeaturesEnabled([systemRole(this.row.agent_id).flag, ...this.requiredFeatures,
                     ...(this.row.request.sourceFeature ? [this.row.request.sourceFeature] : [])], process.env, globalThis.fetch, callSignal);
@@ -72,6 +77,7 @@ export class SystemRoleRagContext {
     private receipt(grant: RoleProjectGrant, evidence: ChatProjectEvidence): RoleProjectEvidence {
         return { status: evidence.status === 'none' ? 'metadata' : evidence.status,
             project: { id: grant.projectId, name: grant.projectName },
+            ...(evidence.mode==='text'?{mode:'text',textRevision:evidence.textRevision,corpusHash:evidence.corpusHash}:{}),
             ...(grant.generation ? { generation: grant.generation } : {}), ...(grant.snapshot ? { snapshot: grant.snapshot } : {}),
             sources: evidence.sources.map(sourceReceipt), ...(evidence.message ? { message: evidence.message } : {}) };
     }
@@ -83,7 +89,8 @@ export function synthesisProjectEvidence(own: RoleProjectEvidence | undefined, c
     if (!receipts.length) return undefined;
     const result: RoleProjectEvidence = { ...receipts[0], sources: [] };
     for (const receipt of receipts) {
-        if (receipt.project.id !== result.project.id || receipt.generation !== result.generation || receipt.snapshot !== result.snapshot) throw new ConflictException('Источники делегатов относятся к разным снимкам проекта.');
+        if (receipt.project.id !== result.project.id || receipt.generation !== result.generation || receipt.snapshot !== result.snapshot
+            ||receipt.mode!==result.mode||receipt.textRevision!==result.textRevision||receipt.corpusHash!==result.corpusHash) throw new ConflictException('Источники делегатов относятся к разным снимкам проекта.');
         for (const source of receipt.sources) {
             if (result.sources.some(item => item.id === source.id)) continue;
             const candidate = { ...result, status: 'ready' as const, sources: [...result.sources, source] };

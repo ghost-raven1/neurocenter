@@ -85,6 +85,28 @@ after(() => {for (const directory of temporary) fs.rmSync(directory, {recursive:
 
 const jsonResponse = (operation, status = '200') => operation.responses[status].content['application/json'].schema;
 
+test('PostgreSQL text knowledge exposes byte limits, exact receipt recovery and explicit revision search', async () => {
+    const {TEXT_KNOWLEDGE_LIMITS}=await import('../../services/shared/project-text-knowledge.cjs');
+    const base='/api/projects/{id}/knowledge/text', upload=actual.paths[base+'/documents'].post;
+    const input=upload.requestBody.content['application/json'].schema;
+    assert.deepEqual(input.required,['requestKey','expectedRevision','documents']);
+    assert.equal(input.properties.documents.maxItems,TEXT_KNOWLEDGE_LIMITS.documents);
+    assert.deepEqual(upload['x-neurocenter-utf8-limits'],TEXT_KNOWLEDGE_LIMITS);
+    assert.match(upload.description,/without deleting absent files/);
+    assert.match(upload.description,/committed receipt is returned before new-write feature checks/);
+    assert.match(upload.description,/independent from model_hosting/);
+    for(const path of [base,base+'/requests/{key}']){
+        assert.match(actual.paths[path].get.description,/remain readable.*OFF/);
+        assert.ok(actual.paths[path].get.security.length);
+    }
+    const search=actual.paths[base+'/search'].post;
+    assert.deepEqual(search.requestBody.content['application/json'].schema.required,['query']);
+    assert.match(search.description,/one consistent revision\/corpusHash/);
+    assert.match(search.description,/No embedding\/model call/);
+    assert.ok(search.responses['409']);
+    assert.equal(actual.paths['/internal/project-text/authorize'],undefined);
+});
+
 test('Fixed computer OpenCode admission and observations reuse shared schemas without accepting generic command fields',async()=>{
     const {OPENCODE_CLI_SCHEMAS}=await import('../../services/shared/computer-setup.cjs');
     const create=actual.paths['/api/device-jobs'].post,schema=create.requestBody.content['application/json'].schema;
@@ -177,8 +199,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 311);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 381);
+    assert.equal(Object.keys(actual.paths).length, 315);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 385);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for(const [pathname,methods] of Object.entries({'/api/models/{id}/token-quotas/{email}':['get','put'],'/api/models/{id}/token-quotas/{email}/requests/{requestKey}':['get']})) assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods,pathname);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
