@@ -1,0 +1,127 @@
+{
+  "card": {
+    "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+    "config": {},
+    "description": "Добавляет текущую ветку и краткий список изменений Git в контекст OpenCode. Только локальное чтение, без сети. Отдельный JS-файл без зависимостей; требуется установленный Git.",
+    "files": [],
+    "kind": "plugin",
+    "name": "Контекст Git",
+    "origin": "neurocenter:recipe/git-context",
+    "revision": "1.0.0-pack.1",
+    "tags": [
+      "Git",
+      "JS-файл",
+      "Контекст"
+    ],
+    "version": 1
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 861,
+          "entrypoint": "git-context.mjs",
+          "filesCount": 1,
+          "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+          "target": "darwin-arm64",
+          "unpackedBytes": 1176
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 861,
+          "entrypoint": "git-context.mjs",
+          "filesCount": 1,
+          "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+          "target": "darwin-x64",
+          "unpackedBytes": 1176
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 861,
+          "entrypoint": "git-context.mjs",
+          "filesCount": 1,
+          "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+          "target": "linux-arm64-glibc",
+          "unpackedBytes": 1176
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 861,
+          "entrypoint": "git-context.mjs",
+          "filesCount": 1,
+          "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+          "target": "linux-arm64-musl",
+          "unpackedBytes": 1176
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 861,
+          "entrypoint": "git-context.mjs",
+          "filesCount": 1,
+          "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 1176
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 861,
+          "entrypoint": "git-context.mjs",
+          "filesCount": 1,
+          "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+          "target": "linux-x64-musl",
+          "unpackedBytes": 1176
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 861,
+          "entrypoint": "git-context.mjs",
+          "filesCount": 1,
+          "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+          "target": "win32-arm64",
+          "unpackedBytes": 1176
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 861,
+          "entrypoint": "git-context.mjs",
+          "filesCount": 1,
+          "sha256": "6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815",
+          "target": "win32-x64",
+          "unpackedBytes": 1176
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/6cf918193b4de6372c0c4cb45089d18c08ace436d91f5a86eaa9890e62d3d815.tar.gz"
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "plugin-git-context",
+  "kind": "plugin",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "965f5b19ce1045e25bf09b33fe7715b38cf47c0a",
+    "path": "scripts/catalog-plugins/catalog-release.json",
+    "repository": "https://github.com/ghost-raven1/neurocenter",
+    "type": "git"
+  },
+  "version": "1.0.0-pack.1"
+}

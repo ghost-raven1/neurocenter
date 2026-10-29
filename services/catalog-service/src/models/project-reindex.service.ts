@@ -256,7 +256,7 @@ export class ProjectReindexService implements OnModuleInit,OnModuleDestroy {
             if(!await this.models.isAssigned(current.project_id,current.data.modelId)||!await readPinnedModel(this.models.pool,current.data.modelId,current.data.modelPin))throw new ConflictException('Закреплённая модель недоступна.');
             signal.throwIfAborted();
         };
-        const result=await withModelUsage({purpose:'reindex',actorEmail:row.actor,projectId:row.project_id,operationId:row.id,requiredFeatures:['rag_sync'],beforeInference},()=>this.runtime.infer(model,'embed',{input:value.input,truncate:false},signal));
+        const result=await withModelUsage({purpose:'reindex',actorEmail:row.actor,actorRole:row.active_role,projectId:row.project_id,operationId:row.id,requiredFeatures:['rag_sync'],beforeInference},()=>this.runtime.infer(model,'embed',{input:value.input,truncate:false},signal));
         const current=await this.models.pool.query('SELECT state FROM project_reindex_plans WHERE id=$1',[row.id]);if(current.rows[0]?.state!=='building')throw new ConflictException('Переиндексация отменена.');
         await this.models.resolveProject(this.request(row),row.project_id,3);return {embeddings:result.embeddings};
     }

@@ -153,7 +153,7 @@ function validSupply(value: unknown, requested?: string): value is IBridgeSupply
     if (Object.keys(data).some(key => !['assetId', 'version', 'buildId', 'sourceCommit', 'artifacts'].includes(key))
         || typeof data.assetId !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,127}$/.test(data.assetId)
         || typeof data.version !== 'string' || !VERSION.test(data.version) || requested !== undefined && data.version !== requested
-        || typeof data.buildId !== 'string' || !SHA.test(data.buildId) || typeof data.sourceCommit !== 'string' || !/^[a-f0-9]{40}$/.test(data.sourceCommit)
+        || typeof data.buildId !== 'string' || !SHA.test(data.buildId) || typeof data.sourceCommit !== 'string' || !/^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64})$/.test(data.sourceCommit)
         || !Array.isArray(data.artifacts) || !data.artifacts.length || data.artifacts.length > 8) { return false; }
     const targets = new Set<string>();
     return data.artifacts.every(item => {

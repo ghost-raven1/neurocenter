@@ -4,7 +4,7 @@ import type {Request} from 'express';
 import {AccessDb} from '../access/access-db';
 import {readModelActor} from '../models/model-access';
 import {AssetSourcesService} from './asset-sources.service';
-import {bridgeReleaseView,bridgeSourceUrl,readBridgeSource} from './bridge-source-feed';
+import {bridgeReleaseView,bridgeSourceUrl,readBridgeSource,isRetiredBridgeSource,retiredBridgeSourceMessage} from './bridge-source-feed';
 import {BridgeSourceRepository,bridgeSourceRepository,staleBridgeSource} from './bridge-source.repository';
 import {importView} from './import-types';
 import {assertBridgeHead} from './bridge-source-head';
@@ -26,13 +26,14 @@ export class BridgeSourceService {
         let imported:IBridgeSourceRelease|undefined,importedError:string|undefined;
         try{
             const supply=await this.source.bridgeSupply();
-            if(typeof supply.sourceCommit!=='string'||!/^[a-f0-9]{40}$/.test(supply.sourceCommit)||supply.artifacts.some(item=>typeof item.target!=='string'))throw new ConflictException('Текущая поставка моста содержит неполную опись.');
+            if(typeof supply.sourceCommit!=='string'||!/^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64})$/.test(supply.sourceCommit)||supply.artifacts.some(item=>typeof item.target!=='string'))throw new ConflictException('Текущая поставка моста содержит неполную опись.');
             const origin=settings.installed_repository??(await this.source.pool.query<{repository:string}>("SELECT repository FROM asset_source_receipts WHERE asset_kind='bridge' AND external_id=$1 AND active ORDER BY updated_at DESC LIMIT 1",[supply.assetId])).rows[0]?.repository;
-            imported={assetId:supply.assetId,version:supply.version,buildId:supply.buildId,repositoryCommit:supply.sourceCommit,targets:supply.artifacts.map(item=>String(item.target)),...(origin?{repositoryUrl:'https://github.com/'+origin}:{})};
+            imported={assetId:supply.assetId,version:supply.version,buildId:supply.buildId,repositoryCommit:supply.sourceCommit,targets:supply.artifacts.map(item=>String(item.target)),...(origin&&origin!=='app-bundled'?{repositoryUrl:'https://github.com/'+origin}:{})};
         }
         catch(error){if(settings.installed_repository||!(error instanceof HttpException)||error.getStatus()!==404)importedError=error instanceof HttpException?error.message:'Не удалось проверить текущую поставку моста.';}
         return {sourceMode:assetSourceMode(),url:settings.url,revision:settings.revision,...(settings.checked_at?{checkedAt:new Date(settings.checked_at).toISOString()}:{}),
-            ...(settings.error?{error:settings.error}:{}),...(snapshot?{available:bridgeReleaseView(snapshot)}:{}),...(imported?{imported}:{}),...(importedError?{importedError}:{})};
+            ...(settings.error?{error:settings.error}:{}),...(snapshot?{available:bridgeReleaseView(snapshot)}:{}),...(imported?{imported}:{}),...(importedError?{importedError}:{}),
+            ...(isRetiredBridgeSource(settings.url)?{sourceReady:false,archiveRequired:true,error:retiredBridgeSourceMessage}:{})};
     }
     async save(actor:string,body:unknown){
         if(!object(body,['url','expectedRevision'])||!revision(body.expectedRevision))throw new BadRequestException('Передайте адрес источника и текущую ревизию настроек.');
@@ -40,6 +41,8 @@ export class BridgeSourceService {
     }
     async check(body:unknown){
         if(!object(body,['expectedRevision','force'])||!revision(body.expectedRevision)||body.force!==undefined&&typeof body.force!=='boolean')throw new BadRequestException('Передайте текущую ревизию источника моста.');
+        const configured=await this.repository.settings();
+        if(isRetiredBridgeSource(configured.url)){if(configured.revision!==body.expectedRevision)throw staleBridgeSource();return this.view();}
         if(assetSourceMode()==='offline'){
             if((await this.repository.settings()).revision!==body.expectedRevision)throw staleBridgeSource();
             const view=await this.view();if(view.revision!==body.expectedRevision)throw staleBridgeSource();return view;
@@ -66,6 +69,7 @@ export class BridgeSourceService {
         try{const previous=await this.source.jobs.byRequest(actor,body.requestKey);if(previous.bridge_source_revision!==body.expectedRevision||previous.source.commit!==body.commit||previous.selected_ids.length!==1||previous.selected_ids[0]!==body.assetId)throw new ConflictException('Ключ запроса уже относится к другому импорту.');return importView(previous);}
         catch(error){if(!(error instanceof HttpException)||error.getStatus()!==404)throw error;}
         const settings=await this.repository.settings();if(settings.revision!==body.expectedRevision||settings.check_commit!==body.commit||settings.error)throw staleBridgeSource();
+        if(isRetiredBridgeSource(settings.url))throw new ConflictException({code:'BRIDGE_SOURCE_ARCHIVE_REQUIRED',sourceReady:false,archiveRequired:true,message:retiredBridgeSourceMessage});
         const snapshot=await this.repository.snapshot(bridgeSourceRepository(settings.url),body.commit),bridge=snapshot?.assets.find(record=>record.current&&record.asset.kind==='bridge'&&record.asset.id===body.assetId);
         if(!snapshot||!bridge)throw staleBridgeSource();await assertBridgeHead(this.source.pool,bridge.asset as BridgeAsset);
         const job=await this.source.jobs.create(actor,body.requestKey,snapshot.pin,[body.assetId],body.expectedRevision);this.source.kickImports();return importView(job);

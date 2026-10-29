@@ -52,8 +52,8 @@ export function parseAssetsArguments(args) {
     if(seen.has('--verify-only')&&seen.has('--download-only'))throw new Error('Выберите один режим поставки.\n'+usage);
     if(options.ids&&new Set(options.ids).size!==options.ids.length)throw new Error('ID ассета повторён.\n'+usage);
     const expected=[options.expectedRepository,options.expectedCommit,options.expectedRevision];
-    if(expected.some(value=>value!==undefined)&&(!expected.every(value=>typeof value==='string')||!/^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}$/i.test(options.expectedRepository)
-        ||!/^[a-f0-9]{40}$/.test(options.expectedCommit)||!/^[a-f0-9]{64}$/.test(options.expectedRevision)))throw new Error('Ожидаемый источник требует repository, commit и SHA-256 описи.\n'+usage);
+    if(expected.some(value=>value!==undefined)&&(!expected.every(value=>typeof value==='string')||!(options.expectedRepository==='app-bundled'||/^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}$/i.test(options.expectedRepository))
+        ||!/^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64})$/.test(options.expectedCommit)||!/^[a-f0-9]{64}$/.test(options.expectedRevision)))throw new Error('Ожидаемый источник требует repository, commit и SHA-256 описи.\n'+usage);
     return options;
 }
 

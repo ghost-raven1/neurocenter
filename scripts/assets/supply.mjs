@@ -2,16 +2,26 @@ import {lstat,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import * as contract from '@neurocenter/asset-contract';
 import sourceReader from '../../services/shared/asset-source-client.cjs';
+import bundledCatalog from '../../services/shared/bundled-catalog.cjs';
 import {safeDirectory} from '../models/bundle-files.mjs';
 import {AssetCache} from './cache.mjs';
 
-/** Единственный источник поставки — commit и точный index SHA нового репозитория. */
+/** Git carries the approved current source set; legacy Git pins remain readable through exact bundled metadata. */
 export async function readSourcePin(root) {
     await safeDirectory(root,'services/shared');
-    const file=path.join(root,'services/shared/asset-source.lock.json'),info=await lstat(file);
+    let file=path.join(root,'services/shared/bundled-catalog.lock.json'),info;
+    try{info=await lstat(file);}catch(error){
+        if(error.code!=='ENOENT')throw error;
+        file=path.join(root,'services/shared/asset-source.lock.json');info=await lstat(file);
+        if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1||info.size>16384)throw new Error('Некорректный lock источника ассетов.');
+        const bytes=await readFile(file),pin=sourceReader.validateSourcePin(JSON.parse(bytes));
+        if(pin.repository==='ghost-raven1/neurocenter-assets')throw new Error('В приложении отсутствует закреплённая поставка catalog-source. Обновите исходники через Git.');
+        return {pin,lockSha256:contract.assetDigest(bytes)};
+    }
     if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1||info.size>16384)throw new Error('Некорректный lock источника ассетов.');
     const bytes=await readFile(file);
-    return {pin:sourceReader.validateSourcePin(JSON.parse(bytes)),lockSha256:contract.assetDigest(bytes)};
+    const bundle=await bundledCatalog.readBundledCatalog(root);
+    return {pin:sourceReader.validateSourcePin(bundle.pin),lockSha256:contract.assetDigest(bytes),bundle};
 }
 export function assetDirectories({root,environment=process.env,artifactsDirectory}) {
     const catalog=path.resolve(root,artifactsDirectory||environment.RUNTIME_ARTIFACT_DIR||'data/runtime-artifacts');
@@ -49,14 +59,14 @@ function completeGraph(records){
 /** Описания читаются без бинарников; offline проверка использует только подтверждённые SHA-кэши. */
 export async function readAssetSupply({root,environment=process.env,artifactsDirectory,verifyOnly=false,offlineReady=false,withoutModels=false,ids,expectedRepository,expectedCommit,expectedRevision,
     signal,fetch:request=globalThis.fetch}={}) {
-    const {pin,lockSha256}=await readSourcePin(root),directories=assetDirectories({root,environment,artifactsDirectory});
+    const {pin,lockSha256,bundle}=await readSourcePin(root),directories=assetDirectories({root,environment,artifactsDirectory});
     if([expectedRepository,expectedCommit,expectedRevision].some(value=>value!==undefined)
         &&(pin.repository!==expectedRepository||pin.commit!==expectedCommit||pin.index.sha256!==expectedRevision))throw Object.assign(new Error('Источник ассетов отличается от подтверждённого выбора. Повторите запуск; сохранённые файлы не изменены.'),{code:'ASSET_SOURCE_CHANGED'});
     const mode=environment.ASSET_SOURCE_MODE||'online';
     if(!['online','offline'].includes(mode))throw new Error('ASSET_SOURCE_MODE должен быть online или offline.');
     const offline=verifyOnly||mode==='offline';
     const metadata=new AssetCache(directories.metadata);
-    const source=new sourceReader.AssetSourceClient(pin,{contract,fetch:request,signal,offline,cache:offlineReady?boundedMetadata(metadata):metadata});
+    const source=new sourceReader.AssetSourceClient(pin,{contract,fetch:request,signal,offline,local:bundle?.metadata,cache:offlineReady?boundedMetadata(metadata):metadata});
     const index=await source.index();
     if(offlineReady&&index.assets.length>300)throw new Error('Полный источник превышает 300 описаний ассетов.');
     const selected=ids??index.assets.filter(entry=>entry.current&&(!withoutModels||entry.kind!=='model')).map(entry=>entry.id);
@@ -77,10 +87,10 @@ export async function readAssetSupply({root,environment=process.env,artifactsDir
     const assets=contract.selectAssets([...records.values()],selected);
     if(withoutModels&&assets.some(record=>record.asset.kind==='model'))throw new Error('Выбранному инструменту нужна модель. Выберите профиль full или другой набор ассетов.');
     const artifacts=new Map();
-    for(const {asset}of assets)for(const artifact of contract.downloadArtifacts(asset)){
+    for(const {asset}of assets)for(const artifact of asset.kind==='model'?[]:contract.downloadArtifacts(asset)){
         const previous=artifacts.get(artifact.sha256);
         if(previous&&previous.bytes!==artifact.bytes)throw new Error('Один SHA ассета имеет разные размеры.');
         artifacts.set(artifact.sha256,previous?.url?previous:artifact);
     }
-    return {pin,revision:pin.index.sha256,lockSha256,index,assets,artifacts:[...artifacts.values()],directories,selected,offline};
+    return {pin,revision:pin.index.sha256,lockSha256,index,assets,artifacts:[...artifacts.values()],directories,selected,offline,sourcePlans:bundle?.plans??[]};
 }

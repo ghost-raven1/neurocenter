@@ -1,11 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { download, extract, TARGETS } from './upstream.mjs';
+import { cachedArchive, download, extract, TARGETS } from './upstream.mjs';
 
 export const SNIP_VERSION = '0.25.2';
 export const SNIP_PLUGIN_VERSION = '2.0.0';
-const release = 'https://github.com/edouard-claude/snip/releases/download/v' + SNIP_VERSION + '/';
 const assets = {
     'darwin-arm64': ['darwin_arm64.tar.gz', 'a495b8b91cc1d51cffd0b4490e536b96cd026f5080b39e1736a29580ec335465'],
     'darwin-x64': ['darwin_amd64.tar.gz', '7e2ddb1c3578f0c185f5544114690b0c26391948d57edaef98b87d15f479ba0c'],
@@ -19,7 +18,7 @@ const assets = {
 export async function prepareOpenCodeSnip({ target, directory }) {
     if (!TARGETS[target]) throw new Error('Неизвестная платформа: ' + target);
     const [suffix, sha256] = assets[target.replace(/-(?:glibc|musl)$/, '')];
-    const archive = await download(release + 'snip_' + SNIP_VERSION + '_' + suffix, sha256);
+    const archive = await cachedArchive(sha256);
     const unpacked = await fs.mkdtemp(path.join(path.dirname(directory), 'snip-source-'));
     try {
         await extract(archive, unpacked, suffix.endsWith('.zip') ? 'zip' : 'tar');

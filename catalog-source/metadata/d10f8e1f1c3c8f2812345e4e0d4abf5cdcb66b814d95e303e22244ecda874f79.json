@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "mcp-filesystem",
+      "kind": "mcp",
+      "version": "1.0.0",
+      "path": "assets/mcp-filesystem/1.0.0/asset.json",
+      "sha256": "62cde495f47a0af6803bbc6d26b8065a4bebc7c28a2ab59bbee74c7a453d0cc4",
+      "current": true
+    },
+    {
+      "id": "plugin-git-context",
+      "kind": "plugin",
+      "version": "1.0.0-pack.1",
+      "path": "assets/plugin-git-context/1.0.0-pack.1/asset.json",
+      "sha256": "752f4f6601fb4123a42733957f6335379ef63ee1af90a2db2814b300849e107e",
+      "current": true
+    },
+    {
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "version": "0.9.10",
+      "path": "assets/neurocenter-bridge/0.9.10/asset.json",
+      "sha256": "b55b7bf350c5fef45d39f5ed4b14e7f769a87dc0c98f987d4a39857636007c53",
+      "current": true
+    },
+    {
+      "id": "model-embedding-qwen3-4b",
+      "kind": "model",
+      "version": "models-2026-10-19.1",
+      "path": "assets/model-embedding-qwen3-4b/models-2026-10-19.1/asset.json",
+      "sha256": "21c0ba1d17b11f4f90f0c926188164feb2f681a80d9fa379320fae84182e7303",
+      "current": true
+    },
+    {
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "version": "1.0.0",
+      "path": "assets/skill-neurocenter-packaging/1.0.0/asset.json",
+      "sha256": "d8debdb3984a7c45ab8d3324a953e844ac01eac70e6e3f70ce1b18d994150eb1",
+      "current": true
+    }
+  ]
+}

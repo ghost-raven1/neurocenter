@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { assetDigest, serializeAsset, type AssetDescriptor, type AssetIndex } from '@neurocenter/asset-contract';
 import { AssetSourceClient, validateSourcePin } from '../src/asset-sources/source-client';
 
-const commit = 'a'.repeat(40), repository = 'ghost-raven1/neurocenter-assets' as const;
+const commit = 'a'.repeat(40), repository = 'example/app-source' as const;
 function skill(id: string, dependencies?: AssetDescriptor['dependencies']): AssetDescriptor {
     return {schemaVersion:1,id,kind:'skill',version:'1.0.0',source:{type:'release',repository:'https://github.com/example/skills',tag:'v1.0.0'},
         license:{spdx:'MIT'},compatibility:{packageFormat:5},card:{path:'common',slug:id,name:id,body:'Проверенная инструкция',meta:{description:'Инструкция для проверки'}},

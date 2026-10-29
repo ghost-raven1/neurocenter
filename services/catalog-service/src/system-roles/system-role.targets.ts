@@ -180,7 +180,7 @@ export class SystemRoleTargets {
             const view = await this.connections.read(target.id), options = rollback ? remoteModelOptions(target.before.options) : remoteModelOptions(JSON.parse(this.replacement(target, replacement)));
             assertRemoteModelOptions(await this.policy.models.get(target.id), options);
             const saved = await this.connections.save(target.id, { expectedRevision: view.revision, expectedModelRevision: view.modelRevision, baseUrl: view.baseUrl,
-                requestDimensions: view.requestDimensions, credential: view.credential, credentialEnv: view.credentialEnv ?? undefined, timeoutMs: view.timeoutMs, options }, actor.email,
+                requestDimensions: view.requestDimensions, authMode: view.authMode, timeoutMs: view.timeoutMs, options }, actor.email,
             async () => { await this.policy.models.requireMain(req); });
             ownerVersion = saved.revision; ownerModelRevision = saved.modelRevision; expectedOptions = options;
         }

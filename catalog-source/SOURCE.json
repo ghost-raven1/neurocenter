@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "kind": "app-bundled-catalog",
+  "historicalMetadata": {
+    "repository": "ghost-raven1/neurocenter-assets",
+    "commit": "e1255b4e522a0b38e471d5624cc63f5f13442649",
+    "sha256": "933bd7b8e7b7d138b783aef84c9bcb1114aaecd099c81f2b12849a470f01dd24"
+  },
+  "currentRecipes": "Application source and exact reviewed dependency locks; build outputs remain local immutable envelopes.",
+  "runtimeBinariesIncluded": false,
+  "modelWeightsIncluded": false
+}

@@ -55,6 +55,8 @@ function requiredRouteFeatures(method,path,body){
     if(!route)return [];
     if(/^\/api\/feature-flags(?:\/|$)/.test(route))return [];
     if(verb==='GET'&&/^\/api\/bridge\/install_workspace\.(sh|ps1)$/.test(route))return ['unified_project_setup'];
+    // The credential owner checks new writes after immutable receipt lookup; recovery survives OFF.
+    if(/^\/api\/models\/[^/]+\/my-access(?:\/|$)/.test(route))return [];
     if(read){
         if(/^\/api\/tool-builds\/(npm|repository)$/.test(route))return ['tool_builds'];
         if(route==='/api/model-usage')return ['model_usage'];

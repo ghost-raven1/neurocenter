@@ -215,11 +215,12 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 325);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 397);
+    assert.equal(Object.keys(actual.paths).length, 327);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 401);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for(const [pathname,methods] of Object.entries({'/api/models/{id}/token-quotas/{email}':['get','put'],'/api/models/{id}/token-quotas/{email}/requests/{requestKey}':['get']})) assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods,pathname);
     for(const [pathname,methods]of Object.entries({'/api/runtime-limits':['get'],'/api/runtime-limits/admin':['get','patch'],'/api/runtime-limits/admin/requests/{key}':['get'],'/api/models/gguf-imports':['post'],'/api/models/gguf-imports/limits':['get'],'/api/models/gguf-imports/requests/{key}':['get'],'/api/models/gguf-imports/{id}':['get','delete'],'/api/models/gguf-imports/{id}/accept':['post'],'/api/models/gguf-imports/{id}/content':['put']}))assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods.sort(),pathname);
+    for(const [pathname,methods]of Object.entries({'/api/models/{id}/my-access':['get','put','delete'],'/api/models/{id}/my-access/requests/{key}':['get']}))assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods.sort(),pathname);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
@@ -503,7 +504,7 @@ test('Retained disabled endpoints advertise their error instead of a fabricated 
     assert.ok(actual.paths['/api/projects/import-local'].post.responses['201']);
 });
 
-test('Remote connection docs expose bounded generation defaults and a write-only key with the model CAS receipt', () => {
+test('Remote connection docs expose bounded generation defaults and personal authorization with the model CAS receipt', () => {
     const item = actual.paths['/api/models/{id}/connection'];
     const body = item.put.requestBody.content['application/json'].schema;
     const options = body.properties.options.properties;
@@ -518,12 +519,17 @@ test('Remote connection docs expose bounded generation defaults and a write-only
     assert.match(options.responseModel.description,/exact response identity/);
     assert.match(options.contextWindow.description, /Remote Ollama/);
     assert.match(body.properties.timeoutMs.description, /1000 to 300000/);
-    assert.match(body.properties.apiKey.description, /Write-only/);
-    assert.ok(!body.required.includes('options')); assert.ok(!body.required.includes('apiKey'));
+    assert.deepEqual(body.properties.authMode.enum,['none','optional','required']);
+    assert.deepEqual(body.properties.credential.enum,['none']);
+    assert.deepEqual(body.anyOf,[{required:['authMode']},{required:['credential']}]);
+    assert.equal(body.additionalProperties,false);
+    assert.ok(!Object.hasOwn(body.properties,'apiKey'));assert.ok(!Object.hasOwn(body.properties,'credentialEnv'));
+    assert.ok(!body.required.includes('options'));assert.ok(!body.required.includes('credential'));
     for (const method of ['get','put']) {
         const result = jsonResponse(item[method]);
         assert.equal(result.properties.modelRevision.type, 'number');
         assert.ok(result.required.includes('modelRevision'));
+        assert.ok(result.required.includes('authMode'));
         assert.ok(!Object.hasOwn(result.properties, 'apiKey'));
     }
 });

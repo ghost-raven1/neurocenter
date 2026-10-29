@@ -67,6 +67,7 @@ export class AssetBlobStore {
             catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;missing.push(artifact);}
         }
         if((this.offline||cacheOnly)&&missing.length)throw new ConflictException('Файлы выбранного ассета отсутствуют в локальной поставке. Перенесите архив с файлами этого ассета. Сетевое скачивание для этого импорта отключено.');
+        if(missing.length&&(asset.kind==='model'||missing.some(artifact=>artifact.url?.includes('/ghost-raven1/neurocenter-assets/'))))throw new ConflictException('Для этой поставки нужен явно выбранный локальный архив. Веса моделей и архивы прежнего репозитория автоматически не скачиваются.');
         const stage = path.join(this.directory,'.stage-'+requestKey);
         try {
             const previous = await fs.lstat(stage);

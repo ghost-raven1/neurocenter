@@ -7,10 +7,10 @@ import {assetFixture,sha,clone} from './assets-sync.fixture.mjs';
 import {assetDirectories} from '../assets/sync.mjs';
 const binaryCalls=f=>f.calls.filter(url=>url.includes('/releases/download/'));
 
-test('Все kinds нового source contract попадают только в общий SHA-кэш, без карточек и tags',async t=>{
-    const f=await assetFixture(t),report=await f.run();assert.equal(report.ok,true);assert.equal(report.mode,'prefetch');assert.equal(report.downloaded,3);
+test('Source metadata keeps every kind while weights require an explicit archive',async t=>{
+    const f=await assetFixture(t),report=await f.run();assert.equal(report.ok,true);assert.equal(report.mode,'prefetch');assert.equal(report.downloaded,2);
     assert.deepEqual(new Set(report.assets.map(item=>item.kind)),new Set(['plugin','bridge','skill','model']));
-    assert.equal(binaryCalls(f).length,3);assert.equal(JSON.parse(await readFile(f.receipt)).schemaVersion,2);
+    assert.equal(binaryCalls(f).length,2);assert.equal(JSON.parse(await readFile(f.receipt)).schemaVersion,2);
     await assert.rejects(lstat(path.join(f.root,'data/embedding')),{code:'ENOENT'});
     await assert.rejects(lstat(path.join(f.root,'bridge-dist')),{code:'ENOENT'});
     assert.equal((await readdir(path.join(f.root,'data/runtime-artifacts'))).some(name=>!name.startsWith('.asset-source-')),false);
@@ -107,7 +107,7 @@ test('Изменение lock во время загрузки не получа
     }}),/Источник изменился/);await assert.rejects(lstat(f.receipt),{code:'ENOENT'});
 });
 test('Две подготовки сериализованы; второй процесс использует проверенный результат первой',async t=>{
-    const f=await assetFixture(t),reports=await Promise.all([f.run(),f.run()]);assert.equal(binaryCalls(f).length,3);assert.deepEqual(reports.map(item=>item.downloaded).sort(),[0,3]);
+    const f=await assetFixture(t),reports=await Promise.all([f.run(),f.run()]);assert.equal(binaryCalls(f).length,2);assert.deepEqual(reports.map(item=>item.downloaded).sort(),[0,2]);
     assert.equal((await readdir(path.join(f.root,'.run'))).some(name=>name.startsWith('assets-sync.lock')),false);
 });
 test('Кэш берётся из единого RUNTIME_ARTIFACT_DIR, отдельного каталога весов у prefetch нет',()=>{

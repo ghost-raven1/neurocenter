@@ -11,6 +11,7 @@ import {toolRuntimePath} from './supply-layout.mjs';
 import { readyManifest } from './manifest.mjs';
 import {exportBuiltAsset} from './source-envelope.mjs';
 import {capturePreparedSource,preparedSourceAdapter} from './prepared-source-snapshot.mjs';
+import bundledCatalog from '../../services/shared/bundled-catalog.cjs';
 import { packRuntime } from './pack.mjs';
 import { publishCatalog } from './publish.mjs';
 import { installDependencies } from './recipes/upstream.mjs';
@@ -183,6 +184,8 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
     const recipeFile = path.resolve(recipePath);
     const recipeDirectory = await fs.realpath(path.dirname(recipeFile));
     const recipe = validateRecipe(input ?? await jsonFile(recipeFile));
+    const binding=recipe.producer;
+    if(binding){if(binding.schemaVersion!==1||binding.id!==recipe.key||typeof binding.revision!=='string')throw new Error('Некорректная привязка текущих исходников каталога.');await bundledCatalog.verifyBundledProducer(binding.producerSha256);}
     const destination = await inspectBuildOutput(output);
     const files = await inspectRecipe(recipe, recipeDirectory, destination);
     if (dryRun) { return { ok: true, dryRun: true, key: recipe.key, kind: recipe.kind, targets: recipe.targets, output: destination }; }
@@ -243,6 +246,7 @@ export async function buildRecipe({ recipe: input, recipePath, output, dryRun = 
             } finally { await fs.rm(directory, { recursive: true, force: true }); }
         }
         if(prepared&&(await capturePreparedSource()).revision!==prepared.revision)throw new Error('Исходники producer изменились во время сборки. Архивы сохранены, asset не опубликован; повторите сборку.');
+        if(binding)await bundledCatalog.verifyBundledProducer(binding.producerSha256);
         const manifestPath=await exportBuiltAsset({recipe,recipeDirectory,destination,preparedInputs,
             publication:publication(recipe,configuration(recipe,sourceConfig,descriptors)),descriptors,sources,locks});
         await readyManifest(manifestPath);

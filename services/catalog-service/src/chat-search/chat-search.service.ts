@@ -78,7 +78,7 @@ export class ChatSearchService implements OnModuleDestroy {
         const beforeInference=async()=>{await this.current(req,row,input,signal,source);};
         const model=await this.current(req,row,input,signal,source);
         const cancelled=new Promise<never>((_resolve,reject)=>{if(signal.aborted)reject(new Error('Обработка остановлена.'));else signal.addEventListener('abort',()=>reject(new Error('Обработка остановлена.')),{once:true});});
-        const result=await Promise.race([withModelUsage({purpose:'reindex',actorEmail:row.actor,projectId:row.project_id,agentId:'agent-indexer',operationId:row.id,requiredFeatures:CHAT_SEARCH_FEATURES,beforeInference},
+        const result=await Promise.race([withModelUsage({purpose:'reindex',actorEmail:row.actor,actorRole:row.active_role,projectId:row.project_id,agentId:'agent-indexer',operationId:row.id,requiredFeatures:CHAT_SEARCH_FEATURES,beforeInference},
             ()=>this.runtime.infer(model,'embed',{input:texts,truncate:false},signal)),cancelled]);
         await this.current(req,row,input,signal,source);return embeddingVectors(result.embeddings,texts.length,row.dimension);
     }

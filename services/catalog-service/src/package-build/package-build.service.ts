@@ -50,6 +50,7 @@ import {assertRuntimeCandidate,verifyBuildRuntime} from './build-runtime';
 import {isSourceEntrypoint} from '../../../shared/source-entrypoint.cjs';
 import {withToolImportDeadline} from './tool-import-deadline';
 import {importToolAsset} from './import-tool-asset';
+import {resolveBundledBuild,assertBundledPublication} from './bundled-source';
 
 interface PreparedTool {asset:ToolAsset;publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>;sourceSnapshotPath?:string}
 
@@ -306,7 +307,8 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         } else {source = input.source;}
         const {requestKey: _requestKey, publication:_publication, ...configuration} = input;
         if(source.type==='files')agentCandidates=source.files.filter(file=>isSourceEntrypoint(file.path)&&file.content.trim()).map(file=>file.path);
-        let config: BuildConfiguration = {...configuration, source,...(input.agent?{agentCandidates:[...new Set([source.entrypoint,...agentCandidates])].slice(0,32)}:{}),...(publication?{publication}:{})};
+        let config: BuildConfiguration = {...configuration, source,...(input.agent?{agentCandidates:[...new Set([('entrypoint'in source?source.entrypoint:undefined),...agentCandidates].filter((value):value is string=>!!value))].slice(0,32)}:{}),...(publication?{publication}:{})};
+        if(source.type==='bundled')config.targets=(await resolveBundledBuild(source,input.kind,Object.prototype.hasOwnProperty.call(raw,'targets')?input.targets:undefined)).targets;
         assertCodexBuildKind(config);if(isPreparedCodexRepository(config.source))await requireFeaturesEnabled(buildFeatures(config));
         if (source.type === 'npm' && source.recommendedKind && source.recommendedKind !== input.kind) { throw new BadRequestException(`Этот пакет устанавливается как ${source.recommendedKind === 'mcp' ? 'MCP' : 'плагин'}. Измените тип инструмента.`); }
         if (source.type === 'npm' && source.supportedTargets) {
@@ -431,7 +433,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             const verified=await buildVerifiedAttempts(row.config,{
                 agent:this.agent,authorize,identity:attempt=>`${row.id}:${attempt}:${row.execution_nonce}`,
                 context:(attempt,feedback)=>({buildId:row.id,executionNonce:row.execution_nonce!,actorEmail:row.actor,actorRole:'Главный админ',attempt,signal:cancellation.controller.signal,
-                    candidates:row.config.agentCandidates??[row.config.source.entrypoint],feedback,requiredFeatures:buildFeatures(row.config),authorize,
+                    candidates:row.config.agentCandidates??('entrypoint'in row.config.source?[row.config.source.entrypoint]:[]),feedback,requiredFeatures:buildFeatures(row.config),authorize,
                     transaction:work=>this.withLease(ownerLease,()=>this.repository.agentTransaction(ownerLease,work))}),
                 reset:async()=>{
                     await authorize();if(started&&!reaped)throw new BuildProcessUnreapedError();
@@ -459,6 +461,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             await assertRuntimeCandidate(manifest,verified.report,verified.identity);
             if (tools.length !== 1 || tools[0].publication.name !== row.config.name || tools[0].publication.kind !== row.config.kind) { throw new Error('Сборщик вернул другой инструмент.'); }
             assertCodexBuildPublication(row.config,tools[0].publication);
+            await assertBundledPublication(row.config.source,tools[0]);
             await authorize();
             // The verified producer is reaped; statfs now includes its retained staging bytes.
             if(started&&reaped&&!this.child){releaseDisk();releaseDisk=()=>undefined;}

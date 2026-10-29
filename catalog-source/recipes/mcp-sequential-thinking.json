@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "key": "mcp-sequential-thinking",
+  "name": "MCP Sequential Thinking",
+  "kind": "mcp",
+  "description": "Пошаговое рассуждение для сложных задач: пересмотр шагов и ветвление гипотез. Готовый npm-комплект; сервер не вызывает отдельную модель и не требует API-ключа.",
+  "tags": [
+    "Планирование",
+    "npm",
+    "Готовый комплект"
+  ],
+  "revision": "1.0.0-pack.1",
+  "source": {
+    "type": "prepared",
+    "adapter": "sequential-thinking"
+  }
+}

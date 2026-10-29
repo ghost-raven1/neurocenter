@@ -11,8 +11,8 @@ import {serviceTabSnapshot, serviceTabSource} from '../TabNotifications/snapshot
 import {tabNotifications} from '../TabNotifications/tracker';
 
 interface Prepared extends ServicePreview { agentId: SystemRoleId; dialogId: string; model: { id: string; pin: string }; }
-interface ChatState { owner: object; overview?: RoleOverview; dialogs: ServiceDialog[]; detail?: ServiceDetail; prepared?: Prepared; error: string; busy: boolean; loading: boolean; receipt?: ServiceReceipt; }
-interface Options {agentId?: SystemRoleId; transport?: typeof api; origin?: string; suspended?: boolean; onAccepted?: (turn: ServiceTurn) => void;}
+interface ChatState { owner: object; overview?: RoleOverview; dialogs: ServiceDialog[]; detail?: ServiceDetail; prepared?: Prepared; error: string; refreshError?: string; busy: boolean; loading: boolean; receipt?: ServiceReceipt; }
+interface Options {agentId?: SystemRoleId; transport?: typeof api; origin?: string; suspended?: boolean; readOverview?: boolean; onAccepted?: (turn: ServiceTurn) => void;}
 const statusOf = (cause: unknown): number | undefined => (cause as { response?: { status?: number } })?.response?.status;
 const rejected = (cause: unknown): boolean => { const status = statusOf(cause); return !!status && status >= 400 && status < 500 && ![408, 429].includes(status); };
 
@@ -22,7 +22,8 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
     const oldScope = serviceIntentScope(scope, projectId, options.origin);
     const roleScope = options.agentId ? serviceIntentScope(scope, projectId, JSON.stringify(['role-chat', options.agentId])) : oldScope;
     const intentScope = !serviceReceipt(roleScope) && options.agentId ? legacyRoleIntentScope(scope, projectId, options.agentId) ?? roleScope : roleScope, transport = options.transport ?? api;
-    const identity = JSON.stringify([scope, projectId ?? null, options.origin, options.agentId, intentScope, !!options.suspended]);
+    const readOverview = options.readOverview ?? true;
+    const identity = JSON.stringify([scope, projectId ?? null, options.origin, options.agentId, intentScope, !!options.suspended, readOverview]);
     const onAccepted = useRef(options.onAccepted); onAccepted.current = options.onAccepted;
     const owner = useMemo(() => ({ active: false, generation: 0 }), [identity]), currentOwner = useRef(owner); currentOwner.current = owner;
     const allowed = useRef(enabled); allowed.current = enabled;
@@ -48,18 +49,19 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
     const refresh = async (): Promise<void> => {
         const owns = capture(); if (!owns()) return;
         const sequence = ++reads.current, dialogId = current.current.detail?.dialog.id;
-        const result = await Promise.allSettled([systemRolesApi.overview(projectId), transport.list(projectId), ...(dialogId ? [transport.read(dialogId)] : [])]);
+        // Preparation metadata belongs to the executable role view; private history uses its own allowed transport.
+        const result = await Promise.allSettled([readOverview ? systemRolesApi.overview(projectId) : Promise.resolve(undefined), transport.list(projectId), ...(dialogId ? [transport.read(dialogId)] : [])]);
         if (!owns() || sequence !== reads.current) return;
         const [overview, dialogs, detail] = result;
-        const patch: Partial<ChatState> = { loading: false };
-        if (overview.status === 'fulfilled') patch.overview = overview.value as RoleOverview;
+        const patch: Partial<ChatState> = { loading: false, error: '' };
+        if (overview.status === 'fulfilled') patch.overview = overview.value as RoleOverview | undefined;
         if (dialogs.status === 'fulfilled') patch.dialogs = dialogs.value as ServiceDialog[];
         if (detail?.status === 'fulfilled' && current.current.detail?.dialog.id === dialogId) {
             patch.detail = detail.value as ServiceDetail;
             const receipt = serviceReceipt(intentScope);
             if (receipt && receipt.dialogId === dialogId && patch.detail.turns.some(turn => turn.id === receipt.requestId)) { clearServiceIntent(intentScope); patch.receipt = undefined; }
         }
-        patch.error = result.some(item => item.status === 'rejected') ? 'Часть данных не обновилась. История и введённая задача сохранены. Повторите чтение.' : '';
+        patch.refreshError = result.some(item => item.status === 'rejected') ? 'Часть данных не обновилась. История и введённая задача сохранены. Повторите чтение.' : '';
         update(patch);
     };
     const perform = async <T,>(work: () => Promise<T>, take: (value: T) => void, fallback: string): Promise<void> => {
@@ -157,7 +159,7 @@ export function useSystemRoleChat(projectId: string | undefined, enabled: boolea
             value => { accept(selected.dialog.id, value); void refresh(); }, 'Исход действия не подтверждён. Перечитайте состояние перед повтором.');
     };
     const value = state.owner === owner ? state : empty();
-    return { ...value, refresh, select, prepare, start, action, recover, invalidate,
+    return { ...value, error: value.error || value.refreshError || '', refresh, select, prepare, start, action, recover, invalidate,
         newDialog: (): void => { if (!capture()() || busy.current || serviceReceipt(intentScope)) return; draftDialog.current = undefined; invalidate(); update({ detail: undefined, error: '' }); },
         replay: async (): Promise<void> => { const intent = serviceIntent(intentScope); if (intent && capture()() && allowed.current) await send(intent, true); },
         canReplay: !!value.receipt && !!serviceIntent(intentScope),

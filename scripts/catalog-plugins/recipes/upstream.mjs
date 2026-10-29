@@ -7,6 +7,15 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 const cache = path.resolve('.run/catalog-plugin-cache');
 
+/** Release archives are supplied explicitly or already verified in the private cache; they are never mandatory downloads. */
+export async function cachedArchive(sha256){
+    if(!/^[a-f0-9]{64}$/.test(sha256))throw new Error('Некорректная SHA-256 архива.');
+    const filename=path.join(cache,sha256);
+    try{const info=await fs.lstat(filename);if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1||info.size>256*1024*1024)throw new Error();
+        if(createHash('sha256').update(await fs.readFile(filename)).digest('hex')!==sha256)throw new Error();return filename;
+    }catch{throw Object.assign(new Error('Нужен явно выбранный локальный архив этой версии. Автоматическое скачивание GitHub Releases выключено.'),{code:'SOURCE_ARCHIVE_REQUIRED'});}
+}
+
 /** Выполняет подготовку только на площадке; lifecycle scripts на клиенте не нужны. */
 export async function run(command, args, options = {}) {
     return execFileAsync(command, args, { timeout: 300_000, maxBuffer: 8 * 1024 * 1024, ...options });

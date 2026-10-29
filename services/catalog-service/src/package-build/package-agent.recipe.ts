@@ -13,17 +13,19 @@ export const agentHash=(value:unknown):string=>createHash('sha256').update(JSON.
 
 /** Recipe choices may vary; source, inventory, model and publication pins remain immutable. */
 export function packageAgentSourceHash(config:BuildConfiguration):string {
-    const {entrypoint:_entrypoint,args:_args,...source}=config.source as BuildConfiguration['source']&{args?:string[]};
+    const {entrypoint:_entrypoint,args:_args,...source}=config.source as BuildConfiguration['source']&{args?:string[];entrypoint?:string};
     const {buildDiagnostics:_diagnostics,buildPlan:_plan,...identity}=config;
     return agentHash({...identity,source});
 }
 const argsOf=(config:BuildConfiguration):string[]=>config.source.type==='files'?[...(config.source.args??[])]:[];
 export function packageAgentRecipe(config:BuildConfiguration):PackageAgentRecipe {
+    if(config.source.type==='bundled')throw new ConflictException('Закреплённый рецепт каталога не меняется агентом.');
     if(config.recipeVersion===2&&config.recipeInventory)return config.buildPlan??{schemaVersion:2};
     return {entrypoint:config.source.entrypoint,...(config.source.type==='files'?{args:argsOf(config)}:{})};
 }
 interface RecipeChoices {entrypoints:string[];arguments:string[][]}
 export function packageAgentChoices(original:BuildConfiguration,context:PackageAgentContext):RecipeChoices {
+    if(original.source.type==='bundled')throw new ConflictException('Закреплённый рецепт каталога не меняется агентом.');
     if(original.kind==='skill')throw new ConflictException('Агент «Упаковщик» пока работает с MCP и плагинами.');
     const source=original.source,fixed=source.type==='upload'||source.type==='repository'&&!!(source.runtimeSource||source.release);
     const entrypoints=[...new Set([source.entrypoint,...context.candidates])];
@@ -43,6 +45,7 @@ export function packageAgentChoices(original:BuildConfiguration,context:PackageA
 
 /** Model text is data: exact JSON keys and trusted choices replace executable tools. */
 export function parsePackageAgentRecipe(value:unknown,current:BuildConfiguration,original:BuildConfiguration,context:PackageAgentContext):BuildConfiguration {
+    if(current.source.type==='bundled'||original.source.type==='bundled')throw new ConflictException('Закреплённый рецепт каталога не меняется агентом.');
     if(original.recipeVersion===2&&original.recipeInventory){
         if(packageAgentSourceHash(current)!==packageAgentSourceHash(original))throw new ConflictException('Закреплённый исходник рецепта изменился.');
         const buildPlan=validateBuildPlan(value,original.recipeInventory);
@@ -68,6 +71,7 @@ export function packageAgentReport(report:PackageAgentRuntimeReport):PackageAgen
         ...(report.diagnostics?{diagnostics:report.diagnostics.slice(0,6).map(cleanBuildReason)}:{})};
 }
 export function packageAgentRecipeAudit(config:BuildConfiguration):Record<string,unknown> {
+    if(config.source.type==='bundled')return {sourceRevision:config.source.revision};
     const recipe={entrypoint:config.source.entrypoint,args:argsOf(config)};
     if(config.recipeVersion===2)return {schemaVersion:2,...(config.buildPlan?{entrypoint:config.buildPlan.entrypoint,plan:config.buildPlan,planSha256:agentHash(config.buildPlan)}:{})};
     return {entrypoint:recipe.entrypoint,argumentCount:recipe.args?.length??0,argsSha256:agentHash(recipe.args??[])};

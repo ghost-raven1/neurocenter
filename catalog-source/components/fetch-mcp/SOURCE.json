@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "repository": "zcaceres/fetch-mcp",
+  "commit": "1ddb1a59cb09a2d38e759f2d7a97829680cbe514",
+  "license": "MIT",
+  "scope": "MCP runtime source closure",
+  "files": [
+    {
+      "path": "source/LICENSE",
+      "sha256": "6e3276d74176e109a3fcd3bbc705df4eb2a32106d25c2b8b3157542fe6f45d48",
+      "bytes": 1122,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/README.md",
+      "sha256": "a166a7aadf98692e95993263a1023093f385a70c2b3424d41cded8a6ee1f7e0e",
+      "bytes": 4576,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/package-lock.json",
+      "sha256": "d1c57eb778da8d7cf6006d442e2190a329dff1cdde3dae9b6640e8ceed81f645",
+      "bytes": 69945,
+      "origin": "application-generated npm lock from pinned package.json"
+    },
+    {
+      "path": "source/package.json",
+      "sha256": "8675cc9fe3bfaef51ba9480d43be58572db2e7517213ee8fed3a75f8d3f2b980",
+      "bytes": 1634,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/pnpm-lock.yaml",
+      "sha256": "eb2805042a412746856efb23e576829988b7af0b2671247f61a6114d908eb560",
+      "bytes": 103085,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/src/Fetcher.ts",
+      "sha256": "a2f1c33338c0817eb5cb77bc5ceee14b6a9a34c3b1ec1dba6449c38bb023a4eb",
+      "bytes": 12775,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/src/YouTubeTranscript.ts",
+      "sha256": "d23d3f83cae459b2977c01b0dd9bb0731e41e7d255a4e31da96011304ab379e9",
+      "bytes": 2244,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/src/index.ts",
+      "sha256": "72a37b4a3d371948d0075184b299fc5d62557ee74f27195f5c57d4214811b4be",
+      "bytes": 8048,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/src/types.ts",
+      "sha256": "7ef5bdbf4bc0db1e0b77a774bd0efd0ce9cc453ca9ddeba46abdd8b79aa0060b",
+      "bytes": 1327,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/tsconfig.json",
+      "sha256": "690cf86978c8bffe1e7e516561c5d2dbb1e8f8c03427e9baca4cf54287aa07fb",
+      "bytes": 399,
+      "origin": "upstream"
+    }
+  ]
+}

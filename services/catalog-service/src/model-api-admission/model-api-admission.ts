@@ -10,6 +10,7 @@ import type {ModelTokenQuotaEstimate} from '../model-token-quotas/model-token-qu
 import {quotaCoverage} from '../model-token-quotas/model-token-quotas.model';
 import {quotaUnavailable} from '../model-token-quotas/quota-database';
 import { modelRateBeforeAttempt } from '../model-rate-limits/model-rate-limits.wait';
+import type {ProviderWireLease} from '../model-usage/model-usage.context';
 
 /** The transport calls this after metadata preflights, immediately before the physical provider action. */
 @Injectable()
@@ -38,7 +39,7 @@ export class ModelApiAdmission {
   // Unlike ongoing authority checks, this guard must never run after the provider has accepted work.
   await context.beforeDispatch?.();
   await modelRateBeforeAttempt(beforeAttempt,signal);
-  let quotaChecked=false,entered=false,started=0,activeWrite:Promise<void>|undefined;
+  let quotaChecked=false,entered=false,started=0,activeWrite:Promise<void>|undefined,wireLease:ProviderWireLease|undefined;
   try {
    if(quotaEnabled){
     if(!this.usage||!estimate)throw quotaUnavailable();
@@ -48,12 +49,17 @@ export class ModelApiAdmission {
    }
    // A newly enabled check cannot be bypassed by an earlier OFF snapshot.
    if(quotaEnabled&&!quotaChecked)throw quotaUnavailable();
+   // Rate waits and quota reservations precede the short credential/authority lock.
+   // It stays held across claimQuota and is consumed at the remote client's literal fetch.
+   if(context.providerWire){wireLease=await context.providerWire.acquire(signal);context.providerWire.current=wireLease;}
    // This durable possible-send claim is last: no asynchronous authority callback may stale its policy.
    if(this.usage&&quotaCoverage(model).managedText)await this.usage.claimQuota(metrics,quotaEnabled,signal);
+   wireLease?.assertCurrent?.();
    signal?.throwIfAborted();
    if (metrics) { metrics.dispatchCount++; metrics.dispatchedAt ??= new Date().toISOString(); }
    started=performance.now();entered=true;
   } catch(error) {
+   if(context.providerWire&&context.providerWire.current===wireLease){context.providerWire.current=undefined;await wireLease?.release();}
    if(quotaChecked)await this.usage?.releaseQuota(metrics).catch(()=>undefined);
    throw error;
   }
@@ -63,6 +69,7 @@ export class ModelApiAdmission {
    const request=action();activeWrite=progress(true);return await request;
   }
   finally {
+   if(context.providerWire&&context.providerWire.current===wireLease){context.providerWire.current=undefined;await wireLease?.release();}
    if (metrics&&entered) metrics.providerLatencyMs += Math.max(0, performance.now() - started);
    await activeWrite;
    await progress(false);

@@ -37,7 +37,7 @@ export class AgentTrialRunner {
         const invoke = async (): Promise<Record<string, unknown>> => {
             signal.throwIfAborted();
             await requireFeaturesEnabled([...AGENT_TRIAL_FEATURES, ...(row.request.tool === 'project_search' ? ['project_search' as const] : [])], process.env, globalThis.fetch, signal);
-            const model = await checkpoint(receipt),actor=model.runtime==='device-codex'?await this.policy.actor(req,row.project_id):undefined;
+            const model = await checkpoint(receipt),actor=await this.policy.actor(req,row.project_id);
             const options = await modelPlanningOptions(this.policy.models.pool,model);
             const contextWindow = model.runtime === 'ollama' ? managedChatContextWindow() : options?.contextWindow ?? null;
             const maxOutput = Math.min(256, options?.maxOutputTokens ?? 256);
@@ -70,7 +70,8 @@ export class AgentTrialRunner {
             if (Object.keys(first).sort().join(',') !== 'nonce,query,tool' || first.nonce !== nonce || first.tool !== 'project_search' || first.query !== 'Описание проекта') throw contractFailure();
             await requireFeaturesEnabled([...AGENT_TRIAL_FEATURES, 'project_search'], process.env, globalThis.fetch, signal);
             await checkpoint(receipt);
-            const prepared = await bounded(withModelUsage({ purpose: 'verification', actorEmail: row.owner_email, projectId: row.project_id, agentId: row.agent_id, operationId: row.id, requiredFeatures: AGENT_TRIAL_FEATURES, beforeInference: async () => { signal.throwIfAborted(); await checkpoint(receipt); signal.throwIfAborted(); } },
+            const actor=await this.policy.actor(req,row.project_id);
+            const prepared = await bounded(withModelUsage({ purpose: 'verification', actorEmail: row.owner_email,actorRole:actor.activeRole, projectId: row.project_id, agentId: row.agent_id, operationId: row.id, requiredFeatures: AGENT_TRIAL_FEATURES, beforeInference: async () => { signal.throwIfAborted(); await checkpoint(receipt); signal.throwIfAborted(); } },
                 () => this.project.prepare(req, row.project_id, 'Описание проекта', signal, async () => {
                     await requireFeaturesEnabled([...AGENT_TRIAL_FEATURES, 'project_search'], process.env, globalThis.fetch, signal); await checkpoint(receipt);
                 })), signal);

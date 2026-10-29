@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "key": "plugin-project-context",
+  "name": "Контекст проекта",
+  "kind": "plugin",
+  "description": "Автоматически добавляет менеджер пакетов и названия scripts из package.json в контекст OpenCode. Не запускает команды. Отдельный JS-файл без зависимостей.",
+  "tags": [
+    "Контекст",
+    "JS-файл",
+    "Без зависимостей"
+  ],
+  "revision": "1.0.1-pack.1",
+  "source": {
+    "type": "prepared",
+    "adapter": "project-context"
+  }
+}

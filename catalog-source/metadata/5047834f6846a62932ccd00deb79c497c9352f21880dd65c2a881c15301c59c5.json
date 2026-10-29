@@ -1,0 +1,68 @@
+{
+  "card": {
+    "description": "Мост для подключения компьютера к Нейроцентру.",
+    "name": "Neurocenter Bridge"
+  },
+  "compatibility": {
+    "bridgeProtocol": 2
+  },
+  "delivery": {
+    "release": {
+      "artifacts": [
+        {
+          "file": "neurocenter-asset-sync-darwin-arm64-0.9.14.tgz",
+          "metadata": {
+            "buildId": "9bfc2924bdaf446707dfe5cf3c5686115217f5c6104c8cb1216c05cba6e546dd",
+            "bytes": 123086090,
+            "nodeVersion": "24.22.0",
+            "probeEngine": {
+              "file": "bin/opencode-probe",
+              "sha256": "a29407b32f28ff552539d6f4a1bbe6fafc5023472c7ff8ca2494525b9b0d921b",
+              "version": "1.14.48"
+            },
+            "ragSupported": true,
+            "sha256": "0ae5fc404062dc8f6baaaf506a12b47ac487ccd058ce104ee727205f2083351e",
+            "target": "darwin-arm64",
+            "version": "0.9.14"
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/bridge-v0.9.14/neurocenter-asset-sync-darwin-arm64-0.9.14.tgz"
+        },
+        {
+          "file": "neurocenter-asset-sync-linux-x64-0.9.14.tgz",
+          "metadata": {
+            "buildId": "9bfc2924bdaf446707dfe5cf3c5686115217f5c6104c8cb1216c05cba6e546dd",
+            "bytes": 203235897,
+            "nodeVersion": "24.22.0",
+            "probeEngine": {
+              "file": "bin/opencode-probe",
+              "sha256": "8732bd22e724fc19055e0e2800b763dbe9efc1e9ca004dc2f8836a9c124303b7",
+              "version": "1.14.48"
+            },
+            "ragSupported": true,
+            "sha256": "1a51ede0e974cc01696e7dab123eadf59c69a3f94618581321fbd7bf0b1b7f2a",
+            "target": "linux-x64",
+            "version": "0.9.14"
+          },
+          "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/bridge-v0.9.14/neurocenter-asset-sync-linux-x64-0.9.14.tgz"
+        }
+      ],
+      "buildId": "9bfc2924bdaf446707dfe5cf3c5686115217f5c6104c8cb1216c05cba6e546dd",
+      "release": "bridge-v0.9.14",
+      "schemaVersion": 1,
+      "version": "0.9.14"
+    },
+    "type": "bridge-release"
+  },
+  "id": "neurocenter-bridge",
+  "kind": "bridge",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/ghost-raven1/neurocenter-assets",
+    "tag": "bridge-v0.9.14",
+    "type": "release"
+  },
+  "version": "0.9.14"
+}

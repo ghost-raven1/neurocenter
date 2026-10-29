@@ -39,6 +39,7 @@ COPY services/catalog-service/package*.json ./
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
 COPY services/catalog-service/ .
 COPY services/shared/ /shared/
+COPY catalog-source/ /catalog-source/
 # Shared declarations resolve the same pinned contracts as the owning service.
 RUN ln -s /app/node_modules /shared/node_modules
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build
@@ -46,11 +47,21 @@ RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
 
 # Сервер использует общий native builder; source assets приходят из единого репозитория.
 COPY scripts/catalog-plugins/ /tools/scripts/catalog-plugins/
+COPY catalog-source/ /tools/catalog-source/
+COPY services/shared/ /tools/services/shared/
+COPY services/catalog-service/package*.json /tools/services/catalog-service/
+COPY services/catalog-service/tsconfig*.json /tools/services/catalog-service/
+COPY services/catalog-service/src/catalog/dto.ts /tools/services/catalog-service/src/catalog/dto.ts
+COPY services/catalog-service/src/devices/mcp-config-schema.ts /tools/services/catalog-service/src/devices/mcp-config-schema.ts
+COPY services/catalog-service/src/publication/publication-runtime.ts /tools/services/catalog-service/src/publication/publication-runtime.ts
+COPY services/catalog-service/src/publication/publication-validation.ts /tools/services/catalog-service/src/publication/publication-validation.ts
+COPY package*.json /tools/
 COPY scripts/models/ /tools/scripts/models/
 COPY scripts/release-request.mjs /tools/scripts/release-request.mjs
 COPY scripts/workspace/node-runtime.mjs /tools/scripts/workspace/node-runtime.mjs
+COPY scripts/opencode-platforms.mjs /tools/scripts/opencode-platforms.mjs
 COPY vendor/asset-contract/ /tools/vendor/asset-contract/
-RUN mkdir -p /tools/services && ln -s /app /tools/services/catalog-service && ln -s /shared /tools/services/shared && ln -s /app/node_modules /tools/node_modules
+RUN ln -s /app/dist /tools/services/catalog-service/dist && ln -s /app/node_modules /tools/services/catalog-service/node_modules && ln -s /app/node_modules /tools/services/shared/node_modules && ln -s /app/node_modules /tools/node_modules
 
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=catalog-service

@@ -1,6 +1,7 @@
 export type PackagingKind = 'mcp' | 'plugin' | 'skill';
 export interface PackagingFile { path: string; content: string; encoding?:'base64' }
 export type PackagingSource = { type: 'npm'; specifier: string; entrypoint?: string }
+    | {type:'bundled';id:string;revision:string}
     | { type: 'files'; files: PackagingFile[]; entrypoint: string; args?: string[] }
     | { type: 'repository'; url: string; ref: string; subdirectory?: string; entrypoint: string; release?: RepositoryRelease }
     | UploadedSource;

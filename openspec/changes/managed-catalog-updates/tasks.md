@@ -14,8 +14,8 @@
 
 ## 3. Current-only source supply
 
-- [ ] 3.1 Включить проверенные current metadata, inline agents/skills и необходимые recipe/source/locks в основной Git; проверить exact SHA, stable IDs, отсутствие old runtime archives и source provenance без выдуманного Git commit.
-- [ ] 3.2 Перевести CLI/Catalog на bundled current metadata/source с точными local aliases старых receipts; проверить собственный cold checkout при запрете старого repo/GH Releases, отсутствие model-weight downloads и понятный optional deferred status.
+- [x] 3.1 Включить проверенные current metadata, inline agents/skills и необходимые recipe/source/locks в основной Git; проверить exact SHA, stable IDs, отсутствие old runtime archives и source provenance без выдуманного Git commit.
+- [x] 3.2 Перевести CLI/Catalog на bundled current metadata/source с точными local aliases старых receipts; проверить собственный cold checkout при запрете старого repo/GH Releases, отсутствие model-weight downloads и понятный optional deferred status.
 - [ ] 3.3 Пройти собственный импорт/публикацию/проект/bridge для новой текущей поставки с прежними pins/custom card/queued job; проверить CAS, отмену, повтор, revoke/lost ACK и сохранение generation, документировать работающий git update workflow.
 
 ## 4. Интеграция
@@ -28,4 +28,4 @@
 - После фактического завершения всех задач синхронизировать specs и архивировать изменение.
 - Удаление прежнего asset-репозитория выполняет только Root после проверенной независимости поставки и отдельного технического auth gate.
 
-Промежуточные свидетельства реализации и unit-проверок: `docs/reports/catalog-updates-rag-2026-10-29.md`. Native, desktop, full source migration и работающая площадка остаются открытыми задачами.
+Промежуточные свидетельства реализации и unit-проверок: `docs/reports/catalog-updates-rag-2026-10-29.md`. RAG native, source metadata/offline и отдельная Fetch native publication проверены. Полная цепочка новой bundled queue → project → bridge, desktop и работающая площадка остаются отдельными воротами.

@@ -1,0 +1,189 @@
+{
+  "card": {
+    "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+    "config": {
+      "args": [
+        "mcp"
+      ],
+      "command": "node",
+      "entrypoint": "opencode-rag.mjs",
+      "extra": {
+        "hostedEmbedding": {
+          "profileSchemaVersion": 2,
+          "reindexSchemaVersion": 1,
+          "schemaVersion": 1
+        },
+        "localConfiguration": {
+          "fields": [
+            {
+              "id": "embeddingUrl",
+              "label": "URL эмбеддингов (Ollama /api или OpenAI /v1; код отправляется на этот адрес)",
+              "required": true,
+              "target": {
+                "kind": "env",
+                "name": "NEUROCENTER_RAG_EMBEDDING_URL"
+              },
+              "type": "url"
+            },
+            {
+              "id": "embeddingModel",
+              "label": "Модель эмбеддингов",
+              "required": true,
+              "target": {
+                "kind": "env",
+                "name": "NEUROCENTER_RAG_EMBEDDING_MODEL"
+              },
+              "type": "string"
+            },
+            {
+              "id": "embeddingProvider",
+              "label": "Протокол: ollama или openai (по умолчанию ollama)",
+              "required": false,
+              "target": {
+                "kind": "env",
+                "name": "NEUROCENTER_RAG_EMBEDDING_PROVIDER"
+              },
+              "type": "string"
+            },
+            {
+              "id": "embeddingKey",
+              "label": "API-ключ эмбеддингов (для OpenAI; локальный сервер может принимать любое значение)",
+              "required": false,
+              "secret": true,
+              "target": {
+                "kind": "env",
+                "name": "NEUROCENTER_RAG_EMBEDDING_KEY"
+              },
+              "type": "string"
+            }
+          ],
+          "schemaVersion": 1
+        },
+        "localUi": {
+          "application": "opencode-rag",
+          "args": [
+            "ui",
+            "--port",
+            "0",
+            "--no-open"
+          ],
+          "entrypoint": "opencode-rag.mjs",
+          "schemaVersion": 1
+        }
+      },
+      "transport": "stdio"
+    },
+    "description": "Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; модель и размерность подключаются в настройках проекта через мост. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.",
+    "files": [],
+    "kind": "mcp",
+    "name": "OpenCodeRAG",
+    "origin": "neurocenter:recipe/mcp-opencode-rag",
+    "revision": "2.4.4-mcp.pack.11",
+    "tags": [
+      "RAG",
+      "npm",
+      "Локальная настройка"
+    ]
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 98496024,
+          "entrypoint": "opencode-rag.mjs",
+          "filesCount": 7843,
+          "sha256": "f2adfcb1b48cff83be833a6a5794f2fe3031ca57cd9bd96f21f03bee04886c5f",
+          "target": "darwin-arm64",
+          "unpackedBytes": 290777919
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/mcp-opencode-rag-2.4.4-mcp.pack.11-darwin-arm64.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 172171046,
+          "entrypoint": "opencode-rag.mjs",
+          "filesCount": 7862,
+          "sha256": "ccdbb3706dbc186afd199d04ccf8cfc62b40b4d08772e35474c04d3e85721eba",
+          "target": "linux-arm64-glibc",
+          "unpackedBytes": 475116232
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/mcp-opencode-rag-2.4.4-mcp.pack.11-linux-arm64-glibc-musl.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 172171046,
+          "entrypoint": "opencode-rag.mjs",
+          "filesCount": 7862,
+          "sha256": "ccdbb3706dbc186afd199d04ccf8cfc62b40b4d08772e35474c04d3e85721eba",
+          "target": "linux-arm64-musl",
+          "unpackedBytes": 475116232
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/mcp-opencode-rag-2.4.4-mcp.pack.11-linux-arm64-glibc-musl.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 178795916,
+          "entrypoint": "opencode-rag.mjs",
+          "filesCount": 7862,
+          "sha256": "f2743223f89c00993a7b66b390aca34c82269d9fe311a2e8ae55899cf4dea3b5",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 513951098
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/mcp-opencode-rag-2.4.4-mcp.pack.11-linux-x64-glibc-musl.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 178795916,
+          "entrypoint": "opencode-rag.mjs",
+          "filesCount": 7862,
+          "sha256": "f2743223f89c00993a7b66b390aca34c82269d9fe311a2e8ae55899cf4dea3b5",
+          "target": "linux-x64-musl",
+          "unpackedBytes": 513951098
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/mcp-opencode-rag-2.4.4-mcp.pack.11-linux-x64-glibc-musl.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 103812583,
+          "entrypoint": "opencode-rag.mjs",
+          "filesCount": 7839,
+          "sha256": "1de4130fc1e03cb3bf03aa76b0564af128d6e4bf0d6b383282f9ebe25b582452",
+          "target": "win32-arm64",
+          "unpackedBytes": 318691770
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/mcp-opencode-rag-2.4.4-mcp.pack.11-win32-arm64.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 109984777,
+          "entrypoint": "opencode-rag.mjs",
+          "filesCount": 7840,
+          "sha256": "005b808e304a7eeaaad021cdeffd139872fdb8aebbfed2f1732e5f5ee9b3dd03",
+          "target": "win32-x64",
+          "unpackedBytes": 352246221
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/mcp-opencode-rag-2.4.4-mcp.pack.11-win32-x64.tar.gz"
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "mcp-opencode-rag",
+  "kind": "mcp",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "recipe": {
+    "path": "recipes/mcp-opencode-rag/2.4.4-mcp.pack.11/recipe.json",
+    "sha256": "2bf11391013fc3aa23da793573c7f4c03ad29ed47c83b2e6e92a47b72f1d6987"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "bytes": 1378797,
+    "sha256": "009a481dbeb9576da09b266013a99441d46431908bdc75654013e556162ec78c",
+    "type": "archive"
+  },
+  "version": "2.4.4-mcp.pack.11"
+}

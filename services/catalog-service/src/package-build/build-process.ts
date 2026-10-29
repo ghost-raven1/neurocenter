@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { BuildConfiguration } from './package-build.model';
 import {hasBuildReapProof} from './build-cleanup';
+import {stageBundledBuild} from './bundled-source';
 
 export const builderScript = (): string => path.resolve(process.env.TOOL_BUILD_SCRIPT || path.join(__dirname, '../../../../scripts/catalog-plugins/build.mjs'));
 export const stagingLimit = 4 * 1024 ** 3;
@@ -82,7 +83,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
     const {publication:_publication,agent:_agent,agentCandidates:_agentCandidates,buildDiagnostics:_diagnostics,...content}=config;
     const identity=config.source.type==='upload'?{...content,source:{...config.source,uploadId:undefined}}:content;
     const key = 'tool-' + createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0,32);
-    let recipeSource: Record<string, unknown>;
+    let recipeSource: Record<string, unknown>={};
     if(config.source.type==='upload'){recipeSource=await stageUploadSource(config.source,stage);}
     else if (config.source.type === 'npm') {
         // Only the pinned, canonical MCP entrypoint has the project-local Memory contract.
@@ -92,7 +93,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
         recipeSource = adapter ? {type: 'prepared', adapter} : {type: 'npm', package: config.source.package, version: config.source.version, entrypoint: config.source.entrypoint};
     }
     else if (config.source.type === 'repository') {recipeSource = {...config.source};}
-    else {
+    else if(config.source.type==='files') {
         for (const file of config.source.files) {
             const target = path.join(source, file.path);
             await fs.mkdir(path.dirname(target), {recursive: true, mode: 0o700});
@@ -100,7 +101,7 @@ export async function runPackageBuilder(config: BuildConfiguration, stage: strin
         }
         recipeSource = {type: 'project', directory: 'source', entrypoint: config.source.entrypoint};
     }
-    const recipe = {schemaVersion: config.recipeVersion===2&&config.recipeInventory?2:1, ...(config.recipeVersion===2&&config.recipeInventory?{inventory:config.recipeInventory,buildPlan:config.buildPlan}:{}), key, name: config.name, kind: config.kind, description: config.description,
+    const recipe = config.source.type==='bundled'?{...await stageBundledBuild(config.source,config.kind,config.targets,stage),name:config.name,description:config.description,tags:config.tags}:{schemaVersion: config.recipeVersion===2&&config.recipeInventory?2:1, ...(config.recipeVersion===2&&config.recipeInventory?{inventory:config.recipeInventory,buildPlan:config.buildPlan}:{}), key, name: config.name, kind: config.kind, description: config.description,
         revision: config.source.type==='upload'?'source-'+config.source.sha256:config.source.type === 'npm' ? config.source.version : config.source.type === 'repository' ? 'git-' + config.source.commit : 'source-' + createHash('sha256').update(JSON.stringify(config.source)).digest('hex'), tags: config.tags, source: recipeSource,
         config: config.kind === 'mcp' ? {transport: 'stdio', args: config.source.type === 'files' ? config.source.args ?? [] : []} : {}, targets: config.targets};
     const recipePath = path.join(stage, 'recipe.json'), output = path.join(stage, 'output');
