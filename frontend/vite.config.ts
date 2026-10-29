@@ -13,6 +13,9 @@ import { fileURLToPath } from 'node:url';
 const DEFAULT_AUTH_PROXY_TARGET = 'http://localhost:22222';
 const DEFAULT_API_PROXY_TARGET = 'http://localhost:4000';
 const computerSetup = fileURLToPath(new URL('../services/shared/computer-setup.cjs', import.meta.url));
+const projectTextKnowledge = fileURLToPath(new URL('../services/shared/project-text-knowledge.cjs', import.meta.url));
+const runtimeLimits = fileURLToPath(new URL('../services/shared/runtime-limits.cjs', import.meta.url));
+const ggufImportPolicy = fileURLToPath(new URL('../services/shared/gguf-import-policy.cjs', import.meta.url));
 
 /**
  * Vite-конфиг (function-форма, чтобы прочитать переменные окружения через loadEnv).
@@ -43,11 +46,11 @@ export default defineConfig((configEnv) => {
     return {
         plugins: [react()],
         resolve: {
-            alias: { '@neurocenter/computer-setup': computerSetup },
+            alias: { '@neurocenter/computer-setup': computerSetup, '@neurocenter/project-text-knowledge': projectTextKnowledge, '@neurocenter/runtime-limits': runtimeLimits },
         },
         // Linked CommonJS needs pre-bundling for named imports in the dev browser.
         optimizeDeps: {
-            include: ['@neurocenter/computer-setup'],
+            include: ['@neurocenter/computer-setup', '@neurocenter/project-text-knowledge', '@neurocenter/runtime-limits'],
         },
         css: {
             preprocessorOptions: {
@@ -100,7 +103,7 @@ export default defineConfig((configEnv) => {
         build: {
             outDir: 'dist',
             sourcemap: false,
-            commonjsOptions: { include: [/node_modules/, computerSetup] },
+            commonjsOptions: { include: [/node_modules/, computerSetup, projectTextKnowledge, runtimeLimits, ggufImportPolicy] },
         },
     };
 });

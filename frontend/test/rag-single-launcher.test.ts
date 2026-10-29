@@ -1,7 +1,7 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {beforeEach,describe,expect,it,vi} from 'vitest';
-import RagTab from '../src/modules/Projects/components/RagTab';
+import RagTab from '../src/modules/Projects/components/SemanticRag';
 import type {IProjectEmbedding} from '../src/features/ProjectEmbedding/model';
 import type {IBridgeJob} from '../src/features/McpBridge/api';
 import {ragUiFixture} from './ragUiFixture';

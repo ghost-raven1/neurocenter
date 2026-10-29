@@ -20,6 +20,7 @@ import { ModelEditModal } from './ModelEditModal';
 import { RemoteConnectionModal } from './RemoteConnectionModal';
 import { OpenCodeImportModal } from './OpenCodeImportModal';
 import {DeviceCodexConnectionModal} from './DeviceCodexConnectionModal';
+import {GgufImportModal} from '../GgufImport/GgufImportModal';
 import { ModelChatModal } from '../ModelChat/ModelChatModal';
 import { modelChatUnavailableReason } from '../ModelChat/model';
 import { filterCatalogModels } from './modelCatalogState';
@@ -50,6 +51,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     const [editing, setEditing] = useState<ICatalogModel | 'new' | 'api' | null>(null);
     const [connection, setConnection] = useState<ICatalogModel | null>(null);
     const [importing, setImporting] = useState(false);
+    const [ggufImport, setGgufImport] = useState(false);
     const [providerSetup, setProviderSetup] = useState<{scope: string; modelId?: string; providerKind?: OpenCodeProviderKind; deviceId?: string}>();
     const providerSetupRef = useRef(providerSetup); providerSetupRef.current = providerSetup;
     const [chatId, setChatId] = useState<string | null>(null);
@@ -68,7 +70,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
     useEffect(() => {
         if (previousScope.current === formScope) return;
         previousScope.current = formScope;
-        setProviderSetup(undefined); setViewId(null); setEditing(null); setConnection(null); setImporting(false); setChatId(null); setConnectionHint(undefined); setError(''); setBusy(null);
+        setProviderSetup(undefined); setViewId(null); setEditing(null); setConnection(null); setImporting(false); setGgufImport(false); setChatId(null); setConnectionHint(undefined); setError(''); setBusy(null);
     }, [formScope]);
     const openProvider = (modelId?: string): void => {
         if (!captureOwner()() || providerContext.current.formScope !== formScope || !projectId || !providerContext.current.canManage) return;
@@ -156,6 +158,7 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
                 {isMain ? <><FeatureButton features={['model_catalog']} type="primary" onClick={() => setEditing('new')}>Добавить модель</FeatureButton>
                     <details className="model-catalog__more"><summary aria-label="Другие действия с каталогом моделей">Другие действия</summary><Space direction="vertical" className="model-catalog__more-content">
                         <FeatureButton features={['model_catalog']} onClick={() => setEditing('api')}>Подключить API</FeatureButton>
+                        <Button onClick={() => setGgufImport(true)}>Из файла GGUF</Button>
                         <Tooltip title="Общая конфигурация компьютера или настройки проекта"><FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>Из OpenCode</FeatureButton></Tooltip>
                         {projectId && canManage && <Button onClick={() => openProvider()}>Настроить в OpenCode</Button>}
                     </Space></details></> : <Button type="primary" onClick={() => openProvider()}>Настроить в OpenCode</Button>}
@@ -198,6 +201,12 @@ export function ModelCatalog({ projectId, projectName, embedded, canManage, isMa
                 await refresh(); if (!owns()) return;
                 if (saved && saved.runtime !== 'ollama' && saved.runtime !== 'device-codex' && !saved.verificationSha256) setConnection(saved);
             }} />}
+        {isMain && ggufImport && <GgufImportModal key={formScope} onClose={() => setGgufImport(false)} onImported={async () => {
+            const owns = captureOwner();
+            if (!owns() || providerContext.current.formScope !== formScope) return;
+            setQuery(''); setAssignedOnly(false);
+            await refresh();
+        }} />}
         {isMain && connection && (connection.runtime === 'device-codex'
             ? <DeviceCodexConnectionModal key={`${formScope}:${connection.id}:${connection.revision}`} model={connection}
                 onConfigureOpenCode={projectId && canManage ? openCodexProvider : undefined} onClose={() => setConnection(null)}/>
