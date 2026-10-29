@@ -2,6 +2,8 @@ import { BadGatewayException, BadRequestException, ConflictException, ForbiddenE
 import { describe, expect, it, vi } from 'vitest';
 import { SystemRoleService } from '../src/system-roles/system-role.service';
 import { SystemRoleStepTimeout } from '../src/system-roles/system-role.runner';
+import { withRoleMcpTools } from '../src/system-role-mcp/system-role-mcp.loop';
+import { normalizeRoleMcpTool, roleMcpToolKey } from '../../shared/system-role-mcp.cjs';
 import type { RoleRunRow } from '../src/system-roles/system-role.types';
 
 vi.mock('../src/system-roles/system-role.operations', () => ({ notifyRoleOperations: vi.fn(), projectRoleOperation: vi.fn() }));
@@ -23,6 +25,25 @@ function fixture(overrides: Partial<RoleRunRow> = {}) {
 }
 
 describe('System role failure diagnostics', () => {
+    it.each(['unselected tool', 'delegated subset', 'invalid arguments'])('persists the MCP rejection reason without dispatch for %s', async scenario => {
+        const target = { runtime: 'server' as const, assetId: 'own-echo', version: 1, manifest: 'a'.repeat(64), discoveryId: '00000000-0000-0000-0000-000000000001' };
+        const tools = ['echo', 'other-echo'].map(name => ({ ...normalizeRoleMcpTool({ name, inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } }), toolKey: roleMcpToolKey(target, name) }));
+        const selected = scenario === 'delegated subset' ? tools : [tools[0]];
+        const prepared = [{ target: { ...target, tools: selected.map(({ name, schemaDigest }) => ({ name, schemaDigest })) }, tools: selected }];
+        const infer = vi.fn(async () => JSON.stringify({ kind: 'tool', toolKey: tools[scenario === 'invalid arguments' ? 0 : 1].toolKey, arguments: scenario === 'invalid arguments' ? [] : { text: 'own QA text' } }));
+        const call = vi.fn(async () => { throw new Error('Unexpected external MCP dispatch'); }), trace = vi.fn();
+        const f = fixture({ phase: 'model_step', calls_started: 1 }), budget = { calls: 0, outputBytes: 0, stopped: false };
+        await withRoleMcpTools([], prepared, scenario === 'delegated subset' ? [tools[0].toolKey] : undefined, budget, infer, call, async () => {}, trace)
+            .catch(cause => f.fail(cause));
+        expect(f.row).toMatchObject({ state: 'failed', phase: 'failed', calls_started: 1, facts: [{ id: 'saved' }] });
+        expect(f.row.message).toContain('неразрешённый MCP-инструмент');
+        expect(f.row.message).toContain('Вызов MCP заблокирован');
+        expect(f.row.message).toContain('подтвердите контекст');
+        expect(f.row.message).toContain('Автоматического повтора нет');
+        expect(f.row.message).not.toContain('Контекст, версия или состояние запуска изменились');
+        expect(infer).toHaveBeenCalledTimes(1); expect(call).not.toHaveBeenCalled(); expect(trace).not.toHaveBeenCalled(); expect(budget.calls).toBe(0);
+    });
+
     it.each([
         [new ForbiddenException({ code: 'feature-disabled', message: 'private feature name' }), 'Функция отключена', 'Включите'],
         [new UnauthorizedException('private actor token'), 'Авторизация', 'Войдите'],
@@ -65,6 +86,7 @@ describe('System role failure diagnostics', () => {
         { status: 503, message: 'Bearer secret-token', code: 'feature-disabled' },
         new HttpException({ message: ['Bearer secret-token'], code: 'unknown-secret-code', body: '/Users/private/path' }, 500),
         new Error('План делегирования не прошёл проверку разрешённых ролей и выбранного контекста.'),
+        new Error('Системный агент выбрал недоступный инструмент или неверные аргументы MCP.'),
     ])('keeps unknown causes and non-HTTP lookalikes private: %s', async cause => {
         const f = fixture({ phase: 'Bearer secret-token /Users/private/path' }); await f.fail(cause);
         expect(f.row.message).toContain('Причина сбоя не определена');

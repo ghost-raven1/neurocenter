@@ -5,6 +5,7 @@ import {afterEach, beforeEach, expect, it, vi} from 'vitest';
 import {SystemRoleChat} from '../src/features/SystemRoleChat/SystemRoleChat';
 import type {RoleOverview, RoleRun, SystemRoleId} from '../src/features/SystemRoles/types';
 import type {ServiceTurn} from '../src/features/SystemRoleChat/types';
+import {saveRoleModelPreference} from '../src/features/SystemRoleChat/roleModelPreference';
 
 const h = vi.hoisted(() => ({owner: '', capture: () => {const owner = h.owner; return () => owner === h.owner;}}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: h.owner, captureOwner: h.capture})}));
@@ -27,6 +28,7 @@ import {systemRoleChatsApi as api} from '../src/features/SystemRoleChat/api';
 
 const dialog = {id: '27172bcb-bb2d-4c16-a48c-ce9247cec33e', projectId: 'prj-one', title: 'Existing task', createdAt: '2026-10-25T00:00:00Z', updatedAt: '2026-10-25T00:00:00Z'};
 const model = {id: 'model-one', name: 'Own model', pin: 'a'.repeat(64)};
+const overview = {definitions: [{id: 'agent-indexer', diagnostics: [], targets: []}, {id: 'agent-ai-admin', diagnostics: [], targets: []}], models: [model], targets: [], budget: {diagnostics: 5}} as unknown as RoleOverview;
 const run = {id: 'run-one', agentId: 'agent-indexer', projectId: 'prj-one', state: 'succeeded', phase: 'succeeded', revision: 1, canCancel: false, canApply: false, canRollback: false,
     modelId: model.id, facts: [], targets: [], steps: [], applied: [], result: {kind: 'diagnosis', summary: 'Own saved response', findings: [], nextSteps: [], changes: []}} as unknown as RoleRun;
 const turn: ServiceTurn = {id: 'request-one', agentId: 'agent-indexer', instruction: 'Own task', createdAt: dialog.createdAt, cancelRequested: false, run};
@@ -38,6 +40,9 @@ const render = async (agentId: SystemRoleId = 'agent-indexer', projectId = 'prj-
 const button = (label: string) => [...container.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === label)!;
 const click = async (node: HTMLElement) => {expect(node).toBeTruthy(); await act(async () => node.click()); await settle();};
 const history = () => container.querySelector<HTMLSelectElement>('[aria-label^="История ·"]')!;
+const modelChoice = () => container.querySelector<HTMLSelectElement>('[aria-label="Модель чата роли"]')!;
+const deferred = <T,>() => {let resolve!: (value: T) => void, reject!: (cause: Error) => void; const promise = new Promise<T>((yes, no) => {resolve = yes; reject = no;}); return {promise, resolve, reject};};
+const acknowledge = async (work: () => void) => {await act(async () => work());};
 const prepareAndAccept = async () => {
     await click(button('Проверить контекст')); await click(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
     await click([...container.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent?.startsWith('Отправить ·'))!);
@@ -45,13 +50,78 @@ const prepareAndAccept = async () => {
 beforeEach(() => {
     vi.resetAllMocks(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); h.owner = 'new-dialog-owner-' + ++sequence; sessionStorage.clear();
     vi.stubGlobal('matchMedia', (query: string) => ({matches: false, media: query, onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => false}));
-    vi.mocked(systemRolesApi.overview).mockResolvedValue({definitions: [{id: 'agent-indexer', diagnostics: [], targets: []}, {id: 'agent-ai-admin', diagnostics: [], targets: []}], models: [model], targets: [], budget: {diagnostics: 5}} as unknown as RoleOverview);
+    vi.mocked(systemRolesApi.overview).mockResolvedValue(overview);
     vi.mocked(api.list).mockResolvedValue([]); vi.mocked(api.create).mockResolvedValue(dialog); vi.mocked(api.read).mockResolvedValue({dialog, turns: []});
     vi.mocked(api.prepare).mockImplementation(async (_id, _agentId, selection) => ({selection, prepared: {preview: 'Own bounded context', consentDigest: 'b'.repeat(64), definitionPin: 'c'.repeat(64), targets: []}}));
     vi.mocked(api.start).mockImplementation(async () => {vi.mocked(api.list).mockResolvedValue([dialog]); return turn;});
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
 });
 afterEach(async () => {await act(async () => root.unmount()); container.remove(); sessionStorage.clear(); vi.unstubAllGlobals();});
+
+it.each(['overview', 'history'])('finishes initial loading after New with %s acknowledged first, keeping the preferred model and blank draft', async first => {
+    const pendingOverview = deferred<RoleOverview>(), pendingHistory = deferred<typeof dialog[]>();
+    const preferred = {...model, id: 'model-preferred', name: 'Preferred model'};
+    saveRoleModelPreference(h.owner, 'prj-one', 'agent-ai-admin', preferred.id);
+    vi.mocked(systemRolesApi.overview).mockReturnValueOnce(pendingOverview.promise);
+    vi.mocked(api.list).mockReturnValueOnce(pendingHistory.promise);
+    await render('agent-ai-admin'); expect(button('Новый диалог').disabled).toBe(false);
+    expect(container.querySelector('.ant-spin-spinning')).not.toBeNull();
+    await click(button('Новый диалог'));
+    const acknowledgements = {overview: () => pendingOverview.resolve({...overview, models: [model, preferred]}), history: () => pendingHistory.resolve([dialog])};
+    await acknowledge(acknowledgements[first as keyof typeof acknowledgements]);
+    expect(container.querySelector('.ant-spin-spinning')).not.toBeNull();
+    await acknowledge(acknowledgements[first === 'overview' ? 'history' : 'overview']);
+    expect(container.querySelector('.ant-spin-spinning')).toBeNull();
+    expect(button('Обновить').classList.contains('ant-btn-loading')).toBe(false);
+    expect(history().value).toBe(''); expect(history().querySelector(`option[value="${dialog.id}"]`)).not.toBeNull();
+    expect(modelChoice().value).toBe(preferred.id); expect(button('Проверить контекст').disabled).toBe(false);
+    expect(systemRolesApi.overview).toHaveBeenCalledOnce(); expect(api.list).toHaveBeenCalledOnce(); expect(api.read).not.toHaveBeenCalled();
+    expect(api.create).not.toHaveBeenCalled(); expect(api.prepare).not.toHaveBeenCalled(); expect(api.start).not.toHaveBeenCalled();
+    await act(async () => {history().value = dialog.id; history().dispatchEvent(new Event('change', {bubbles: true}));});
+    expect(history().value).toBe(dialog.id); expect(api.read).toHaveBeenCalledExactlyOnceWith(dialog.id);
+});
+
+it('settles an in-flight refresh after New without restoring the previous dialogue detail', async () => {
+    vi.mocked(api.list).mockResolvedValue([dialog]); vi.mocked(api.read).mockResolvedValue({dialog, turns: [turn]});
+    await render(); expect(container.textContent).toContain('Own saved response');
+    const pendingOverview = deferred<RoleOverview>(), pendingHistory = deferred<typeof dialog[]>(), pendingDetail = deferred<{dialog: typeof dialog; turns: ServiceTurn[]}>();
+    vi.mocked(systemRolesApi.overview).mockReturnValueOnce(pendingOverview.promise);
+    vi.mocked(api.list).mockReturnValueOnce(pendingHistory.promise); vi.mocked(api.read).mockReturnValueOnce(pendingDetail.promise);
+    await click(button('Обновить')); await click(button('Новый диалог'));
+    await acknowledge(() => {pendingOverview.resolve(overview); pendingHistory.resolve([dialog]);});
+    expect(history().value).toBe(''); expect(container.textContent).not.toContain('Own saved response');
+    await acknowledge(() => pendingDetail.resolve({dialog, turns: [turn]}));
+    expect(history().value).toBe(''); expect(container.textContent).not.toContain('Own saved response');
+    expect(modelChoice().value).toBe(model.id); expect(api.read).toHaveBeenCalledTimes(2);
+    expect(api.create).not.toHaveBeenCalled(); expect(api.prepare).not.toHaveBeenCalled(); expect(api.start).not.toHaveBeenCalled();
+});
+
+it.each(['actor', 'project', 'role'])('ignores the old initial acknowledgements after New and a %s change', async change => {
+    const pendingOverview = deferred<RoleOverview>(), pendingHistory = deferred<typeof dialog[]>();
+    vi.mocked(systemRolesApi.overview).mockReturnValueOnce(pendingOverview.promise); vi.mocked(api.list).mockReturnValueOnce(pendingHistory.promise);
+    await render(); await click(button('Новый диалог'));
+    const nextModel = {...model, id: 'next-context-model'}, nextDialog = {...dialog, id: 'next-context-dialog', projectId: change === 'project' ? 'prj-two' : 'prj-one'};
+    vi.mocked(systemRolesApi.overview).mockResolvedValue({...overview, models: [nextModel]});
+    vi.mocked(api.list).mockResolvedValue([nextDialog]); vi.mocked(api.read).mockResolvedValue({dialog: nextDialog, turns: []});
+    if (change === 'actor') h.owner = 'other-person-' + sequence;
+    await render(change === 'role' ? 'agent-ai-admin' : 'agent-indexer', nextDialog.projectId);
+    await acknowledge(() => {pendingOverview.resolve(overview); pendingHistory.resolve([dialog]);});
+    expect(history().value).toBe(nextDialog.id); expect(modelChoice().value).toBe(nextModel.id);
+    expect(modelChoice().querySelector(`option[value="${model.id}"]`)).toBeNull();
+    expect(container.querySelector('.ant-spin-spinning')).toBeNull(); expect(api.read).toHaveBeenCalledExactlyOnceWith(nextDialog.id);
+    expect(api.create).not.toHaveBeenCalled(); expect(api.prepare).not.toHaveBeenCalled(); expect(api.start).not.toHaveBeenCalled();
+});
+
+it('clears initial loading after New when overview fails and recovers through explicit refresh without reopening history', async () => {
+    const pendingOverview = deferred<RoleOverview>(), pendingHistory = deferred<typeof dialog[]>();
+    vi.mocked(systemRolesApi.overview).mockReturnValueOnce(pendingOverview.promise); vi.mocked(api.list).mockReturnValueOnce(pendingHistory.promise);
+    await render(); await click(button('Новый диалог'));
+    await acknowledge(() => {pendingOverview.reject(Error('Read unavailable')); pendingHistory.resolve([dialog]);});
+    expect(container.querySelector('.ant-spin-spinning')).toBeNull(); expect(container.textContent).toContain('Часть данных не обновилась');
+    await click(button('Обновить'));
+    expect(container.textContent).not.toContain('Часть данных не обновилась'); expect(history().value).toBe(''); expect(modelChoice().value).toBe(model.id);
+    expect(api.read).not.toHaveBeenCalled(); expect(api.create).not.toHaveBeenCalled(); expect(api.prepare).not.toHaveBeenCalled(); expect(api.start).not.toHaveBeenCalled();
+});
 
 it('keeps an explicit new dialogue after creating the first dialogue in this mount', async () => {
     await render(); await prepareAndAccept();
