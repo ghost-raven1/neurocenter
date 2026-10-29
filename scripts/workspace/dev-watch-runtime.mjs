@@ -32,9 +32,9 @@ export class WatchRuntime {
         }catch(error){if(owned)this.guardian({kind:'release',pid:owned.pid});throw error;}
     }
     /** Consumers start only after the selected flag definitions and preceding backend services are ready. */
-    async start(generation,signal){this.mcpEntry=path.join(generation.repository,'mcp/neurocenter-asset-sync/dist/index.js');
+    async start(generation,signal){this.mcpEntry=this.config.nativeEnabled===false?null:path.join(generation.repository,'mcp/neurocenter-asset-sync/dist/index.js');
         for(const service of orderedServices(this.config.services)){signal?.throwIfAborted();const pkg=servicePackages[service.name],entry=pkg?path.join(generation.repository,service.dir,'dist/main.js'):service.entry;
-            const item=await this.launch(service,entry,{...service.environment,...pkg?{ASSET_SYNC_MCP_BIN:this.mcpEntry}:{}},{sourceSha256:pkg?generation.sourceSha256:null,signal});if(pkg)await this.ready(item,signal);}
+            const item=await this.launch(service,entry,{...service.environment,...pkg&&this.mcpEntry?{ASSET_SYNC_MCP_BIN:this.mcpEntry}:{}},{sourceSha256:pkg?generation.sourceSha256:null,signal});if(pkg)await this.ready(item,signal);}
     }
     async stopOne(item){
         if(!item)return;
@@ -50,7 +50,7 @@ export class WatchRuntime {
     async publish(generation,selection,signal){
         const selected=new Set(selection.map(([id])=>id)),previousMcp=this.mcpEntry;if(selected.has('bridge'))this.mcpEntry=path.join(generation.repository,'mcp/neurocenter-asset-sync/dist/index.js');
         try{for(const service of orderedServices(this.config.services)){if(!selected.has(servicePackages[service.name]))continue;signal?.throwIfAborted();const previous=this.active.get(service.name);await this.stopOne(previous);let next;
-                try{next=await this.launch(service,path.join(generation.repository,service.dir,'dist/main.js'),{...service.environment,ASSET_SYNC_MCP_BIN:this.mcpEntry},{sourceSha256:generation.sourceSha256,signal});await this.ready(next,signal);}
+                try{next=await this.launch(service,path.join(generation.repository,service.dir,'dist/main.js'),{...service.environment,...this.mcpEntry?{ASSET_SYNC_MCP_BIN:this.mcpEntry}:{}},{sourceSha256:generation.sourceSha256,signal});await this.ready(next,signal);}
                 catch(error){if(next)await this.stopOne(next);if(previous&&!this.closed&&!signal?.aborted){const restored=await this.launch(service,previous.record.entry,previous.environment,{sourceSha256:previous.sourceSha256,signal});await this.ready(restored,signal);}throw error;}
             }
         }catch(error){if(selected.has('bridge'))this.mcpEntry=previousMcp;throw error;}

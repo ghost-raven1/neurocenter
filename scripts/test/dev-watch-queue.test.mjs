@@ -25,6 +25,14 @@ test('stop aborts the owned build and no late result can restart a service',asyn
 test('service inputs rebuild only their package, shared includes consumers and MCP includes Catalog/RAG',()=>{
     assert.deepEqual(affectedPackages(['services/api-gateway/src/main.ts']).map(([id])=>id),['api-gateway']);assert.deepEqual(affectedPackages(['frontend/src/main.tsx']),[]);assert.equal(affectedPackages(['services/shared/contract.cjs']).length,7);assert.deepEqual(new Set(affectedPackages(['mcp/neurocenter-asset-sync/src/index.ts']).map(([id])=>id)),new Set(['bridge','catalog-service','rag-sync-service']));
 });
+test('core watcher ignores Native source and never includes its package in shared rebuilds',async t=>{
+    const root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-watch-core-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+    const native=path.join(root,'mcp/neurocenter-asset-sync/src/index.ts');await fs.mkdir(path.dirname(native),{recursive:true});await fs.writeFile(native,'not part of core');
+    const options={nativeEnabled:false},snapshot=await watchSnapshot(root,options);
+    assert.equal(snapshot.has('mcp/neurocenter-asset-sync/src/index.ts'),false);
+    assert.deepEqual(affectedPackages(['mcp/neurocenter-asset-sync/src/index.ts'],options),[]);
+    assert.equal(affectedPackages(['services/shared/contract.cjs'],options).some(([id])=>id==='bridge'),false);
+});
 test('bounded polling observes new/deleted source and ignores outputs, dependencies and links',async t=>{
     const root=await fs.mkdtemp(path.join(os.tmpdir(),'nc-watch-input-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));const src=path.join(root,'services/catalog-service/src');await fs.mkdir(src,{recursive:true});await fs.writeFile(path.join(src,'main.ts'),'one');await fs.mkdir(path.join(src,'node_modules'));await fs.writeFile(path.join(src,'node_modules/ignore.ts'),'ignored');await fs.symlink(os.tmpdir(),path.join(src,'link'));const before=await watchSnapshot(root);await fs.rm(path.join(src,'main.ts'));await fs.writeFile(path.join(src,'new.ts'),'two');const after=await watchSnapshot(root);assert.deepEqual(changedWatchInputs(before,after).sort(),['services/catalog-service/src/main.ts','services/catalog-service/src/new.ts']);assert.equal([...after.keys()].some(name=>name.includes('node_modules')),false);
 });

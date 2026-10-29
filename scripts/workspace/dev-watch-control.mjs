@@ -7,7 +7,7 @@ import {watchService,servicePackages} from './dev-watch-plan.mjs';
 import {readWatchFile} from './dev-watch-files.mjs';
 import {saveWatchProcesses,WATCH_SERVICE_READY_TIMEOUT_MS} from './dev-watch-runtime.mjs';
 /** The detached guardian receives service environments through private IPC, never files or command arguments. */
-export async function startDevWatch({root,node,logDir,services,signal,initialGeneration}){
+export async function startDevWatch({root,node,logDir,services,signal,initialGeneration,nativeEnabled=true}){
     if(process.platform==='win32')throw Error('Watch требует POSIX process groups (macOS/Linux).');
     signal?.throwIfAborted();
     const previous=discoverDevProcesses(root,[watchService]);if(previous.length)throw Error('Watch этого checkout уже запущен. Сначала scripts/dev.sh down.');
@@ -28,7 +28,7 @@ export async function startDevWatch({root,node,logDir,services,signal,initialGen
             });
             // Cancellation may have arrived while opening the log, spawning or saving process identities.
             if(signal?.aborted){abort();return;}
-            child.send({kind:'start',config:{root,node,logDir,services,watcherRecord,...initialGeneration?{initialGeneration}:{}}});
+            child.send({kind:'start',config:{root,node,logDir,services,watcherRecord,nativeEnabled,...initialGeneration?{initialGeneration}:{}}});
         });
         child.disconnect();child.unref();return {child,record:watcherRecord};
     }catch(error){child.kill('SIGTERM');throw error;}

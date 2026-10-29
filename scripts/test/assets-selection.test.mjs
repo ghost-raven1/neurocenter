@@ -93,6 +93,12 @@ test('Standard excludes models and tools whose exact dependency requires a model
     assert.ok(s.events.some(([,label,value])=>label.includes('Fixture plugin')&&value.includes('профиль full')));
     assert.ok(!s.events.some(([,label])=>label.includes('model-fixture')));
 });
+test('A legacy full saved selection cannot download weights when startup excludes models',async t=>{
+    const f=await assetFixture(t);await saveAssetSelection(f.root,{pin:f.pin,ids:[f.model.id,f.tool.id],withoutModels:false});
+    const choice=await session(f,{interactive:false,withoutModels:true}).choose();assert.deepEqual(choice.ids,[f.tool.id]);
+    const report=await f.run({...choice,withoutModels:true});assert.equal(report.assets.some(asset=>asset.kind==='model'),false);
+    assert.equal(f.calls.some(url=>url.startsWith(f.model.delivery.bundle.releaseBaseUrl+'/')),false);
+});
 
 test('Selected dependencies are automatic and exact; they are not new implicit selected IDs',async t=>{
     const f=await assetFixture(t),tool=clone(f.tool);tool.dependencies=[{id:f.bridge.id,version:f.bridge.version,sha256:f.index.assets.find(entry=>entry.id===f.bridge.id).sha256}];
