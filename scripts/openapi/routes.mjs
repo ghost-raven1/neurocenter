@@ -4,11 +4,13 @@ import {decorators,nestBindings,values} from './typescript.mjs';
 
 export const SERVICES=['catalog-service','skills-service','rag-sync-service','feature-flags-service','oauth2-bridge','api-gateway'];
 const HTTP=new Map([['Get','get'],['Post','post'],['Put','put'],['Patch','patch'],['Delete','delete'],['Head','head'],['Options','options'],['All','all']]);
+/** Feature modules may own controller.ts directly; Nest decorators still determine public routes. */
+const controllerSource=filename=>filename.endsWith('.controller.ts')||path.basename(filename)==='controller.ts';
 
 export function controllerFiles(root){
     const result=[];
     const walk=directory=>{if(!fs.existsSync(directory))return;for(const item of fs.readdirSync(directory,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){
-        const file=path.join(directory,item.name);if(item.isDirectory())walk(file);else if(item.name.endsWith('.controller.ts'))result.push(file);
+        const file=path.join(directory,item.name);if(item.isDirectory())walk(file);else if(controllerSource(file))result.push(file);
     }};
     for(const service of SERVICES)walk(path.join(root,'services',service,'src'));
     return result;
@@ -57,7 +59,7 @@ function publicPath(service,method,raw,device){
 export function scanRoutes(ts,program,root){
     const result=[],device=deviceRules(ts,root);
     for(const source of program.getSourceFiles()){
-        const filename=source.fileName;if(!filename.endsWith('.controller.ts')||!filename.startsWith(root+path.sep))continue;
+        const filename=source.fileName;if(!controllerSource(filename)||!filename.startsWith(root+path.sep))continue;
         const service=path.relative(root,filename).split(path.sep)[1];if(!SERVICES.includes(service))continue;
         const bindings=nestBindings(ts,source);
         for(const declaration of source.statements){
