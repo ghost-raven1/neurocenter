@@ -1,4 +1,5 @@
 import {decorators,values} from './typescript.mjs';
+import {describeComputerSetup} from './computer-setup.mjs';
 
 const stringSchema={type:'string'};
 const freeForm=()=>({'x-neurocenter-untyped':true,description:'JSON body shape is not declared by this controller; server validation still applies.'});
@@ -136,5 +137,5 @@ export function operation(ts,checker,mapper,route){
         for(const failure of thrownStatuses(ts,method,bindings))result.responses[failure]={description:'This endpoint rejects the operation. '+(documentation||'See the server error message.')};
         result.deprecated=true;result.description=(result.description?result.description+'\n\n':'')+'This retained endpoint has no successful response.';
     }
-    return result;
+    return describeComputerSetup(result,path,http);
 }

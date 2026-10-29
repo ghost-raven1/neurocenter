@@ -16,7 +16,7 @@ export async function readDeviceJobReceipt(db:Pick<PoolClient,'query'>,view:stri
         FROM bridge_jobs JOIN receipt ON receipt.job_id=bridge_jobs.id
         WHERE bridge_jobs.email=$1 AND bridge_jobs.device_id=receipt.receipt_device_id
         AND ($3::boolean OR project_id=ANY($4::text[])
-            OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy')))
+            OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli')))
         AND EXISTS (SELECT 1 FROM bridge_devices device WHERE device.id=bridge_jobs.device_id AND device.email=$1)`,
     [scope.email,requestKey,scope.main,scope.projects]);
     const row=rows[0];

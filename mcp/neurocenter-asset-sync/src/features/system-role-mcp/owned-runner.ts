@@ -7,6 +7,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 // Standalone so Node24 can also execute the source in native causal tests.
 const nonce=process.argv[3],receipt=process.argv[4];
 if(process.platform==='win32'||process.argv[2]!=='--role-mcp-owner'||!nonce||!receipt||!path.isAbsolute(receipt)||!process.send)process.exit(2);
+/** A departed parent cannot receive progress; its closed IPC channel must not interrupt durable cleanup. */
+const notify=(value:Record<string,unknown>):void=>{if(process.connected)process.send?.(value,()=>{});};
 type Owner={pid:number;parent:number;uid:number;birth:string;state:string};
 const known=new Map<number,Owner>();let permitted=false,closing:Promise<void>|undefined;
 async function census(){
@@ -55,7 +57,7 @@ const stop=()=>closing??=(async()=>{
   await delay(20);
  }
  throw new Error('MCP descendants did not close');
-})().catch(error=>{const code=(error as NodeJS.ErrnoException).code;process.send?.({nonce,cleanupFailure:typeof code==='string'&&/^[A-Z_]+$/.test(code)?code:'CLEANUP_FAILED'});process.exit(1);});
+})().catch(error=>{const code=(error as NodeJS.ErrnoException).code;notify({nonce,cleanupFailure:typeof code==='string'&&/^[A-Z_]+$/.test(code)?code:'CLEANUP_FAILED'});process.exit(1);});
 process.once('disconnect',()=>{void stop();});process.once('SIGTERM',()=>{void stop();});process.once('SIGINT',()=>{void stop();});
 let observingBusy=false;
 const observing=setInterval(()=>{if(observingBusy||closing)return;observingBusy=true;void census().then(discover).catch(()=>{void stop();}).finally(()=>{observingBusy=false;});},250);observing.unref();
@@ -65,8 +67,9 @@ process.on('message',(value:unknown)=>{
  if(closing||permitted||permit?.nonce!==nonce||typeof permit.command!=='string'||!Array.isArray(permit.args)||typeof permit.cwd!=='string'||!permit.env){void stop();return;}
  permitted=true;
  const child=spawn(permit.command,permit.args,{cwd:permit.cwd,env:permit.env,shell:false,detached:false,stdio:['pipe','pipe','pipe']});
+ child.once('spawn',()=>{notify({nonce,executionStarted:true});});
  child.stdin.on('error',()=>{});process.stdin.pipe(child.stdin);child.stdout.pipe(process.stdout);child.stderr.pipe(process.stderr);
- child.once('error',()=>{process.send?.({nonce,executionExit:{code:null,signal:null}});void stop();});
- child.once('exit',(code,signal)=>{process.send?.({nonce,executionExit:{code,signal}});void stop();});
+ child.once('error',()=>{notify({nonce,executionExit:{code:null,signal:null}});void stop();});
+ child.once('exit',(code,signal)=>{notify({nonce,executionExit:{code,signal}});void stop();});
 });
-process.send({ready:true,nonce});
+notify({ready:true,nonce});
