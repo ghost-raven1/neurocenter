@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { api, readState, stateDir, type Credentials } from './state.js';
 import { BRIDGE_VERSION, bridgeBuildId } from './protocol.js';
 import { readBoundedUtf8 } from './read-bounded.js';
+import {recoverComputerSetupJobs} from '../features/computer-setup/executor.js';
 
 const exec = promisify(execFile);
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -64,10 +65,10 @@ async function stopWorker(index: string, force: boolean): Promise<boolean> {
             pid = undefined;
         }
     }
-    if (!pid && (!force || !await readState<Credentials>('credentials'))) { return false; }
+    if (!pid && (!force || !await readState<Credentials>('credentials'))) { await recoverComputerSetupJobs();return false; }
     if (!force) {
         const version = await readState<{ pid: number; version: string; buildId?: string }>('worker-version');
-        if (version && version.pid === pid && version.version === BRIDGE_VERSION && version.buildId === await bridgeBuildId()) { return false; }
+        if (version && version.pid === pid && version.version === BRIDGE_VERSION && version.buildId === await bridgeBuildId()) { await recoverComputerSetupJobs();return false; }
     }
     let paused = false; let completed = false;
     try {
@@ -82,7 +83,7 @@ async function stopWorker(index: string, force: boolean): Promise<boolean> {
                     // Без worker недействующий ключ должен дойти до повторного подключения.
                     paused = false;
                     if (await readLock(lock)) { throw new Error('Владелец блокировки MCP изменился. Повторите обновление.'); }
-                    return false;
+                    await recoverComputerSetupJobs();return false;
                 }
                 throw error;
             }
@@ -104,6 +105,7 @@ async function stopWorker(index: string, force: boolean): Promise<boolean> {
             }
             if (await readLock(lock) === raw) { await fs.rm(lock, { force: true }); }
         }
+        await recoverComputerSetupJobs();
         completed = true;
         return paused;
     } finally {

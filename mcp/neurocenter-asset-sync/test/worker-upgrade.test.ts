@@ -12,6 +12,7 @@ const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
 vi.mock('node:child_process', () => ({ execFile: Object.assign(vi.fn(), { [Symbol.for('nodejs.util.promisify.custom')]: execute }) }));
 vi.mock('../src/bridge/state.js', () => ({ api: vi.fn(), readState: vi.fn(), stateDir: vi.fn() }));
 vi.mock('../src/bridge/protocol.js', () => ({ BRIDGE_VERSION: 'test-version', bridgeBuildId: vi.fn(async () => 'same-build') }));
+vi.mock('../src/features/computer-setup/executor.js',()=>({recoverComputerSetupJobs:vi.fn(async()=>{})}));
 
 describe('Безопасная подготовка замены установленного worker', () => {
     let directory: string;

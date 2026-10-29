@@ -83,6 +83,28 @@ after(() => {for (const directory of temporary) fs.rmSync(directory, {recursive:
 
 const jsonResponse = (operation, status = '200') => operation.responses[status].content['application/json'].schema;
 
+test('Fixed computer OpenCode admission and observations reuse shared schemas without accepting generic command fields',async()=>{
+    const {OPENCODE_CLI_SCHEMAS}=await import('../../services/shared/computer-setup.cjs');
+    const create=actual.paths['/api/device-jobs'].post,schema=create.requestBody.content['application/json'].schema;
+    assert.equal(schema.oneOf[1].$ref,'#/components/schemas/OpenCodeCliRequest');
+    assert.deepEqual(schema.oneOf[0].allOf[1].properties.kind.not.enum,['inspect-opencode-cli']);
+    assert.deepEqual(actual.components.schemas.OpenCodeCliRequest,OPENCODE_CLI_SCHEMAS.request);
+    assert.equal(actual.components.schemas.OpenCodeCliRequest.additionalProperties,false);
+    assert.deepEqual(actual.components.schemas.OpenCodeCliRequest.required,['deviceId','kind','scope','requestKey']);
+    assert.deepEqual(actual.components.schemas.OpenCodeCliObservation,OPENCODE_CLI_SCHEMAS.observation);
+    const lower='abcdefab-cdef-4abc-8def-abcdefabcdef',upper=lower.toUpperCase();
+    for(const item of [OPENCODE_CLI_SCHEMAS.request.properties.deviceId,OPENCODE_CLI_SCHEMAS.payload.properties.deviceId,
+        ...OPENCODE_CLI_SCHEMAS.observation.oneOf.flatMap(branch=>[branch.properties.deviceId,branch.properties.jobId])]){
+        assert.equal(new RegExp(item.pattern).test(lower),true);assert.equal(new RegExp(item.pattern).test(upper),false);
+    }
+    const variants=actual.components.schemas.OpenCodeCliCompletion.oneOf;
+    assert.deepEqual(variants.map(value=>value.properties.state.enum),[['succeeded'],['failed'],['failed']]);
+    assert.equal(variants[2].properties.result.maxProperties,0);
+    for(const status of ['400','403','409','429','503'])assert.ok(create.responses[status],status);
+    assert.ok(create['x-neurocenter-job-kind-contracts']['inspect-opencode-cli'].errors['400'].includes('computer-setup-invalid-request'));
+    assert.match(create.description,/exact accepted request/i);
+});
+
 test('Static Nest decorators, aliases, prefix arrays and gateway boundaries define public routes', () => {
     assert.equal(fixtureDocument.info.version, '0.0.1-fixture');
     assert.ok(fixtureDocument.paths['/api/sample'].post);

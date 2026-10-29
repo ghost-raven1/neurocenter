@@ -3,6 +3,7 @@ import {completeLearningQuirks} from '../learning-quirks/completion';
 import {PROJECT_CONFIGURATION_JOB,normalizeProjectConfigurationReport} from '../../../shared/project-configuration.cjs';
 import {completeDeviceCodex} from '../models/device-codex-completion';
 import {completeRuntimeCachePolicy} from './runtime-cache-jobs';
+import {completeComputerSetup,lockComputerSetupCompletionDevice} from './computer-setup-jobs';
 import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE} from '../../../shared/project-agents.cjs';
 import {assertAgentCompletionAccess} from '../agents/agent-completion-access';
 import {assertAgentConfigurationResult} from '../agents/agent-jobs';
@@ -57,6 +58,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
     let discard = false;
     try {
         await client.query('BEGIN');
+        await lockComputerSetupCompletionDevice(client,deviceId,id,input.lease);
         const { rows } = await client.query<Job>(
             'SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3 FOR UPDATE',
             [id, deviceId, input.lease],
@@ -68,6 +70,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         if(codex){await client.query('COMMIT');if(!codex.repeated)await notifyDeviceOperations();return codex;}
         const cache=await completeRuntimeCachePolicy(client,job,input);
         if(cache){await client.query('COMMIT');if(!cache.repeated)await notifyDeviceOperations();return cache;}
+        const computer=await completeComputerSetup(client,job,input);
+        if(computer){await client.query('COMMIT');if(!computer.repeated)await notifyDeviceOperations();return computer;}
         const memory=await completeLearningMemory(client,job,input);
         if(memory){await client.query('COMMIT');if(!memory.repeated)await notifyDeviceOperations();return memory;}
         const quirks=await completeLearningQuirks(client,job,input);

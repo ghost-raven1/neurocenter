@@ -78,6 +78,8 @@ import {startRoleMcpPoller} from '../features/system-role-mcp/poller.js';
 import {AGENT_METHOD_WORKFLOW_JOB} from '../features/agent-method-workflow/contract.js';
 import {runAgentMethodWorkflow,stopMethodWorkflows} from '../features/agent-method-workflow/executor.js';
 import {recoverMethodCompletions} from '../features/agent-method-workflow/receipts.js';
+import {OPENCODE_CLI_INSPECT_JOB} from '../features/computer-setup/contract.js';
+import {runComputerSetupJob,stopComputerSetupJobs,recoverComputerSetupJobs} from '../features/computer-setup/executor.js';
 
 interface Job {
     id: string;
@@ -125,6 +127,8 @@ export async function runWorker(): Promise<void> {
         }
     }
     await writeState('worker-version', { pid: process.pid, version: BRIDGE_VERSION, buildId: await bridgeBuildId() });
+    // Recover the previous local owner before either queue lane can obtain another execution permit.
+    await recoverComputerSetupJobs();
     let running = false;
     let stopped = false;
     const socket = io(apiHub(), {
@@ -132,7 +136,15 @@ export async function runWorker(): Promise<void> {
         auth: { token: credentials.token },
         reconnection: true,
     });
-    const roleMcpPoller=startRoleMcpPoller();
+    let roleMcpPoller:ReturnType<typeof startRoleMcpPoller>|undefined;
+    let roleMcpStopping:Promise<void>|undefined;
+    const stopRoleMcpPoller=():Promise<void>=>{
+        if(roleMcpStopping)return roleMcpStopping;
+        const current=roleMcpPoller;roleMcpPoller=undefined;
+        if(!current)return Promise.resolve();
+        const closing=current.stop().finally(()=>{if(roleMcpStopping===closing)roleMcpStopping=undefined;});
+        roleMcpStopping=closing;return closing;
+    };
     let heartbeatPending: Promise<void> | undefined;
     let heartbeatPublication:Promise<void>|undefined;
     let cleanupPending:Promise<unknown>|undefined,lastCleanup=0;
@@ -177,6 +189,9 @@ export async function runWorker(): Promise<void> {
         }
         running = true;
         try {
+            await recoverComputerSetupJobs();
+            await roleMcpStopping;
+            if(!stopped&&!roleMcpPoller)roleMcpPoller=startRoleMcpPoller();
             await recoverMemoryCompletions(saveCompletion);
             await recoverPendingWorkspaceIdentity();
             await recoverFileJobs();
@@ -206,10 +221,10 @@ export async function runWorker(): Promise<void> {
                         state: 'running',
                     });
                 };
-                const authorize = async () => {
+                const authorize = async (signal?:AbortSignal) => {
                     const result = await api(`jobs/${current.id}/authorize`, {
                         lease: current.lease,
-                    });
+                    },undefined,signal);
                     if (!(current.kind==='scan-opencode-models'&&current.payload.scope==='global'&&!current.project_id) && [PROJECT_CONFIGURATION_JOB,PROJECT_AGENTS_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'install', 'uninstall', 'inspect-installation','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','sync-rag','restore-rag','open-rag-ui','connect-rag-model','publish-project-snapshot'].includes(current.kind) && current.payload.bindingId !== await projectBindingId(current.project_id || '')) {
                         throw new Error('Папка проекта изменилась после отправки запроса. Установка остановлена; проверьте привязку и повторите действие.');
                     }
@@ -224,6 +239,10 @@ export async function runWorker(): Promise<void> {
                     }).catch(() => undefined);
                 }, 30000);
                 try {
+                    if(current.kind===OPENCODE_CLI_INSPECT_JOB){
+                        await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runComputerSetupJob(current,deviceId,authorize));
+                        clearInterval(renew);await deliverCompletions();await heartbeat();continue;
+                    }
                     if(current.kind===AGENT_METHOD_WORKFLOW_JOB){
                         const completed=await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runAgentMethodWorkflow(current,deviceId,authorize,update));
                         clearInterval(renew);await saveCompletion({id:current.id,lease:current.lease,deviceId,...completed});await deliverCompletions();await heartbeat();continue;
@@ -399,6 +418,10 @@ export async function runWorker(): Promise<void> {
                         }
                     }
                     if(current.kind===DEVICE_CODEX_JOB)throw new Error('Результат Codex сохранён локально или требует восстановления; повторная отправка модели заблокирована.');
+                    if(current.kind===OPENCODE_CLI_INSPECT_JOB){
+                        await stopRoleMcpPoller();
+                        throw new Error('Проверка OpenCode сохранена для восстановления; новые задания ждут подтверждённой очистки.');
+                    }
                     if(current.kind===AGENT_METHOD_WORKFLOW_JOB)throw new Error('Результат разработки сохранён локально или требует восстановления; повторный запуск автоматически не выполняется.');
                     if(current.kind===MEMORY_SYNC_JOB)throw new Error('План Memory сохранён для восстановления. Новые изменения автоматически не запускаются.');
                     if(current.kind==='connect-rag-model'&&current.payload.reindex){const root=await projectFolder(current.project_id||'');releaseRagReindex(root);await recoverRagRestore(root);}
@@ -427,7 +450,7 @@ export async function runWorker(): Promise<void> {
                             ...(['apply-local-change',...PROJECT_LOCAL_APPLIES].includes(current.kind) ? {changePlanId:current.payload.changePlanId,digest:current.payload.expectedChangeDigest} : {}),
                         } : current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureResult(error):workspaceBindingFailureResult(current.kind, current.payload.workspaceFailureVersion, error);
                         await saveCompletion({ id: current.id, lease: current.lease, deviceId,
-                            state: 'failed', result, message: current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureMessage(error):current.kind === 'publish-project-snapshot' ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.' : [PROJECT_CONFIGURATION_JOB,...OPENCODE_PROVIDER_JOBS,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui','connect-rag-model'].includes(current.kind)
+                            state: 'failed', result, message: current.kind===OPENCODE_CLI_INSPECT_JOB?'Проверка OpenCode не завершена. Проверьте компьютер и повторите действие.':current.kind===PROJECT_AGENTS_JOB?projectAgentsFailureMessage(error):current.kind === 'publish-project-snapshot' ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.' : [PROJECT_CONFIGURATION_JOB,...OPENCODE_PROVIDER_JOBS,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'inspect-installation','prepare-bind-project','bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui','connect-rag-model'].includes(current.kind)
                                 ? 'Действие не выполнено. Проверьте актуальную папку и доступ.' : (error as Error).message.slice(0, 1500) });
                     }
                     await deliverCompletions();
@@ -448,11 +471,11 @@ export async function runWorker(): Promise<void> {
         if (!running) { void drain(); }
     }, 15000);
     socket.on('connect', () => {
-        roleMcpPoller.wake();
+        roleMcpPoller?.wake();
         void drain();
     });
     socket.on('bridge:work', () => {
-        roleMcpPoller.wake();
+        roleMcpPoller?.wake();
         void drain();
     });
     const stop = (): void => {
@@ -461,15 +484,18 @@ export async function runWorker(): Promise<void> {
         cleanupController?.abort();
         clearInterval(timer);
         socket.disconnect();
-        const sessions = Promise.allSettled([stopMethodWorkflows(),roleMcpPoller.stop(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()]);
+        const sessions = Promise.all([stopComputerSetupJobs(),Promise.allSettled([stopMethodWorkflows(),stopRoleMcpPoller(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()])]);
         // Read-only maintenance may cancel; admitted mutation and owned lock cleanup must finish.
-        void Promise.allSettled([heartbeatPublication,sessions]).then(()=>Promise.allSettled([cleanupPending])).then(()=>readBoundedUtf8(lock, 4096))
+        void Promise.all([heartbeatPublication,sessions]).then(()=>Promise.allSettled([cleanupPending])).then(()=>readBoundedUtf8(lock, 4096))
             .then((value) =>
                 value === String(process.pid)
                     ? fs.rm(lock, { force: true })
                     : undefined,
             )
-            .finally(() => process.exit(0));
+            .then(() => process.exit(0),()=>{
+                process.exitCode=1;
+                process.stderr.write('neurocenter bridge: очистка OpenCode не подтверждена; блокировка и журнал сохранены для восстановления.\n');
+            });
     };
     process.on('SIGTERM', stop);
     process.on('SIGINT', stop);
