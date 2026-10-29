@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import {textKnowledgeAdmission,TEXT_KNOWLEDGE_LIMITS} from '../../../shared/project-text-knowledge.cjs';
 import type { Request } from 'express';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
 import type { ModelChatProjectContext } from '../model-chat/chat-project-context';
@@ -28,6 +29,7 @@ export class SystemRoleRagContext {
     }
     private grant(): RoleProjectGrant | undefined {
         const grant = this.row.snapshot.projectContext;
+        if(grant?.textAdmission){try{textKnowledgeAdmission(grant.textAdmission);}catch{throw new ConflictException('Снимок лимитов принятого запуска не подтверждён.');}}
         if (grant && (!this.context || !['project-index','project-text'].includes(grant.scope)||grant.scope==='project-text'&&!grant.textContext || grant.projectId !== this.row.project_id
             || !grant.recipients.length || grant.recipients.some(id => !SYSTEM_ROLE_DEFINITIONS.some(role => role.id === id)))) {
             throw new ConflictException('Разрешение базы знаний не соответствует принятому запуску. Подготовьте контекст заново.');
@@ -50,7 +52,7 @@ export class SystemRoleRagContext {
             requiredFeatures: [...this.requiredFeatures, systemRole(this.row.agent_id).flag,
                 ...(this.row.request.sourceFeature ? [this.row.request.sourceFeature] : [])],
             beforeInference: async () => { await this.checkpoint(); await this.beforeInference(); } }, () => grant.scope==='project-text'
-                ? this.context!.prepareText(this.req,grant.projectId,grant.textContext!,AbortSignal.any([this.signal,callSignal]))
+                ? this.context!.prepareText(this.req,grant.projectId,grant.textContext!,AbortSignal.any([this.signal,callSignal]),undefined,grant.textAdmission??{revision:0,limits:TEXT_KNOWLEDGE_LIMITS})
                 : this.context!.prepare(this.req,
             grant.projectId, roleProjection(this.row.snapshot.selection.instruction).content, AbortSignal.any([this.signal, callSignal]), async () => {
                 await this.checkpoint(); await requireFeaturesEnabled([systemRole(this.row.agent_id).flag, ...this.requiredFeatures,
@@ -78,6 +80,7 @@ export class SystemRoleRagContext {
         return { status: evidence.status === 'none' ? 'metadata' : evidence.status,
             project: { id: grant.projectId, name: grant.projectName },
             ...(evidence.mode==='text'?{mode:'text',textRevision:evidence.textRevision,corpusHash:evidence.corpusHash}:{}),
+            ...(grant.textAdmission?{textAdmission:grant.textAdmission}:{}),
             ...(grant.generation ? { generation: grant.generation } : {}), ...(grant.snapshot ? { snapshot: grant.snapshot } : {}),
             sources: evidence.sources.map(sourceReceipt), ...(evidence.message ? { message: evidence.message } : {}) };
     }
@@ -90,7 +93,8 @@ export function synthesisProjectEvidence(own: RoleProjectEvidence | undefined, c
     const result: RoleProjectEvidence = { ...receipts[0], sources: [] };
     for (const receipt of receipts) {
         if (receipt.project.id !== result.project.id || receipt.generation !== result.generation || receipt.snapshot !== result.snapshot
-            ||receipt.mode!==result.mode||receipt.textRevision!==result.textRevision||receipt.corpusHash!==result.corpusHash) throw new ConflictException('Источники делегатов относятся к разным снимкам проекта.');
+            ||receipt.mode!==result.mode||receipt.textRevision!==result.textRevision||receipt.corpusHash!==result.corpusHash
+            ||JSON.stringify(receipt.textAdmission)!==JSON.stringify(result.textAdmission)) throw new ConflictException('Источники делегатов относятся к разным снимкам проекта.');
         for (const source of receipt.sources) {
             if (result.sources.some(item => item.id === source.id)) continue;
             const candidate = { ...result, status: 'ready' as const, sources: [...result.sources, source] };

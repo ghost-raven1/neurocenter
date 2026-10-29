@@ -1,5 +1,5 @@
-import {Body,Controller,Get,Param,Post,Req} from '@nestjs/common';
-import type {Request} from 'express';
+import {Body,Controller,Get,Param,Post,Req,Res} from '@nestjs/common';
+import type {Request,Response} from 'express';
 import {assertInternal} from '../access/access.controller';
 import {ProjectTextKnowledge} from './project-text.service';
 import type {TextUpload,TextSearch} from '../../../shared/project-text-knowledge.cjs';
@@ -10,7 +10,7 @@ export class ProjectTextController {
     constructor(private readonly text:ProjectTextKnowledge){}
     @Get() state(@Req() req:Request,@Param('id') id:string){return this.text.state(req,id);}
     @Post('documents') upload(@Req() req:Request,@Param('id') id:string,@Body() input:TextUpload){return this.text.upload(req,id,input);}
-    @Get('requests/:key') receipt(@Req() req:Request,@Param('id') id:string,@Param('key') key:string){return this.text.receipt(req,id,key);}
+    @Get('requests/:key') async receipt(@Req() req:Request,@Param('id') id:string,@Param('key') key:string,@Res() res:Response){res.json(await this.text.receipt(req,id,key));}
     @Post('search') search(@Req() req:Request,@Param('id') id:string,@Body() input:TextSearch){return this.text.search(req,id,input);}
 }
 @Controller('internal/project-text')

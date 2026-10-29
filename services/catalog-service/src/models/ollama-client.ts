@@ -44,7 +44,7 @@ export class OllamaClient {
 
     async status(model:IModel):Promise<IRuntimeModelStatus> {
         this.assertModel(model);
-        if(!model.manifestSha256)return {state:'missing',message:'Импортируйте проверенный ассет модели с закреплённым SHA.',checkedAt:null};
+        if(!model.manifestSha256)return {state:'missing',message:model.fileImport?'GGUF сохранён и проверен. Запустите хостинг для создания и проверки модели в локальном Ollama.':'Импортируйте проверенный ассет модели с закреплённым SHA.',checkedAt:null};
         model={...model,model:localModelAlias(model)};
         if(this.environment.MODEL_HOSTING_ENABLED==='false')return {state:'unavailable',message:'Хостинг моделей отключён администратором сервера.',checkedAt:null};
         try {

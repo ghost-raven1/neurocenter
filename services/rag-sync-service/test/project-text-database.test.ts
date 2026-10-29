@@ -3,15 +3,17 @@ import {writeFile} from 'node:fs/promises';
 import {afterAll,afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {ProjectTextStore} from '../src/project-text/text-store';
 import {textHash,emptyTextHash} from '../src/project-text/text-values';
-import {textUploadCanonical,type TextDocument} from '../../shared/project-text-knowledge.cjs';
+import {textUploadCanonical,TEXT_KNOWLEDGE_LIMITS,type TextDocument} from '../../shared/project-text-knowledge.cjs';
 import {requireRagFeatures} from '../src/rag/rag-features';
 import {authorizeTextUpload} from '../src/project-text/text-authorization';
+import {readTextAdmission} from '../src/project-text/text-policy';
 import {checkRagQuotaMigration,checkRagMigrations} from '../src/database/migrations';
 import {PROJECT_TEXT_MIGRATION} from '../src/database/migration-definitions';
 import {lostTextAck,pausedTextSearch,semanticSeed,textDatabaseFixture,textDatabaseState} from './project-text-database.fixture';
 vi.mock('../../shared/capacity.cjs',()=>({reserveCapacity:async()=>()=>{}}));
 vi.mock('../src/rag/rag-features',()=>({requireRagFeatures:vi.fn(async()=>{})}));
 vi.mock('../src/project-text/text-authorization',()=>({authorizeTextUpload:vi.fn(async()=>{})}));
+vi.mock('../src/project-text/text-policy',()=>({readTextAdmission:vi.fn()}));
 
 const connection=process.env.RAG_TEXT_TEST_PG_URL,actor={email:'owner@test',activeRole:'developer'};
 const fixtures:Array<Awaited<ReturnType<typeof textDatabaseFixture>>>=[],cleanup:unknown[]=[];
@@ -19,7 +21,7 @@ const upload=(documents:TextDocument[],expectedRevision=0)=>({requestKey:randomU
 const hash=(value:unknown)=>textHash(textUploadCanonical(value));
 const put=(f:Awaited<ReturnType<typeof textDatabaseFixture>>,value:ReturnType<typeof upload>)=>f.text.upload(f.project,value,hash(value),actor);
 async function fixture(){const f=await textDatabaseFixture(connection!);fixtures.push(f);return f;}
-beforeEach(()=>{vi.resetAllMocks();vi.mocked(requireRagFeatures).mockResolvedValue();vi.mocked(authorizeTextUpload).mockResolvedValue();});
+beforeEach(()=>{vi.resetAllMocks();vi.mocked(requireRagFeatures).mockResolvedValue();vi.mocked(authorizeTextUpload).mockResolvedValue();vi.mocked(readTextAdmission).mockResolvedValue({revision:0,limits:TEXT_KNOWLEDGE_LIMITS});});
 afterEach(async()=>{for(const f of fixtures.splice(0))cleanup.push(await f.dispose());});
 afterAll(async()=>{if(process.env.RAG_TEXT_EVIDENCE_FILE)await writeFile(process.env.RAG_TEXT_EVIDENCE_FILE,JSON.stringify({cleanup},null,2)+'\n');});
 

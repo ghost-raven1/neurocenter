@@ -49,6 +49,13 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (project && project[1] !== 'import-local') {
         const level = projectLevel(claims,activeRole,project[1]);
         if (!level) { return false; }
+        if (project[2]?.startsWith('knowledge/text')) {
+            const suffix = project[2];
+            if (suffix === 'knowledge/text') return read;
+            if (suffix === 'knowledge/text/documents') return verb === 'POST' && level >= 2;
+            if (suffix === 'knowledge/text/search') return verb === 'POST';
+            return read && /^knowledge\/text\/requests\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(suffix);
+        }
         // The service distinguishes a readable accepted receipt from admission of a new plan.
         if(project[2]==='embedding/reindex'&&verb==='POST')return true;
         if(project[2]?.startsWith('chat-search'))return project[2]==='chat-search' ? read : /^chat-search\/jobs\/[a-f0-9-]{36}$/.test(project[2]) ? read||verb==='DELETE' : level>=2&&verb==='POST'&&/^chat-search\/(index|search)$/.test(project[2]);
@@ -73,6 +80,9 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route === '/api/tool-builds' || route.startsWith('/api/tool-builds/')) { return main; }
     if (route.startsWith('/api/maintenance') || route === '/api/audit') { return main; }
     if (route === '/api/model-usage') return read && ['Главный админ', 'Админ проекта', 'Разработчик'].includes(activeRole);
+    if (route === '/api/runtime-limits') return read;
+    if (route === '/api/runtime-limits/admin') return main && (read || verb === 'PATCH');
+    if (/^\/api\/runtime-limits\/admin\/requests\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(route)) return main && read;
     if(route==='/api/agents'){return read||main&&request.method.toUpperCase()==='POST';}
     if(/^\/api\/agents\/agent-[a-z0-9][a-z0-9-]{0,120}$/.test(route)){return read||main&&request.method.toUpperCase()==='PATCH';}
     if (route === '/api/model-chats' || route.startsWith('/api/model-chats/')) {

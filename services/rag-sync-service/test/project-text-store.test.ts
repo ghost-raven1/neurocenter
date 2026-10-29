@@ -3,21 +3,23 @@ import type {Pool} from 'pg';
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 import {ProjectTextStore} from '../src/project-text/text-store';
 import {textExcerpt,textHash,emptyTextHash} from '../src/project-text/text-values';
-import {textUploadCanonical} from '../../shared/project-text-knowledge.cjs';
+import {textUploadCanonical,TEXT_KNOWLEDGE_LIMITS} from '../../shared/project-text-knowledge.cjs';
 import {requireRagFeatures} from '../src/rag/rag-features';
 import {authorizeTextUpload} from '../src/project-text/text-authorization';
+import {readTextAdmission} from '../src/project-text/text-policy';
 vi.mock('../src/rag/rag-features',()=>({requireRagFeatures:vi.fn(async()=>{})}));
 vi.mock('../src/project-text/text-authorization',()=>({authorizeTextUpload:vi.fn(async()=>{})}));
+vi.mock('../src/project-text/text-policy',()=>({readTextAdmission:vi.fn()}));
 const actor={email:'owner@test',activeRole:'developer'},project='prj-text';
 const input=()=>({requestKey:randomUUID(),expectedRevision:0,documents:[{path:'docs/readme.md',content:'Русский текст про кота.'}]});
 const hash=(value:unknown)=>textHash(textUploadCanonical(value));
 
 function fixture(rows:(sql:string)=>unknown[]=()=>[]){
-    const calls:string[]=[],release=vi.fn(),query=vi.fn(async(sql:string)=>{calls.push(sql);return {rows:rows(sql)};});
+    const calls:string[]=[],release=vi.fn(),query=vi.fn(async(sql:string,_values?:unknown[])=>{calls.push(sql);return {rows:rows(sql)};});
     const pool={query,connect:vi.fn(async()=>({query,release}))}as unknown as Pool;
     return {store:new ProjectTextStore(pool),pool,calls,query,release};
 }
-beforeEach(()=>{vi.resetAllMocks();vi.mocked(requireRagFeatures).mockResolvedValue();vi.mocked(authorizeTextUpload).mockResolvedValue();});
+beforeEach(()=>{vi.resetAllMocks();vi.mocked(requireRagFeatures).mockResolvedValue();vi.mocked(authorizeTextUpload).mockResolvedValue();vi.mocked(readTextAdmission).mockResolvedValue({revision:0,limits:TEXT_KNOWLEDGE_LIMITS});});
 
 describe('Text upload transaction boundaries',()=>{
     it('validates exact canonical payload bytes before opening a transaction',async()=>{
@@ -50,7 +52,7 @@ describe('Text upload transaction boundaries',()=>{
         const value=input(),f=fixture(),denied=Error('permission revoked');
         vi.mocked(requireRagFeatures).mockResolvedValueOnce();vi.mocked(authorizeTextUpload).mockRejectedValueOnce(denied);
         await expect(f.store.upload(project,value,hash(value),actor)).rejects.toBe(denied);
-        expect(authorizeTextUpload).toHaveBeenCalledWith({projectId:project,actor,requestKey:value.requestKey,requestHash:hash(value)});
+        expect(authorizeTextUpload).toHaveBeenCalledWith({projectId:project,actor,requestKey:value.requestKey,requestHash:hash(value),admission:{revision:0,limits:TEXT_KNOWLEDGE_LIMITS}});
         expect(f.calls.some(sql=>/^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);expect(f.calls.at(-1)).toBe('ROLLBACK');
     });
     it('fresh authorization immediately precedes the first mutation and one receipt commits with the corpus',async()=>{
@@ -72,6 +74,38 @@ describe('Text upload transaction boundaries',()=>{
         const f=fixture();expect(await f.store.state(project)).toEqual({mode:'text',projectId:project,revision:0,corpusHash:emptyTextHash,documentCount:0,bytes:0,updatedAt:null});
         expect(await f.store.receipt(project,randomUUID(),actor)).toBeNull();expect(requireRagFeatures).not.toHaveBeenCalled();
         expect(authorizeTextUpload).not.toHaveBeenCalled();expect(f.pool.connect).not.toHaveBeenCalled();
+    });
+});
+
+describe('Effective text policy is enforced by the SQL owner',()=>{
+    it('a lowered upload policy denies new text before authorization or quota mutation',async()=>{
+        const f=fixture(),value=input();vi.mocked(readTextAdmission).mockResolvedValue({revision:4,limits:{...TEXT_KNOWLEDGE_LIMITS,fileBytes:2}});
+        await expect(f.store.upload(project,value,hash(value),actor)).rejects.toHaveProperty('status',400);
+        expect(authorizeTextUpload).not.toHaveBeenCalled();expect(f.calls.some(sql=>/^(INSERT|UPDATE|DELETE)/.test(sql))).toBe(false);
+    });
+    it('accepted receipt recovery does not read or apply a newer unavailable policy',async()=>{
+        const value=input(),saved={requestKey:value.requestKey,admission:{revision:1,limits:TEXT_KNOWLEDGE_LIMITS}};
+        const f=fixture(sql=>sql.startsWith('SELECT request_hash')?[{request_hash:hash(value),result:saved}]:[]);
+        vi.mocked(readTextAdmission).mockRejectedValue(Error('new policy unavailable'));
+        expect(await f.store.upload(project,value,hash(value),actor)).toEqual(saved);expect(readTextAdmission).not.toHaveBeenCalled();
+    });
+    it('effective sources and excerpt bytes actually constrain SQL and literal UTF8 citations',async()=>{
+        const f=fixture(sql=>sql.startsWith('SELECT d.id')?[{id:'one',path:'one.md',content:'target '+'界'.repeat(20),score:0.5,query_lexemes:['target']}]:[]);
+        vi.mocked(readTextAdmission).mockResolvedValue({revision:9,limits:{...TEXT_KNOWLEDGE_LIMITS,sources:2,excerptBytes:12}});
+        const result=await f.store.search(project,{query:'target'});
+        expect(f.query.mock.calls.find(([sql])=>sql.startsWith('SELECT d.id'))?.[1]?.[2]).toBe(2);
+        expect(result.admission).toMatchObject({revision:9,limits:{sources:2,excerptBytes:12}});
+        expect(Buffer.byteLength(result.sources[0].excerpt)).toBeLessThanOrEqual(12);
+    });
+    it('a server-retained accepted grant uses its validated snapshot after a lower current query limit',async()=>{
+        const f=fixture(),retained={revision:2,limits:TEXT_KNOWLEDGE_LIMITS};
+        vi.mocked(readTextAdmission).mockRejectedValue(Error('current policy unavailable'));
+        expect((await f.store.search(project,{query:'accepted question'},retained)).admission).toEqual(retained);
+        expect(readTextAdmission).not.toHaveBeenCalled();
+    });
+    it('lowered query admission rejects new search before opening a SQL snapshot',async()=>{
+        const f=fixture();vi.mocked(readTextAdmission).mockResolvedValue({revision:3,limits:{...TEXT_KNOWLEDGE_LIMITS,queryBytes:2}});
+        await expect(f.store.search(project,{query:'new query'})).rejects.toHaveProperty('status',400);expect(f.pool.connect).not.toHaveBeenCalled();
     });
 });
 

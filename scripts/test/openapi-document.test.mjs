@@ -86,11 +86,11 @@ after(() => {for (const directory of temporary) fs.rmSync(directory, {recursive:
 const jsonResponse = (operation, status = '200') => operation.responses[status].content['application/json'].schema;
 
 test('PostgreSQL text knowledge exposes byte limits, exact receipt recovery and explicit revision search', async () => {
-    const {TEXT_KNOWLEDGE_LIMITS}=await import('../../services/shared/project-text-knowledge.cjs');
+    const {TEXT_KNOWLEDGE_LIMITS,TEXT_KNOWLEDGE_CEILINGS}=await import('../../services/shared/project-text-knowledge.cjs');
     const base='/api/projects/{id}/knowledge/text', upload=actual.paths[base+'/documents'].post;
     const input=upload.requestBody.content['application/json'].schema;
     assert.deepEqual(input.required,['requestKey','expectedRevision','documents']);
-    assert.equal(input.properties.documents.maxItems,TEXT_KNOWLEDGE_LIMITS.documents);
+    assert.equal(input.properties.documents.maxItems,TEXT_KNOWLEDGE_CEILINGS.documents);
     assert.deepEqual(upload['x-neurocenter-utf8-limits'],TEXT_KNOWLEDGE_LIMITS);
     assert.match(upload.description,/without deleting absent files/);
     assert.match(upload.description,/committed receipt is returned before new-write feature checks/);
@@ -199,10 +199,11 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 315);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 385);
+    assert.equal(Object.keys(actual.paths).length, 324);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 396);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for(const [pathname,methods] of Object.entries({'/api/models/{id}/token-quotas/{email}':['get','put'],'/api/models/{id}/token-quotas/{email}/requests/{requestKey}':['get']})) assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods,pathname);
+    for(const [pathname,methods]of Object.entries({'/api/runtime-limits':['get'],'/api/runtime-limits/admin':['get','patch'],'/api/runtime-limits/admin/requests/{key}':['get'],'/api/models/gguf-imports':['post'],'/api/models/gguf-imports/limits':['get'],'/api/models/gguf-imports/requests/{key}':['get'],'/api/models/gguf-imports/{id}':['get','delete'],'/api/models/gguf-imports/{id}/accept':['post'],'/api/models/gguf-imports/{id}/content':['put']}))assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods.sort(),pathname);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');

@@ -105,6 +105,8 @@ function requiredRouteFeatures(method,path,body){
     if(/^\/api\/models\/[^/]+\/ollama\//.test(route))return ['model_hosting'];
     if(/^\/api\/models\/[^/]+\/hosting$/.test(route))return input.action==='stop'?[]:['model_hosting'];
     if(route==='/api/models/import-opencode')return ['opencode_model_sync'];
+    // The owner checks new GGUF admission after immutable request/accept replay lookup.
+    if(/^\/api\/models\/gguf-imports(?:\/|$)/.test(route))return [];
     // Enforcement can be disabled without losing its administrative settings.
     if(/^\/api\/models\/[^/]+\/rate-limit$/.test(route))return [];
     if(/^\/api\/models\/[^/]+\/token-quotas\//.test(route)){

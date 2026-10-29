@@ -1,4 +1,4 @@
-import {normalizeTextContext} from '../../../shared/project-text-knowledge.cjs';
+import {normalizeTextContext,TEXT_KNOWLEDGE_CEILINGS} from '../../../shared/project-text-knowledge.cjs';
 import {runModelChatAgentTools} from '../agent-tools/agent-tools.model-chat';
 import {traceSavedChat} from '../../../shared/dev-trace.cjs';
 import {AgentToolsService} from '../agent-tools/agent-tools.service';
@@ -248,7 +248,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             prompt = chatPrompt(body.prompt, true), ids = chatAttachmentIds(body.attachmentIds ?? []), pin = chatPin(body.expectedModelPin), scope = await this.scope(req, id),
             targets = body.targetAgentIds === undefined ? [] : chatAgentIds(body.targetAgentIds, true), research = chatResearchInput(body.research, scope.row.project_id),agentTools=agentToolGrant(body.agentTools,scope.row.project_id),
             values = scope.row.mode === 'group' ? [prompt, ids, targets] : [prompt, ids];
-        let textContext;try{textContext=body.textContext===undefined?undefined:normalizeTextContext(body.textContext);}catch(error){throw new BadRequestException((error as Error).message);}
+        let textContext;try{textContext=body.textContext===undefined?undefined:normalizeTextContext(body.textContext,TEXT_KNOWLEDGE_CEILINGS);}catch(error){throw new BadRequestException((error as Error).message);}
         if(textContext&&(!scope.row.project_id||research||agentTools))throw new BadRequestException('Выберите текстовый контекст проекта отдельно от исследования и инструментов.');
         const ordinaryHash=agentTools?[...values,research??null,agentTools]:research?[...values,research]:values;
         const hash=chatHash(textContext?[...ordinaryHash,{textContext}]:ordinaryHash);

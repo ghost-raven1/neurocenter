@@ -3,6 +3,8 @@ import {forwardDiscussionAttachment} from './discussion-attachment-download';
 import {snapshotContentRoute,snapshotDownloadRoute,snapshotPublicationRoute} from '../../../shared/snapshot-content-route.cjs';
 import {forwardSnapshotChunk} from './snapshot-stream';
 import {sourceUploadContentRoute} from '../../../shared/source-upload-route.cjs';
+import {ggufImportContentRoute} from '../../../shared/gguf-import-route.cjs';
+import {forwardGgufImport} from './gguf-import-stream';
 import {forwardSourceUpload} from './source-upload-stream';
 import {assetSourceArchiveRoute,ASSET_SOURCE_ARCHIVE_MAX_BYTES} from '../../../shared/asset-source-archive-route.cjs';
 import { Injectable } from '@nestjs/common';
@@ -131,6 +133,8 @@ export class ProxyService {
                 if(failure){res.setHeader('Cache-Control','no-store');res.status(failure.status).json(failure);return;}
             }
             if(/^\/api\/feature-flags(?:\/|$)/.test(path))res.setHeader('Cache-Control','no-store');
+            const ggufUpload=ggufImportContentRoute(method,path);
+            if(ggufUpload){await forwardGgufImport(this.http,`${this.catalogUrl}${ggufUpload}`,this.buildHeaders(req.headers,auth),req,res);return;}
             const discussionUpload=discussionAttachmentUploadRoute(method,path);
             if(discussionUpload){
                 const query=new URLSearchParams();

@@ -5,6 +5,28 @@ import {AccessDb} from '../src/access/access-db';
 const claims:IAccessClaims={email:'member@example.test',userRoles:['Админ проекта','Разработчик','Наблюдатель'],projects:[{projectId:'prj-a',projectName:'Мой проект',role:'Админ проекта'},{projectId:'prj-b',projectName:'Другой рабочий',role:'Разработчик'},{projectId:'prj-read',projectName:'Чтение',role:'Наблюдатель'}],pluginIds:['approved'],skillPaths:['common/approved']};
 const request=(method:string,path:string,body?:Record<string,unknown>,query?:Record<string,unknown>)=>({method,path,body,query});
 describe('Единая ролевая модель каталога',()=>{
+    it('Gateway admits effective limits reads and restricts the exact admin policy routes',()=>{
+        const main={...claims,userRoles:['Главный админ']},key='12345678-1234-1234-1234-123456789abc';
+        for(const role of claims.userRoles){
+            expect(allowRequest(claims,role,request('GET','/api/runtime-limits'))).toBe(true);
+            for(const [method,path]of [['GET','/api/runtime-limits/admin'],['PATCH','/api/runtime-limits/admin'],['GET','/api/runtime-limits/admin/requests/'+key]])
+                expect(allowRequest(claims,role,request(method,path))).toBe(false);
+        }
+        for(const [method,path]of [['GET','/api/runtime-limits/admin'],['PATCH','/api/runtime-limits/admin'],['GET','/api/runtime-limits/admin/requests/'+key]])
+            expect(allowRequest(main,'Главный админ',request(method,path))).toBe(true);
+        for(const [method,path]of [['POST','/api/runtime-limits'],['DELETE','/api/runtime-limits/admin'],['GET','/api/runtime-limits/admin/requests/invalid'],['GET','/api/runtime-limits/other']])
+            expect(allowRequest(main,'Главный админ',request(method,path))).toBe(false);
+    });
+    it('Text knowledge admission matches developer writes and reader searches without project escalation',()=>{
+        const base='/api/projects/prj-b/knowledge/text',key='12345678-1234-1234-1234-123456789abc';
+        expect(allowRequest(claims,'Разработчик',request('POST',base+'/documents'))).toBe(true);
+        for(const [method,path]of [['GET',base],['GET',base+'/requests/'+key],['POST',base+'/search']])
+            expect(allowRequest(claims,'Наблюдатель',request(method,path))).toBe(true);
+        expect(allowRequest(claims,'Наблюдатель',request('POST',base+'/documents'))).toBe(false);
+        for(const [method,path]of [['DELETE',base],['POST',base+'/requests/'+key],['POST',base+'/other'],['GET','/api/projects/prj-stranger/knowledge/text']])
+            expect(allowRequest(claims,'Разработчик',request(method,path))).toBe(false);
+    });
+
     it('Read access reaches exact reindex replay; new admission stays with the service and action routes remain administrative',()=>{
         const path='/api/projects/prj-read/embedding/reindex';
         expect(allowRequest(claims,'Наблюдатель',request('POST',path))).toBe(true);

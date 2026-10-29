@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import {ProjectTextKnowledge} from '../project-text/project-text.service';
-import type {TextContext} from '../../../shared/project-text-knowledge.cjs';
+import {normalizeTextContext,textKnowledgeAdmission,type TextContext,type TextAdmission} from '../../../shared/project-text-knowledge.cjs';
+import {RuntimeLimitsService} from '../runtime-limits/runtime-limits.service';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
 import type { ModelsService } from '../models/models.service';
@@ -31,9 +32,11 @@ export class ModelChatProjectContext {
 
     async captureText(req:Request,projectId:string,selection:TextContext):Promise<ProjectContextCapture>{
         await requireFeatureEnabled('project_text_knowledge');
+        const policy=await new RuntimeLimitsService(this.models).effective(),admission={revision:policy.revision,limits:policy.policy.textKnowledge};
+        try{normalizeTextContext(selection,admission.limits);}catch(error){throw new BadRequestException((error as Error).message);}
         const checked=await this.text.assertContext(req,projectId,selection),project=await this.models.resolveProject(req,projectId,2);
         return {identity:ragRequestHash({projectId,textContext:checked}),searchEnabled:true,evidence:{status:'metadata',mode:'text',textRevision:checked.revision,corpusHash:checked.corpusHash,
-            project:{id:project.id,name:project.name,state:project.state,headRevision:project.headRevision},sources:[]}};
+            project:{id:project.id,name:project.name,state:project.state,headRevision:project.headRevision},sources:[],textAdmission:admission}};
     }
     async assertTextIdentity(req:Request,projectId:string,selection:TextContext,identity:string):Promise<void>{
         const checked=await this.text.assertContext(req,projectId,selection);
@@ -41,17 +44,18 @@ export class ModelChatProjectContext {
     }
 
     /** Explicit text retrieval never touches the embedding runtime or the selected semantic generation. */
-    async prepareText(req:Request,projectId:string,selection:TextContext,signal:AbortSignal,accepted?:ChatProjectEvidence):Promise<PreparedProjectContext>{
+    async prepareText(req:Request,projectId:string,selection:TextContext,signal:AbortSignal,accepted?:ChatProjectEvidence,retained?:TextAdmission):Promise<PreparedProjectContext>{
         signal.throwIfAborted();await requireFeatureEnabled('project_text_knowledge');
         const current=await this.text.assertContext(req,projectId,selection),project=await this.models.resolveProject(req,projectId,2);
         const assertCurrent=async()=>{signal.throwIfAborted();await this.text.assertContext(req,projectId,current);signal.throwIfAborted();};
         const beforeInference=async()=>{await requireFeatureEnabled('project_text_knowledge');await assertCurrent();};
         let evidence=accepted;
         if(!evidence){
-            const found=await this.text.search(req,projectId,{query:current.query,revision:current.revision},signal);
+            const admission=retained?textKnowledgeAdmission(retained):undefined;
+            const found=await this.text.search(req,projectId,{query:current.query,revision:current.revision},signal,admission);
             if(found.corpusHash!==current.corpusHash)throw new ConflictException('Текстовая база изменилась во время поиска. Повторите выбор контекста.');
             evidence={status:found.sources.length?'ready':'empty',mode:'text',textRevision:found.revision,corpusHash:found.corpusHash,
-                project:{id:project.id,name:project.name,state:project.state,headRevision:project.headRevision},sources:found.sources};
+                project:{id:project.id,name:project.name,state:project.state,headRevision:project.headRevision},sources:found.sources,...(found.admission?{textAdmission:found.admission}:{})};
         }
         if(evidence.mode!=='text'||evidence.project?.id!==project.id||evidence.textRevision!==current.revision||evidence.corpusHash!==current.corpusHash)throw new ConflictException('Принятый текстовый контекст относится к другому корпусу.');
         await assertCurrent();return this.prepared(evidence,assertCurrent,beforeInference,['project_text_knowledge']);

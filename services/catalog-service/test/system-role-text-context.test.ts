@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { diagnosis, delegation, snippet, systemRoleRagPort } from './helpers/system-role-rag-port';
 import type { TextContext } from '../../shared/project-text-knowledge.cjs';
 import type { SystemRoleId } from '../src/system-roles/system-role.types';
+import {roleSelection} from '../src/system-roles/system-role.validation';
+import {DEFAULT_RUNTIME_LIMIT_POLICY} from '../../shared/runtime-limits.cjs';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
@@ -72,5 +74,28 @@ describe('Explicit base text knowledge in real system-role execution', () => {
         await f.run();
         expect(f.calls.map(call => call.endpoint)).toEqual(['chat']); expect(f.row.state).toBe('succeeded');
         expect(f.row.result?.projectContext).toMatchObject({ mode: 'text', sources: [{ id: 'source-one' }] });
+    });
+
+    it('keeps the server-issued policy in accepted consent when the current configuration is reduced',async()=>{
+        const f=await textRole(),accepted=f.accepted.projectContext?.textAdmission;
+        expect(accepted).toMatchObject({revision:0,limits:{queryBytes:2048}});
+        f.db.query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT revision,policy')?[{revision:9,policy:{...DEFAULT_RUNTIME_LIMIT_POLICY,textKnowledge:{...DEFAULT_RUNTIME_LIMIT_POLICY.textKnowledge,queryBytes:1}}}]:[],rowCount:0}));
+        await f.run();
+        expect(f.rpc.mock.calls.find(([route])=>route.endsWith('/search'))?.[1]).toMatchObject({admission:accepted});
+        expect(f.row.result?.projectContext?.textAdmission).toEqual(accepted);expect(f.calls.map(call=>call.endpoint)).toEqual(['chat']);
+    });
+
+    it('preserves a legacy accepted grant without a snapshot using its original default admission',async()=>{
+        const f=await textRole(),previous=structuredClone(f.row.snapshot);delete previous.projectContext!.textAdmission;
+        await f.accept(await f.owner.prepare(f.req,'agent-ai-admin',previous.selection,undefined,previous));
+        await f.run();expect(f.rpc.mock.calls.find(([route])=>route.endsWith('/search'))?.[1]).toMatchObject({admission:{revision:0,limits:{queryBytes:2048}}});
+        expect(f.row.state).toBe('succeeded');
+    });
+
+    it('refuses client-supplied admission overrides before granting project knowledge',async()=>{
+        const f=await textRole();
+        expect(()=>roleSelection('agent-ai-admin',{...f.accepted.selection,textAdmission:{revision:0,limits:DEFAULT_RUNTIME_LIMIT_POLICY.textKnowledge}})).toThrow();
+        expect(()=>roleSelection('agent-ai-admin',{...f.accepted.selection,textContext:{...f.selector,admission:{revision:0,limits:DEFAULT_RUNTIME_LIMIT_POLICY.textKnowledge}}})).toThrow();
+        expect(f.calls).toEqual([]);
     });
 });
