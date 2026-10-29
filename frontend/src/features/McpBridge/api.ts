@@ -30,6 +30,7 @@ export interface IBridgeDevice {
         runtimeVersion?: string;
         bridgeVersion?: string;
         buildId?: string;
+        openCodeInstallSupply?:import('../../../../services/shared/opencode-cli-install.cjs').OpenCodeInstallSupply;
         protocolVersion?: number;
         capabilities?: string[];
         previousDeviceCompletions?: number;

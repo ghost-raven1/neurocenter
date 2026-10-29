@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 const DEFAULT_AUTH_PROXY_TARGET = 'http://localhost:22222';
 const DEFAULT_API_PROXY_TARGET = 'http://localhost:4000';
 const computerSetup = fileURLToPath(new URL('../services/shared/computer-setup.cjs', import.meta.url));
+const opencodeLocalProviders = fileURLToPath(new URL('../services/shared/opencode-local-providers.cjs', import.meta.url));
+const opencodeCliInstall = fileURLToPath(new URL('../services/shared/opencode-cli-install.cjs', import.meta.url));
 const projectTextKnowledge = fileURLToPath(new URL('../services/shared/project-text-knowledge.cjs', import.meta.url));
 const runtimeLimits = fileURLToPath(new URL('../services/shared/runtime-limits.cjs', import.meta.url));
 const ggufImportPolicy = fileURLToPath(new URL('../services/shared/gguf-import-policy.cjs', import.meta.url));
@@ -46,11 +48,11 @@ export default defineConfig((configEnv) => {
     return {
         plugins: [react()],
         resolve: {
-            alias: { '@neurocenter/computer-setup': computerSetup, '@neurocenter/project-text-knowledge': projectTextKnowledge, '@neurocenter/runtime-limits': runtimeLimits },
+            alias: { '@neurocenter/computer-setup': computerSetup, '@neurocenter/opencode-cli-install': opencodeCliInstall, '@neurocenter/opencode-local-providers': opencodeLocalProviders, '@neurocenter/project-text-knowledge': projectTextKnowledge, '@neurocenter/runtime-limits': runtimeLimits },
         },
         // Linked CommonJS needs pre-bundling for named imports in the dev browser.
         optimizeDeps: {
-            include: ['@neurocenter/computer-setup', '@neurocenter/project-text-knowledge', '@neurocenter/runtime-limits'],
+            include: ['@neurocenter/computer-setup', '@neurocenter/opencode-cli-install', '@neurocenter/opencode-local-providers', '@neurocenter/project-text-knowledge', '@neurocenter/runtime-limits'],
         },
         css: {
             preprocessorOptions: {

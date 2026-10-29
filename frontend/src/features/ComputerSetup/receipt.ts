@@ -14,5 +14,5 @@ export async function readCliReceipt(value: unknown, intent: CliIntent): Promise
     if (!record(value) || value.requestKey !== intent.request.requestKey || value.requestFingerprint !== await cliRequestFingerprint(intent)) {
         throw Error('Квитанция не подтверждает исходный ключ, роль и запрос. Новая проверка приостановлена.');
     }
-    return readCliJob(value.job, intent.request.deviceId, intent.jobId);
+    return readCliJob(value.job, intent.request.deviceId, intent.jobId,intent.request.kind);
 }

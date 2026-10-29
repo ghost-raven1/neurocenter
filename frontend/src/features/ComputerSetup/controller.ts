@@ -1,31 +1,35 @@
 import {OPENCODE_CLI_INSPECT_JOB, normalizeOpenCodeCliRequest} from '@neurocenter/computer-setup';
+import {OPENCODE_CLI_INSTALL_JOB,normalizeOpenCodeInstallRequest} from '@neurocenter/opencode-cli-install';
 import {errorMessage} from '../../common/utils/errorMessage';
 import {createBridgeRequestKey} from '../McpBridge/bridgeRequestKey';
 import type {CliObservationApi} from './api';
 import type {CliJournalLock} from './journalLock';
-import {cliTerminal, initialCliObservation, newerCliJob, readCliJob, record, type CliIntent, type CliJob, type CliObservationState} from './model';
+import {cliTerminal, initialCliObservation, newerCliJob, readCliJob, record, type CliIntent, type CliJob, type CliObservationState,type ComputerCliKind} from './model';
 import {readCliReceipt} from './receipt';
 import {cliStorageKey, readCliIntent, writeCliIntent, type CliStorage} from './storage';
+import {installationReconciled} from './installationState';
 
 interface Options {
     email: string; role: string; deviceId: string; api: CliObservationApi; storage?: CliStorage; lock?: CliJournalLock;
     captureOwner: () => () => boolean; canStart: () => boolean; canCancel: () => boolean;
     onChange: (state: CliObservationState) => void; requestKey?: () => string;
+    kind?:ComputerCliKind;
 }
 const statusOf = (cause: unknown): number | undefined => (cause as {response?: {status?: number}} | null)?.response?.status;
 const denied = (cause: unknown): boolean => [401, 403].includes(statusOf(cause) ?? 0);
 
 /** One device journal owns admission and exact-key recovery; no network work is held under a WebLock. */
 export function createCliObservationController(options: Options) {
-    const key = cliStorageKey(options.email, options.deviceId);
+    const kind=options.kind??OPENCODE_CLI_INSPECT_JOB,key = cliStorageKey(options.email, options.deviceId,kind);
     let state = initialCliObservation(), active = false, epoch = 0, initialized = false, attemptedAutomatic = false;
     let observed: string | null = null, abort: AbortController | undefined, receiptConfirmed = false;
+    let historySnapshot:readonly unknown[]=[];
     const publish = (patch: Partial<CliObservationState>): void => {state = {...state, ...patch}; options.onChange(state);};
     const privacy = (): void => publish({job: undefined, canReplay: false, denied: true});
     function loadJournal(): boolean {
         try {
             if (!options.storage) throw Error('Хранилище браузера недоступно. Новая проверка приостановлена; историю можно читать.');
-            const saved = readCliIntent(options.storage, key, options.email, options.deviceId);
+            const saved = readCliIntent(options.storage, key, options.email, options.deviceId,kind);
             if (state.intent && saved.raw === null) throw Error('Сохранённая отправка удалена в другой вкладке. Исходный запрос оставлен для проверки.');
             if (saved.intent?.request.requestKey !== state.intent?.request.requestKey) {receiptConfirmed = false; publish({job: undefined});}
             observed = saved.raw;
@@ -54,9 +58,10 @@ export function createCliObservationController(options: Options) {
     async function history(signal: AbortSignal, current: () => boolean): Promise<CliJob[]> {
         const raw = await options.api.list(signal);
         if (!Array.isArray(raw)) throw Error('История проверок не подтверждена. Обновите состояние.');
-        const jobs = raw.filter(item => record(item) && item.deviceId === options.deviceId && item.kind === OPENCODE_CLI_INSPECT_JOB)
-            .map(item => readCliJob(item, options.deviceId)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+        const jobs = raw.filter(item => record(item) && item.deviceId === options.deviceId && item.kind === kind)
+            .map(item => readCliJob(item, options.deviceId,undefined,kind)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
         if (current()) {
+            historySnapshot=raw;
             initialized = true; publish({denied: false});
             if (!state.intent) {
                 const latest = jobs[0], previous = state.job;
@@ -90,7 +95,7 @@ export function createCliObservationController(options: Options) {
         if (!current() || !options.canStart() || pending.role !== options.role || !save(pending)) return;
         publish({canReplay: false});
         try {
-            const job = readCliJob(await options.api.create(pending.request, signal), options.deviceId, pending.jobId);
+            const job = readCliJob(await options.api.create(pending.request, signal), options.deviceId, pending.jobId,kind);
             if (!current()) return;
             if (!save({...pending, jobId: job.id})) return;
         } catch (cause) {
@@ -101,9 +106,12 @@ export function createCliObservationController(options: Options) {
         if (current()) await recover(signal, current);
     }
     async function start(automatic: boolean): Promise<void> {
+        if(automatic&&kind===OPENCODE_CLI_INSTALL_JOB)return;
         if (!initialized || !options.canStart() || !options.lock || state.storageError || state.denied || automatic && (attemptedAutomatic || state.intent || state.job)) return;
         await run(async (signal, current) => {
             const jobs = await history(signal, current); if (!current() || !options.canStart()) return;
+            const uncertain=jobs.find(job=>job.installation?.status==='unknown')??(state.job?.installation?.status==='unknown'?state.job:undefined);
+            if(uncertain&&!installationReconciled(uncertain,historySnapshot)){publish({error:'Исход предыдущей установки требует сверки. Сначала проверьте OpenCode; новая установка не отправлена.'});return;}
             if (jobs.some(job => !cliTerminal(job))) {publish({error: 'На этом компьютере уже выполняется проверка. Обновите её состояние.'}); return;}
             let created = false;
             const pending = await options.lock!(key, () => {
@@ -114,7 +122,8 @@ export function createCliObservationController(options: Options) {
                 if (saved && (!previous || saved.request.requestKey !== previous.request.requestKey)) return saved;
                 if (saved && (!receiptConfirmed || !state.job || state.job.id !== saved.jobId || !cliTerminal(state.job))) return saved;
                 if (automatic && (saved || state.job || attemptedAutomatic)) return undefined;
-                const request = normalizeOpenCodeCliRequest({deviceId: options.deviceId, kind: OPENCODE_CLI_INSPECT_JOB, scope: 'global', requestKey: createBridgeRequestKey(options.requestKey)});
+                const input={deviceId:options.deviceId,kind,scope:'global',requestKey:createBridgeRequestKey(options.requestKey)};
+                const request = kind===OPENCODE_CLI_INSTALL_JOB?normalizeOpenCodeInstallRequest(input):normalizeOpenCodeCliRequest(input);
                 const intent: CliIntent = {version: 1, email: options.email.trim().toLowerCase(), role: options.role, request};
                 if (!save(intent)) return undefined;
                 created = true; attemptedAutomatic = true; publish({job: undefined}); return intent;
@@ -125,7 +134,7 @@ export function createCliObservationController(options: Options) {
         });
     }
     return {
-        activate(): void {active = true; epoch++; state = initialCliObservation(); initialized = false; attemptedAutomatic = false; receiptConfirmed = false; observed = null; options.onChange(state);},
+        activate(): void {active = true; epoch++; state = initialCliObservation(); initialized = false; attemptedAutomatic = false; receiptConfirmed = false; observed = null;historySnapshot=[]; options.onChange(state);},
         dispose(): void {active = false; epoch++; abort?.abort();},
         refresh: () => run(async (signal, current) => {loadJournal(); await history(signal, current); if (current() && state.intent) await recover(signal, current);}),
         check: () => run(async (signal, current) => {if (state.intent) await recover(signal, current); else await history(signal, current);}),

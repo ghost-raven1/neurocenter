@@ -96,7 +96,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
         const params = new URLSearchParams(location.pathname === '/start' ? location.search : '');
         const project = new URLSearchParams(location.search).get('p');
         if (project) params.set('p', project);
-        history.push(startQueryUrl(params.toString(), {setup: true, step: 1}, location.pathname === '/start' ? location.hash : ''));
+        history.push(startQueryUrl(params.toString(), {setup: true, step: 0}, location.pathname === '/start' ? location.hash : ''));
     };
     const brand = <div className="app__brand"><BrandMark/><div><strong>Нейроцентр</strong><span>Рабочее пространство команды</span></div></div>;
     const menu = <AppNavigation entries={items} pathname={location.pathname} active={!compact || menuOpen}

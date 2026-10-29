@@ -8,13 +8,13 @@ describe('Адрес первого подключения', () => {
         expect(unifiedSetupStep(search)).toBe(0);
     });
 
-    it.each([0, 1, 2, 3])('Открывает основной этап %i из ссылки', step => {
-        expect(unifiedSetupStep(`?setup=1&step=${step}&p=example`)).toBe(step);
+    it.each([0, 1, 2, 3, 4, 5])('Открывает основной этап %i из ссылки', step => {
+        expect(unifiedSetupStep(`?setup=1&setupFlow=bridge-first&step=${step}&p=example`)).toBe(step);
     });
 
     it('Переход между этапами сохраняет проект, справку и якорь', () => {
         expect(startQueryUrl('?step=2&p=prj-example&extension=rag', { step: 0 }, '#setup'))
-            .toBe('/start?step=0&p=prj-example&extension=rag#setup');
+            .toBe('/start?step=0&p=prj-example&extension=rag&setupFlow=bridge-first#setup');
     });
 
     it('Новый выбор проекта сохраняет текущий этап и параметры ссылки', () => {

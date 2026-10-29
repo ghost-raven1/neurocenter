@@ -15,6 +15,7 @@ import type { Device, DeviceStore } from '../src/devices/device-store';
 import { modelScanDigest, type IOpenCodeModelCandidate, type IOpenCodeModelScan } from '../../shared/opencode-model-scan.cjs';
 import {saveModelVersion} from '../src/models/model-history';
 import {requireFeaturesEnabled} from '../src/features/require-feature-enabled';
+import {sealModelCredential} from '../src/models/remote-model-secret';
 vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined)}));
 
 const adminUrl = process.env.OPENCODE_MODEL_SYNC_TEST_PG_URL;
@@ -126,25 +127,33 @@ describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQ
         await sync(snapshot([candidate({ options: { contextWindow: 128000, temperature: 0 } })]));
         expect(Number((await remote.head(model.id))!.revision)).toBe(1); expect((await remote.head(model.id))!.failure_message).toBe('Provider unavailable');
     });
-    it('default-off consent rejects keys atomically; opt-in stores only encrypted credentials and rotates once', async () => {
-        let scan = snapshot(); await expect(sync(scan, { [scan.candidates[0]!.candidateId]: secret })).rejects.toThrow('не разрешён'); expect(await cards()).toHaveLength(0);
-        const configured = await service.configure(request, device.id, { expectedRevision: 0, enabled: true, transferCredentials: true });
-        expect(configured.transferCredentials).toBe(true); scan = snapshot(); await sync(scan, { [scan.candidates[0]!.candidateId]: secret }, 1);
-        const model = (await cards())[0], row = (await remote.head(model.id))!;
-        expect(remote.connection(row).apiKey).toBe(secret); expect(JSON.stringify(row)).not.toContain(secret);
-        expect(JSON.stringify(await service.read(request, device.id))).not.toContain(secret);
-        expect(JSON.stringify((await pool.query('SELECT * FROM security_events')).rows)).not.toContain(secret);
-        scan = snapshot(); await sync(scan, { [scan.candidates[0]!.candidateId]: secret }, 1); expect(Number((await remote.head(model.id))!.revision)).toBe(1);
-        scan = snapshot(); await sync(scan, { [scan.candidates[0]!.candidateId]: secret + '-rotated' }, 1); expect(Number((await remote.head(model.id))!.revision)).toBe(2);
+    it('rejects credential snapshots before storage even when a historical export preference is enabled', async () => {
+        for (const legacy of [false, true]) {
+            await pool.query('INSERT INTO opencode_model_sync_settings(device_id,revision,enabled,transfer_credentials) VALUES($1,3,true,$2) ON CONFLICT(device_id) DO UPDATE SET transfer_credentials=$2', [device.id, legacy]);
+            const before = (await pool.query('SELECT * FROM opencode_model_sync_settings')).rows;
+            expect(await service.context(device)).toMatchObject({ revision: 3, transferCredentials: false });
+            expect(await service.read(request, device.id)).toMatchObject({ transferCredentials: false, canTransferCredentials: false, legacyTransferCredentials: legacy });
+            const write = vi.spyOn(service.repository, 'sync'), read = vi.spyOn(service.repository, 'settings'); const scan = snapshot();
+            await expect(sync(scan, { [scan.candidates[0]!.candidateId]: secret }, 3)).rejects.toMatchObject({ status: 403 });
+            expect(write).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled(); write.mockRestore(); read.mockRestore();
+            expect(await cards()).toHaveLength(0); expect((await pool.query('SELECT * FROM model_remote_connections')).rows).toHaveLength(0);
+            expect((await pool.query('SELECT * FROM opencode_model_snapshots')).rows).toHaveLength(0); expect((await pool.query('SELECT * FROM security_events')).rows).toHaveLength(0);
+            expect((await pool.query('SELECT * FROM opencode_model_sync_settings')).rows).toEqual(before);
+        }
+        await expect(service.configure(request, device.id, { expectedRevision: 3, enabled: true, transferCredentials: false })).rejects.toMatchObject({ status: 409 });
     });
-    it('revoked consent rejects an in-flight snapshot; missing local values never delete the previous key', async () => {
-        await service.configure(request, device.id, { expectedRevision: 0, enabled: true, transferCredentials: true });
-        const scan = snapshot(); await sync(scan, { [scan.candidates[0]!.candidateId]: secret }, 1); const model = (await cards())[0];
-        await service.configure(request, device.id, { expectedRevision: 1, enabled: true, transferCredentials: false });
-        await expect(sync(snapshot(), {}, 1)).rejects.toThrow('Настройки'); await sync(snapshot(), {}, 2);
-        expect(remote.connection((await remote.head(model.id))!).apiKey).toBe(secret);
-        expect((await service.repository.sources(device.id))[0]).toMatchObject({ credentialStatus: 'transferred', hasServerKey: true });
-        await expect(service.configure(request, device.id, { expectedRevision: 1, enabled: true, transferCredentials: true })).rejects.toThrow('другом окне');
+    it('metadata settings and reload preserve the previous encrypted history and stored preference', async () => {
+        await sync(snapshot()); const model = (await cards())[0], head = (await remote.head(model.id))!;
+        await pool.query("UPDATE model_remote_connections SET credential_kind='stored',credential=$3 WHERE model_id=$1 AND revision=$2", [model.id, head.revision, sealModelCredential(secret, model.id, Number(head.revision))]);
+        await pool.query('INSERT INTO opencode_model_sync_settings(device_id,revision,enabled,transfer_credentials) VALUES($1,1,true,true)', [device.id]);
+        const previous = (await pool.query('SELECT * FROM model_remote_connections')).rows;
+        expect(await service.configure(request, device.id, { expectedRevision: 1, enabled: false })).toMatchObject({ revision: 2, enabled: false, transferCredentials: false, legacyTransferCredentials: true });
+        expect(await service.configure(request, device.id, { expectedRevision: 2, enabled: true })).toMatchObject({ revision: 3, enabled: true, transferCredentials: false, legacyTransferCredentials: true });
+        await expect(sync(snapshot(), {}, 2)).rejects.toThrow('Настройки'); await sync(snapshot(), {}, 3);
+        expect((await pool.query('SELECT * FROM model_remote_connections')).rows).toEqual(previous);
+        expect((await service.repository.settings(device.id)).transferCredentials).toBe(true);
+        expect(JSON.stringify(await service.read(request, device.id))).not.toContain(secret);
+        await expect(service.configure(request, device.id, { expectedRevision: 2, enabled: true })).rejects.toThrow('другом окне');
     });
     it('manual connection edits and credentials from another computer always win over automatic updates', async () => {
         await sync(snapshot()); const model = (await cards())[0];
@@ -159,8 +168,8 @@ describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQ
         expect(await remote.head(model.id)).toEqual(before); expect(await cards()).toHaveLength(1);
         const other = { ...device, id: randomUUID() };
         await pool.query('INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash,report) SELECT $2,email,role,name,fingerprint,$3,report FROM bridge_devices WHERE id=$1', [device.id, other.id, randomBytes(32).toString('hex')]);
-        await service.configure(request, other.id, { expectedRevision: 0, enabled: true, transferCredentials: true });
-        const scan = snapshot(); await service.sync(other, { scan, settingsRevision: 1, credentials: { [scan.candidates[0]!.candidateId]: secret } }, async () => other);
+        await service.configure(request, other.id, { expectedRevision: 0, enabled: true });
+        const scan = snapshot(); await service.sync(other, { scan, settingsRevision: 1, credentials: {} }, async () => other);
         expect(await remote.head(model.id)).toEqual(before); expect((await service.repository.sources(other.id))[0].credentialStatus).toBe('manual');
     });
     it('duplicate source aliases and role revocation before commit roll back all cards and keys', async () => {

@@ -16,22 +16,22 @@ describe('Unified project setup never turns navigation or a stale assignment int
     it('opens historical step and pairing links in the primary wizard',()=>{
         for(const query of ['', '?p=prj-qa', '?setup=0&step=1&connect=qa-owned-pair-code'])expect(startSetupRequested(query)).toBe(false);
         for(const query of ['?step=0','?step=1','?step=2&p=prj-qa','?legacy=1','?addComputer=1','?setup=1&step=2'])expect(startSetupRequested(query)).toBe(true);
-        expect(unifiedSetupStep('?step=2&p=prj-qa')).toBe(1);
-        expect(unifiedSetupStep('?setup=1&step=2&p=prj-qa')).toBe(2);
+        expect(unifiedSetupStep('?step=2&p=prj-qa')).toBe(0);
+        expect(unifiedSetupStep('?setup=1&step=2&p=prj-qa')).toBe(4);
     });
     it.each(['?connect=qa-owned-pair-code','?setup=1&connect=qa-owned-pair-code','?step=1&connect=qa-owned-pair-code','?step=2&connect=qa-owned-pair-code&p=prj-qa',
         '?step=1&connect=qa-owned-pair-code&legacy=1','?step=1&connect=qa-owned-pair-code&addComputer=1'])('uses the primary computer stage for pairing link %s',query=>{
-        expect(startSetupRequested(query)).toBe(true);expect(unifiedSetupStep(query)).toBe(1);
+        expect(startSetupRequested(query)).toBe(true);expect(unifiedSetupStep(query)).toBe(0);
     });
     it('keeps the selected project and unknown query context on resume',()=>{
         const url=startQueryUrl('?p=prj-qa&extension=rag',{setup:true,step:3},'#details');
-        expect(url).toBe('/start?p=prj-qa&extension=rag&step=3&setup=1#details');
-        expect(unifiedSetupStep('?step=3')).toBe(3);
+        expect(url).toBe('/start?p=prj-qa&extension=rag&step=3&setupFlow=bridge-first&setup=1#details');
+        expect(unifiedSetupStep('?step=3')).toBe(5);
         for(const query of ['?step=-1','?step=4','?step=NaN'])expect(unifiedSetupStep(query)).toBe(0);
     });
     it('routes add-computer intent into the main connection stage without a legacy step URL',()=>{
-        const query='?setup=1&addComputer=1&p=prj-qa';expect(startSetupRequested(query)).toBe(true);expect(unifiedSetupStep(query)).toBe(1);
-        expect(unifiedSetupStep(query+'&step=3')).toBe(3);
+        const query='?setup=1&addComputer=1&p=prj-qa';expect(startSetupRequested(query)).toBe(true);expect(unifiedSetupStep(query)).toBe(0);
+        expect(unifiedSetupStep(query+'&step=3')).toBe(0);
         const closed=startQueryUrl(query,{setup:false,step:0,addComputer:false});expect(startSetupRequested(new URL(closed,'https://qa.example.test').search)).toBe(false);
         expect(new URL(closed,'https://qa.example.test').searchParams.get('p')).toBe('prj-qa');
     });

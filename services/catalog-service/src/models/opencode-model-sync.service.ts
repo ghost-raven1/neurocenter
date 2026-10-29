@@ -6,7 +6,6 @@ import { DeviceStore, type Device } from '../devices/device-store';
 import { managedBinding } from '../devices/device-compatibility';
 import { projectLevel } from '../access/access.model';
 import { ModelsService } from './models.service';
-import { canStoreModelCredential } from './remote-model-secret';
 import { notifyModelCatalogChange } from './model-events';
 import { OpenCodeModelSyncRepository } from './opencode-model-sync.repository';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
@@ -26,12 +25,11 @@ export class OpenCodeModelSyncService {
         const email = await this.models.requireMain(request); await this.devices.owned({ email, activeRole: 'Главный админ' }, id);
         const settings = await this.repository.settings(id), sources = await this.repository.sources(id);
         await this.models.requireMain(request);
-        return { ...settings, canTransferCredentials: canStoreModelCredential(), sources };
+        return { ...settings, transferCredentials:false, legacyTransferCredentials:settings.transferCredentials, canTransferCredentials:false, sources };
     }
     async configure(request: Request, id: string, value: unknown) {
         const email = await this.models.requireMain(request); await this.devices.owned({ email, activeRole: 'Главный админ' }, id);
-        if (!object(value) || Object.keys(value).some(key => !['expectedRevision', 'enabled', 'transferCredentials'].includes(key)) || !Number.isSafeInteger(value.expectedRevision) || Number(value.expectedRevision) < 0 || typeof value.enabled !== 'boolean' || typeof value.transferCredentials !== 'boolean') throw new BadRequestException('Укажите актуальную ревизию и настройки синхронизации.');
-        if (value.transferCredentials && !canStoreModelCredential()) throw new ConflictException('На сервере ещё не настроено шифрование ключей моделей.');
+        if (!object(value) || Object.keys(value).some(key => !['expectedRevision', 'enabled', 'transferCredentials'].includes(key)) || !Number.isSafeInteger(value.expectedRevision) || Number(value.expectedRevision) < 0 || typeof value.enabled !== 'boolean' || value.transferCredentials!==undefined&&typeof value.transferCredentials !== 'boolean') throw new BadRequestException('Укажите актуальную ревизию и настройки синхронизации.');
         const db = await this.models.pool.connect();
         try {
             await db.query('BEGIN');
@@ -39,9 +37,10 @@ export class OpenCodeModelSyncService {
             await this.models.requireMain(request);
             const previous = await this.repository.settings(id, db);
             if (previous.revision !== value.expectedRevision) throw new ConflictException('Настройка изменена в другом окне. Обновите данные.');
-            if(value.enabled&&(!previous.enabled||value.transferCredentials&&!previous.transferCredentials))await requireFeaturesEnabled(['opencode_model_sync']);
+            if(value.transferCredentials!==undefined&&value.transferCredentials!==previous.transferCredentials)throw new ConflictException({code:'opencode-credential-export-retired',message:'Перенос ключей OpenCode отключён. Настройте личный ключ модели в «Мой доступ».'});
+            if(value.enabled&&!previous.enabled)await requireFeaturesEnabled(['opencode_model_sync']);
             await db.query(`INSERT INTO opencode_model_sync_settings(device_id,revision,enabled,transfer_credentials) VALUES($1,$2,$3,$4)
-                ON CONFLICT(device_id) DO UPDATE SET revision=EXCLUDED.revision,enabled=EXCLUDED.enabled,transfer_credentials=EXCLUDED.transfer_credentials,updated_at=now()`, [id, previous.revision + 1, value.enabled, value.transferCredentials]);
+                ON CONFLICT(device_id) DO UPDATE SET revision=EXCLUDED.revision,enabled=EXCLUDED.enabled,updated_at=now()`, [id, previous.revision + 1, value.enabled, previous.transferCredentials]);
             await db.query('COMMIT');
         } catch (cause) { await db.query('ROLLBACK').catch(() => undefined); throw cause; } finally { db.release(); }
         return this.read(request, id);
@@ -55,12 +54,13 @@ export class OpenCodeModelSyncService {
         }) : [];
         const ids = bindings.map(binding => binding.projectId as string);
         const projects = (await this.models.pool.query<{ id: string }>('SELECT id FROM projects WHERE id=ANY($1::text[])', [ids])).rows.map(row => row.id);
-        return { schemaVersion:2,global:{deviceId:device.id},...settings, transferCredentials: settings.transferCredentials && canStoreModelCredential(), bindings: settings.enabled ? bindings.filter(binding => projects.includes(String(binding.projectId))).map(binding => ({ projectId: binding.projectId, bindingId: binding.bindingId, instanceId: binding.instanceId })) : [] };
+        return { schemaVersion:2,global:{deviceId:device.id},...settings, transferCredentials:false, bindings: settings.enabled ? bindings.filter(binding => projects.includes(String(binding.projectId))).map(binding => ({ projectId: binding.projectId, bindingId: binding.bindingId, instanceId: binding.instanceId })) : [] };
     }
     async sync(device: Device, value: unknown, authorize: () => Promise<Device>) {
         await this.allowed(device);
         await requireFeaturesEnabled(['opencode_model_sync']);
         if (!object(value) || Object.keys(value).some(key => !['settingsRevision', 'scan', 'credentials'].includes(key)) || !Number.isSafeInteger(value.settingsRevision) || !object(value.credentials) || Buffer.byteLength(JSON.stringify(value)) > 1048576) throw new BadRequestException('Некорректный снимок синхронизации OpenCode.');
+        if(Object.keys(value.credentials).length)throw new ForbiddenException({code:'opencode-credential-export-retired',message:'Синхронизация OpenCode принимает только метаданные. Ключ задаёт каждый пользователь в «Мой доступ».'});
         const settings = await this.repository.settings(device.id);
         if (!settings.enabled || settings.revision !== value.settingsRevision) throw new ConflictException('Настройки синхронизации изменились. Повторите чтение OpenCode.');
         const scan = value.scan;
@@ -72,11 +72,6 @@ export class OpenCodeModelSyncService {
         const credentials: Record<string, string> = {};
         const sourceKeys = scan.candidates.map(candidate => JSON.stringify([candidate.provider, candidate.configKey ?? candidate.model]));
         if (new Set(sourceKeys).size !== sourceKeys.length) throw new BadRequestException('Снимок содержит повторяющиеся записи OpenCode.');
-        if (Object.keys(value.credentials).length && (!settings.transferCredentials || !canStoreModelCredential())) throw new ForbiddenException('Перенос ключей с этого компьютера не разрешён.');
-        for (const [id, key] of Object.entries(value.credentials)) {
-            if (!scan.candidates.some(candidate => candidate.candidateId === id && !candidate.blocker && candidate.hasKey) || typeof key !== 'string' || !key || key.length > 8192 || /[\x00-\x20\x7f]/.test(key)) throw new BadRequestException('Ключ не соответствует поддерживаемой записи снимка.');
-            credentials[id] = key;
-        }
         const assert = async (db: PoolClient): Promise<void> => {
             const fresh = await authorize(); await this.allowed(fresh);
             await requireFeaturesEnabled(['opencode_model_sync']);

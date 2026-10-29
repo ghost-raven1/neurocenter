@@ -1,10 +1,10 @@
 import api from '../../core/api/base';
-import type {OpenCodeCliRequest} from '../../../../services/shared/computer-setup.cjs';
+import type {ComputerCliRequest} from './model';
 
 export interface CliObservationApi {
     list: (signal: AbortSignal) => Promise<unknown>;
     request: (key: string, signal: AbortSignal) => Promise<unknown>;
-    create: (input: OpenCodeCliRequest, signal: AbortSignal) => Promise<unknown>;
+    create: (input: ComputerCliRequest, signal: AbortSignal) => Promise<unknown>;
     cancel: (jobId: string, signal: AbortSignal) => Promise<void>;
 }
 

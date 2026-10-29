@@ -1,18 +1,23 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {stateDir} from '../../bridge/state.js';
 import {atomicText,syncDirectory} from '../../bridge/atomic-file.js';
 import {readBoundedSnapshot} from '../../bridge/read-bounded.js';
 import type {Completion} from '../../bridge/completions.js';
-import {closeRoleMcpProcess,findRoleMcpProcess,roleMcpOwnerAlive,roleMcpProcessOwner,type RoleMcpProcessJournal} from '../system-role-mcp/owned-process.js';
+import {closeRoleMcpProcess,findRoleMcpProcess,roleMcpOwnerAlive,roleMcpProcessOwner,retireRoleMcpProcessReceipt,type RoleMcpProcessJournal} from '../system-role-mcp/owned-process.js';
 import type {RoleMcpOwner} from '../system-role-mcp/session-journal.js';
 import {normalizeOpenCodeCliResult} from './contract.js';
+import {normalizeOpenCodeInstallPayload,normalizeOpenCodeInstallResult,type OpenCodeInstallPayload} from './install-contract.js';
 
 export interface CliJobIdentity {id:string;lease:string;deviceId:string}
+interface CliInstallStage {file:string;dev:number;ino:number;parentDev:number;parentIno:number}
 export interface CliReceipt {
     schemaVersion:1;job:CliJobIdentity;worker:RoleMcpOwner;phase:'started'|'closed';
     process?:{nonce:string;receipt:string;owner?:RoleMcpOwner};completion?:Completion;
+    installation?:{payload:OpenCodeInstallPayload;publicationStarted:boolean;stage?:CliInstallStage};
+    localOnly?:true;
 }
 const uuid=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const same=(left:unknown,right:unknown)=>JSON.stringify(left)===JSON.stringify(right);
@@ -38,9 +43,18 @@ function owner(value:RoleMcpOwner):boolean{
         &&typeof value.birth==='string'&&!!value.birth&&value.birth.length<=256&&typeof value.entry==='string'&&path.isAbsolute(value.entry)&&value.entry.length<=4096;
 }
 function validate(item:CliReceipt):CliReceipt{
-    if(!item||!exact(item,['schemaVersion','job','worker','phase',...(item.process?['process']:[]),...(item.completion?['completion']:[])])
+    if(!item||!exact(item,['schemaVersion','job','worker','phase',...(item.process?['process']:[]),...(item.completion?['completion']:[]),...(item.installation?['installation']:[]),...(item.localOnly?['localOnly']:[])])
         ||item.schemaVersion!==1||!item.job||!exact(item.job,['id','lease','deviceId'])||![item.job.id,item.job.lease,item.job.deviceId].every(value=>uuid.test(value))
         ||!owner(item.worker)||!['started','closed'].includes(item.phase))throw new Error('Повреждён журнал проверки OpenCode.');
+    if(item.localOnly!==undefined&&(item.localOnly!==true||item.installation||item.phase!=='started'||item.completion))throw new Error('Повреждён локальный владелец OpenCode.');
+    if(item.installation){
+        if(!exact(item.installation,['payload','publicationStarted',...(item.installation.stage?['stage']:[])])||typeof item.installation.publicationStarted!=='boolean'
+            ||normalizeOpenCodeInstallPayload(item.installation.payload).deviceId!==item.job.deviceId)throw new Error('Повреждён журнал установки OpenCode.');
+        const stage=item.installation.stage;
+        if(stage&&(!exact(stage,['file','dev','ino','parentDev','parentIno'])||typeof stage.file!=='string'
+            ||!/^\.opencode\.install\.[a-f0-9-]{36}\.tmp$/.test(path.basename(stage.file))||stage.file!==path.join(os.homedir(),'.local','bin',path.basename(stage.file))
+            ||![stage.dev,stage.ino,stage.parentDev,stage.parentIno].every(value=>Number.isSafeInteger(value)&&value>=0)))throw new Error('Владелец временного файла OpenCode изменился.');
+    }
     if(item.process){
         const process=item.process;
         if(!exact(process,['nonce','receipt',...(process.owner?['owner']:[])])||!uuid.test(process.nonce)
@@ -53,8 +67,9 @@ function validate(item:CliReceipt):CliReceipt{
             ||!['succeeded','failed'].includes(value.state)||typeof value.message!=='string'||Buffer.byteLength(value.message)>1500||value.message.includes('\0')
             ||!value.result||typeof value.result!=='object'||Array.isArray(value.result))throw new Error('Повреждён результат проверки OpenCode.');
         if(Object.keys(value.result).length){
-            const result=normalizeOpenCodeCliResult(value.result,{deviceId:item.job.deviceId,jobId:item.job.id});
-            if((result.status==='installed'||result.status==='missing')!==(value.state==='succeeded'))throw new Error('Результат проверки OpenCode не соответствует состоянию.');
+            const result=item.installation?normalizeOpenCodeInstallResult(value.result,{deviceId:item.job.deviceId,jobId:item.job.id,source:item.installation.payload.source})
+                :normalizeOpenCodeCliResult(value.result,{deviceId:item.job.deviceId,jobId:item.job.id});
+            if(['installed','missing','unchanged'].includes(result.status)!==(value.state==='succeeded'))throw new Error('Результат проверки OpenCode не соответствует состоянию.');
         }else if(value.state!=='failed')throw new Error('Проверка OpenCode не содержит наблюдения.');
     }
     return item;
@@ -85,10 +100,48 @@ async function change(previous:CliReceipt,next:CliReceipt):Promise<CliReceipt>{
         await atomicText(path.join(await directory('active'),previous.job.id+'.json'),JSON.stringify(next),0o600);return next;
     }finally{release();}
 }
-export async function beginCliReceipt(job:CliJobIdentity):Promise<CliReceipt>{
+async function beginReceipt(job:CliJobIdentity,installation?:OpenCodeInstallPayload,localOnly=false):Promise<CliReceipt>{
     if(await readCliReceipt(job.id))throw new Error('Проверка OpenCode уже принята.');
-    const item=validate({schemaVersion:1,job,worker:await roleMcpProcessOwner(),phase:'started'});
+    const item=validate({schemaVersion:1,job,worker:await roleMcpProcessOwner(),phase:'started',...(installation?{installation:{payload:normalizeOpenCodeInstallPayload(installation),publicationStarted:false}}:{}),...(localOnly?{localOnly:true as const}:{})});
     await atomicText(path.join(await directory('active'),job.id+'.json'),JSON.stringify(item),0o600);return item;
+}
+export const beginCliReceipt=(job:CliJobIdentity,installation?:OpenCodeInstallPayload)=>beginReceipt(job,installation);
+/** Private compatibility probes have durable process ownership but never a fictitious server job. */
+export const beginLocalCliReceipt=(job:CliJobIdentity)=>beginReceipt(job,undefined,true);
+export async function retireLocalCliReceipt(item:CliReceipt):Promise<void>{
+    try{
+    if(!item.localOnly)throw new Error('Проверка OpenCode не является локальной.');
+    await closeCliReceipt(item);await writes;
+    if(!same(await read('active',item.job.id),item))throw new CliCleanupError(new Error('Локальная проверка OpenCode изменилась.'));
+    await fs.unlink(path.join(await directory('active'),item.job.id+'.json'));await syncDirectory(await directory('active'));
+    // Closure is already proven. An orphaned proof is harmless if optional receipt retirement cannot complete.
+    if(item.process?.owner)await retireRoleMcpProcessReceipt(item.process.owner,item.process.nonce,item.process.receipt).catch(()=>{});
+    }catch(error){throw error instanceof CliCleanupError?error:new CliCleanupError(error);}
+}
+/** The durable marker precedes publication; recovery never guesses that an interrupted copy may run again. */
+export async function markCliInstallPublication(item:CliReceipt):Promise<CliReceipt>{
+    if(!item.installation||item.phase!=='started')throw new Error('Установка OpenCode не подготовлена.');
+    return change(item,{...item,installation:{...item.installation,publicationStarted:true}});
+}
+/** Recovery can remove only the exact staged inode; an unjournalled crash can leave at most an empty file. */
+export async function markCliInstallStage(item:CliReceipt,stage:CliInstallStage):Promise<CliReceipt>{
+    if(!item.installation||item.phase!=='started'||item.installation.stage||item.installation.publicationStarted)throw new Error('Временный файл OpenCode уже получил владельца.');
+    return change(item,{...item,installation:{...item.installation,stage}});
+}
+async function cleanupInstallStage(item:CliReceipt):Promise<void>{
+    const stage=item.installation?.stage;if(!stage)return;
+    try{
+        const parent=await fs.lstat(path.dirname(stage.file)),file=await fs.lstat(stage.file);
+        if(!parent.isDirectory()||parent.isSymbolicLink()||parent.dev!==stage.parentDev||parent.ino!==stage.parentIno
+            ||!file.isFile()||file.isSymbolicLink()||file.dev!==stage.dev||file.ino!==stage.ino||file.uid!==process.getuid?.())throw new Error('Временный файл OpenCode изменился.');
+        await fs.unlink(stage.file);await syncDirectory(path.dirname(stage.file));
+    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw new CliCleanupError(error);}
+}
+/** Installation has several fixed --version probes; each preceding owned process must close first. */
+export async function cliInstallProcessJournal(item:CliReceipt,save:(next:CliReceipt)=>void):Promise<RoleMcpProcessJournal>{
+    if(!item.installation)throw new Error('Установка OpenCode не подготовлена.');
+    if(item.process){await closeCliReceipt(item);const {process:_process,...rest}=item;item=await change(item,rest);save(item);}
+    return cliProcessJournal(item,save);
 }
 /** Nonce and exact wrapper identity are fsynced before the wrapper can receive its execution permit. */
 export async function cliProcessJournal(item:CliReceipt,save:(next:CliReceipt)=>void):Promise<RoleMcpProcessJournal>{
@@ -106,12 +159,12 @@ export async function closeCliReceipt(item:CliReceipt):Promise<void>{
     }catch(cause){throw new CliCleanupError(cause);}
 }
 export async function completeCliReceipt(item:CliReceipt,completion:Completion):Promise<CliReceipt>{
-    if(item.phase!=='started')throw new Error('Результат проверки OpenCode уже зафиксирован.');
+    if(item.phase!=='started'||item.localOnly)throw new Error('Результат проверки OpenCode уже зафиксирован или предназначен только локальному владельцу.');
     return change(item,{...item,phase:'closed',completion});
 }
 /** Outbox takes delivery ownership first; the immutable closed archive prevents execution replay after its ACK. */
 export async function queueCliCompletion(item:CliReceipt,save:(value:Completion)=>Promise<void>):Promise<void>{
-    if(item.phase!=='closed'||!item.completion)throw new Error('Очистка проверки OpenCode не подтверждена.');
+    if(item.phase!=='closed'||!item.completion||item.localOnly)throw new Error('Очистка проверки OpenCode не подтверждена.');
     await save(item.completion);
     const previous=await read('active',item.job.id),archived=await read('completed',item.job.id);
     if(!same(previous,item)||archived&&!same(archived,item))throw new Error('Результат проверки OpenCode изменился перед архивированием.');
@@ -129,9 +182,14 @@ export async function recoverComputerSetupCompletions(save:(value:Completion)=>P
         if(++count>64||!uuid.test(file.name.slice(0,-5)))throw new Error('Сначала восстановите сохранённые проверки OpenCode.');
         let item=await read('active',file.name.slice(0,-5));if(!item)continue;
         if(item.worker.pid!==process.pid&&await roleMcpOwnerAlive(item.worker))throw new CliCleanupError(new Error('Проверка OpenCode принадлежит работающему мосту.'));
+        if(item.localOnly){await retireLocalCliReceipt(item);continue;}
         if(item.phase==='started'){
             await closeCliReceipt(item);
-            item=await completeCliReceipt(item,{...item.job,state:'failed',message:cliFailureMessage,result:{}});
+            await cleanupInstallStage(item);
+            const install=item.installation;
+            const result=install?normalizeOpenCodeInstallResult({...install.payload,jobId:item.job.id,checkedAt:new Date().toISOString(),status:install.publicationStarted?'unknown':'failed',installedVersion:null,commandVersion:null,commandReady:false,
+                nextAction:install.publicationStarted?'reconcile':'retry',failure:'interrupted'}):{};
+            item=await completeCliReceipt(item,{...item.job,state:'failed',message:cliFailureMessage,result:{...result}});
         }
         await queueCliCompletion(item,save);
     }
