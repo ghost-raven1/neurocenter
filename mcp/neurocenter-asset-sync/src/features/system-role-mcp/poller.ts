@@ -9,12 +9,12 @@ import {assertRoleMcpClaim,recoverRoleMcpSessions,acknowledgeRoleMcpCompletion,t
 
 interface PollerDependencies {claim:(signal:AbortSignal,request:RoleMcpClaimRequest,identity:RoleMcpIdentity)=>Promise<SessionJob|null>;authorize:(job:SessionJob,signal:AbortSignal,identity:RoleMcpIdentity)=>Promise<unknown>;
  run:typeof runSystemRoleMcpJob;complete:(job:SessionJob,value:unknown,identity:RoleMcpIdentity)=>Promise<unknown>;recover:(deviceId:string,signal:AbortSignal)=>Promise<void>;
- credentials:()=>Promise<Credentials|undefined>;identity:()=>Promise<RoleMcpIdentity>}
+ credentials:()=>Promise<Credentials|undefined>;identity:()=>Promise<RoleMcpIdentity>;canClaim:()=>boolean}
 /** MCP transport leases run beside ordinary jobs, so browser sessions never starve a local Codex model or another role. */
 export function startRoleMcpPoller(dependencies:Partial<PollerDependencies>={}){
  const deps:PollerDependencies={claim:(signal,request,identity)=>roleMcpApi('claim',request,signal,identity),authorize:(job,signal,identity)=>roleMcpApi('authorize',{jobId:job.id,lease:job.lease},signal,identity),
   run:runSystemRoleMcpJob,complete:(job,value,identity)=>roleMcpApi('complete',{jobId:job.id,lease:job.lease,...value as object},undefined,identity),
-  recover:deliverRoleMcpResults,credentials:()=>readState<Credentials>('credentials'),identity:captureRoleMcpIdentity,...dependencies};
+  recover:deliverRoleMcpResults,credentials:()=>readState<Credentials>('credentials'),identity:captureRoleMcpIdentity,canClaim:()=>true,...dependencies};
  const controller=new AbortController(),tasks=new Map<string,Promise<void>>(),active=new Set<string>();let polling:Promise<void>|undefined;
  let owner:Awaited<ReturnType<typeof roleMcpProcessOwner>>|undefined;
  const tick=()=>{
@@ -24,8 +24,10 @@ export function startRoleMcpPoller(dependencies:Partial<PollerDependencies>={}){
    owner??=await roleMcpProcessOwner();
    await deps.recover(credentials.deviceId,controller.signal);
    await recoverRoleMcpSessions(identity,active,request=>deps.claim(controller.signal,request,identity),deps.complete);
-   while(tasks.size<2&&!controller.signal.aborted){
-    let intent=await beginRoleMcpIntent(identity,owner);const job=await deps.claim(controller.signal,{requestId:intent.requestId,recoveryOnly:false},identity);
+   while(tasks.size<2&&!controller.signal.aborted&&deps.canClaim()){
+    let intent=await beginRoleMcpIntent(identity,owner);
+    if(!deps.canClaim()){await retireRoleMcpIntent(identity,intent);return;}
+    const job=await deps.claim(controller.signal,{requestId:intent.requestId,recoveryOnly:false},identity);
     if(!job){await retireRoleMcpIntent(identity,intent);return;}
     assertRoleMcpClaim(job,intent.requestId);if(tasks.has(job.id))throw new Error('Сессия MCP уже выполняется.');
     intent=await retainRoleMcpClaim(identity,intent,job);if(job.recoveryOnly)continue;

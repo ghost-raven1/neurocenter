@@ -177,8 +177,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 310);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 380);
+    assert.equal(Object.keys(actual.paths).length, 311);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 381);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for(const [pathname,methods] of Object.entries({'/api/models/{id}/token-quotas/{email}':['get','put'],'/api/models/{id}/token-quotas/{email}/requests/{requestKey}':['get']})) assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods,pathname);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
@@ -430,6 +430,10 @@ test('Redirects, manual OAuth JSON, binary streams and HEAD reflect the actual H
 test('Device and MCP routes expose the actual public authentication and protocol requirements', () => {
     assert.deepEqual(actual.paths['/api/device-channel/pair/start'].post.security, []);
     assert.deepEqual(actual.paths['/api/device-channel/identity'].post.security, [{deviceBearer:[]}]);
+    const presence=actual.paths['/api/device-channel/presence'].post;
+    assert.deepEqual(presence.security,[{deviceBearer:[]}]);
+    const presenceBody=presence.requestBody.content['application/json'].schema;
+    for(const key of ['platform','arch','runtimeVersion','bridgeVersion','buildId','protocolVersion'])assert.ok(presenceBody.required.includes(key));
     const runtime = actual.paths['/api/device-channel/jobs/{id}/runtime/{sha256}'].get;
     assert.equal(runtime.responses['200'].content['application/gzip'].schema.format, 'binary');
     assert.equal(runtime.parameters.find(item => item.name === 'x-neurocenter-job-lease').required, true);

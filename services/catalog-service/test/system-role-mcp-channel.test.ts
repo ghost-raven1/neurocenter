@@ -16,11 +16,11 @@ function fixture() {
         target: { runtime: 'device', assetId: 'asset-one', version: 1, manifest: 'b'.repeat(64), deviceId, bindingId: 'binding', instanceId: 'instance', configurationRevisions: [] },
         package: { immutable: 'package' }, install_set: null, job_id: id, worker_lease: lease, worker_lease_until: later(), claimed_at: new Date(), state: 'open', deadline_at: later(), created_at: new Date() } as unknown as McpSessionRow;
     const call = { id: callId, session_id: id, run_id: null, kind: 'list', name: null, schema_digest: null, arguments: null, state: 'dispatched', deadline_at: later() } as McpCallRow;
-    const state = { revoked: false, occupied: 0, events: [] as string[] };
+    const state = { revoked: false, occupied: 0, reportUnavailable:false,events: [] as string[] };
     const identity = vi.fn(async () => { if (state.revoked) throw new UnauthorizedException(); return device; });
     const query = vi.fn(async (sql: string, params: unknown[] = []) => {
         if (sql.includes('SELECT s.* FROM system_role_mcp_sessions s JOIN bridge_devices')) return { rows: params[0] === id && params[1] === lease && params[2] === digest(token) ? [session] : [], rowCount: 1 };
-        if (sql.includes('FROM bridge_devices')) return { rows: state.revoked ? [] : [{ id: deviceId, email:device.email }], rowCount: state.revoked ? 0 : 1 };
+        if (sql.includes('FROM bridge_devices')) return { rows: state.revoked ? [] : [{ id: deviceId, email:device.email,report_unavailable:state.reportUnavailable }], rowCount: state.revoked ? 0 : 1 };
         if (sql.includes('FROM system_role_mcp_retired_claims')) return { rows: [], rowCount: 0 };
         if (sql.includes('FROM projects')) return { rows: [{id:'prj-one'}], rowCount: 1 };
         if (sql.includes('SELECT count(*)')) return { rows: [{ count: String(state.occupied) }], rowCount: 1 };
@@ -49,6 +49,13 @@ it('claims a private session after fresh authority and returns identifiers witho
     const f = fixture(); f.session.claimed_at = null;
     expect(await f.channel.claim(token,claimInput)).toEqual({ id, lease, requestId:claimRequestId, kind: 'system-role-mcp-session', project_id: 'prj-one', payload: { sessionId: id } });
     expect(f.state.events).toEqual(['authority', 'claim']); expect(f.identity).toHaveBeenCalledWith(token); expect(f.query.mock.calls.map(call => call[0]).join('\n')).not.toContain('bridge_jobs');
+});
+it('degraded admission blocks an unclaimed session while preserving active authorization and fresh authority',async()=>{
+    const f=fixture();f.state.reportUnavailable=true;
+    expect(await f.channel.authorize(token,base)).toEqual({ok:true,closed:false});expect(f.authority).toHaveBeenCalledOnce();
+    f.authority.mockClear();f.session.claimed_at=null;
+    expect(await f.channel.claim(token,claimInput)).toBeNull();expect(f.session.claimed_at).toBeNull();expect(f.authority).not.toHaveBeenCalled();
+    f.state.reportUnavailable=false;expect(await f.channel.claim(token,claimInput)).toMatchObject({id,lease});
 });
 it('two already claimed open MCP sessions fill only this device private lane and prevent another claim', async () => {
     const f = fixture(); f.session.claimed_at = null; f.state.occupied = 2;

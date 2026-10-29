@@ -19,6 +19,7 @@ import type { Request, Response } from 'express';
 import { assertInternal } from '../access/access.controller';
 import type { IAccessActor } from '../access/access.model';
 import { DeviceStore } from './device-store';
+import type {BridgePresence} from './device-report';
 import { DeviceJobs, JobInput } from './device-jobs';
 import {DeviceInstallations} from './device-installations';
 import { completeDeviceJob, type DeviceCompletion } from './device-completion';
@@ -121,6 +122,9 @@ export class DeviceController {
         @Body() input: Record<string, unknown>,
     ) {
         return this.devices.heartbeat(await this.device(req), input);
+    }
+    @Post('internal/device-channel/presence') async presence(@Req() req:Request,@Body() input:BridgePresence){
+        return this.devices.presence(await this.device(req),input);
     }
     @Post('internal/device-channel/jobs/claim') async claim(
         @Req() req: Request,

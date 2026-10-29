@@ -1,5 +1,21 @@
 import { BadRequestException } from '@nestjs/common';
 
+export interface BridgePresence {
+    platform:string;arch:string;runtimeVersion:string;bridgeVersion:string;buildId:string;protocolVersion:number;
+    runtimeArtifactTarget?:string;
+}
+
+/** A degraded client can refresh identity without replacing its last complete workspace snapshot. */
+export function bridgePresence(value:unknown):Record<string,unknown>{
+    const checked=workspaceReport(value),required=['platform','arch','runtimeVersion','bridgeVersion','buildId'];
+    if(Object.keys(checked).some(key=>![...required,'protocolVersion','runtimeArtifactTarget'].includes(key))
+        ||required.some(key=>typeof checked[key]!=='string'||!checked[key]||String(checked[key]).length>256)
+        ||!Number.isSafeInteger(checked.protocolVersion)||Number(checked.protocolVersion)<1){
+        throw new BadRequestException('Некорректные сведения о присутствии локального MCP.');
+    }
+    return {...checked,reportUnavailable:true,rootError:'Локальный отчёт недоступен. Новые задания приостановлены; исходные настройки сохранены. Восстановите настройки папок на компьютере.'};
+}
+
 /** Проверяет известные поля JSONB: отчёт компьютера не может сломать страницу подключения. */
 export function workspaceReport(value: unknown): Record<string, unknown> {
     const fail = () => { throw new BadRequestException('Некорректный отчёт локального MCP. Обновите клиент и повторите подключение.'); };
@@ -16,6 +32,7 @@ export function workspaceReport(value: unknown): Record<string, unknown> {
         if (report[field] !== undefined && (!Number.isSafeInteger(report[field]) || Number(report[field]) < 0)) { return fail(); }
     }
     if (report.ragSupported !== undefined && typeof report.ragSupported !== 'boolean') { return fail(); }
+    if (report.reportUnavailable !== undefined && typeof report.reportUnavailable !== 'boolean') { return fail(); }
     if(report.runtimeArtifactTarget!==undefined&&!['darwin-arm64','darwin-x64','linux-arm64-glibc','linux-x64-glibc','linux-arm64-musl','linux-x64-musl','win32-arm64','win32-x64'].includes(String(report.runtimeArtifactTarget)))return fail();
     if (report.bindings !== undefined) {
         if (!Array.isArray(report.bindings) || report.bindings.length > 1000) { return fail(); }

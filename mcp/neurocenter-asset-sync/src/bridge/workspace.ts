@@ -84,6 +84,18 @@ export async function setRoot(root: string): Promise<Workspace> {
         return workspace;
     });
 }
+/** Runtime identity remains readable when project state cannot produce an authoritative report. */
+export async function bridgePresenceReport() {
+    return {
+        platform: process.platform,
+        arch: process.arch,
+        runtimeVersion: process.versions.node,
+        ...(TARGETS.includes(runtimeArtifactTarget())?{runtimeArtifactTarget:runtimeArtifactTarget()}:{}),
+        bridgeVersion: BRIDGE_VERSION,
+        buildId: await bridgeBuildId(),
+        protocolVersion: BRIDGE_PROTOCOL,
+    };
+}
 export async function workspaceReport() {
     const workspace = await readState<Workspace>('workspace');
     let folders:string[]=[];
@@ -96,13 +108,7 @@ export async function workspaceReport() {
         }
     }
     return {
-        platform: process.platform,
-        arch: process.arch,
-        runtimeVersion: process.versions.node,
-        ...(TARGETS.includes(runtimeArtifactTarget())?{runtimeArtifactTarget:runtimeArtifactTarget()}:{}),
-        bridgeVersion: BRIDGE_VERSION,
-        buildId: await bridgeBuildId(),
-        protocolVersion: BRIDGE_PROTOCOL,
+        ...await bridgePresenceReport(),
         capabilities: BRIDGE_CAPABILITIES,
         previousDeviceCompletions: await previousDeviceCompletions(),
         ...await localRagStatus(),

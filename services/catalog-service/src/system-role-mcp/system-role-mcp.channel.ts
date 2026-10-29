@@ -173,10 +173,10 @@ export class SystemRoleMcpChannel {
     }
     private live(session: McpSessionRow): void { if (session.state !== 'open' || !future(session.deadline_at) || !future(session.worker_lease_until)) conflict(); }
     private async currentDevice(db: Db, device: Device, token: unknown, exclusive = false): Promise<boolean> {
-        const row = typeof token === 'string' ? (await db.query<{ paused: boolean }>(`SELECT id,paused_until>clock_timestamp() AS paused FROM bridge_devices WHERE id=$1 AND email=$2 AND token_hash=$3
+        const row = typeof token === 'string' ? (await db.query<{ paused: boolean;report_unavailable:boolean }>(`SELECT id,paused_until>clock_timestamp() AS paused,report->>'reportUnavailable'='true' AS report_unavailable FROM bridge_devices WHERE id=$1 AND email=$2 AND token_hash=$3
             AND NOT revoked AND expires_at>clock_timestamp() FOR ${exclusive ? 'UPDATE' : 'SHARE'}`, [device.id, device.email, digest(token)])).rows[0] : undefined;
         if (!row) throw new UnauthorizedException('Подключение MCP истекло или отозвано.');
-        return row.paused === true;
+        return row.paused === true||exclusive&&row.report_unavailable===true;
     }
     /** Replaying a durable preclaim intent retires execution; it never allocates work or asserts physical cleanup. */
     private async recoverClaim(db: Db, token: unknown, requestId: string, retireUnknown = false) {

@@ -404,11 +404,11 @@ async function main() {
         next('Установка общего контракта ассетов');
         await prepareWorkspaceDependencies();
         await forPackages(command, next);
+        next('Подготовка образа проверки снимков');
+        await buildDevSnapshotImage(root,process.env);
         next('Подготовка dev-поставки моста');
         const {prepareDevBridge} = await import('./workspace/dev-bridge-runtime.mjs');
         await prepareDevBridge({root, node, environment: process.env, output});
-        next('Подготовка образа проверки снимков');
-        await buildDevSnapshotImage(root,process.env);
         output.success('Зависимости установлены');
         output.info('Запустить проект', 'scripts/dev.sh up');
     }

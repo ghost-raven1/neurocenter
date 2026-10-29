@@ -22,4 +22,20 @@ describe('bounded MCP transport sessions',()=>{
   finally{await poller.stop();}
   expect(closed).toContain(jobs[0].id);expect(poller.active).toBe(0);expect(claims).toBeLessThanOrEqual(3);
  });
+ it('suspends new claims without aborting an admitted session or its durable completion',async()=>{
+  const deviceId=randomUUID(),id=randomUUID(),job={id,lease:randomUUID(),payload:{sessionId:id}}as SessionJob;
+  ({temporary}=await workspaceFixture());await writeState('credentials',{deviceId,token:'fixture',email:'owner@example.test'});
+  let permitted=true,claims=0,release!:()=>void,activeSignal:AbortSignal|undefined;
+  const gate=new Promise<void>(done=>{release=done;}),complete=vi.fn(async()=>({ok:true,closed:true})),recover=vi.fn(async()=>{});
+  const poller=startRoleMcpPoller({canClaim:()=>permitted,recover,
+   claim:async(_signal,request)=>++claims===1?{...job,requestId:request.requestId}:null,
+   authorize:async()=>{},run:async(_job,_device,_authorize,_deps,signal)=>{activeSignal=signal;await gate;return {state:'succeeded',message:'closed',result:{schemaVersion:1,sessionId:id,closed:true}};},complete});
+  try{
+   await vi.waitFor(()=>expect(poller.active).toBe(1));await vi.waitFor(()=>expect(claims).toBe(2));
+   permitted=false;poller.wake();await vi.waitFor(()=>expect(recover).toHaveBeenCalledTimes(2));
+   expect(claims).toBe(2);expect(activeSignal?.aborted).toBe(false);expect(complete).not.toHaveBeenCalled();
+   release();await vi.waitFor(()=>expect(complete).toHaveBeenCalledOnce());expect(activeSignal?.aborted).toBe(false);
+   permitted=true;poller.wake();await vi.waitFor(()=>expect(claims).toBe(3));
+  }finally{release();await poller.stop();}
+ });
 });

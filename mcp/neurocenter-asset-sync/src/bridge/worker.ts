@@ -35,6 +35,7 @@ import {
     commitProjectBinding,
     recoverPendingWorkspaceIdentity,
     workspaceReport,
+    bridgePresenceReport,
     projectFolder,
     projectBindingId,
     type WorkspaceBindingMode,
@@ -150,6 +151,7 @@ export async function runWorker(): Promise<void> {
     let cleanupPending:Promise<unknown>|undefined,lastCleanup=0;
     let cleanupController:AbortController|undefined;
     let observationsPending:Promise<void>|undefined;
+    let workspaceHealthy=false;
     const heartbeat = (): Promise<void> => {
         if (stopped) { return Promise.resolve(); }
         if (heartbeatPending) { return heartbeatPending; }
@@ -161,14 +163,22 @@ export async function runWorker(): Promise<void> {
                 socket.auth = { token: fresh.token };
                 socket.disconnect().connect();
             }
-            const report = await workspaceReport();
+            let report, degraded=false;
+            try { report=await workspaceReport(); }
+            catch {
+                degraded=true;workspaceHealthy=false;
+                report=await bridgePresenceReport();
+                process.stderr.write('neurocenter bridge: локальный отчёт недоступен; новые задания приостановлены, исходные файлы сохранены.\n');
+            }
             if (!stopped) {
                 let finishPublication!:()=>void;
                 const publication=new Promise<void>(resolve=>{finishPublication=resolve;});
                 heartbeatPublication=publication;
                 try{
-                await api('heartbeat', report);
+                await api(degraded?'presence':'heartbeat', report);
                 if (stopped) { return; }
+                if(degraded)return;
+                workspaceHealthy=true;
                 void synchronizeOpenCodeModels(() => stopped).catch(() => undefined);
                 if(!cleanupPending&&Date.now()-lastCleanup>60*60_000){
                     lastCleanup=Date.now();
@@ -191,7 +201,6 @@ export async function runWorker(): Promise<void> {
         try {
             await recoverComputerSetupJobs();
             await roleMcpStopping;
-            if(!stopped&&!roleMcpPoller)roleMcpPoller=startRoleMcpPoller();
             await recoverMemoryCompletions(saveCompletion);
             await recoverPendingWorkspaceIdentity();
             await recoverFileJobs();
@@ -203,8 +212,10 @@ export async function runWorker(): Promise<void> {
             await startHostedRagConnections();
             await deliverCompletions();
             await heartbeat();
+            if(stopped||!workspaceHealthy)return;
+            if(!roleMcpPoller)roleMcpPoller=startRoleMcpPoller({canClaim:()=>workspaceHealthy});
             if(!observationsPending)observationsPending=synchronizeLearningObservations().catch(()=>undefined).finally(()=>{observationsPending=undefined;});
-            while (!stopped) {
+            while (!stopped&&workspaceHealthy) {
                 const claimant = credentials!;
                 const deviceId = claimant.deviceId;
                 const current = await api<Job | null>('jobs/claim', undefined, claimant.token);

@@ -327,8 +327,8 @@ export class DeviceJobs {
         let discard = false;
         try {
             await client.query('BEGIN');
-            const connection = await client.query('SELECT id,paused_until>now() AS paused FROM bridge_devices WHERE id=$1 FOR UPDATE', [device.id]);
-            if (connection.rows[0]?.paused) { await client.query('COMMIT'); return null; }
+            const connection = await client.query("SELECT id,paused_until>now() AS paused,report->>'reportUnavailable'='true' AS report_unavailable FROM bridge_devices WHERE id=$1 FOR UPDATE", [device.id]);
+            if (connection.rows[0]?.paused||connection.rows[0]?.report_unavailable===true) { await client.query('COMMIT'); return null; }
             const active = await client.query("SELECT 1 FROM bridge_jobs WHERE device_id=$1 AND state='running' AND lease_until>now() LIMIT 1", [device.id]);
             if (active.rows.length) { await client.query('COMMIT'); return null; }
             const { rows } = await client.query(
