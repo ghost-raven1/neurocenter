@@ -60,4 +60,14 @@ describe('Bridge background refresh ownership', () => {
         await act(async () => old.resolve(bridgeFixture().devices));
         expect(io.devices).toHaveBeenCalledTimes(2); expect(value.device?.id).toBe(paired.id); expect(value.devicesReady).toBe(true);
     });
+    it('shares an explicit selection with another mounted bridge consumer in the same tab', async () => {
+        const first = bridgeFixture().devices[0], second = {...first, id: 'other-selected-computer', name: 'Other computer'};
+        io.devices.mockResolvedValue([first, second]);
+        let other: ReturnType<typeof useBridge>;
+        function Consumers() {value = useBridge(); other = useBridge(); return null;}
+        await act(async () => root.render(createElement(Consumers)));
+        await act(async () => value.choose(second.id));
+        expect(value.device?.id).toBe(second.id); expect(other!.device?.id).toBe(second.id);
+        expect(localStorage.getItem('neurocenter.device.' + io.user.email)).toBe(second.id);
+    });
 });

@@ -1,0 +1,22 @@
+.computer-header {
+    &__trigger.ant-btn {
+        display: inline-flex; align-items: center; gap: 10px; height: 48px; max-width: 460px;
+        padding: 6px 10px; border: 1px solid #e5ebf0; border-radius: 10px; background: #f8fafc; text-align: left;
+        > .anticon { flex-shrink: 0; color: #557087; }
+        > .anticon + span { margin-left: 0; }
+        > .computer-header__identity, > .computer-header__cli {
+            display: flex; flex-direction: column; min-width: 0; gap: 2px;
+        }
+    }
+    &__identity { max-width: 200px; }
+    &__name, &__cli > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 16px; }
+    &__name { color: #294459; font-size: 12px; font-weight: 600; }
+    &__status, &__cli time { color: #758697; font-size: 10px; line-height: 14px; white-space: nowrap; }
+    &__status_online { color: #367c45; }
+    &__divider { width: 1px; height: 24px; background: #dde5ec; flex-shrink: 0; }
+    &__cli { max-width: 170px; font-size: 12px; }
+    &__details { width: 420px; display: grid; gap: 12px; outline: none;
+        .ant-descriptions-item-label { font-size: 12px; }
+        .ant-alert { max-width: 100%; }
+    }
+}

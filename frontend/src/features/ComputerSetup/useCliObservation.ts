@@ -13,7 +13,7 @@ import {cliTerminal, cliUuid, initialCliObservation} from './model';
 import {cliStorageKey, type CliStorage} from './storage';
 
 /** Auth and selected ID fence async work; heartbeat objects never create another automatic request. */
-export function useCliObservation(bridge: ReturnType<typeof useBridge>, masterEnabled: boolean) {
+export function useCliObservation(bridge: ReturnType<typeof useBridge>, masterEnabled: boolean, automatic = true) {
     const {scope, captureOwner} = useAuthRequestOwner(), user = useSelector((value: RootState) => value.userBlock.user);
     const availability = useFeatureAvailability('computer_setup', 'computer_connections');
     const email = user?.email ?? '', role = user?.activeRole ?? '', deviceId = bridge.device?.id ?? '';
@@ -23,6 +23,7 @@ export function useCliObservation(bridge: ReturnType<typeof useBridge>, masterEn
     const blocker = cliObservationBlocker({device: bridge.device, verified: bridge.devicesReady && !bridge.errors.devices, assignedRole, role,
         enabled: availability.enabled, reason: availability.reason, masterEnabled});
     const canStart = !blocker && !!lock && proofSupported;
+    const automaticAllowed = useRef(automatic); automaticAllowed.current = automatic;
     const latest = useRef({canStart, canCancel: false}); latest.current = {canStart, canCancel: assignedRole && roleLevel(role) >= 1 && cliUuid(deviceId)};
     const [result, setResult] = useState({identity, state: initialCliObservation()});
     const controller = useMemo(() => {
@@ -34,12 +35,12 @@ export function useCliObservation(bridge: ReturnType<typeof useBridge>, masterEn
     }, [scope, email, role, deviceId, captureOwner, lock]);
     useLayoutEffect(() => {
         controller.activate();
-        if (scope && email && cliUuid(deviceId)) void controller.refresh().then(() => controller.automatic());
+        if (scope && email && cliUuid(deviceId)) void controller.refresh().then(() => {if (automaticAllowed.current) return controller.automatic();});
         const changed = (event: StorageEvent): void => {if (event.key === null || event.key === cliStorageKey(email, deviceId)) controller.storageChanged();};
         window.addEventListener('storage', changed);
         return () => {window.removeEventListener('storage', changed); controller.dispose();};
     }, [controller, scope, email, deviceId]);
-    useEffect(() => {if (canStart) void controller.automatic();}, [controller, canStart]);
+    useEffect(() => {if (canStart && automatic) void controller.automatic();}, [controller, canStart, automatic]);
     const state = result.identity === identity ? result.state : initialCliObservation();
     useEffect(() => {
         if (cliTerminal(state.job) || !state.intent && !state.job || state.canReplay || state.denied || state.storageError) return;

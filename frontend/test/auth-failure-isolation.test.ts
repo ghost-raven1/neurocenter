@@ -27,6 +27,8 @@ vi.mock('../src/modules/Operations/OperationsButton', () => ({ default: () => nu
 vi.mock('../src/features/ModelChat/ChatLauncher', () => ({ ChatLauncher: () => null }));
 vi.mock('../src/features/ChatActivity/useChatPresence', () => ({ useChatPresence: () => undefined }));
 vi.mock('../src/features/McpBridge/BridgePairing', () => ({ BridgePairing: () => null }));
+vi.mock('../src/features/ComputerSetup/ComputerEnvironment', () => ({ComputerEnvironmentProvider: ({children}: {children: ReactNode}) => children}));
+vi.mock('../src/features/ComputerSetup/ComputerHeader', () => ({ComputerHeader: () => null}));
 vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
     return { Grid: { useBreakpoint: () => ({ lg: true }) }, Layout: Object.assign(content, { Sider: content, Header: content, Content: content }),
