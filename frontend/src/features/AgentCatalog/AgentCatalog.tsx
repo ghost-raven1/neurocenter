@@ -25,6 +25,7 @@ import {useSelector} from 'react-redux';
 import type {RootState} from '../../store';
 import { useAgentReadiness } from './useAgentReadiness';
 import { AgentTrialModal } from './AgentTrialModal';
+import { agentUpdate, showAgentUpdate } from './agentUpdates';
 
 /** Common templates, immutable project pins and actual bridge delivery share one visible flow. */
 export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
@@ -37,6 +38,7 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     const actions = useAgentActions({ ...props, catalog, refresh });
     const [query, setQuery] = useState(''), [projectOnly, setProjectOnly] = useState(!!embedded);
     const [showArchive, setShowArchive] = useState(false);
+    const [updateFilter, setUpdateFilter] = useState({scope: '', enabled: false});
     const [editing, setEditing] = useState<ICatalogAgent | 'new'>(), [viewId, setViewId] = useState<string>();
     const [projectEditing, setProjectEditing] = useState<{assignment: IProjectAgent; revision: number}>();
     const [trialAgentId, setTrialAgentId] = useState<string>();
@@ -49,10 +51,24 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
     const confirmation = useRef<{destroy(): void}>();
     useEffect(() => { setEditing(undefined); setViewId(undefined); setProjectEditing(undefined); setTrialAgentId(undefined); setProviderSetup(undefined); setQuery(''); setProjectOnly(!!embedded); setShowArchive(false); return () => confirmation.current?.destroy(); }, [scope, projectId, embedded]);
     const assignments = useMemo(() => new Map(catalog?.assignments.map(item => [item.agentId, item]) ?? []), [catalog]);
-    const shown = useMemo(() => catalog ? visibleAgents(catalog, query, !!projectId && projectOnly, isMain && showArchive) : [], [catalog, query, projectId, projectOnly, isMain, showArchive]);
+    const filtered = useMemo(() => catalog ? visibleAgents(catalog, query, !!projectId && projectOnly, isMain && showArchive) : [], [catalog, query, projectId, projectOnly, isMain, showArchive]);
     const connection = agentConnection(props);
     const target = selectedAgentTarget(props);
     const unavailable = loading || !!error || !catalog || actions.unconfirmed;
+    const updateScope = JSON.stringify([scope, projectId, target]);
+    const onlyUpdates = updateFilter.scope === updateScope && updateFilter.enabled;
+    useEffect(() => { setUpdateFilter({scope: updateScope, enabled: false}); }, [updateScope]);
+    const updateAgents = new Map(catalog?.items.map(agent => [agent.id, agent]) ?? []);
+    for (const assignment of catalog?.assignments ?? []) if (!updateAgents.has(assignment.agentId)) updateAgents.set(assignment.agentId, assignment.card);
+    const updates = new Map([...updateAgents.values()].map(agent => {
+        const assignment = assignments.get(agent.id);
+        return [agent.id, agentUpdate(agent, assignment, assignment && catalog ? projectAgentStatus(catalog, assignment, target) : undefined, !unavailable)] as const;
+    }));
+    const updateRows = [...updates.values()];
+    const shown = filtered.filter(agent => !onlyUpdates || !!updates.get(agent.id) && showAgentUpdate(updates.get(agent.id)!));
+    if (onlyUpdates) for (const assignment of catalog?.assignments ?? []) {
+        if (assignment.removed && updates.get(assignment.agentId)?.needsApply && !shown.some(agent => agent.id === assignment.agentId)) shown.push(assignment.card);
+    }
     const pending = !!catalog?.deliveries.some(item => connection.target && item.deviceId === connection.target.deviceId
         && item.bindingId === connection.target.expectedBindingId && item.instanceId === connection.target.expectedInstanceId
         && item.revision === catalog.revision && ['queued', 'running', 'reconciling'].includes(item.state));
@@ -97,6 +113,12 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         {error && <Alert showIcon type={catalog ? 'warning' : 'error'} className="agent-catalog__notice" message={catalog ? 'Не удалось обновить агентов — показаны предыдущие данные' : 'Агенты не загружены'} description={error} action={<Button onClick={() => { void refresh(); }}>Повторить</Button>} />}
         {actions.error && <Alert showIcon type="error" className="agent-catalog__notice" message={actions.error} action={actions.unconfirmed && <Space wrap><Button disabled={actions.busy} onClick={() => { void actions.repeat(); }}>Повторить запрос</Button><Button disabled={actions.busy} onClick={() => { void actions.recheck(); }}>Перечитать состояние</Button></Space>} />}
         {actions.notice && <Alert showIcon type="info" className="agent-catalog__notice" message={actions.notice} />}
+        {projectId && catalog && <Alert showIcon type="info" className="agent-catalog__notice" message="Обновления агентов" description={<Space wrap>
+            <Typography.Text>{unavailable ? 'Новые редакции пока не подтверждены.' : `Новые шаблоны в каталоге: ${updateRows.filter(item => item.catalogNewer).length}.`}
+                {' '}Ожидают применения: {updateRows.filter(item => item.needsApply).length}.</Typography.Text>
+            <Checkbox checked={onlyUpdates} onChange={event => setUpdateFilter({scope: updateScope, enabled: event.target.checked})}>Только обновления</Checkbox>
+            <Typography.Text type="secondary">Ожидание и ошибки остаются видимыми.</Typography.Text>
+        </Space>} />}
         {canReadTrials && readiness.error && !trialAgentId && <Alert type="warning" showIcon className="agent-catalog__notice" message="Состояние испытаний не обновилось" description={readiness.error}
             action={<Button loading={readiness.loading} onClick={() => { void readiness.refresh(); }}>Перечитать испытания</Button>} />}
         {projectId && <div className="agent-catalog__connection"><BridgeConnection bridge={bridge} projectId={projectId} compact showReadinessNotice={false} />
@@ -113,13 +135,13 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
             const trial = readiness.items.find(item => item.agentId === agent.id);
             return <Col xs={24} xl={12} key={agent.id}><AgentCard agent={agent} assignment={assignment} status={status} isMain={isMain} canManage={canManage} projectSelected={!!projectId} feedback={<CatalogFeedback catalogId={'agent:' + agent.id} title={agent.name}/>}
                 readiness={trial} trialChecking={checkingTrial(agent.id)} trialDisabled={!trial || actions.busy} onTrial={canReadTrials && assignment && !assignment.removed ? () => setTrialAgentId(agent.id) : undefined}
-                busy={actions.busy} unavailable={unavailable} onView={() => setViewId(agent.id)} onEdit={() => setEditing(agent)} onArchived={() => { void refresh(); }}
+                busy={actions.busy || !!status?.busy} unavailable={unavailable} onView={() => setViewId(agent.id)} onEdit={() => setEditing(agent)} onArchived={() => { void refresh(); }}
                 onAssign={() => perform('assign', assignment?.removed ? assignment.card : agent)}
                 onConfigure={() => { if (assignment && catalog.revision !== null) setProjectEditing({ assignment, revision: catalog.revision }); }}
                 onToggle={() => { if (assignment) perform('configure', assignment.card, { enabled: !assignment.enabled }); }}
                 onRemove={() => { if (assignment) remove(assignment); }} onUpdate={() => { if (assignment) update(agent, assignment); }} /></Col>;
         })}</Row> : <Empty description={query ? 'По этому запросу агенты не найдены' : projectOnly && projectId ? 'В проект пока не добавлены агенты' : 'В каталоге пока нет агентов'}>
-            {(query || projectOnly) && <Button onClick={() => { setQuery(''); setProjectOnly(false); }}>Показать все агенты</Button>}
+            {(query || projectOnly || onlyUpdates) && <Button onClick={() => { setQuery(''); setProjectOnly(false); setUpdateFilter({scope: updateScope, enabled: false}); }}>Показать все агенты</Button>}
         </Empty>)}
         {(projectId||isMain)&&<details className="agent-catalog__advanced" open={advancedOpen} onToggle={event=>{if(event.target===event.currentTarget)setAdvancedOpen(event.currentTarget.open);}}>
             <summary>{projectId?'Файлы проекта и сервисные инструменты':'Сервисные инструменты'}{advancedAttention?' · требуется внимание':''}</summary>

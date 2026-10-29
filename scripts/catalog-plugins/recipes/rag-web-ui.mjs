@@ -4,9 +4,9 @@ import path from 'node:path';
 export const RAG_LOCAL_UI = Object.freeze({ schemaVersion: 1, application: 'opencode-rag', entrypoint: 'opencode-rag.mjs', args: ['ui', '--port', '0', '--no-open'] });
 const bootstrap = '<script>const m=location.hash.match(/^#neurocenter-token=([a-f0-9]{48})$/);if(m){sessionStorage.setItem("opencode-rag-token",m[1]);history.replaceState(null,"",location.pathname);}</script>';
 const serverChanges = [
-    ['const store = new LanceDbStore(storePath, vectorDimension);', 'const store = protectedNativeStore(new LanceDbStore(storePath, vectorDimension), { storePath, config: cfg, get dimension() { return cfg.embedding.vectorDimension ?? vectorDimension; } });'],
+    ['const store = cfg\n        ? createVectorStore(cfg, storePath, vectorDimension, cwd ?? process.cwd())\n        : new LanceDbStore(storePath, vectorDimension);', 'const store = protectedNativeStore(cfg ? createVectorStore(cfg, storePath, vectorDimension, cwd ?? process.cwd()) : new LanceDbStore(storePath, vectorDimension), { storePath, config: cfg, get dimension() { return cfg.embedding.vectorDimension ?? vectorDimension; } });'],
     ['embedderPromise = Promise.resolve(createEmbedder(cfg));', 'embedderPromise = managedUiEmbedder(cfg, store).catch(error => { embedderPromise = null; throw error; });'],
-    ['const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg, getEmbedder, token, configPath);', 'const apiHandler = managedUiRequests(createApiHandler(store, keywordIndex, storePath, cwd, cfg, getEmbedder, token, configPath), { root: cwd, storePath, configPath });'],
+    ['const apiHandler = createApiHandler(browseStore, keywordIndex, storePath, cwd, cfg, getEmbedder, token, configPath);', 'const apiHandler = managedUiRequests(createApiHandler(browseStore, keywordIndex, storePath, cwd, cfg, getEmbedder, token, configPath), { root: cwd, storePath, configPath });'],
     ['                port,', '                port: server.address().port,'],
     ['server.close(() => {\n                        store.close().catch(() => { });\n                        keywordIndex.close();\n                        resolveClose();\n                    });', 'server.close(async () => {\n                        try { await store.close(); } catch { } finally { keywordIndex.close(); resolveClose(); }\n                    });'],
 ];
@@ -128,5 +128,5 @@ export async function applyManagedWebUiCompatibility(directory) {
     const scriptFile = path.join(directory, 'upstream/dist/web/ui', script[1].slice('/ui/'.length));
     const dashboard = patchDashboard(await fs.readFile(scriptFile, 'utf8'));
     await Promise.all([fs.writeFile(serverFile, changedServer), fs.writeFile(apiFile, changedApi), fs.writeFile(scriptFile, dashboard), fs.writeFile(htmlFile, html.replace('<head>', '<head>' + bootstrap))]);
-    return { id: 'neurocenter-rag-web-ui', version: 2, files: ['upstream/dist/web/server.js', 'upstream/dist/web/api.js', 'upstream/dist/web/ui/index.html', 'upstream/dist/web/ui/' + script[1].slice('/ui/'.length)] };
+    return { id: 'neurocenter-rag-web-ui', version: 3, files: ['upstream/dist/web/server.js', 'upstream/dist/web/api.js', 'upstream/dist/web/ui/index.html', 'upstream/dist/web/ui/' + script[1].slice('/ui/'.length)] };
 }

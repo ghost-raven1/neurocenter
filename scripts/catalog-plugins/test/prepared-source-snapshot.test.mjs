@@ -100,7 +100,7 @@ for(const mode of ['NUL','oversize','hardlink','symlink'])test(`Prepared source 
 
 const canonicalRecipe=()=>validateRecipe({schemaVersion:1,key:'retained-rag',name:'Retained RAG',kind:'plugin',description:'Public producer fixture',revision:'git-'+RAG_PLUGIN_SOURCE.commit,
     source:{type:'repository',url:RAG_PLUGIN_SOURCE.url,commit:RAG_PLUGIN_SOURCE.commit,entrypoint:RAG_PLUGIN_SOURCE.entrypoint},targets:['darwin-arm64']});
-const upstream={version:'2.4.4',archiveSha256:'6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af',repository:RAG_PLUGIN_SOURCE.url,commit:RAG_PLUGIN_SOURCE.commit};
+const upstream={version:'2.12.2',archiveSha256:'a92207b01fa04df1ac4df45ead1f8bbca3e556b38f002e6dd94902ec09d609ee',repository:RAG_PLUGIN_SOURCE.url,commit:RAG_PLUGIN_SOURCE.commit};
 /** Only dependency modules and already-built public validators are borrowed; producer source resolves inside the fixture. */
 async function producerDependencies(root){
     const service=path.join(root,'services/catalog-service');
@@ -164,8 +164,11 @@ test('Adapted producer transient edits abort the actual canonical build before e
 test('Adapted producer snapshot materializes the real managed adapter copy closure in an isolated source tree',async t=>{
     const root=await fixture(t),records=await preparedSourceFiles(root),restored=path.join(root,'restored');
     for(const record of records){const target=path.join(restored,record.path);await fs.mkdir(path.dirname(target),{recursive:true});await fs.writeFile(target,record.content);}
-    // Web UI patching is outside this closure test; the actual copier and hosted import rewrite execute unchanged.
+    // Upstream patch contracts are outside this copy-closure test; helpers and their import rewrites execute unchanged.
     await fs.writeFile(path.join(restored,'scripts/catalog-plugins/recipes/rag-web-ui.mjs'),'export const RAG_LOCAL_UI={};export async function applyManagedWebUiCompatibility(){return {fixture:true};}\n');
+    const recipeFile=path.join(restored,'scripts/catalog-plugins/recipes/opencode-rag.mjs'),recipeSource=await fs.readFile(recipeFile,'utf8');
+    const start=recipeSource.indexOf('export async function applyManagedQuirksCompatibility(directory) {'),end=recipeSource.indexOf('/** Общие управляемые команды',start);
+    assert.ok(start>0&&end>start);await fs.writeFile(recipeFile,recipeSource.slice(0,start)+'export async function applyManagedQuirksCompatibility(){return {fixture:true};}\n\n'+recipeSource.slice(end));
     const output=path.join(root,'runtime'),core=path.join(output,'upstream/dist/core');await fs.mkdir(core,{recursive:true});await fs.writeFile(path.join(core,'runtime-overrides.js'),'export function merge(){\n    return merged;\n}\n');
     const {prepareManagedRagCommands}=await import(pathToFileURL(path.join(restored,'scripts/catalog-plugins/recipes/opencode-rag.mjs')).href);
     await prepareManagedRagCommands(output);
@@ -173,6 +176,9 @@ test('Adapted producer snapshot materializes the real managed adapter copy closu
     const {indexCorpusConfiguration}=await import(pathToFileURL(path.join(output,'rag-index-corpus.mjs')).href);assert.equal(typeof indexCorpusConfiguration,'function');
     assert.match(await fs.readFile(path.join(output,'rag-index-profile.mjs'),'utf8'),/from '\.\/rag-index-corpus\.mjs'/);
     assert.ok(!(await fs.readFile(path.join(output,'rag-index-profile.mjs'),'utf8')).includes('../../../../services/shared/'));
+    const guard=await import(pathToFileURL(path.join(output,'rag-quirks-guard.mjs')).href),journal=path.join(output,'quirks.jsonl');
+    await fs.writeFile(journal,'{broken}\n');assert.throws(()=>guard.assertManagedQuirksSource(output));
+    assert.equal(await fs.readFile(journal,'utf8'),'{broken}\n');
 });
 test('Source snapshot privacy uses the actual project public selection without root or nested npm credentials',async t=>{
     const producer=await controlledProducer(t),source=path.join(producer.root,'source'),output=path.join(producer.root,'output');

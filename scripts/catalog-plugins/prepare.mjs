@@ -21,7 +21,7 @@ export function builtinRecipes() {
         { key: 'opencode-rag', name: 'OpenCodeRAG', kind: 'mcp', revision: RAG_REVISION, tags: ['RAG', 'npm', 'Локальная настройка'],
             description: 'Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; модель и размерность подключаются в настройках проекта через мост. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.' },
         { key: 'opencode-rag-plugin', name: 'OpenCodeRAG (плагин)', kind: 'plugin', revision: RAG_PLUGIN_REVISION, tags: ['RAG', 'GitHub', 'Автоиндексация'],
-            description: 'Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Модель и размерность подключаются в настройках проекта через мост; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.' },
+            description: 'Плагин MrDoe/OpenCodeRAG 2.12.2 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Модель и размерность подключаются в настройках проекта через мост; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.' },
         { key: 'opencode-snip', name: 'opencode-snip', kind: 'plugin', revision: `${SNIP_PLUGIN_VERSION}+snip.${SNIP_VERSION}.pack.1`, tags: ['Терминал', 'GitHub Releases', 'Готовый комплект'],
             description: 'Сокращает вывод команд терминала через opencode-snip и встроенный snip CLI. Готовые бинарники из GitHub Releases, SHA-256 проверен; ручная установка CLI и изменение PATH не нужны. Сложные shell-команды остаются без изменений.' },
     ];

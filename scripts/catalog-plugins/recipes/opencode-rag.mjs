@@ -6,14 +6,14 @@ import { applyManagedWebUiCompatibility, RAG_LOCAL_UI } from './rag-web-ui.mjs';
 import { applyManagedPipeline } from './rag-managed-pipeline.mjs';
 
 export const RAG_HOSTED_EMBEDDING = Object.freeze({ schemaVersion: 1, profileSchemaVersion: 2, reindexSchemaVersion: 1 });
-export const RAG_LEARNING_QUIRKS = Object.freeze({ schemaVersion: 1, format: 'opencode-rag-quirks-jsonl', sourceSha256: '6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af' });
-export const RAG_VERSION = '2.4.4';
-export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.13`;
+export const RAG_LEARNING_QUIRKS = Object.freeze({ schemaVersion: 1, format: 'opencode-rag-quirks-jsonl', sourceSha256: 'a92207b01fa04df1ac4df45ead1f8bbca3e556b38f002e6dd94902ec09d609ee' });
+export const RAG_VERSION = '2.12.2';
+export const RAG_REVISION = `${RAG_VERSION}-mcp.pack.1`;
 export const RAG_SUPPORTED_TARGETS = Object.freeze(Object.keys(TARGETS).filter(target => target !== 'darwin-x64'));
-const sha256 = '6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af';
+const sha256 = 'a92207b01fa04df1ac4df45ead1f8bbca3e556b38f002e6dd94902ec09d609ee';
 // V2/TUI зависимости исключены; настоящий Web UI уже собран в закреплённом upstream-архиве.
 export const RAG_DEPENDENCIES = Object.freeze({
-    '@e965/xlsx': '0.20.3', '@lancedb/lancedb': '0.29.0', '@modelcontextprotocol/sdk': '1.29.0',
+    '@clickhouse/client': '1.24.1', fflate: '0.8.3', '@e965/xlsx': '0.20.3', '@lancedb/lancedb': '0.29.0', '@modelcontextprotocol/sdk': '1.29.0',
     '@thednp/dommatrix': '3.0.4', '@vscode/tree-sitter-wasm': '0.3.1', 'apache-arrow': '18.1.0',
     chokidar: '4.0.3', commander: '13.1.0', 'js-tiktoken': '1.0.21', mammoth: '1.12.0',
     minimatch: '8.0.7', 'p-limit': '7.3.0', 'pdfjs-dist': '6.3.289', picocolors: '1.1.1',
@@ -37,7 +37,7 @@ export async function prepareOpenCodeRagRuntime({ target, directory, dependencie
         throw new Error(target === 'darwin-x64' ? 'OpenCodeRAG: upstream LanceDB 0.29.0 не публикует native runtime для Intel Mac.' : 'Неизвестная платформа: ' + target);
     }
     await fs.mkdir(directory, { recursive: true });
-    const archive = await download('https://registry.npmjs.org/opencode-rag-plugin/-/opencode-rag-plugin-2.4.4.tgz', sha256);
+    const archive = await download('https://registry.npmjs.org/opencode-rag-plugin/-/opencode-rag-plugin-2.12.2.tgz', sha256);
     const temporary = await fs.mkdtemp(path.join(path.dirname(directory), 'rag-source-'));
     try {
         await extract(archive, temporary);
@@ -57,6 +57,36 @@ export async function applyHostedRuntimeCompatibility(directory) {
     return { id: 'neurocenter-rag-hosted-configuration', version: 1, file: 'upstream/dist/core/runtime-overrides.js' };
 }
 
+/** Validate the complete journal before upstream reconciliation can change its index or source. */
+export async function applyManagedQuirksCompatibility(directory) {
+    const file = path.join(directory, 'upstream/dist/quirks/quirk-store.js');
+    const source = await fs.readFile(file, 'utf8');
+    const stateFile = path.join(directory, 'upstream/dist/core/state-sync.js'), state = await fs.readFile(stateFile, 'utf8');
+    const mutations = ['updateQuirk(deps, id, patch)', 'addQuirk(deps, input)', 'removeQuirk(deps, id)', 'reconcileQuirks(deps)'];
+    const changes = [
+        ['const raw = readFileSync(filePath, "utf-8").trim();', 'const raw = readManagedQuirksJsonl(filePath).trim();'],
+        ...mutations.map(name => [`export async function ${name} {`, `export async function ${name} {\n    if (!isMemoryStore(deps.storePath)) assertManagedQuirksSource(deps.storePath);`]),
+        ['lastObserved: existing.lastObserved,\n        sourceRef,\n    };', 'lastObserved: existing.lastObserved,\n        sourceRef,\n    };\n    if (!isMemoryStore(deps.storePath)) assertManagedQuirksWrite(deps.storePath, updated);'],
+        ['lastObserved,\n        sourceRef: input.sourceRef,\n    };', 'lastObserved,\n        sourceRef: input.sourceRef,\n    };\n    if (!isMemoryStore(deps.storePath)) assertManagedQuirksWrite(deps.storePath, quirk);'],
+        ['await deps.store.addChunks(', 'if (!isMemoryStore(deps.storePath)) assertManagedQuirksSource(deps.storePath);\n    await deps.store.addChunks(', 3],
+        ['await deps.store.deleteByFilePath(', 'if (!isMemoryStore(deps.storePath)) assertManagedQuirksSource(deps.storePath);\n    await deps.store.deleteByFilePath(', 4],
+        ['function appendJsonl(filePath, q) {', 'function appendJsonl(filePath, q) {\n    const managedRaw = readManagedQuirksJsonl(filePath);\n    validateManagedQuirksJsonl(managedRaw + JSON.stringify(q) + "\\n");'],
+        ['function rewriteJsonl(filePath, quirks) {', 'function rewriteJsonl(filePath, quirks) {\n    readManagedQuirksJsonl(filePath);\n    validateManagedQuirksJsonl(quirks.map(q => JSON.stringify(q)).join("\\n") + "\\n");'],
+    ];
+    const stateChanges = [
+        ['export function mergeQuirkJsonl(local, remote) {', 'export function mergeQuirkJsonl(local, remote) {\n    validateManagedQuirksJsonl(local);\n    validateManagedQuirksJsonl(remote);'],
+        ['const local = await readFileOrUndefined(this.localPath(name));', 'if (name === "quirks") readManagedQuirksJsonl(this.localPath(name));\n            const local = await readFileOrUndefined(this.localPath(name));', 2],
+        ['const remoteHash = sha256(remote.data);', 'if (name === "quirks") validateManagedQuirksJsonl(remote.data);\n            const remoteHash = sha256(remote.data);'],
+        ['catch {\n                    // Upload the local copy; the next hydrate merges instead.', 'catch (error) {\n                    if (error?.code === "RAG_QUIRKS_INVALID") throw error;\n                    // Upload the local copy; the next hydrate merges instead.'],
+    ];
+    const known = (text, replacements) => !replacements.some(([before, , count = 1]) => text.split(before).length !== count + 1);
+    if (!known(source, changes) || !known(state, stateChanges) || source.includes('readManagedQuirksJsonl') || state.includes('validateManagedQuirksJsonl')) throw new Error('Изменился reader кварков OpenCodeRAG; обновите проверку целого источника.');
+    const apply = (text, replacements) => replacements.reduce((value, [before, after]) => value.replaceAll(before, after), text);
+    await fs.writeFile(file, 'import { readManagedQuirksJsonl, assertManagedQuirksSource, assertManagedQuirksWrite, validateManagedQuirksJsonl } from "../../../rag-quirks-guard.mjs";\n' + apply(source, changes));
+    await fs.writeFile(stateFile, 'import { readManagedQuirksJsonl, validateManagedQuirksJsonl } from "../../../rag-quirks-guard.mjs";\n' + apply(state, stateChanges));
+    return { id: 'neurocenter-rag-whole-quirks-source', version: 2, files: ['upstream/dist/quirks/quirk-store.js', 'upstream/dist/core/state-sync.js'] };
+}
+
 /** Общие управляемые команды сохраняют одни настройки и блокировки MCP, плагина и Web UI. */
 export async function prepareManagedRagCommands(directory) {
     for (const name of ['opencode-rag.mjs', 'rag-mcp.mjs', 'rag-context.mjs', 'rag-errors.mjs', 'rag-local-runtime.mjs',
@@ -69,8 +99,14 @@ export async function prepareManagedRagCommands(directory) {
         await fs.writeFile(path.join(directory, name), helper.replace('../../../../services/shared/rag-index-contract.cjs', './rag-index-contract.cjs'));
     }
     await fs.copyFile(fileURLToPath(new URL('../../../services/shared/rag-index-contract.cjs', import.meta.url)), path.join(directory, 'rag-index-contract.cjs'));
+    const quirksHelper = await fs.readFile(fileURLToPath(new URL('./adapters/rag-quirks-guard.mjs', import.meta.url)), 'utf8');
+    const quirksContract = '../../../../services/shared/project-learning-quirks.cjs';
+    if (quirksHelper.split(quirksContract).length !== 2) throw new Error('Изменилась зависимость проверки кварков RAG.');
+    await fs.writeFile(path.join(directory, 'rag-quirks-guard.mjs'), quirksHelper.replace(quirksContract, './project-learning-quirks.cjs'));
+    await fs.copyFile(fileURLToPath(new URL('../../../services/shared/project-learning-quirks.cjs', import.meta.url)), path.join(directory, 'project-learning-quirks.cjs'));
+    const quirks = await applyManagedQuirksCompatibility(directory);
     const hostedEmbedding = await applyHostedRuntimeCompatibility(directory);
-    return { ...await applyManagedWebUiCompatibility(directory), hostedEmbedding };
+    return { ...await applyManagedWebUiCompatibility(directory), hostedEmbedding, quirks };
 }
 
 /** Автономная поставка upstream MCP с явным индексированием и локальной настройкой модели. */

@@ -1,12 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { DEFAULT_CONFIG, findConfigFile, loadConfig, resolveLogConfig } from './upstream/dist/core/config.js';
+import { findConfigFile, loadWorkspaceConfig, resolveConfigPaths, resolveLogConfig } from './upstream/dist/core/config.js';
 import { createEmbedder, probeEmbeddingDimension } from './upstream/dist/embedder/factory.js';
 import { createVectorStore } from './upstream/dist/vectorstore/factory.js';
 import { readStoreDimension } from './upstream/dist/vectorstore/lancedb.js';
 import { KeywordIndex } from './upstream/dist/retriever/keyword-index.js';
+import { assertManagedQuirksSource } from './rag-quirks-guard.mjs';
 import { applyLocalRuntimeProfile } from './rag-local-runtime.mjs';
-import { managedRagConfiguration, readProjectRagConfiguration } from './rag-plugin-config.mjs';
+import { managedRagConfiguration, readWorkspaceRagConfiguration } from './rag-plugin-config.mjs';
 
 export function workspacePath(root, requested) {
     const resolved = path.resolve(root, requested);
@@ -32,7 +33,7 @@ export async function checkedWorkspacePath(root, requested) {
 export async function readRagConfiguration(root, env = process.env, { ui = false } = {}) {
     const source = findConfigFile(root);
     if (source) await checkedWorkspacePath(root, source);
-    const cfg = managedRagConfiguration(source ? loadConfig(source) : structuredClone(DEFAULT_CONFIG), readProjectRagConfiguration(source), root);
+    const cfg = managedRagConfiguration(loadWorkspaceConfig(root), readWorkspaceRagConfiguration(resolveConfigPaths(root)), root);
     const provider = env.NEUROCENTER_RAG_EMBEDDING_PROVIDER || cfg.embedding.provider || 'ollama';
     if (!['ollama', 'openai'].includes(provider)) throw new Error('Выберите протокол эмбеддингов ollama или openai.');
     const baseUrl = env.NEUROCENTER_RAG_EMBEDDING_URL || cfg.embedding.baseUrl;
@@ -54,6 +55,7 @@ export async function createRagContext(root, cfg) {
     // Ollama пишет исходный ответ в свой журнал до внешнего перехвата ошибок.
     const embedder = createEmbedder({ ...cfg, logging: { ...cfg.logging, level: 'none' } });
     const storePath = await checkedWorkspacePath(root, cfg.vectorStore.path);
+    assertManagedQuirksSource(storePath);
     const existingDimension = await readStoreDimension(storePath);
     const probe = await probeEmbeddingDimension(embedder);
     if (!probe.dimension) throw new Error('Модель эмбеддингов недоступна: проверьте локальную настройку.');
@@ -61,7 +63,7 @@ export async function createRagContext(root, cfg) {
     const dimension = probe.dimension;
     cfg.embedding.vectorDimension = dimension;
     await fs.mkdir(storePath, { recursive: true });
-    const store = createVectorStore(cfg, storePath, dimension);
+    const store = createVectorStore(cfg, storePath, dimension, root);
     let keywordIndex;
     try { keywordIndex = await KeywordIndex.load(storePath); }
     catch (error) { if (error.code !== 'ENOENT') { await store.close(); throw error; } keywordIndex = new KeywordIndex(storePath); }

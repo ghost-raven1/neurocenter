@@ -1,0 +1,32 @@
+# Design
+
+## Context
+
+Store уже хранит immutable project snapshot отдельно от общего head и использует CAS для repin. InstallPlans и DeviceJobs обеспечивают явное одобрение и локальную доставку. AgentCatalog сохраняет overrides при обновлении шаблона и проверяет exact device/binding/instance/revision receipt. Не хватает заметной сводки и различения всех версий.
+
+Действующий feed закреплён на старом внешнем index с RAG pack.11; app recipes pack.13 тоже используют upstream 2.4.4. Проверенный npm 2.12.2 имеет gitHead `5f71c3ef708ba0c632b40be53b7c07ec2b8ba843` и archive SHA-256 `a92207b01fa04df1ac4df45ead1f8bbca3e556b38f002e6dd94902ec09d609ee`. Public default требует V2, но отдельная фабрика `dist/plugin.js` сохраняется; её работа с OpenCode1.14.48 требует отдельного actual native доказательства.
+
+## Goals / Non-Goals
+
+**Goals:** минимально дополнить существующие карточки и действия; обновить действительную RAG-поставку; перенести текущую проверенную supply в основной Git с воспроизводимой локальной подготовкой.
+
+**Non-Goals:** другой UI framework, новая система разрешений или очередей, автоматическое принятие upstream latest, скрытое изменение пользовательского профиля, автоматическая смена embedding dimension, скачивание весов, одновременное объявление Linux/Windows проверенными после macOS.
+
+## Decisions
+
+1. Чистые selectors сравнивают head/pin/receipt. Короткая Ant Design сводка и фильтр только раскрывают существующие explicit actions. Смена scope сбрасывает фильтр. Отдельный новый API или дублирование update worker не нужны.
+2. RAG использует точный npm архив и прежний SDK 1.14.48 через управляемую внутреннюю фабрику. Зависимости добавляются только для реально достижимых static imports: `@clickhouse/client@1.24.1`, `fflate@0.8.3`. Blind SDK/engine bump и V2 default не принимаются.
+3. Exact patch contracts обновляются для четырёх аргументов store factory, live config/embedder, двух promotion веток и трёх lock cleanup. Неизвестные bytes остаются fail-closed. Web UI патчится в настоящем новом bundle с проверкой всех ожидаемых точек.
+4. Все пути загрузки/перестроения и upstream Quirk reader проверяют весь bounded JSONL до изменения данных. Старый source SHA остаётся разрешённым. Новый `deletedAt` полностью валидируется, сохраняется в file hash и пропускается только при создании опыта; существующие утверждённые знания не удаляются.
+5. Current-only manifest и source bootstrap переиспользуют существующие проверенные asset contract, immutable local export/import и conflict handling. Исторические descriptors разрешаются только по точным сохранённым bytes/SHA. Рабочая поставка содержит один текущий producer, без старых runtime архивов и второго asset-репозитория. Способ хранения определится по существующим форматам; Git commit не выдумывается из произвольного digest.
+
+## Risks / Trade-offs
+
+- Внутренняя фабрика upstream не является публичным обещанием OpenCode1 support → actual pinned engine, plugin/MCP/UI, live config и partial-failure приёмка обязательны до ready.
+- Новая версия умеет согласовывать кварки и central state → bounded whole-source validation предшествует native reader/reconcile, повреждённые bytes не исправляются автоматически.
+- Старые source receipts и custom card изменялись независимо → stable mapping, CAS и существующий explicit conflict workflow, без сброса БД.
+- Native rebuild зависит от ОС → builder готовит только квалифицированную target; непроверенные цели помечаются отдельно.
+
+## Migration Plan
+
+Сначала обновить exact source/locks и проверить helper contracts, затем собрать собственную host runtime generation и проверить закреплённый OpenCode. После этого подключить current metadata/source bootstrap, проверить запрет старого repo/Releases/weights и явную публикацию в собственном стенде. Сохранить старую immutable квитанцию и active pointer до полной проверки новой generation. При отказе использовать прежнюю generation и явное восстановление, не переименовывать старые bytes. Только Root выполняет feature-коммиты, интеграцию и отдельное разрешённое удаление прежнего asset-репозитория.

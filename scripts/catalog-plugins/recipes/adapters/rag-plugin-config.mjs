@@ -13,6 +13,19 @@ export function readProjectRagConfiguration(file) {
     return raw;
 }
 
+/** Raw global defaults and project overrides follow the same precedence as the reviewed upstream loader. */
+export function readWorkspaceRagConfiguration({ global, workspace }) {
+    const merge = (base, override) => {
+        const value = { ...base };
+        for (const [key, next] of Object.entries(override)) {
+            value[key] = next && typeof next === 'object' && !Array.isArray(next)
+                && value[key] && typeof value[key] === 'object' && !Array.isArray(value[key]) ? merge(value[key], next) : next;
+        }
+        return value;
+    };
+    return [global, workspace].filter(Boolean).reduce((value, file) => merge(value, readProjectRagConfiguration(file)), {});
+}
+
 /** Сохраняет конфиг проекта; новый проект использует локальную модель без дополнительных моделей. */
 export function managedRagConfiguration(config, rawConfiguration = {}, root) {
     let managed = structuredClone(config);

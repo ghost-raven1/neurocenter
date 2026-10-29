@@ -3,6 +3,7 @@ import { filePath } from '../publication/publication-validation';
 import { TARGETS } from '../../../shared/runtime-artifacts.cjs';
 import { isSourceEntrypoint } from '../../../shared/source-entrypoint.cjs';
 import { packageEntrypoints } from '../../../shared/source-candidates.cjs';
+import { RAG_PLUGIN_SOURCE } from '../../../shared/opencode-rag-source.cjs';
 import {fetchNpmMetadata} from './npm-source-transport';
 
 const semver = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -54,7 +55,7 @@ export async function resolveNpmSource(specifier: unknown, suppliedEntrypoint?: 
     let metadata: Record<string, unknown>;
     try { metadata = JSON.parse(raw) as Record<string, unknown>; } catch { throw new BadRequestException('npm вернул некорректное описание пакета.'); }
     if (!metadata || typeof metadata !== 'object' || metadata.name !== name || typeof metadata.version !== 'string' || !semver.test(metadata.version) || requestedVersion !== 'latest' && metadata.version !== requestedVersion) { throw new BadRequestException('npm вернул другую версию пакета.'); }
-    const prepared = name === 'opencode-rag-plugin' ? {version: '2.4.4', recommendedKind: 'mcp' as const, supportedTargets: TARGETS.filter(target => target !== 'darwin-x64')}
+    const prepared = name === 'opencode-rag-plugin' ? {version: RAG_PLUGIN_SOURCE.version, recommendedKind: 'mcp' as const, supportedTargets: [...RAG_PLUGIN_SOURCE.supportedTargets]}
         : name === 'opencode-snip' ? {version: '2.0.0', recommendedKind: 'plugin' as const, supportedTargets: [...TARGETS]} : undefined;
     if (prepared && metadata.version !== prepared.version) { throw new BadRequestException(`Для ${name} подготовлен совместимый адаптер версии ${prepared.version}. Укажите ${name}@${prepared.version}.`); }
     const detected = packageEntrypoints(metadata);

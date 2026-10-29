@@ -2,6 +2,7 @@
 const {createHash}=require('node:crypto');
 const QUIRKS_LIMITS=Object.freeze({bytes:1024*1024,totalBytes:1024*1024,records:1000,recordBytes:16384,contentBytes:8192,importedExperiences:1000,receiptBytes:1024});
 const QUIRKS_SOURCE_SHA256='6a21f4e39748394e56400364990f90ae0c9518cf6d16f62623fe664a951358af';
+const QUIRKS_SOURCE_SHA256S=Object.freeze([QUIRKS_SOURCE_SHA256,'a92207b01fa04df1ac4df45ead1f8bbca3e556b38f002e6dd94902ec09d609ee']);
 const SHA=/^[a-f0-9]{64}$/;
 const UUID=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value)&&[Object.prototype,null].includes(Object.getPrototypeOf(value));
@@ -40,8 +41,12 @@ function parseQuirksJsonl(value,settings){
         if(Buffer.byteLength(line)>limits.recordBytes)quota('recordBytes');if(!line.trim())fail();
         let parsed;try{parsed=JSON.parse(line);}catch{fail();}
         if(typeof parsed?.content==='string'&&Buffer.byteLength(parsed.content)>limits.contentBytes)quota('contentBytes');
-        let quirk;try{quirk=normalizeQuirk(parsed);}catch{fail();}
+        const deletedAt=parsed?.deletedAt;
+        if(deletedAt!==undefined&&(typeof deletedAt!=='string'||!Number.isFinite(Date.parse(deletedAt))||new Date(deletedAt).toISOString()!==deletedAt))fail();
+        const live={...parsed};delete live.deletedAt;
+        let quirk;try{quirk=normalizeQuirk(live);}catch{fail();}
         if(seen.has(quirk.id))fail();seen.add(quirk.id);
+        if(deletedAt!==undefined)continue;
         records.push({quirk,recordSha256:digest(line)});
     }
     return {fileSha256,records};
@@ -82,6 +87,6 @@ function normalizeQuirksReceipt(value){
 function supportsLearningQuirks(pkg){
     const value=pkg?.config?.extra?.learningQuirks;
     return pkg?.schemaVersion===5&&['mcp','plugin'].includes(pkg?.plugin?.kind)&&pkg?.config?.transport!=='remote'
-        &&exact(value,['schemaVersion','format','sourceSha256'])&&value.schemaVersion===1&&value.format==='opencode-rag-quirks-jsonl'&&value.sourceSha256===QUIRKS_SOURCE_SHA256;
+        &&exact(value,['schemaVersion','format','sourceSha256'])&&value.schemaVersion===1&&value.format==='opencode-rag-quirks-jsonl'&&QUIRKS_SOURCE_SHA256S.includes(value.sourceSha256);
 }
-module.exports={QUIRKS_LIMITS,QUIRKS_SOURCE_SHA256,supportsLearningQuirks,normalizeQuirksLimits,parseQuirksJsonl,preflightQuirkImport,normalizeQuirkSource,quirkExperienceKey,quirkReportedExperience,normalizeQuirksReceipt};
+module.exports={QUIRKS_LIMITS,QUIRKS_SOURCE_SHA256,QUIRKS_SOURCE_SHA256S,supportsLearningQuirks,normalizeQuirksLimits,parseQuirksJsonl,preflightQuirkImport,normalizeQuirkSource,quirkExperienceKey,quirkReportedExperience,normalizeQuirksReceipt};

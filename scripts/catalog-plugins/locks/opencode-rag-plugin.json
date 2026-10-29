@@ -8,6 +8,7 @@
       "name": "neurocenter-prepared-runtime",
       "version": "1.0.0",
       "dependencies": {
+        "@clickhouse/client": "1.24.1",
         "@e965/xlsx": "0.20.3",
         "@lancedb/lancedb": "0.29.0",
         "@modelcontextprotocol/sdk": "1.29.0",
@@ -17,6 +18,7 @@
         "apache-arrow": "18.1.0",
         "chokidar": "4.0.3",
         "commander": "13.1.0",
+        "fflate": "0.8.3",
         "js-tiktoken": "1.0.21",
         "mammoth": "1.12.0",
         "minimatch": "8.0.7",
@@ -26,6 +28,15 @@
         "sharp": "0.35.2",
         "web-tree-sitter": "0.26.9",
         "word-extractor": "1.0.4"
+      }
+    },
+    "node_modules/@clickhouse/client": {
+      "version": "1.24.1",
+      "resolved": "https://registry.npmjs.org/@clickhouse/client/-/client-1.24.1.tgz",
+      "integrity": "sha512-1kjKJ4uuD4J9JlRU4CpwEGfecstvtoGreBorhh7CxgB7r7PL54DCLD6gajKZhLCri84XlyD3CUxEm6rYkKC+dA==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=20"
       }
     },
     "node_modules/@e965/xlsx": {
@@ -1893,6 +1904,12 @@
       "dependencies": {
         "pend": "~1.2.0"
       }
+    },
+    "node_modules/fflate": {
+      "version": "0.8.3",
+      "resolved": "https://registry.npmjs.org/fflate/-/fflate-0.8.3.tgz",
+      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
+      "license": "MIT"
     },
     "node_modules/finalhandler": {
       "version": "2.1.1",

@@ -8,6 +8,7 @@ import { Button, Card, Tag, Typography } from 'antd';
 import { FC, ReactNode } from 'react';
 import type { IStoreApp, TStoreKind } from '../../features/Catalog/types';
 import {storeCardPlatforms,storeCardRevision,storeCardSource} from './storeCardPresentation';
+import type { IProjectCatalogUpdate } from './projectCatalogUpdates';
 
 const { Text, Paragraph } = Typography;
 
@@ -59,6 +60,7 @@ interface IAppCardProps {
     /** Зона действий в футере (стандартизированные кнопки). */
     action: ReactNode;
     feedback?: ReactNode;
+    update?: IProjectCatalogUpdate;
 }
 
 /**
@@ -69,7 +71,7 @@ interface IAppCardProps {
  * @param {IAppCardProps} props
  * @returns JSX-элемент карточки
  */
-const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback }) => {
+const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback, update }) => {
     const source=storeCardSource(app.origin),revision=storeCardRevision(app.revision),platforms=storeCardPlatforms(app.config);
     const description=app.description.trim(),tags=[...new Set(app.tags.map(tag=>tag.trim()).filter(Boolean))].slice(0,3);
     return (
@@ -87,10 +89,24 @@ const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, fee
                 {!!stats?.installs&&<span><DownloadOutlined /> {stats.installs} установок</span>}
                 <Text type="secondary" className="store-card__edition">Редакция {app.version}</Text>
             </div>
+            {update && <ProjectToolVersions app={app} update={update} />}
             {feedback}
             <div className="store-card__actions">{action}</div>
         </Card>
     );
 };
+
+/** Редакция назначения и квитанция файлов не подменяют проверку запуска инструмента. */
+function ProjectToolVersions({app, update}: {app: IStoreApp; update: IProjectCatalogUpdate}): JSX.Element {
+    const headRevision = storeCardRevision(update.head?.revision);
+    const projectRevision = storeCardRevision(app.revision);
+    return <div className="store-card__versions" role="status" style={{display: 'grid', gap: 2, fontSize: 12}}>
+        <Text type={update.catalogNewer ? 'warning' : 'secondary'}>Каталог: {update.head ? `${headRevision ? headRevision + ' · ' : ''}редакция ${update.head.version}` : 'версия не подтверждена'}</Text>
+        <Text type="secondary">Проект: {update.project.version && !app.pinError ? `${projectRevision ? projectRevision + ' · ' : ''}редакция ${update.project.version}` : 'версия не подтверждена'}</Text>
+        <Text type={update.computerDiffers ? 'warning' : 'secondary'}>Компьютер: {update.computer
+            ? `квитанция редакции ${update.computer.version}${update.computerDiffers ? ' · отличается от проекта' : ''}`
+            : update.receiptsReady ? 'нет квитанции выбранной папки' : 'версия не подтверждена'}</Text>
+    </div>;
+}
 
 export default AppCard;
