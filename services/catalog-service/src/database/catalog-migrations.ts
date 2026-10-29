@@ -33,6 +33,8 @@ import {PROJECT_CHAT_SCHEMA_SQL} from '../project-chat/project-chat.schema';
 import {PROJECT_CHAT_SCHEMA_ASSERT_SQL} from '../project-chat/project-chat.schema-verification';
 import {MODEL_RATE_LIMITS_SCHEMA_SQL} from '../model-rate-limits/model-rate-limits.schema';
 import {MODEL_RATE_LIMITS_SCHEMA_ASSERT_SQL} from '../model-rate-limits/model-rate-limits.schema-verification';
+import {MODEL_TOKEN_QUOTAS_SCHEMA_SQL} from '../model-token-quotas/model-token-quotas.schema';
+import {MODEL_TOKEN_QUOTAS_SCHEMA_ASSERT_SQL} from '../model-token-quotas/model-token-quotas.schema-verification';
 import {MODEL_USAGE_DETAILS_SCHEMA_SQL} from '../model-usage/model-usage-details.schema';
 import {DISCUSSIONS_SCHEMA_SQL} from '../discussions/discussions.schema';
 import {DISCUSSIONS_SCHEMA_ASSERT_SQL} from '../discussions/discussions.schema-verification';
@@ -122,4 +124,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:43,name:'role-specific-service-conversations',sql:SERVICE_ROLE_CONVERSATIONS_SCHEMA_SQL+'\n'+SERVICE_ROLE_CONVERSATIONS_SCHEMA_ASSERT_SQL},
     {version:44,name:'conditional-agent-response-summaries',sql:CHAT_SUMMARY_POLICY_SCHEMA_SQL+'\n'+CHAT_SUMMARY_POLICY_SCHEMA_ASSERT_SQL},
     {version:45,name:'durable-project-chat-method-workflows',sql:METHOD_CHAT_WORKFLOWS_SCHEMA_SQL+'\n'+METHOD_CHAT_WORKFLOWS_SCHEMA_ASSERT_SQL},
+    {version:46,name:'per-user-model-token-quotas',sql:MODEL_TOKEN_QUOTAS_SCHEMA_SQL+'\n'+MODEL_TOKEN_QUOTAS_SCHEMA_ASSERT_SQL},
 ];

@@ -1,3 +1,4 @@
+import {estimateModelTokens} from '../model-token-quotas/quota-estimate';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import {visionFixture} from '../../../shared/vision-fixture.cjs';
 import type {IModel,IModelVerification} from './model.types';
@@ -110,8 +111,9 @@ export class OllamaClient {
             ||endpoint==='chat'&&model.capability==='embedding')throw new Error('Протокол запроса не соответствует модели.');
         const installed=this.entry(await this.request('/api/tags',undefined,signal),model);
         if(!installed||!this.digestMatches(model,installed))throw new Error('Подготовленная версия модели недоступна.');
-        const request=()=>this.request('/api/'+endpoint,{...body,model:model.model,stream:false,keep_alive:'5m'},signal,600000,16*1024*1024);
-        const value=await(this.admission?this.admission.run(model,signal,request):request());
+        const payload={...body,model:model.model,stream:false,keep_alive:'5m'};
+        const request=()=>this.request('/api/'+endpoint,payload,signal,600000,16*1024*1024);
+        const value=await(this.admission?this.admission.run(model,signal,request,()=>estimateModelTokens(model,endpoint,payload)):request());
         if(value.model!==model.model)throw new Error('Runtime вернул ответ другой модели.');
         if(endpoint==='embed') {
             const count=Array.isArray(body.input)?body.input.length:1;
@@ -170,7 +172,7 @@ export class OllamaClient {
         await requireFeaturesEnabled(['model_hosting']); signal?.throwIfAborted();
         const action=async(signal?:AbortSignal)=>{
             const request=()=>this.request('/api/'+endpoint,body,signal,endpoint==='chat'?600000:180000);
-            const value=await(this.admission?this.admission.run(model,signal,request):request());validate(value);return value;
+            const value=await(this.admission?this.admission.run(model,signal,request,()=>estimateModelTokens(model,endpoint,body)):request());validate(value);return value;
         };
         return this.usage?withModelUsage({purpose:'verification'},()=>this.usage!.observe(model,endpoint,action,signal)):action(signal);
     }

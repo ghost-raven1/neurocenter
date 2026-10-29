@@ -20,6 +20,7 @@ import { modelInferenceBody } from '../models/inference.controller';
 import { requireFeatureEnabled, requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
 import { assertPendingChatInference } from './chat-inference-admission';
+import { savedChatFailureMessage } from './chat-failure';
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
 import { extractChatDocument } from './chat-document-extractor';
 import { chatContext, chatUsage, managedChatContextWindow, type IChatContextSettings, type IChatContext } from './chat-context';
@@ -402,7 +403,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             if(published)traceSavedChat('succeeded',{conversationId:scope.row.id,turnId:turn.id,requestId:turn.request_id});
         } catch (error) {
             const terminalStatus = combined.aborted ? 'cancelled' : 'failed';
-            const applied = await this.repository.fail(scope.row.id, turn.id, turn.request_id, terminalStatus, terminalStatus==='cancelled' ? 'Запрос остановлен. Можно повторить его.' : error instanceof BadRequestException || error instanceof ServiceUnavailableException || error instanceof ConflictException || error instanceof ForbiddenException && error.message.startsWith('Функция «') ? error.message : 'Модель не выполнила запрос. Проверьте подключение и повторите.');
+            const applied = await this.repository.fail(scope.row.id, turn.id, turn.request_id, terminalStatus, savedChatFailureMessage(error, terminalStatus === 'cancelled'));
             if(applied)traceSavedChat(terminalStatus,{conversationId:scope.row.id,turnId:turn.id,requestId:turn.request_id});
             if (error instanceof ForbiddenException || error instanceof ConflictException) throw error;
         } finally { if (this.active.get(turn.id)?.abort === abort) this.active.delete(turn.id); }

@@ -1,3 +1,4 @@
+import {estimateModelTokens} from '../model-token-quotas/quota-estimate';
 import type { IModel } from './model.types';
 import type { IRemoteModelConnection } from './remote-model.types';
 import { isRemoteModel } from './remote-model.types';
@@ -41,8 +42,11 @@ export class RemoteModelClient {
             catch (cause) { throw new RemoteModelError('response', (cause as Error).message); }
         }
         const route = openai ? endpoint === 'embed' ? '/embeddings' : responses ? '/responses' : '/chat/completions' : '/api/' + endpoint;
-        const request = () => this.request(remoteModelBaseUrl(connection.baseUrl) + route, payload, connection.apiKey, signal, connection.timeoutMs);
-        const value = await (this.options.admission ? this.options.admission.run(model, signal, request) : request());
+        const url=remoteModelBaseUrl(connection.baseUrl);
+        if(connection.apiKey&&(connection.apiKey.length>8192||/[\x00-\x20\x7f]/.test(connection.apiKey)))
+            throw new RemoteModelError('authorization','Сохранённый ключ удалённого API некорректен.');
+        const request = () => this.request(url + route, payload, connection.apiKey, signal, connection.timeoutMs);
+        const value = await (this.options.admission ? this.options.admission.run(model, signal, request, () => estimateModelTokens(model,endpoint,payload)) : request());
         const responseModel = connection.options?.responseModel ?? model.model;
         if (value.model !== responseModel) { throw new RemoteModelError('response', 'Удалённый API вернул ответ другой модели.'
             + (openai ? ' Укажите точный идентификатор ответа в параметрах подключения, если провайдер использует алиас.' : '')); }
@@ -118,7 +122,6 @@ export class RemoteModelClient {
 
     private async request(url: string, body: Json, apiKey?: string, signal?: AbortSignal, timeoutMs?: number): Promise<Json> {
         signal?.throwIfAborted();
-        if (apiKey && (apiKey.length > 8192 || /[\x00-\x20\x7f]/.test(apiKey))) { throw new RemoteModelError('authorization', 'Сохранённый ключ удалённого API некорректен.'); }
         const deadline = AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs ?? timeoutMs ?? 90000), ...(signal ? [signal] : [])]);
         try {
             const request:RequestInit={ method: 'POST', redirect: 'error', signal: deadline,

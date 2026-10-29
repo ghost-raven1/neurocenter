@@ -107,6 +107,12 @@ function requiredRouteFeatures(method,path,body){
     if(route==='/api/models/import-opencode')return ['opencode_model_sync'];
     // Enforcement can be disabled without losing its administrative settings.
     if(/^\/api\/models\/[^/]+\/rate-limit$/.test(route))return [];
+    if(/^\/api\/models\/[^/]+\/token-quotas\//.test(route)){
+        // Preserve encoded slashes inside a platform email without treating them as Express route separators.
+        const parts=path.replace(/\/+$/,'').split('/').map(decodeURIComponent);
+        if(parts[0]===''&&parts[1]==='api'&&parts[2]==='models'&&parts[3]&&!parts[3].includes('/')&&parts[4]==='token-quotas'&&parts[5]
+            &&(parts.length===6||parts.length===8&&parts[6]==='requests'&&parts[7]&&!parts[7].includes('/')))return [];
+    }
     if(/^\/api\/models(?:\/|$)/.test(route)||/^\/api\/projects\/[^/]+\/models(?:\/|$)/.test(route))return verb==='DELETE'?[]:['model_catalog'];
     if(/^\/api\/projects\/[^/]+\/embedding$/.test(route))return ['model_catalog','rag_sync'];
     // Exact accepted replays survive OFF; the owner checks rag_sync before any new plan.

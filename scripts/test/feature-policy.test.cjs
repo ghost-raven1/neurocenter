@@ -6,6 +6,21 @@ const {FeatureFlagError,readFeatures,requireFeaturesEnabled}=require('../../serv
 const {requiredRouteFeatures,requiredJobFeatures,requiredInferenceFeatures}=require('../../services/shared/feature-policy.cjs');
 const response=flags=>new Response(JSON.stringify(evaluateFeatureFlags(flags)));
 const env={FEATURE_FLAGS_SERVICE_URL:'http://flags.test',NEUROCENTER_INTERNAL_TOKEN:'qa-only'};
+test('Personal token quota enforcement defaults OFF without blocking policy receipts or exact recovery',()=>{
+ const definition=FEATURE_FLAGS.find(flag=>flag.key==='user_model_token_quotas');
+ assert.ok(definition);assert.equal(defaultFeatureFlags().user_model_token_quotas,false);
+ assert.deepEqual(definition.dependsOn,[]);
+ for(const [method,route]of [['GET','/api/models/model/token-quotas/person%40example.test'],['PUT','/api/models/model/token-quotas/person%40example.test'],['GET','/api/models/model/token-quotas/person%40example.test/requests/key']])assert.deepEqual(requiredRouteFeatures(method,route,{}),[]);
+ assert.deepEqual(requiredRouteFeatures('POST','/api/models',{}),['model_catalog']);
+});
+test('Encoded slash in a valid quota email preserves recovery without exempting another route',()=>{
+ for(const email of ['first/last@example.test','person+tag@example.test','person%name@example.test']){
+  const route='/api/models/model/token-quotas/'+encodeURIComponent(email);
+  assert.deepEqual(requiredRouteFeatures('PUT',route,{}),[],email);
+  assert.deepEqual(requiredRouteFeatures('PUT',route+'/unexpected',{}),['model_catalog']);
+ }
+ assert.deepEqual(requiredRouteFeatures('PUT','/api/%6dodels/model/token-quotas/first%2Flast%40example.test',{}),[]);
+});
 for(const key of FEATURE_FLAG_KEYS)test('Every capability has a complete immutable definition and enforces '+key,async()=>{
  const definition=FEATURE_FLAGS.find(flag=>flag.key===key);assert.ok(Object.isFrozen(definition));assert.ok(Object.isFrozen(definition.dependsOn));assert.ok(definition.name&&definition.description&&definition.group);
  const configured={...defaultFeatureFlags(),[key]:false},evaluated=evaluateFeatureFlags(configured);assert.equal(evaluated.flags[key],false);assert.equal(configured[key],false);

@@ -177,9 +177,10 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 308);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 377);
+    assert.equal(Object.keys(actual.paths).length, 310);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 380);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
+    for(const [pathname,methods] of Object.entries({'/api/models/{id}/token-quotas/{email}':['get','put'],'/api/models/{id}/token-quotas/{email}/requests/{requestKey}':['get']})) assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods,pathname);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
     assert.equal(actual.paths['/api/rag/sync'].post['x-neurocenter-service'], 'catalog-service');
@@ -195,6 +196,35 @@ test('Each model rate policy has a browser-only independent CAS contract', () =>
     const result=jsonResponse(route.get);
     for(const name of ['modelId','revision','requests','windowMs','enabled','canManage','featureEnabled'])assert.ok(result.properties[name],name);
     assert.equal(result.properties.requests.type,'number');assert.equal(result.properties.enabled.type,'boolean');
+});
+
+test('Personal token quotas describe exact receipts and decimal counters behind MainAdmin browser authority',()=>{
+    const route=actual.paths['/api/models/{id}/token-quotas/{email}'];
+    const receipt=actual.paths['/api/models/{id}/token-quotas/{email}/requests/{requestKey}'].get;
+    assert.deepEqual(Object.keys(route).sort(),['get','put']);
+    for(const operation of [route.get,route.put,receipt]){
+        assert.deepEqual(operation.security,[{sessionCookie:[]}]);
+        assert.equal(operation['x-neurocenter-service'],'catalog-service');
+        assert.match(operation.description,/MainAdmin/);
+        assert.match(operation.description,/OFF/);
+        for(const name of ['id','email'])assert.equal(operation.parameters.find(value=>value.name===name)?.required,true,name);
+    }
+    const body=route.put.requestBody.content['application/json'].schema;
+    assert.deepEqual(body.required,['requestKey','expectedRevision','enabled','tokenLimit','periodMs']);
+    assert.equal(body.properties.requestKey.type,'string');
+    assert.match(body.properties.tokenLimit.description,/Positive safe integer/);
+    assert.match(body.properties.periodMs.description,/31536000000/);
+    assert.match(route.put.description,/503.*unconfirmed/);
+    assert.match(route.put.description,/unsupported model surfaces return 409/);
+    const view=jsonResponse(route.get),counters=view.properties.counters.properties;
+    for(const name of ['chargedTokens','activeReservedTokens','unknownHeldTokens','remainingTokens','overrunTokens'])assert.equal(counters[name].type,'string',name);
+    assert.equal(counters.actualInputTokens.nullable,true);assert.equal(counters.actualOutputTokens.nullable,true);
+    assert.equal(view.properties.coverage.properties.managedText.type,'boolean');
+    for(const operation of [route.put,receipt]){
+        const result=jsonResponse(operation);
+        for(const name of ['modelId','userEmail','writerEmail','requestKey','requestFingerprint','input','policy'])assert.ok(result.properties[name],name);
+    }
+    assert.match(receipt.description,/404.*absence does not prove/);
 });
 
 test('Usage documents actor and API filters with scoped detail rather than exposing a user directory', () => {
@@ -269,6 +299,9 @@ test('Learning separates browser review, four core device actions and owned sync
         assert.deepEqual(actual.paths[pathname].post.security,[{deviceBearer:[]}]);
         assert.equal(actual.paths[pathname].post['x-neurocenter-service'],'catalog-service');
     }
+    const quirks=actual.paths['/api/device-channel/learning-quirks/import'];
+    assert.deepEqual(Object.keys(quirks),['post']);
+    assert.deepEqual(quirks.post.security,[{deviceBearer:[]}]);
     for(const suffix of ['approve','reject','revoke','activate','analyses'])assert.equal(actual.paths['/api/device-channel/learning/'+suffix],undefined);
 });
 

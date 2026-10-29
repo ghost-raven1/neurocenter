@@ -1,3 +1,7 @@
+import type {ModelDispatchMetrics} from './model-dispatch-metrics';
+import type {ModelTokenQuotaEstimate} from '../model-token-quotas/model-token-quotas.types';
+import {quotaUserEmail} from '../model-token-quotas/model-token-quotas.validation';
+import {quotaUnavailable} from '../model-token-quotas/quota-database';
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import { ForbiddenException, Injectable, OnApplicationShutdown, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -63,12 +67,28 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
     private async maintain(): Promise<void> {
         await this.repository.renew(this.workerId).catch(() => undefined); await this.repository.recover().catch(() => undefined); await this.flush();
     }
+    /** A quota uses the same durable usage UUID and never installs a second paid-attempt ledger. */
+    async reserveQuota(model:IModel,estimate:ModelTokenQuotaEstimate,metrics:ModelDispatchMetrics|undefined,signal?:AbortSignal):Promise<boolean>{
+        if(!metrics?.usageId||metrics.workerId!==this.workerId)throw quotaUnavailable();
+        metrics.quotaAttempted=true;
+        const actor=currentModelUsage().actorEmail;
+        if(!actor)throw new ForbiddenException('Для персонального бюджета нужна доверенная учётная запись пользователя.');
+        return this.repository.reserveQuota(this.workerId,{usageId:metrics.usageId,userEmail:quotaUserEmail(actor),model,estimate},signal);
+    }
+    async claimQuota(metrics:ModelDispatchMetrics|undefined,enforce:boolean,signal?:AbortSignal):Promise<void>{
+        if(!metrics?.usageId||metrics.workerId!==this.workerId)throw quotaUnavailable();
+        await this.repository.claimQuota(this.workerId,metrics.usageId,enforce,signal);
+    }
+    async releaseQuota(metrics:ModelDispatchMetrics|undefined):Promise<void>{
+        if(metrics?.usageId&&metrics.workerId===this.workerId)await this.repository.releaseQuota(this.workerId,metrics.usageId);
+    }
     async observe(model: IModel, endpoint: 'chat' | 'embed', action: (signal: AbortSignal) => Promise<Record<string, unknown>>, signal?: AbortSignal): Promise<Record<string, unknown>> {
         const combined = AbortSignal.any([this.shutdown.signal, ...(signal ? [signal] : [])]); combined.throwIfAborted();
         const context = currentModelUsage(), id = randomUUID();
         try { await this.repository.begin({ ...context, id, workerId: this.workerId, model, endpoint }); }
         catch { throw new ServiceUnavailableException('Журнал использования моделей недоступен. Запрос к провайдеру не отправлен; повторите позже.'); }
-        const metrics = createModelDispatchMetrics(), started = performance.now(); let terminal: UsageTerminal = { status: 'error', inputTokens: null, outputTokens: null, latencyMs: 0 };
+        const metrics = createModelDispatchMetrics();metrics.usageId=id;metrics.workerId=this.workerId;
+        const started = performance.now(); let terminal: UsageTerminal = { status: 'error', inputTokens: null, outputTokens: null, latencyMs: 0 };
         metrics.progress = async active => {
             try { await this.repository.dispatchProgress(id,this.workerId,metrics.dispatchCount,metrics.dispatchedAt,active?null:Math.round(metrics.providerLatencyMs)); }
             catch { /* Activity metadata cannot turn a provider result into a failed request. */ }
@@ -88,7 +108,7 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
                 throw error;
             }
             finally {
-                Object.assign(terminal, {dispatchCount: metrics.dispatchCount, dispatchedAt: metrics.dispatchedAt, rateWaitMs: Math.round(metrics.rateWaitMs),
+                Object.assign(terminal, {...(metrics.quotaAttempted?{quotaTracked:true}:{}),dispatchCount: metrics.dispatchCount, dispatchedAt: metrics.dispatchedAt, rateWaitMs: Math.round(metrics.rateWaitMs),
                     providerLatencyMs: metrics.dispatchCount ? Math.round(metrics.providerLatencyMs) : null});
                 terminal.latencyMs = Math.min(2147483647, Math.max(0, Math.round(performance.now() - started)));
                 try { await this.repository.finish(id, this.workerId, terminal); }

@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 /** Transport facts for one observed operation; never includes request bodies or credentials. */
 export interface ModelDispatchMetrics {
     dispatchCount: number; rateWaitMs: number; providerLatencyMs: number; dispatchedAt: string | null;
+    usageId?: string; workerId?: string; quotaAttempted?: boolean;
     progress?: (active: boolean) => Promise<void>;
 }
 const storage = new AsyncLocalStorage<ModelDispatchMetrics>();
