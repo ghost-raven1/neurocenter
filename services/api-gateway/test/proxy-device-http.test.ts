@@ -17,6 +17,13 @@ describe.sequential('Device channel source allowlist, fresh identity and event b
  it('does not turn a browser session into a device identity',async()=>{
   expect((await f.send('/api/device-channel/heartbeat',{method:'POST',body:{}})).status).toBe(401);expect(f.calls.filter(call=>call.path==='/internal/device-channel/heartbeat')).toEqual([]);
  });
+ it('forwards degraded presence only with current device authority and invalidates the same bridge view',async()=>{
+  const body={platform:'linux',arch:'x64',runtimeVersion:'24.22.0',bridgeVersion:'0.9.27',buildId:'a'.repeat(64),protocolVersion:2};
+  expect((await f.send('/api/device-channel/presence',{method:'POST',headers:deviceHeaders,body})).status).toBe(200);
+  const call=f.calls.find(call=>call.path==='/internal/device-channel/presence')!;expect(call.body).toEqual(body);expect(call.headers.authorization).toBe(deviceHeaders.authorization);expect(f.live.bridge).toHaveBeenCalledWith('owner@example.test','device-qa',undefined);
+  f.state.deviceStatus=401;expect((await f.send('/api/device-channel/presence',{method:'POST',headers:deviceHeaders,body})).status).toBe(401);
+  expect(f.calls.filter(call=>call.path==='/internal/device-channel/presence')).toHaveLength(1);
+ });
  it('forwards only the exact project configuration permit with the real device bearer',async()=>{
   const body={jobId};const result=await f.send('/api/device-channel/project-configuration/authorize',{method:'POST',headers:deviceHeaders,body});expect(result.status).toBe(200);const call=f.calls.find(call=>call.path==='/internal/device-channel/project-configuration/authorize')!;expect(call.body).toEqual(body);expect(call.headers.authorization).toBe(deviceHeaders.authorization);expect(f.live.sections).not.toHaveBeenCalled();
  });

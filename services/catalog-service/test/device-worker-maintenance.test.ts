@@ -95,12 +95,13 @@ describe('Only worker maintenance controller routes accept retained tokens',()=>
         await expect(controller(f.store)[operation](request('wrong-gateway'))).rejects.toMatchObject({status:403});
         expect(f.connect).not.toHaveBeenCalled();expect(f.direct).not.toHaveBeenCalled();
     });
-    it('Identity, heartbeat and claim retain the ordinary revoked-device denial',async()=>{
+    it('Identity, heartbeat, degraded presence and claim retain the ordinary revoked-device denial',async()=>{
         vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN','own-gateway');const f=fixture(),api=controller(f.store);
         const denied=new UnauthorizedException('Revoked identity'),identity=vi.spyOn(f.store,'identity').mockRejectedValue(denied);
         await expect(api.identity(request())).rejects.toBe(denied);
         await expect(api.heartbeat(request(),{})).rejects.toBe(denied);
+        await expect(api.presence(request(),{} as never)).rejects.toBe(denied);
         await expect(api.claim(request())).rejects.toBe(denied);
-        expect(identity).toHaveBeenCalledTimes(3);expect(f.connect).not.toHaveBeenCalled();
+        expect(identity).toHaveBeenCalledTimes(4);expect(f.connect).not.toHaveBeenCalled();
     });
 });

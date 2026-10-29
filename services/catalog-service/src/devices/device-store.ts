@@ -14,7 +14,7 @@ import type {PoolClient} from 'pg';
 import { AccessDb } from '../access/access-db';
 import type { IAccessActor } from '../access/access.model';
 import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
-import { workspaceReport } from './device-report';
+import { workspaceReport,bridgePresence } from './device-report';
 
 export const digest = (value: string): string =>
     createHash('sha256').update(value).digest('hex');
@@ -246,6 +246,12 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             [device.id, checked],
         );
         return { ok: true };
+    }
+    /** Preserve authoritative project data when only the worker's runtime identity is available. */
+    async presence(device:Device,report:unknown){
+        const checked=bridgePresence(report);
+        await this.pool.query(`UPDATE bridge_devices SET last_seen=now(),report=CASE WHEN jsonb_typeof(report)='object' THEN report || $2::jsonb ELSE report END WHERE id=$1`,[device.id,checked]);
+        return {ok:true};
     }
     /** Старый ключ разрешает только паузу своей очереди; renewal ждёт завершения этой транзакции. */
     private async maintenance<T>(token:unknown,action:(client:PoolClient,id:string)=>Promise<T>):Promise<T> {

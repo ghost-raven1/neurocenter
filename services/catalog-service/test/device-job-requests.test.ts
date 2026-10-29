@@ -26,14 +26,14 @@ type Receipt={email:string;key:string;deviceId:string;hash:string|null;jobId:str
 function queue(){
     let jobs:StoredJob[]=[],receipts:Receipt[]=[];
     let snapshot:{jobs:StoredJob[];receipts:Receipt[]}|undefined;
-    let receiptError=false;
+    let receiptError=false,reportUnavailable=false;
     const result=(rows:unknown[]=[])=>({rows,rowCount:rows.length});
     const publicRow=(job:StoredJob)=>({id:job.id,deviceId:job.deviceId,projectId:job.projectId,kind:job.kind,state:job.state,role:job.role,payload:job.payload});
     const query=vi.fn(async(sql:string,params:unknown[]=[])=>{
         if(sql==='BEGIN'){snapshot=structuredClone({jobs,receipts});return result();}
         if(sql==='ROLLBACK'){if(snapshot)({jobs,receipts}=snapshot);return result();}
         if(sql==='COMMIT'){snapshot=undefined;return result();}
-        if(sql.startsWith('SELECT id,role FROM bridge_devices'))return result([{id:params[0],role}]);
+        if(sql.startsWith('SELECT id,role,report->>'))return result([{id:params[0],role,report_unavailable:reportUnavailable}]);
         if(sql==='SELECT 1 FROM projects WHERE id=$1')return result([{id:'project'}]);
         if(sql.startsWith('INSERT INTO bridge_job_requests')){
             if(receiptError)throw new Error('receipt unavailable');
@@ -74,12 +74,19 @@ function queue(){
         jobs.push(job);receipts.push({email:job.email,key:job.requestKey,deviceId:job.deviceId,hash:job.requestHash,jobId:job.id});return job;
     };
     const enqueue=(changes:Record<string,unknown>={})=>enqueueDeviceJob(pool,'id,device_id AS "deviceId",kind,state',incoming(changes),async()=>claims);
-    return {pool,query,release,incoming,seed,enqueue,get jobs(){return jobs;},get receipts(){return receipts;},failReceipt(){receiptError=true;},allowReceipt(){receiptError=false;}};
+    return {pool,query,release,incoming,seed,enqueue,get jobs(){return jobs;},get receipts(){return receipts;},failReceipt(){receiptError=true;},allowReceipt(){receiptError=false;},setReportUnavailable(value:boolean){reportUnavailable=value;}};
 }
 
 describe('Ключ запроса хранит связь с объединённым заданием',()=>{
     beforeEach(()=>vi.clearAllMocks());
     afterEach(()=>vi.restoreAllMocks());
+    it('degraded admission retains an accepted receipt but refuses a new nonce until the full report recovers',async()=>{
+        const q=queue();expect(await q.enqueue()).toMatchObject({id:'new-job'});q.setReportUnavailable(true);
+        expect(await q.enqueue()).toMatchObject({id:'new-job'});
+        const next={id:'later-job',requestKey:'33333333-3333-4333-8333-333333333333',kind:'run-agent-method-workflow'};
+        await expect(q.enqueue(next)).rejects.toHaveProperty('status',409);expect(q.jobs).toHaveLength(1);
+        q.setReportUnavailable(false);expect(await q.enqueue(next)).toMatchObject({id:'later-job'});
+    });
     it('commits an origin link once with its new job and never republishes it on exact receipt recovery',async()=>{
         const q=queue(),postInsert=vi.fn(async()=>undefined);
         const create=()=>enqueueDeviceJob(q.pool,'id',q.incoming({kind:'run-agent-method-workflow'}),async()=>claims,postInsert);

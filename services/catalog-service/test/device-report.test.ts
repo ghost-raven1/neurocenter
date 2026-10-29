@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { workspaceReport } from '../src/devices/device-report';
+import { workspaceReport,bridgePresence } from '../src/devices/device-report';
 
 describe('Недоверенный отчёт локального компьютера', () => {
     it.each([null, [], { folders: {} }, { capabilities: 'all' }, { root: {} }, { bindings: [null] }, { bindings: [{ projectId: 'p', folderName: 'folder', bindingId: '../bad' }] }, { ragSupported: 'yes' }])('Отклоняет структуру, которая сломала бы интерфейс: %j', input => {
@@ -31,5 +31,22 @@ describe('Недоверенный отчёт локального компью�
         {valid:false},{identityStatus:'legacy'},{identityStatus:undefined},{bindingId:undefined},{instanceId:undefined},
     ])('Не принимает байты без проверенного экземпляра: %j',change=>{
         expect(()=>workspaceReport({bindings:[{...binding,...change,dataSize}]})).toThrow('Некорректный отчёт');
+    });
+});
+
+describe('Degraded presence accepts runtime identity only',()=>{
+    const identity={platform:'linux',arch:'x64',runtimeVersion:'24.22.0',bridgeVersion:'0.9.27',buildId:'a'.repeat(64),protocolVersion:2};
+    it('disables execution with a fixed diagnostic without inventing an empty workspace snapshot',()=>{
+        const report=bridgePresence(identity);
+        expect(report).toMatchObject({...identity,reportUnavailable:true,rootError:expect.any(String)});
+        expect(report).not.toHaveProperty('capabilities');
+        for(const key of ['root','folders','bindings','installations'])expect(report).not.toHaveProperty(key);
+    });
+    it.each([
+        {...identity,bindings:[]},{...identity,folders:[]},{...identity,capabilities:['managed-installations']},
+        {...identity,rootError:'PRIVATE_ERROR_TOKEN'},{...identity,root:'/private/path'},
+        {...identity,bridgeVersion:''},{...identity,platform:undefined},{...identity,protocolVersion:0},
+    ])('rejects workspace replacement, caller diagnostics, missing identity and capabilities: %j',input=>{
+        expect(()=>bridgePresence(input)).toThrow();
     });
 });

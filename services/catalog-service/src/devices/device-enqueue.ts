@@ -25,13 +25,14 @@ export async function enqueueDeviceJob(pool: Pool, view: string, input: Enqueue,
     let result: Row;
     try {
         await client.query('BEGIN');
-        const owned = await client.query<{id:string;role:string}>('SELECT id,role FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR UPDATE', [input.deviceId, input.email]);
+        const owned = await client.query<{id:string;role:string;report_unavailable:boolean}>("SELECT id,role,report->>'reportUnavailable'='true' AS report_unavailable FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR UPDATE", [input.deviceId, input.email]);
         if (!owned.rows.length) { throw new ForbiddenException('Подключение MCP истекло или отключено.'); }
         const previous = await findDeviceJobRequest(client,view,input);
         if (previous) {
             await client.query('COMMIT');
             return clean(previous);
         }
+        if(owned.rows[0].report_unavailable===true)throw new ConflictException('Локальный отчёт компьютера недоступен. Восстановите настройки перед новым заданием.');
         const reclaimed=await reclaimUnauthorizedQueuedJobs(client,{id:input.deviceId,email:input.email,role:owned.rows[0].role},
             {role:input.role,project_id:input.projectId??null,kind:input.kind},()=>readClaims(client));
         await guardWorkspaceQueue(client, input);
