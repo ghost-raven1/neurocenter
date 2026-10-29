@@ -29,6 +29,7 @@ import {DeviceCodexService} from '../models/device-codex.service';
 import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {runtimeCacheWorkRole} from './runtime-cache-jobs';
 import {BRIDGE_UPDATE_CLEANUP_CAPABILITY} from '../../../shared/runtime-cache-policy.cjs';
+import {computerSetupReceiptIdentity} from './computer-setup-jobs';
 
 /** Browser управляет только своими устройствами; channel принимает только секрет привязанного MCP. */
 @Controller()
@@ -195,7 +196,8 @@ export class DeviceController {
     ) {
         assertInternal(req.headers['x-neurocenter-internal']);
         const token=String(req.headers.authorization||'').replace(/^Bearer /,'');
-        const device = await this.codex?.receiptIdentity(token,id,input?.lease)??await this.device(req);
+        const device = await this.codex?.receiptIdentity(token,id,input?.lease)
+            ??await computerSetupReceiptIdentity(this.devices.pool,token,id,input?.lease)??await this.device(req);
         return completeDeviceJob(this.devices.pool, device.id, id, input);
     }
 }

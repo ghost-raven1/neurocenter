@@ -51,6 +51,8 @@ import {authorizeProviderAction} from './opencode-provider-permit';
 import {reconcileSnapshotJobs} from './project-snapshot-completion';
 import {RUNTIME_CACHE_POLICY_JOB} from '../../../shared/runtime-cache-policy.cjs';
 import {runtimeCacheWorkRole,runtimeCacheJobPayload,assertRuntimeCacheJob,assertRuntimeCacheAuthority} from './runtime-cache-jobs';
+import {OPENCODE_CLI_INSPECT_JOB} from '../../../shared/computer-setup.cjs';
+import {computerSetupJobPayload,assertComputerSetupInput,assertComputerSetupJob,assertComputerSetupAdmission,assertComputerSetupAuthority} from './computer-setup-jobs';
 import { transitionDeviceJobs } from './device-job-transition';
 import { assertRuntimeConfigurationRevisions } from './mcp-config-status';
 import { hasDeviceJobPermission,jobMinimumLevel } from './device-job-access';
@@ -134,10 +136,12 @@ export class DeviceJobs {
         if((approved?.package.config?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion!==1)throw new ConflictException('Обновите выбранную установку OpenCodeRAG для переиндексации.');
     }
     async create(actor: IAccessActor, input: JobInput, admit?: (db:PoolClient)=>Promise<void>) {
+        if(input?.kind===OPENCODE_CLI_INSPECT_JOB)assertComputerSetupInput(input);
         if (
             !input ||
             ![
                 'choose-root',
+                OPENCODE_CLI_INSPECT_JOB,
                 RUNTIME_CACHE_POLICY_JOB,
                 MEMORY_SYNC_JOB,
                 LEARNING_QUIRKS_KIND,
@@ -179,7 +183,7 @@ export class DeviceJobs {
             input.kind === 'choose-root' ? undefined : input.projectId,
             jobMinimumLevel(input.kind),
         );
-        if (input.kind !== 'choose-root' && input.kind!==RUNTIME_CACHE_POLICY_JOB && !(input.kind==='scan-opencode-models'&&input.scope==='global') && !input.projectId) {
+        if (input.kind !== 'choose-root' && input.kind!==OPENCODE_CLI_INSPECT_JOB && input.kind!==RUNTIME_CACHE_POLICY_JOB && !(input.kind==='scan-opencode-models'&&input.scope==='global') && !input.projectId) {
             throw new BadRequestException('Выберите серверный проект.');
         }
         const requestHash = deviceJobRequestHash(actor.activeRole,input);
@@ -194,6 +198,7 @@ export class DeviceJobs {
         }
         assertManagedBridge(device.report);
         if(input.kind===RUNTIME_CACHE_POLICY_JOB)payload={...runtimeCacheJobPayload(device,input,actor.activeRole)!};
+        if(input.kind===OPENCODE_CLI_INSPECT_JOB)payload=computerSetupJobPayload(device,input,actor.activeRole)!;
         if (RAG_JOB_KINDS.includes(input.kind)) {
             payload = {bindingId:assertRagJobBinding(device.report,input.projectId,input.expectedBindingId),ragProtocol:RAG_GENERATION_PROTOCOL};
         }
@@ -278,7 +283,7 @@ export class DeviceJobs {
             id: randomUUID(), deviceId: device.id, email: actor.email, role: actor.activeRole,
             projectId: input.projectId, kind: input.kind, payload,
             requestKey: input.requestKey, requestHash,
-        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await assertAgentMethodJob(device,{kind:input.kind,payload,project_id:input.projectId??null},db);await admit?.(db);return this.store.access.claims(actor.email);},
+        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await assertAgentMethodJob(device,{kind:input.kind,payload,project_id:input.projectId??null},db);await assertComputerSetupAdmission(db,{kind:input.kind,payload,project_id:input.projectId??null,device_id:device.id,email:actor.email,role:actor.activeRole});await admit?.(db);return this.store.access.claims(actor.email);},
         origin?async(db,jobId)=>{await saveMethodChatOrigin(db,jobId,input.projectId!,actor,origin);}:undefined);
     }
     /** История и отмена используют свежие назначения; владение компьютером не заменяет доступ к проекту. */
@@ -295,7 +300,7 @@ export class DeviceJobs {
     async list(actor: IAccessActor) {
         const scope = await this.readScope(actor);
         await this.expire();
-        const access = "AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy')))";
+        const access = "AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli')))";
         return (
             await this.store.pool.query(
                 `SELECT ${view} FROM bridge_jobs WHERE email=$1 ${access} AND (state IN ('queued','running','reconciling')
@@ -359,6 +364,7 @@ export class DeviceJobs {
             if(job.kind===DEVICE_CODEX_JOB&&!this.codex)throw new ConflictException('Подключение Codex недоступно.');
             await this.codex?.authorizeJob(device,job);
             assertRuntimeCacheJob(device,job);
+            assertComputerSetupJob(device,job);
             await assertAgentConfigurationJob(this.store,device,job);
             await assertAgentMethodJob(device,job,this.store.pool);
             await assertMethodChatJob(this.store.pool,job);
@@ -390,6 +396,7 @@ export class DeviceJobs {
             await assertRagAutoInspection(this.store.pool,device,job);
             if(job.kind===RUNTIME_CACHE_POLICY_JOB)await this.permission(device,job.role,undefined);
             await assertRuntimeCacheAuthority(this.store.pool,device,job);
+            await assertComputerSetupAuthority(this.store.pool,device,job);
             if (job.kind === 'install') {
                 await this.assertCatalogAsset(job.project_id, job.payload.assetKind, job.payload.assetId);
                 await this.assertJobPlan(job);
@@ -424,6 +431,7 @@ export class DeviceJobs {
         if(job.kind===DEVICE_CODEX_JOB&&!this.codex)throw new ConflictException('Подключение Codex недоступно.');
         await this.codex?.authorizeJob(device,job);
         assertRuntimeCacheJob(device,job);
+        assertComputerSetupJob(device,job);
         if(options?.snapshotReceipt&&job.kind!==SNAPSHOT_JOB_KIND)throw new BadRequestException('Подтверждение снимка не относится к этому заданию.');
         if(!options?.snapshotReceipt)await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
         await assertRagAutoInspection(this.store.pool,device,job);
@@ -474,6 +482,7 @@ export class DeviceJobs {
         }
         if(job.kind===RUNTIME_CACHE_POLICY_JOB)await this.permission(device,job.role,undefined);
         await assertRuntimeCacheAuthority(this.store.pool,device,job);
+        await assertComputerSetupAuthority(this.store.pool,device,job);
         return { ok: true, projectId: job.project_id, role: job.role,...(job.kind===SNAPSHOT_JOB_KIND?{snapshotId:job.payload.snapshotId,snapshotProtocol:job.payload.snapshotProtocol}: {}) };
     }
     async memorySyncContext(device:Device,input:unknown){
@@ -543,7 +552,7 @@ export class DeviceJobs {
         if(selected.rows[0]?.kind===DEVICE_CODEX_JOB&&(input.result!==undefined&&input.result!==null&&JSON.stringify(input.result)!=='{}'))throw new BadRequestException('Приватный результат Codex передаётся только в завершении задания.');
         if (Buffer.byteLength(JSON.stringify(input.result ?? null)) > 10000) { throw new BadRequestException('Промежуточный результат превышает допустимый размер.'); }
         let progressMessage = selected.rows[0]?.kind===DEVICE_CODEX_JOB?'Codex обрабатывает запрос на компьютере.':input.message;
-        if ([PROJECT_CONFIGURATION_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
+        if ([OPENCODE_CLI_INSPECT_JOB,PROJECT_CONFIGURATION_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
             if (input.result !== undefined && input.result !== null) { throw new BadRequestException('Результат привязки передаётся только после завершения.'); }
             progressMessage = 'Мост выполняет проверенное действие.';
         }
@@ -574,7 +583,7 @@ export class DeviceJobs {
     }
     async cancel(actor: IAccessActor, id: string) {
         const scope = await this.readScope(actor);
-        const access = "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy')))";
+        const access = "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli')))";
         const params = [id,scope.email,scope.main,scope.projects];
         const codex=(await this.store.pool.query<{kind:string;state:string}>(`SELECT kind,state FROM bridge_jobs WHERE id=$1 AND email=$2 ${access}`,params)).rows[0];
         if(codex?.kind===DEVICE_CODEX_JOB){
@@ -586,7 +595,7 @@ export class DeviceJobs {
         }
         // Learning jobs journal each boundary and can stop between steps; filesystem jobs keep their rollback contract.
         const { rowCount } = await transitionDeviceJobs(this.store.pool,
-            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks','run-agent-method-workflow') AND state IN ('running','reconciling')) RETURNING *`,
+            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks','run-agent-method-workflow','inspect-opencode-cli') AND state IN ('running','reconciling')) RETURNING *`,
             params,
             {state:'CANCELLED',percent:0,message:'Отменено пользователем'},
         );

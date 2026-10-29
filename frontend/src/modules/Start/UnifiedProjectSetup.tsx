@@ -23,6 +23,7 @@ import {startQueryUrl,startSetupRequested} from './startQuery';
 import {setupBinding,unifiedSetupStep} from './projectSetupModel';
 import {StartProjectAssets} from './StartProjectAssets';
 import {SetupProgress} from './SetupProgress';
+import {CliObservation} from '../../features/ComputerSetup/CliObservation';
 import './Start.less';
 
 async function copyCommand(value:string){
@@ -59,7 +60,7 @@ export default function UnifiedProjectSetup(){
         <Card className="start__setup"><Space direction="vertical" size={20} style={{width:'100%'}}>
             <div><Typography.Title level={2}>Установите OpenCode и подготовьте проект</Typography.Title><Typography.Paragraph>Установщик подготовит OpenCode и мост. Затем подключите компьютер, выберите папку, агентов и инструменты проекта. Ручные настройки сохраняются.</Typography.Paragraph></div>
             {!enabled&&<Alert type="info" showIcon message={availability.reason} description="Новые действия единого мастера выключены. Состояние, история и восстановление сохраняются."/>}
-            <SetupProgress bridge={bridge}/>
+            <SetupProgress bridge={bridge} cli={<CliObservation bridge={bridge} canStart={enabled}/>}/>
             {!opened?<Button type="primary" size="large" icon={<RocketOutlined/>} onClick={()=>go(step)}>{enabled?'Установить OpenCode':'Посмотреть состояние и настройку'}</Button>:<>
                 <Typography.Text strong>Открыт шаг {step+1} из 4. Состояние окружения проверяется отдельно.</Typography.Text>
                 <div role="group" aria-label="Этапы основной настройки" onKeyDown={event=>{

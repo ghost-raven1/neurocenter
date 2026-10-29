@@ -81,6 +81,11 @@ export async function startRoleMcpProcess(command:string,args:string[],cwd:strin
  const child=spawn(process.execPath,[runner,'--role-mcp-owner',nonce,receipt],{cwd,env:{PATH:process.env.PATH,LANG:'C.UTF-8'},detached:true,shell:false,stdio:['pipe','pipe','pipe','ipc']});
  let cleanupFailure:string|undefined;
  child.on('message',(value:unknown)=>{const message=value as {nonce?:string;cleanupFailure?:string};if(message.nonce===nonce&&message.cleanupFailure&&/^[A-Z_]+$/.test(message.cleanupFailure))cleanupFailure=message.cleanupFailure;});
+ // A resolved false is safe for existing consumers which do not need a spawn observation.
+ const started=new Promise<boolean>(resolve=>{
+  child.on('message',(value:unknown)=>{const item=value as {nonce?:string;executionStarted?:boolean};if(item.nonce===nonce&&item.executionStarted===true)resolve(true);});
+  child.once('exit',()=>resolve(false));child.once('error',()=>resolve(false));
+ });
  // The wrapper's own exit confirms cleanup; command callers need the real executable's exit separately.
  const execution=new Promise<{code:number|null;signal:string|null}>(resolve=>{
   child.on('message',(value:unknown)=>{const item=value as {nonce?:string;executionExit?:{code:number|null;signal:string|null}};
@@ -108,6 +113,6 @@ export async function startRoleMcpProcess(command:string,args:string[],cwd:strin
   });
   owner=await roleMcpProcessOwner(child.pid!,runner);if(journal)await beforeAbort(journal.retain(owner),signal);await authorize();signal.throwIfAborted();
   await new Promise<void>((resolve,reject)=>child.send!({nonce,command,args,cwd,env},error=>error?reject(error):resolve()));
-  return {child:child as ChildProcess&{stdin:NonNullable<ChildProcess['stdin']>;stdout:NonNullable<ChildProcess['stdout']>;stderr:NonNullable<ChildProcess['stderr']>},execution,close:stop};
+  return {child:child as ChildProcess&{stdin:NonNullable<ChildProcess['stdin']>;stdout:NonNullable<ChildProcess['stdout']>;stderr:NonNullable<ChildProcess['stderr']>},started,execution,close:stop};
  }catch(error){try{await stop();}catch(cleanup){throw new RoleMcpCleanupError(cleanup);}throw error;}
 }

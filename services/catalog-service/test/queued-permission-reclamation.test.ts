@@ -65,6 +65,13 @@ describe('Освобождение очереди после отзыва пра
             expect(hasDeviceJobPermission(claims,'Разработчик','Наблюдатель','current',jobMinimumLevel(kind))).toBe(true);
         }
     });
+    it('Глобальная проверка CLI сохраняет обе действующие read роли без выбранного проекта',async()=>{
+        const global={project_id:null,kind:'inspect-opencode-cli',role:'Наблюдатель'};
+        query.mockResolvedValueOnce({rows:[{id:'cli',email,...global}]});
+        await expect(reclaimUnauthorizedQueuedJobs(client,{...device,role:'Наблюдатель'},global,readClaims)).resolves.toBe(false);
+        expect(jobMinimumLevel(global.kind)).toBe(1);
+        expect(query.mock.calls.some(([sql])=>sql.startsWith('UPDATE'))).toBe(false);
+    });
     it('Повтор requestKey возвращает прежний результат до fresh cleanup и не раскрывает внутренние поля',async()=>{
         const input={id:'new',deviceId:device.id,email,role:incoming.role,projectId:'current',kind:'sync-rag',payload:{},requestKey:'key',requestHash:'hash'};
         query.mockImplementation(async(sql:string)=>({rows:sql.startsWith('SELECT id,role')?[device]:sql.includes('request_hash')?[{id:'saved',request_hash:'hash',request_device_id:device.id,payload:{secret:'private'},role:'Разработчик'}]:[]}));

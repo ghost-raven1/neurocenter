@@ -4,6 +4,7 @@ import {controllerFiles,scanRoutes} from './routes.mjs';
 import {createProgram,loadTypeScript} from './typescript.mjs';
 import {createSchemaMapper} from './type-schema.mjs';
 import {operation} from './operation.mjs';
+import {computerSetupSchemas} from './computer-setup.mjs';
 
 /** Rebuilds the public contract from source declarations without executing application code. */
 export function generateOpenApi(root){
@@ -26,6 +27,6 @@ export function generateOpenApi(root){
         servers:[{url:'/',description:'Current Neurocenter site'}],paths:sortedPaths,
         components:{securitySchemes:{sessionCookie:{type:'apiKey',in:'cookie',name:'bridge_session',description:'Sign in to Neurocenter in this browser. HttpOnly session cookies are sent automatically; do not paste the cookie here.'},
             deviceBearer:{type:'http',scheme:'bearer',description:'Existing personal device token. It does not grant browser administration rights.'}},
-        schemas:{...mapper.components.schemas,ApiError:{type:'object',properties:{message:{anyOf:[{type:'string'},{type:'array',items:{type:'string'}}]},error:{type:'string'},statusCode:{type:'integer'},code:{type:'string'}}}}},
+        schemas:{...mapper.components.schemas,...computerSetupSchemas,ApiError:{type:'object',properties:{message:{anyOf:[{type:'string'},{type:'array',items:{type:'string'}}]},error:{type:'string'},statusCode:{type:'integer'},code:{type:'string'}}}}},
         tags:[...new Set(Object.values(sortedPaths).flatMap(item=>Object.values(item).flatMap(value=>value.tags)))].sort().map(name=>({name}))};
 }

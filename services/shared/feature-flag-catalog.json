@@ -104,6 +104,14 @@
     "defaultEnabled": true
   },
   {
+    "key": "computer_setup",
+    "name": "Настройка программ компьютера",
+    "description": "Новые проверки OpenCode через подключённый мост; история, отмена и восстановление принятых действий доступны.",
+    "group": "platform",
+    "dependsOn": ["computer_connections"],
+    "defaultEnabled": true
+  },
+  {
     "key": "bridge_storage_cleanup",
     "name": "Очистка копий обновления моста",
     "description": "Автоматическая очистка проверенных неиспользуемых копий обновления. Выключение очистки, история и восстановление доступны.",

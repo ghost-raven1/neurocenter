@@ -146,6 +146,15 @@ test('Unified setup gates only its new bootstrap and retains existing installers
  assert.equal(flags.flags.unified_project_setup,false);
 });
 
+test('Computer setup gates new jobs in their queue owner while retaining exact receipt and cancellation routes',()=>{
+ assert.equal(defaultFeatureFlags().computer_setup,true);
+ assert.deepEqual(requiredJobFeatures('inspect-opencode-cli'),['computer_setup']);
+ assert.deepEqual(requiredJobFeatures('inspect-opencode-cli',{},true),['computer_setup']);
+ assert.equal(evaluateFeatureFlags({...defaultFeatureFlags(),computer_connections:false}).flags.computer_setup,false);
+ for(const [method,path]of [['POST','/api/device-jobs'],['GET','/api/device-jobs'],['GET','/api/device-jobs/requests/existing'],['DELETE','/api/device-jobs/existing'],['POST','/api/device-channel/jobs/id/complete']]){
+  assert.deepEqual(requiredRouteFeatures(method,path,{kind:'inspect-opencode-cli'}),[]);
+ }
+});
 
 test('System chat admission remains stateful so exact replay, history and cancellation survive flag changes',()=>{
  for(const [verb,path]of [['POST','/api/system-role-chats'],['POST','/api/system-role-chats/dialog/messages'],['POST','/api/system-role-chats/dialog/messages/turn/retry'],['POST','/api/system-role-chats/dialog/messages/turn/cancel'],['GET','/api/system-role-chats/dialog']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);

@@ -14,6 +14,9 @@ function fixture(kind='sync-learning-memory',state='running'){
   if(statement==='BEGIN'){previous=structuredClone(job);return {rows:[]};}
   if(statement==='ROLLBACK'){Object.assign(job,previous);return {rows:[]};}
   if(statement==='COMMIT')return {rows:[]};
+  if(statement.startsWith('SELECT device.id FROM bridge_devices device JOIN bridge_jobs job')){
+   expect(params[3]).toBe('inspect-opencode-cli');return {rows:[]};
+  }
   if(statement.startsWith('SELECT * FROM bridge_jobs'))return {rows:params[0]===id&&params[1]===deviceId&&params[2]===lease?[structuredClone(job)]:[]};
   if(statement.startsWith('UPDATE bridge_jobs')){job.state=params[1] as string;job.message=params[3] as string;job.result=JSON.parse(params[4] as string);return {rows:[],rowCount:1};}
   if(statement.includes('INSERT INTO operations')){operations.push(params);return {rows:[],rowCount:1};}
