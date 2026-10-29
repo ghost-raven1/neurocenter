@@ -6,10 +6,13 @@ import {createHash} from 'node:crypto';
 import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-export const PREPARED_SOURCE_MAX_FILES=128;
+export const PREPARED_SOURCE_MAX_FILES=134;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'package.json','package-lock.json',
+    ...['package.json','index.d.ts','README.md','docs/contract.md','bin/assets.mjs','SOURCE.json','NOTICE.md','SHA256SUMS',
+        ...['agent','asset','dependencies','download','index','native-delivery','producer','repository','validation'].map(name=>'lib/'+name+'.mjs')]
+        .map(name=>'vendor/asset-contract/'+name),
     'scripts/catalog-plugins/archive-source.mjs','scripts/catalog-plugins/build.mjs','scripts/catalog-plugins/generic.mjs',
     'scripts/catalog-plugins/manifest.mjs','scripts/catalog-plugins/pack.mjs','scripts/catalog-plugins/payload-description.mjs','scripts/catalog-plugins/prepare.mjs',
     'scripts/catalog-plugins/prepared-source-snapshot.mjs','scripts/catalog-plugins/publish.mjs','scripts/catalog-plugins/tool-import-request.mjs','scripts/catalog-plugins/recipe-schema.mjs',

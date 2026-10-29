@@ -34,6 +34,7 @@ RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY vendor/asset-contract/ /vendor/asset-contract/
 COPY services/catalog-service/package*.json ./
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
 COPY services/catalog-service/ .
@@ -48,6 +49,7 @@ COPY scripts/catalog-plugins/ /tools/scripts/catalog-plugins/
 COPY scripts/models/ /tools/scripts/models/
 COPY scripts/release-request.mjs /tools/scripts/release-request.mjs
 COPY scripts/workspace/node-runtime.mjs /tools/scripts/workspace/node-runtime.mjs
+COPY vendor/asset-contract/ /tools/vendor/asset-contract/
 RUN mkdir -p /tools/services && ln -s /app /tools/services/catalog-service && ln -s /shared /tools/services/shared && ln -s /app/node_modules /tools/node_modules
 
 ENV NODE_ENV=production

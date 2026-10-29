@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/ghost-raven1/neurocenter-assets",
+  "commit": "e1255b4e522a0b38e471d5624cc63f5f13442649",
+  "package": "@neurocenter/asset-contract",
+  "version": "1.2.1",
+  "license": "UNLICENSED",
+  "selection": "Минимальный runtime/CLI и документация контракта. Исходные байты сохранены; ассеты, рецепты, промпты, модели и веса не включены.",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 8718,
+      "sha256": "9ce0cff05ca184bc292f9cbb91a72b49d26ab3493ac653bd07ca49bd86539289",
+      "gitBlobSha1": "2c1bab05b99cd36a6faeec557ff1748296bbfcbd"
+    },
+    {
+      "path": "bin/assets.mjs",
+      "bytes": 3635,
+      "sha256": "0d5517b1e914e60ae4a4f4cd606bcfb5cd1572c46884474955c60ab021b2658c",
+      "gitBlobSha1": "31ebceb968156a2bc0ca210b051678ec426b3f76"
+    },
+    {
+      "path": "docs/contract.md",
+      "bytes": 2235,
+      "sha256": "481f81ec7a293a981ab777c76c7932dcf8f4b9873cd9517bc988077cb459c05f",
+      "gitBlobSha1": "857290c069311b866bcf61cf0ba7747aa7f45b5e"
+    },
+    {
+      "path": "index.d.ts",
+      "bytes": 6035,
+      "sha256": "0b09986276b10e946029c653f9323b0f499b7aaf3a03f6191286adcd2d0f072c",
+      "gitBlobSha1": "473a7189dba90fcd1640387f894ac7170b1ff8aa"
+    },
+    {
+      "path": "lib/agent.mjs",
+      "bytes": 2782,
+      "sha256": "8499f0a93dfd12419ac97d01afdd0e0c2dacef3e600e0b3a87cfb4a34a638f08",
+      "gitBlobSha1": "f6dcdc6a192aac3f1fd8685e3f71bdb7d4410cd0"
+    },
+    {
+      "path": "lib/asset.mjs",
+      "bytes": 9882,
+      "sha256": "0ecd9d5cd2301deb756e45fbda40bf1a053cc497e84ebce282558192be97d261",
+      "gitBlobSha1": "eb28b231a6d019de21ccbff76fea7350046698f9"
+    },
+    {
+      "path": "lib/dependencies.mjs",
+      "bytes": 1938,
+      "sha256": "9a71fc44729ed879cf538ee154f4ff3178c86aeb56e9be3c9bc313da23dcfee3",
+      "gitBlobSha1": "df7f98dfd60d622d8905d2650a880eb3c77ca175"
+    },
+    {
+      "path": "lib/download.mjs",
+      "bytes": 3559,
+      "sha256": "302bf2f19f339e5291f2c391bd7908b3f07e1dfbcf8fd9c30f5a7b97deb602b6",
+      "gitBlobSha1": "04c6559ead9d02f0b5995e3a6c49d3d540086085"
+    },
+    {
+      "path": "lib/index.mjs",
+      "bytes": 389,
+      "sha256": "fd4c8c4665dabebeea33642b4a361214d54e1beac6ff8c2e2638e690ff031614",
+      "gitBlobSha1": "149ec7a60336658cc36045c4ce61b1d7cd8a164d"
+    },
+    {
+      "path": "lib/native-delivery.mjs",
+      "bytes": 8980,
+      "sha256": "d9b4f94fdec5a3a3dfd186c70a32a83090662a00021512a82b69b56fe1058119",
+      "gitBlobSha1": "812c9d487ad808123888a1a9a5a9f42c2a269065"
+    },
+    {
+      "path": "lib/producer.mjs",
+      "bytes": 2041,
+      "sha256": "fb1711ad40124cc6215eff94f17691d6827411cfe62b8d09858e94c0d0cbbc59",
+      "gitBlobSha1": "0ab8707f083241580b449d73539b43d6a7d824b4"
+    },
+    {
+      "path": "lib/repository.mjs",
+      "bytes": 6255,
+      "sha256": "34269af493363fd47d4fe56cebdc69f36dfb1c9059af6ebb8a7d15a09d382ad0",
+      "gitBlobSha1": "80083cd8e420b490e153aaea5c4925e4469cf8a6"
+    },
+    {
+      "path": "lib/validation.mjs",
+      "bytes": 4108,
+      "sha256": "0c378e263497fcd136222918cd39d77c61ec989a0b948693eadd4ef5580f4306",
+      "gitBlobSha1": "84f88c6258bc02e93120332200d75c058b0f84fd"
+    },
+    {
+      "path": "package.json",
+      "bytes": 1107,
+      "sha256": "c960fc5ac2d9bd26c2a889ca2dd05125527f9a9b25403930e15c474345b97804",
+      "gitBlobSha1": "545bac30e68cd2dba256e0034f1f281304cbf565"
+    }
+  ]
+}
