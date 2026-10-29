@@ -6,7 +6,6 @@ import { nextModelRevision, saveModelVersion, type IModelRow } from './model-his
 import { validateModelCreate } from './model-validation';
 import { remoteModelBaseUrl } from './remote-model-validation';
 import { remoteModelOptions, remoteModelTimeout } from './remote-model-options';
-import { canStoreModelCredential, sealModelCredential } from './remote-model-secret';
 import { RemoteConnectionRepository } from './remote-connection.repository';
 import { securityEvent } from '../access/security-events';
 import {resolveOpenCodeIdentity,saveOpenCodeIdentity} from './opencode-model-identity';
@@ -44,6 +43,7 @@ export class OpenCodeModelSyncRepository {
                 hasServerKey: row.hasServerKey || !row.revoked && _credentialKind === 'environment' && !!process.env[_credentialEnv] }));
     }
     async sync(device: { id: string; email: string }, scan: IOpenCodeModelScan, settings: OpenCodeSyncSettings, credentials: Record<string, string>, authorize: (db: PoolClient) => Promise<void>) {
+        if(Object.keys(credentials).length)throw new ConflictException('Синхронизация принимает только метаданные. Настройте личный ключ в «Мой доступ».');
         const db = await this.pool.connect();
         try {
             await db.query('BEGIN');
@@ -62,7 +62,7 @@ export class OpenCodeModelSyncRepository {
                 let modelId: string | null = old?.model_id ?? null;
                 let credentialStatus = 'not-needed';
                 if (!candidate.blocker && candidate.runtime && candidate.baseUrl) {
-                    const result = await this.upsert(db, device, scopeKey, scan.scope, candidate, credentials[candidate.candidateId]);
+                    const result = await this.upsert(db, device, scopeKey, scan.scope, candidate);
                     modelId = result.id; credentialStatus = result.credentialStatus; changed ||= result.changed; imported += Number(result.created);
                     if (projectId!==null&&(!old || old.model_id !== modelId)) {
                         const assigned = await db.query(`INSERT INTO project_models(project_id,model_id,added_by) SELECT $1,id,$3 FROM model_catalog WHERE id=$2 AND archived_at IS NULL
@@ -86,7 +86,7 @@ export class OpenCodeModelSyncRepository {
         } catch (cause) { await db.query('ROLLBACK').catch(() => undefined); throw cause; }
         finally { db.release(); }
     }
-    private async upsert(db: PoolClient, device: { id: string; email: string }, sourceScopeKey: string,scope:'global'|'project', candidate: IOpenCodeModelCandidate, key?: string) {
+    private async upsert(db: PoolClient, device: { id: string; email: string }, sourceScopeKey: string,scope:'global'|'project', candidate: IOpenCodeModelCandidate) {
         const id = await resolveOpenCodeIdentity(db,candidate), baseUrl = remoteModelBaseUrl(candidate.baseUrl), options = remoteModelOptions(candidate.options), timeoutMs = remoteModelTimeout(candidate.timeoutMs);
         const sourceKey = digest([sourceScopeKey, candidate.provider, candidate.configKey ?? candidate.model]);
         let row = (await db.query<IModelRow>('SELECT * FROM model_catalog WHERE id=$1 FOR UPDATE', [id])).rows[0];
@@ -106,26 +106,22 @@ export class OpenCodeModelSyncRepository {
         const managed = (await db.query<{ device_id: string; source_key: string; descriptor_sha: string; connection_revision: string }>('SELECT * FROM opencode_managed_models WHERE model_id=$1', [id])).rows[0];
         const owned = !!managed && managed.device_id === device.id && managed.source_key === sourceKey && managed.descriptor_sha === descriptorDigest(row) && Number(managed.connection_revision) === Number(head?.revision ?? 0) && !head?.revoked_at && !row.archived_at;
         if (!owned) return { id, created, changed: created, credentialStatus: 'manual' };
-        const keyAvailable = !!key && canStoreModelCredential();
-        // Absent local credentials never erase a previously stored server key.
-        const previousKey = head?.credential_kind === 'stored' && !head.revoked_at ? repository.connection(head).apiKey : undefined;
-        const effectiveKey = keyAvailable ? key : previousKey;
-        const credentialStatus = effectiveKey ? 'transferred' : candidate.hasKey ? key ? 'unavailable' : 'pending' : 'not-needed';
-        const failure = candidate.hasKey && !effectiveKey ? 'Добавьте API-ключ на сервере или разрешите перенос ключей с этого компьютера.' : null;
-        if (head && !head.revoked_at && row.descriptor.capability === candidate.capability && head.base_url === baseUrl && digest(head.options) === digest(options) && head.timeout_ms === timeoutMs && previousKey === effectiveKey) {
-            return { id, created, changed: created, credentialStatus };
+        const authMode=head?.auth_mode??(head&&head.credential_kind!=='none'||candidate.hasKey?'required':'optional');
+        const credentialStatus=authMode==='required'?'pending':'not-needed';
+        // Legacy ciphertext remains on its original row; a new metadata revision never opens or copies it.
+        if (head && !head.revoked_at && head.auth_mode===authMode && row.descriptor.capability === candidate.capability && head.base_url === baseUrl && digest(head.options) === digest(options) && head.timeout_ms === timeoutMs) {
+            return { id, created, changed: created, credentialStatus:head.credential_kind==='stored'?'transferred':credentialStatus };
         }
         const revision = Number(head?.revision ?? 0) + 1;
-        const sealed = effectiveKey ? sealModelCredential(effectiveKey, id, revision) : null;
-        await db.query(`INSERT INTO model_remote_connections(model_id,revision,base_url,request_dimensions,credential_kind,credential,credential_env,options,timeout_ms,failure_message)
-            VALUES($1,$2,$3,false,$4,$5::jsonb,NULL,$6::jsonb,$7,$8)`, [id, revision, baseUrl, sealed ? 'stored' : 'none', sealed ? JSON.stringify(sealed) : null, JSON.stringify(options), timeoutMs, failure]);
+        await db.query(`INSERT INTO model_remote_connections(model_id,revision,base_url,request_dimensions,credential_kind,credential,credential_env,options,timeout_ms,auth_mode,failure_message)
+            VALUES($1,$2,$3,false,'none',NULL,NULL,$4::jsonb,$5,$6,NULL)`, [id, revision, baseUrl, JSON.stringify(options), timeoutMs, authMode]);
         if (!created) {
             const next = await nextModelRevision(db, id, row.revision);
             row = (await db.query<IModelRow>(`UPDATE model_catalog SET descriptor=descriptor||$3::jsonb,revision=$2,updated_at=now() WHERE id=$1 RETURNING *`, [id, next, JSON.stringify({ verificationSha256: null, capability: candidate.capability })])).rows[0]!;
             await saveModelVersion(db, row);
         }
         await db.query('UPDATE opencode_managed_models SET connection_revision=$2,descriptor_sha=$3 WHERE model_id=$1', [id, revision, descriptorDigest(row)]);
-        await securityEvent(db, { actor: device.email, action: 'model.connection.sync', resourceId: id, before: head ? { revision: Number(head.revision) } : null, after: { revision, hasKey: !!sealed } });
+        await securityEvent(db, { actor: device.email, action: 'model.connection.sync', resourceId: id, before: head ? { revision: Number(head.revision) } : null, after: { revision, hasKey: false } });
         return { id, created, changed: true, credentialStatus };
     }
 }

@@ -16,7 +16,16 @@ import { modelScanDigest, type IOpenCodeModelCandidate, type IOpenCodeModelScan 
 import {saveModelVersion} from '../src/models/model-history';
 import {requireFeaturesEnabled} from '../src/features/require-feature-enabled';
 import {sealModelCredential} from '../src/models/remote-model-secret';
-vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined)}));
+import {modelFromRow} from '../src/models/model-history';
+import {remoteProviderLease} from '../src/remote-providers/remote-provider.lease';
+import {ModelApiAdmission} from '../src/model-api-admission/model-api-admission';
+import {RemoteModelClient} from '../src/models/remote-model-client';
+import {withModelUsage} from '../src/model-usage/model-usage.context';
+import {createModelDispatchMetrics,withModelDispatchMetrics} from '../src/model-usage/model-dispatch-metrics';
+import {defaultFeatureFlags,evaluateFeatureFlags} from '../../shared/feature-flags.cjs';
+import {openCodeIdentity} from '../src/models/opencode-model-identity';
+vi.mock('../src/features/require-feature-enabled',()=>({requireFeaturesEnabled:vi.fn(async()=>undefined),requireFeatureEnabled:vi.fn(async()=>undefined)}));
+const barrier=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});return{promise,release};};
 
 const adminUrl = process.env.OPENCODE_MODEL_SYNC_TEST_PG_URL;
 describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQL and no paid provider calls', () => {
@@ -35,7 +44,7 @@ describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQ
     beforeAll(async () => {
         const url = new URL(adminUrl!); if (url.hostname !== '127.0.0.1' || !url.port || url.port === '5432') throw Error('Use an owned isolated PostgreSQL port.');
         database = 'nc_opencode_sync_' + randomUUID().replaceAll('-', ''); admin = new Pool({ connectionString: url.href, max: 1 });
-        await admin.query('CREATE DATABASE ' + database); url.pathname = '/' + database; pool = new Pool({ connectionString: url.href, max: 5 });
+        await admin.query('CREATE DATABASE ' + database); url.pathname = '/' + database; pool = new Pool({ connectionString: url.href, max: 2 });
         await ensureCatalogSchema(pool);
         if (!(await pool.query("SELECT to_regclass('opencode_model_sources') AS name")).rows[0].name) await pool.query(OPENCODE_MODEL_SYNC_SCHEMA_SQL);
         modelRepo = new ModelsRepository(pool); remote = new RemoteConnectionRepository(pool);
@@ -62,7 +71,8 @@ describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQ
         const source=candidate(),id='model-opencode-'+createHash('sha256').update(JSON.stringify([source.provider,source.runtime,source.model,source.modelVersion,source.baseUrl])).digest('hex').slice(0,40);
         const descriptor={description:'Previously imported',runtime:source.runtime,model:source.model,modelVersion:source.modelVersion,capability:source.capability,source:'custom',dimension:null,manifestSha256:null,verificationSha256:null};
         const row=(await pool.query('INSERT INTO model_catalog(id,name,descriptor) VALUES($1,$2,$3) RETURNING *',[id,'Previous manual import',descriptor])).rows[0];await saveModelVersion(pool,row);
-        await remote.save(id,{expectedModelRevision:1,expectedRevision:0,baseUrl:source.baseUrl!,requestDimensions:false,credential:'stored',apiKey:secret,options:source.options},device.email,async()=>undefined);
+        await remote.save(id,{expectedModelRevision:1,expectedRevision:0,baseUrl:source.baseUrl!,requestDimensions:false,credential:'none',authMode:'required',options:source.options},device.email,async()=>undefined);
+        await pool.query("UPDATE model_remote_connections SET credential_kind='stored',credential=$2 WHERE model_id=$1 AND revision=1",[id,sealModelCredential(secret,id,1)]);
         if(proven)await pool.query('INSERT INTO security_events(event_id,actor,action,resource_id,before_state,after_state) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),device.email,'model.import.opencode',id,null,{provider:source.provider,model:source.model,runtime:source.runtime}]);
         return {id,source};
     };
@@ -70,7 +80,7 @@ describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQ
         const old=await oldManualImport();const before=await remote.head(old.id);await sync(snapshot([old.source]));expect(await cards()).toHaveLength(1);expect(await remote.head(old.id)).toEqual(before);
         expect((await service.repository.sources(device.id))[0]).toMatchObject({modelId:old.id,credentialStatus:'manual'});
         const model=(await modelRepo.get(old.id))!;await modelRepo.update(old.id,{expectedRevision:model.revision,name:'Keep my manual name'},device.email);
-        const updated=(await modelRepo.get(old.id))!;await remote.save(old.id,{expectedModelRevision:updated.revision,expectedRevision:Number(before!.revision),baseUrl:'https://manually-edited.example.test/v1',requestDimensions:false,credential:'stored',options:{contextWindow:8192}},device.email,async()=>undefined);
+        const updated=(await modelRepo.get(old.id))!;await remote.save(old.id,{expectedModelRevision:updated.revision,expectedRevision:Number(before!.revision),baseUrl:'https://manually-edited.example.test/v1',requestDimensions:false,credential:'none',authMode:'required',options:{contextWindow:8192}},device.email,async()=>undefined);
         const manual=await remote.head(old.id);await sync(snapshot([candidate()]));expect(await cards()).toHaveLength(1);expect(await remote.head(old.id)).toEqual(manual);expect((await modelRepo.get(old.id))!.name).toBe('Keep my manual name');
         expect((await pool.query('SELECT model_id FROM opencode_model_identities')).rows).toEqual([{model_id:old.id}]);
     });
@@ -121,6 +131,88 @@ describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQ
         expect((await service.read(request, device.id)).sources[0]).toMatchObject({ modelId: model.id, contextWindow: 128000, outputTokenLimit: 64000, credentialStatus: 'pending', state: 'present', assigned: true, needsCheck: true, hasServerKey: false });
         expect((await sync(snapshot())).imported).toBe(0); expect(await cards()).toHaveLength(1); expect(Number((await remote.head(model.id))!.revision)).toBe(1);
     });
+    it.each([true,false])('new metadata import uses personal auth mode for safe local hasKey=%s without a shared failure',async hasKey=>{
+        await sync(snapshot([candidate({hasKey,credentialSource:hasKey?'inline':'none'})]));
+        const row=(await remote.head((await cards())[0].id))!;
+        expect(row).toMatchObject({auth_mode:hasKey?'required':'optional',credential_kind:'none',credential:null,credential_env:null,failure_message:null});
+        expect(JSON.stringify((await pool.query('SELECT * FROM security_events')).rows)).not.toContain(secret);
+    });
+    it.each(['none','optional','required'] as const)('automatic metadata revision preserves explicit %s auth mode',async authMode=>{
+        await sync(snapshot());const id=(await cards())[0].id;
+        await pool.query('UPDATE model_remote_connections SET auth_mode=$2 WHERE model_id=$1',[id,authMode]);
+        const previous=(await remote.head(id))!;
+        await sync(snapshot([candidate({hasKey:false,credentialSource:'none',timeoutMs:150000})]));
+        expect(await remote.head(id)).toMatchObject({revision:'2',auth_mode:authMode,timeout_ms:150000,credential_kind:'none',credential:null,failure_message:null});
+        expect((await pool.query('SELECT * FROM model_remote_connections WHERE model_id=$1 AND revision=1',[id])).rows[0]).toEqual(previous);
+    });
+    it('metadata revisions never decrypt or reseal legacy ciphertext or mark a personal missing key as shared failure',async()=>{
+        await sync(snapshot());const id=(await cards())[0].id;
+        await pool.query("UPDATE model_remote_connections SET auth_mode=NULL,credential_kind='stored',credential=$2,failure_message='Добавьте API-ключ на сервере или разрешите перенос ключей с этого компьютера.' WHERE model_id=$1 AND revision=1",[id,sealModelCredential(secret,id,1)]);
+        const previous=(await remote.head(id))!,open=vi.spyOn(RemoteConnectionRepository.prototype,'connection');
+        const oldKey=process.env.NEUROCENTER_MODEL_CREDENTIAL_KEY!;vi.stubEnv('NEUROCENTER_MODEL_CREDENTIAL_KEY',randomBytes(32).toString('base64'));
+        try{
+            await sync(snapshot([candidate({hasKey:false,credentialSource:'none',timeoutMs:150000})]));
+            expect(open).not.toHaveBeenCalled();
+            expect(await remote.head(id)).toMatchObject({revision:'2',auth_mode:'required',credential_kind:'none',credential:null,credential_env:null,failure_message:null});
+            expect((await pool.query('SELECT * FROM model_remote_connections WHERE model_id=$1 AND revision=1',[id])).rows[0]).toEqual(previous);
+            expect((await pool.query("SELECT * FROM model_remote_connections WHERE model_id=$1 AND revision>1 AND (credential IS NOT NULL OR credential_kind<>'none')",[id])).rowCount).toBe(0);
+        }finally{open.mockRestore();vi.stubEnv('NEUROCENTER_MODEL_CREDENTIAL_KEY',oldKey);}
+    });
+    it('metadata waits at the provider fence while quota claim holds a dispatch lease and proceeds before the answer',async()=>{
+        await sync(snapshot());const model=modelFromRow((await cards())[0]);
+        await pool.query("INSERT INTO platform_users(email,is_main_admin) VALUES($1,true)",[device.email]);
+        await pool.query("UPDATE model_remote_connections SET auth_mode='optional' WHERE model_id=$1",[model.id]);
+        const expected=(await remote.head(model.id))!,atClaim=barrier(),finishClaim=barrier(),atWire=barrier(),answer=barrier(),trusted=await identity();
+        const flags=Object.fromEntries(Object.keys(defaultFeatureFlags()).map(key=>[key,true]));vi.stubGlobal('fetch',vi.fn(async()=>Response.json(evaluateFeatureFlags(flags))));
+        const usage={reserveQuota:vi.fn(async()=>true),claimQuota:vi.fn(async()=>{atClaim.release();await finishClaim.promise;}),releaseQuota:vi.fn(async()=>{})};
+        const admission=new ModelApiAdmission({acquire:vi.fn(async(_model,_signal,beforeAttempt)=>{await beforeAttempt();})}as never,usage as never);
+        const provider=vi.fn(async()=>{atWire.release();await answer.promise;return Response.json({model:model.model,choices:[{index:0,finish_reason:'stop',message:{content:'OK'}}]});});
+        const client=new RemoteModelClient({admission,fetch:provider as typeof fetch}),metrics=createModelDispatchMetrics();metrics.usageId=randomUUID();metrics.workerId='owned-model-sync-fence';
+        const pending=withModelDispatchMetrics(metrics,()=>withModelUsage({purpose:'chat',actorEmail:device.email,actorRole:device.role,
+            providerWire:{acquire:signal=>remoteProviderLease(pool,model,expected,{email:device.email,activeRole:device.role},signal)}},()=>client.infer(model,{modelId:model.id,revision:Number(expected.revision),baseUrl:expected.base_url,requestDimensions:false},'chat',{messages:[{role:'user',content:'hello'}]})));
+        let update:Promise<unknown>|undefined;
+        try{
+            await atClaim.promise;const scan=snapshot([candidate({timeoutMs:150000})]);update=service.sync(device,{scan,credentials:{},settingsRevision:0},async()=>trusted);
+            await expect.poll(async()=>(await admin.query("SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=$1 AND wait_event='advisory' AND query LIKE '%pg_advisory_xact_lock%'",[database])).rows[0].count,{interval:5,timeout:700}).toBe(1);
+            expect(provider).not.toHaveBeenCalled();finishClaim.release();await atWire.promise;await update;
+            expect(await remote.head(model.id)).toMatchObject({revision:'2',auth_mode:'optional',timeout_ms:150000});
+            expect(metrics.dispatchCount).toBe(1);expect(usage.claimQuota).toHaveBeenCalledOnce();expect(usage.releaseQuota).not.toHaveBeenCalled();
+        }finally{finishClaim.release();answer.release();await pending;await update;vi.unstubAllGlobals();}
+    });
+    it('legacy adoption takes provider before model so a paused manual save completes without a lock inversion',async()=>{
+        const old=await oldManualImport(),before=(await remote.head(old.id))!,trusted=await identity();
+        const atProvider=barrier(),continueWriter=barrier(),writer=await pool.connect();let released=false;
+        const db={query:async(sql:string,args?:unknown[])=>{const result=await writer.query(sql,args);if(sql==='SELECT pg_advisory_xact_lock(hashtextextended($1,0))'){atProvider.release();await continueWriter.promise;}return result;},release:()=>{released=true;writer.release();}};
+        const manual=new RemoteConnectionRepository({connect:async()=>db}as unknown as Pool);
+        const saving=manual.save(old.id,{expectedModelRevision:1,expectedRevision:Number(before.revision),baseUrl:old.source.baseUrl!,requestDimensions:false,credential:'none',authMode:'optional',options:old.source.options},device.email,async()=>undefined);
+        let adopting:Promise<unknown>|undefined;
+        try{
+            await atProvider.promise;const scan=snapshot([old.source]);adopting=service.sync(device,{scan,credentials:{},settingsRevision:0},async()=>trusted);
+            await expect.poll(async()=>(await admin.query("SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=$1 AND wait_event='advisory' AND query LIKE '%pg_advisory_xact_lock%'",[database])).rows[0].count,{interval:5,timeout:700}).toBe(1);
+            continueWriter.release();await saving;await adopting;
+            expect(await cards()).toHaveLength(1);expect((await service.repository.sources(device.id))[0]).toMatchObject({modelId:old.id,credentialStatus:'manual'});
+            expect(await remote.head(old.id)).toMatchObject({revision:'2',auth_mode:'optional',credential_kind:'none',credential:null});
+            expect((await pool.query('SELECT * FROM model_remote_connections WHERE model_id=$1 AND revision=1',[old.id])).rows[0]).toEqual(before);
+        }finally{continueWriter.release();await saving;await adopting;if(!released)writer.release();}
+    });
+    it('two devices with opposite candidate order serialize globally before acquiring model families',async()=>{
+        const first=candidate(),second=candidate({configKey:'second',model:'second',modelVersion:'second'}),other={...device,id:randomUUID()};
+        await pool.query('INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash,report) SELECT $2,email,role,name,fingerprint,$3,report FROM bridge_devices WHERE id=$1',[device.id,other.id,randomBytes(32).toString('hex')]);
+        const scanA=globalSnapshot([first,second]),scanB={...globalSnapshot([second,first]),deviceId:other.id};scanB.digest=modelScanDigest(scanB);
+        const atFirst=barrier(),finishFirst=barrier(),original=RemoteConnectionRepository.prototype.head;let held=false;
+        const head=vi.spyOn(RemoteConnectionRepository.prototype,'head').mockImplementation(async function(this:RemoteConnectionRepository,id,db){
+            const value=await original.call(this,id,db);if(id===openCodeIdentity(first)&&!held){held=true;atFirst.release();await finishFirst.promise;}return value;
+        });
+        const a=service.sync(device,{scan:scanA,credentials:{},settingsRevision:0},async()=>device);let b:Promise<unknown>|undefined;
+        try{
+            await atFirst.promise;b=service.sync(other,{scan:scanB,credentials:{},settingsRevision:0},async()=>other);
+            await expect.poll(async()=>(await admin.query("SELECT count(*)::int AS count FROM pg_stat_activity WHERE datname=$1 AND wait_event='advisory' AND query LIKE '%neurocenter:opencode-model-sync%'",[database])).rows[0].count,{interval:5,timeout:700}).toBe(1);
+            finishFirst.release();await a;await b;
+            expect(await cards()).toHaveLength(2);expect((await pool.query('SELECT * FROM model_remote_connections')).rows).toHaveLength(2);
+            expect((await pool.query('SELECT * FROM opencode_model_sources')).rows).toHaveLength(4);
+            expect((await service.repository.sources(device.id)).map(source=>source.modelId).sort()).toEqual((await service.repository.sources(other.id)).map(source=>source.modelId).sort());
+        }finally{finishFirst.release();await a;await b;head.mockRestore();}
+    });
     it('ignores JSON option key order and provider failures; neither produces a new connection on every heartbeat', async () => {
         await sync(snapshot()); const model = (await cards())[0];
         await pool.query("UPDATE model_remote_connections SET failure_message='Provider unavailable' WHERE model_id=$1", [model.id]);
@@ -157,7 +249,7 @@ describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQ
     });
     it('manual connection edits and credentials from another computer always win over automatic updates', async () => {
         await sync(snapshot()); const model = (await cards())[0];
-        await remote.save(model.id, { expectedModelRevision: 1, expectedRevision: 1, baseUrl: 'https://manual.example.test/v1', requestDimensions: false, credential: 'stored', apiKey: secret, options: { contextWindow: 8192 } }, device.email, async () => undefined);
+        await remote.save(model.id, { expectedModelRevision: 1, expectedRevision: 1, baseUrl: 'https://manual.example.test/v1', requestDimensions: false, credential: 'none',authMode:'optional', options: { contextWindow: 8192 } }, device.email, async () => undefined);
         const previous = await remote.head(model.id); await sync(snapshot());
         expect(await remote.head(model.id)).toEqual(previous);
         expect((await service.repository.sources(device.id))[0].credentialStatus).toBe('manual');
@@ -220,7 +312,9 @@ describe.skipIf(!adminUrl).sequential('OpenCode auto-sync — isolated PostgreSQ
         expect((await pool.query('SELECT * FROM opencode_model_snapshots')).rows).toEqual(before);
     });
     it('concurrent discovery is idempotent and semantic option changes create a new immutable connection identity', async () => {
-        await Promise.all([sync(snapshot()), sync(snapshot())]); const model = (await cards())[0]; expect(await cards()).toHaveLength(1);
+        const trusted=await identity();
+        await Promise.all([snapshot(),snapshot()].map(scan=>service.sync(device,{scan,credentials:{},settingsRevision:0},async()=>trusted)));
+        const model = (await cards())[0]; expect(await cards()).toHaveLength(1);
         await sync(snapshot([candidate({ capability: 'vision', options: { contextWindow: 32768 } })]));
         expect(Number((await remote.head(model.id))!.revision)).toBe(1); expect(await cards()).toHaveLength(2);
         const source=(await service.repository.sources(device.id))[0];expect(source.modelId).not.toBe(model.id);expect((await pool.query('SELECT descriptor FROM model_catalog WHERE id=$1',[source.modelId])).rows[0].descriptor.capability).toBe('vision');
