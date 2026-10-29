@@ -38,23 +38,23 @@ export function modelRuntimeEnvironment(root,environment=process.env) {
     return {MODEL_RUNTIME_URL:target,MODEL_STORAGE_PATH:config.data,...(context?{MODEL_CHAT_CONTEXT_WINDOW_TOKENS:context}:{})};
 }
 
-/** Запускает runtime; модели добавляются только явным импортом и установкой через каталог. */
-export async function startModelRuntime({root,environment=process.env,output},run=runModelStartupProcess) {
+/** Startup can use a preloaded runtime exclusively; weights and tags always belong to explicit imports. */
+export async function startModelRuntime({root,environment=process.env,output,preparedOnly=false},run=runModelStartupProcess) {
     if(environment.MODEL_HOSTING_ENABLED==='false') {
         output.info('Хостинг моделей','Отключён настройкой MODEL_HOSTING_ENABLED');return {ok:true,disabled:true};
     }
     const config=configuration(environment,root);
     await dataDirectory(config,'',true);
-    output.info('Запуск контейнера моделей','Ожидаем Docker и готовность runtime. Первая загрузка образа может занять несколько минут; предел ожидания — 10 минут.');
+    output.info('Запуск контейнера моделей',preparedOnly?'Используется только заранее подготовленный образ; скачивание и сборка отключены.':'Ожидаем Docker и готовность runtime. Первая загрузка образа может занять несколько минут; предел ожидания — 10 минут.');
     let result;
     try {
         result=await run('docker',['compose','--project-directory',root,'--project-name',config.project,
-            '-f',path.join(root,'compose.embedding.yml'),'up','-d','--wait','--wait-timeout','90','embedding'],
+            '-f',path.join(root,'compose.embedding.yml'),'up',...(preparedOnly?['--pull','never','--no-build']:[]),'-d','--wait','--wait-timeout','90','embedding'],
             {cwd:root,env:{...environment,EMBEDDING_PORT:String(config.port),MODEL_STORAGE_PATH:config.data},encoding:'utf8',maxBuffer:2*1024*1024,timeout:10*60*1000,
                 onTick:waiting(output,'Docker: запуск хостинга')});
         assertNotCancelled(result);
         if(result.error||result.status!==0)throw new Error('Не удалось подготовить контейнер моделей.');
-        output.success('Хостинг моделей готов; выберите модели в каталоге');
+        output.success('Хостинг моделей готов; добавьте нужную модель вручную из GGUF или архива');
         return {ok:true};
     } catch(error) {
         if(error.code==='ECANCELED')throw error;
@@ -65,7 +65,8 @@ export async function startModelRuntime({root,environment=process.env,output},ru
             :`Docker не подтвердил готовность контейнера${Number.isInteger(result?.status)?` (код ${result.status})`:''}.`);
         const diagnostic=await saveRuntimeDiagnostic(root,result || {error});
         if(diagnostic)output.info('Подробности Docker',diagnostic);
-        output.info('Повторить запуск','scripts/dev.sh up');
+        if(preparedOnly)output.info('Подготовить runtime','Перенесите проверенный архив образа Docker и загрузите его локально. Образ должен соответствовать закреплённой версии compose.embedding.yml.');
+        output.info('Повторить запуск','scripts/dev.sh up --profile full');
         return {ok:false};
     }
 }

@@ -4,6 +4,7 @@ import {RAG_QUOTA_MIGRATION,RAG_QUOTA_SCHEMA} from '../rag/quota/rag-quota-schem
 import {DATABASE_LIFECYCLE_SCHEMA,PROJECT_IDENTITY_SCHEMA} from './migration-sql';
 import type {SchemaObjects} from './schema-inspection';
 import {PLATFORM_QUOTA_SCHEMA,PLATFORM_QUOTA_CACHE_SCHEMA} from '../rag/quota/platform-quota-schema';
+import {PROJECT_TEXT_SCHEMA,PROJECT_TEXT_OBJECTS} from '../project-text/text-schema';
 
 export interface RagMigration {version:string;name:string;scope:'data'|'base'|'project';sql:string;objects:SchemaObjects;schemaSha256:string;lockTables?:readonly string[];}
 export const sqlChecksum=(sql:string):string=>createHash('sha256').update(sql).digest('hex');
@@ -21,7 +22,11 @@ export const PLATFORM_QUOTA_MIGRATION:RagMigration={version:'platform-quota-poli
     objects:{tables:['rag_platform_quota_policy','rag_platform_quota_events']},schemaSha256:'ee6db88af1409567bf4775b1d306dbbe632fc4d14a4d5ad273b689a7b4dfa18c'};
 export const PLATFORM_QUOTA_CACHE_MIGRATION:RagMigration={version:'platform-quota-applied-1',name:'platform-quota-applied',scope:'data',sql:PLATFORM_QUOTA_CACHE_SCHEMA,
     objects:{tables:['rag_platform_quota_applied']},schemaSha256:'01eee6249c42330df2f100871cda22772e60314f71843a0e740cabc64c0c8575'};
-export const RAG_MIGRATIONS=[GENERATION_MIGRATION,LIFECYCLE_MIGRATION,IDENTITY_MIGRATION,PLATFORM_QUOTA_MIGRATION,PLATFORM_QUOTA_CACHE_MIGRATION] as const;
+/** Measured on the owned PostgreSQL 16.15 fixture with the frozen semantic/quota schemas. */
+export const PROJECT_TEXT_MIGRATION:RagMigration={version:'project-text-1',name:'project-text-knowledge',scope:'project',sql:PROJECT_TEXT_SCHEMA,
+    objects:PROJECT_TEXT_OBJECTS,lockTables:['rag_chunks','rag_storage_budget'],
+    schemaSha256:'9f7cbeee84d8b4cca72dd912a2ff1cfa60ebf342c26a1a458f453bdf2fce07ec'};
+export const RAG_MIGRATIONS=[GENERATION_MIGRATION,LIFECYCLE_MIGRATION,IDENTITY_MIGRATION,PLATFORM_QUOTA_MIGRATION,PLATFORM_QUOTA_CACHE_MIGRATION,PROJECT_TEXT_MIGRATION] as const;
 export const QUOTA_MIGRATION:RagMigration={version:RAG_QUOTA_MIGRATION,name:'rag-storage-budget',scope:'data',sql:RAG_QUOTA_SCHEMA,
     lockTables:['rag_chunks'],
     objects:{tables:['rag_storage_settings','rag_storage_budget','rag_quota_events'],

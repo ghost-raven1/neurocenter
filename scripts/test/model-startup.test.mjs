@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,mkdir,symlink,readFile,stat,readdir} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,symlink,readFile,writeFile,stat,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {modelRuntimeEnvironment,startModelRuntime} from '../models/startup.mjs';
@@ -27,6 +27,19 @@ test('Startup запускает только Docker runtime, не скачив�
     assert.deepEqual(calls[0].args.slice(-6),['up','-d','--wait','--wait-timeout','90','embedding']);
     assert.equal(calls[0].args.some(arg=>['pull','down','stop'].includes(arg)),false);
     assert.ok(messages.some(item=>item.text[0]==='Docker: запуск хостинга'&&item.text[1].includes('12 с')));
+}));
+test('Prepared-only hosting starts a locally available image without pulling or building',async()=>fixture(async({root,output})=>{
+    const calls=[];assert.deepEqual(await startModelRuntime({root,output,environment:{},preparedOnly:true},async(command,args)=>{calls.push({command,args});return {status:0};}),{ok:true});
+    assert.equal(calls.length,1);assert.equal(calls[0].command,'docker');const up=calls[0].args.indexOf('up');
+    assert.deepEqual(calls[0].args.slice(up,up+4),['up','--pull','never','--no-build']);
+    assert.equal(calls[0].args.some(arg=>['pull','build','create','run'].includes(arg)),false);
+}));
+test('Missing prepared hosting image is not reported ready and leaves models/tags untouched',async()=>fixture(async({root,output,messages})=>{
+    const manifest=path.join(root,'data/embedding/models/manifests/local/imported/v1');await mkdir(path.dirname(manifest),{recursive:true});await writeFile(manifest,'existing accepted local model');
+    const calls=[];assert.deepEqual(await startModelRuntime({root,output,environment:{},preparedOnly:true},async(command,args)=>{calls.push({command,args});return {status:1,stderr:'synthetic missing local image'};}),{ok:false});
+    assert.equal(calls.length,1);assert.ok(calls[0].args.includes('--no-build'));assert.ok(calls[0].args.includes('never'));
+    assert.equal(messages.some(item=>item.level==='success'),false);assert.ok(messages.some(item=>item.text.join(' ').includes('архив')));
+    assert.equal(await readFile(manifest,'utf8'),'existing accepted local model');
 }));
 test('Ошибка Docker видна, детали пишутся в закрытый лог, соседние сервисы могут стартовать',async()=>fixture(async({root,output,messages})=>{
     assert.deepEqual(await startModelRuntime({root,output,environment:{}},async()=>({status:1,stderr:'PRIVATE UPSTREAM'})),{ok:false});

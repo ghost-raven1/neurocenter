@@ -1,3 +1,4 @@
+import {normalizeTextContext} from '../../../shared/project-text-knowledge.cjs';
 import {runModelChatAgentTools} from '../agent-tools/agent-tools.model-chat';
 import {traceSavedChat} from '../../../shared/dev-trace.cjs';
 import {AgentToolsService} from '../agent-tools/agent-tools.service';
@@ -243,10 +244,14 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         });
     }
     async send(req: Request, id: string, raw: unknown, signal: AbortSignal): Promise<ChatDetail> {
-        const body = chatBody(raw, ['expectedRevision', 'requestId', 'prompt', 'attachmentIds', 'expectedModelPin', 'targetAgentIds', 'research','agentTools']), revision = chatRevision(body.expectedRevision), requestId = chatUuid(body.requestId),
+        const body = chatBody(raw, ['expectedRevision', 'requestId', 'prompt', 'attachmentIds', 'expectedModelPin', 'targetAgentIds', 'research','agentTools','textContext']), revision = chatRevision(body.expectedRevision), requestId = chatUuid(body.requestId),
             prompt = chatPrompt(body.prompt, true), ids = chatAttachmentIds(body.attachmentIds ?? []), pin = chatPin(body.expectedModelPin), scope = await this.scope(req, id),
             targets = body.targetAgentIds === undefined ? [] : chatAgentIds(body.targetAgentIds, true), research = chatResearchInput(body.research, scope.row.project_id),agentTools=agentToolGrant(body.agentTools,scope.row.project_id),
-            values = scope.row.mode === 'group' ? [prompt, ids, targets] : [prompt, ids], hash = chatHash(agentTools?[...values,research??null,agentTools]:research ? [...values, research] : values);
+            values = scope.row.mode === 'group' ? [prompt, ids, targets] : [prompt, ids];
+        let textContext;try{textContext=body.textContext===undefined?undefined:normalizeTextContext(body.textContext);}catch(error){throw new BadRequestException((error as Error).message);}
+        if(textContext&&(!scope.row.project_id||research||agentTools))throw new BadRequestException('Выберите текстовый контекст проекта отдельно от исследования и инструментов.');
+        const ordinaryHash=agentTools?[...values,research??null,agentTools]:research?[...values,research]:values;
+        const hash=chatHash(textContext?[...ordinaryHash,{textContext}]:ordinaryHash);
         if(agentTools&&research)throw new BadRequestException('Выберите один режим: инструменты агента или внешнее исследование. Поиск проекта входит в инструменты агента.');
         if (scope.row.mode !== 'group' && targets.length) throw new BadRequestException('Адресаты доступны в групповом диалоге.');
         if (!prompt.trim() && !ids.length) throw new BadRequestException('Введите сообщение или прикрепите документ.');
@@ -263,12 +268,14 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             const tail = await this.repository.tail(db, id);
             if (!tail || tail.status === 'pending' || !await this.discussions.get(db, tail.id)) this.requireResolved(tail ? [tail] : []);
             const model = await scope.authorize(true), text = await this.inputText(db, id, prompt, ids);
+            const selectedText=textContext?await this.projectContext.prepareText(req,row.project_id!,textContext,signal):undefined;
             const plan = row.mode === 'group' ? await this.groups.plan(req, row, model, targets, db) : [];
-            const automatic = plan.length > 1 && !research && !agentTools && (await readFeatures(process.env,globalThis.fetch,signal)).flags.group_discussions;
+            const automatic = plan.length > 1 && !research && !agentTools && !textContext && (await readFeatures(process.env,globalThis.fetch,signal)).flags.group_discussions;
             const context = automatic ? undefined : await this.contextFor(req, db, row, model, text, targets);
             if (context?.exceeded) throw new BadRequestException(context.reason || 'Сообщение не помещается в доступный контекст.');
             if (automatic) await this.discussionHistory(db, row, model, text);
-            const turn = await this.repository.addTurn(db, row, { requestId, hash, prompt, attachmentIds: ids, text, research, agentTools, targetAgentIds: plan.map(agent => agent.snapshot.agentId) });
+            const turn = await this.repository.addTurn(db, row, { requestId, hash, prompt, attachmentIds: ids, text, research, agentTools, targetAgentIds: plan.map(agent => agent.snapshot.agentId),
+                ...(textContext&&selectedText?{textContext:{selection:textContext,evidence:selectedText.evidence}}:{}) });
             if (automatic) await this.discussions.create(db, turn, scope.actorRole, model, plan);
             else if (plan.length) await this.groups.add(db, row, turn, plan);
             await this.repository.stage(db, row, turn, context?.compactionNeeded ? 'compacting' : 'responding');
@@ -327,6 +334,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             if (await this.discussions.get(db, turnId)) throw new ConflictException('История обсуждения сохраняется. Отправьте исправленный вопрос новым сообщением.');
             if ((await this.groups.responses(db, id, [turnId])).some(response => response.status === 'done')) throw new ConflictException('Полученные ответы сохраняются. Продолжите с готовыми ответами вместо удаления раунда.');
             await db.query("DELETE FROM model_chat_research_steps WHERE conversation_id=$1 AND turn_id=$2", [id, turnId]);
+            await db.query('DELETE FROM model_chat_text_contexts WHERE turn_id=$1',[turnId]);
             await db.query("UPDATE model_chat_turns SET removed_at=now(),prompt='',input_text='',attachment_ids='{}' WHERE conversation_id=$1 AND id=$2", [id, turnId]); await this.repository.bump(db, row);
         }); return this.read(req, id);
     }
@@ -367,7 +375,13 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             if(turn.agent_tools_request){if(!this.agentTools)throw new ServiceUnavailableException('Инструменты агентов недоступны.');await this.agentTools.admit(req,scope.row.project_id!,turn.agent_tools_request);}
             const research = new ChatResearchExecutor(this.repository, this.runtime, this.researchTools, this.projectContext);
             const beforeInference = async () => { if(turn.agent_tools_request)await requireFeatureEnabled('project_agent_tools');await scope.authorize(true); await assertPendingChatInference(this.repository, scope.row.id, turn, combined); };
-            const model = await scope.authorize(true), prepareProject = () => turn.agent_tools_request&&!turn.agent_tools_request.rag?this.agentTools!.metadataProject(req,scope.row.project_id!,combined,()=>scope.authorize(true)):withModelUsage({ purpose: 'project-search', actorEmail: scope.owner,actorRole:scope.actorRole, projectId: scope.row.project_id, turnId: turn.id, beforeInference, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.projectContext.prepare(req, scope.row.project_id, turn.input_text, combined));
+            if(scope.row.project_id&&!turn.text_context){
+                const saved=(await this.pool.query<NonNullable<TurnRow['text_context']>>('SELECT selection,evidence FROM model_chat_text_contexts WHERE turn_id=$1 AND project_id=$2',[turn.id,scope.row.project_id])).rows[0];
+                if(saved)turn.text_context=saved;
+            }
+            const model = await scope.authorize(true), prepareProject = () => turn.text_context
+                ? this.projectContext.prepareText(req,scope.row.project_id!,turn.text_context.selection,combined,turn.text_context.evidence)
+                : turn.agent_tools_request&&!turn.agent_tools_request.rag?this.agentTools!.metadataProject(req,scope.row.project_id!,combined,()=>scope.authorize(true)):withModelUsage({ purpose: 'project-search', actorEmail: scope.owner,actorRole:scope.actorRole, projectId: scope.row.project_id, turnId: turn.id, beforeInference, requiredFeatures: [scope.row.mode === 'group' ? 'group_chat' : 'model_chat', ...(turn.research_request ? ['research_tools' as const] : [])] }, () => this.projectContext.prepare(req, scope.row.project_id, turn.input_text, combined));
             if (scope.row.mode === 'group') {
                 const prepared = await prepareChatRound(req, scope, turn, combined, this.groups, this.repository, model => this.settings(this.pool, model), research);
                 if (!prepared.size) { await finishChatRound(scope, turn, combined, this.groups, this.repository); return this.read(req, scope.row.id); }

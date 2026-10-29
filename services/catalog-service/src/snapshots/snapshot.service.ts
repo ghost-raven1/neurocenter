@@ -36,6 +36,10 @@ export class SnapshotService implements OnModuleInit,OnModuleDestroy {
         }catch{throw new ForbiddenException('Не подтверждён пользователь снимка.');}
     }
     async capabilities(){
+        if(process.env.SNAPSHOT_EXECUTOR_ENABLED!==undefined&&process.env.SNAPSHOT_EXECUTOR_ENABLED!=='1')return {
+            available:false,reason:'Исполнитель проверки снимков не подготовлен. Подготовьте его для новых публикаций.',
+            format:'neurocenter.lancedb-snapshot/v1',chunkBytes:SNAPSHOT_CHUNK_BYTES,maxBytes:Number(process.env.SNAPSHOT_MAX_BYTES||16*1024**3),
+        };
         let reason:string|null=null;
         try{this.storage();await this.signer.signature({purpose:'configuration-check'});}catch{reason='Настройте хранилище и приватный ключ подписи снимков.';}
         const live=(await this.pool.query("SELECT 1 FROM project_snapshot_verifiers WHERE sdk_version='0.29.0' AND last_seen>now()-interval '60 seconds' AND ($1::text IS NULL OR image_digest=$1) LIMIT 1",[process.env.SNAPSHOT_VERIFIER_IMAGE_DIGEST??null])).rowCount;

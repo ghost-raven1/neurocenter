@@ -50,11 +50,17 @@ export class ChatRepository {
         if (before && !cursor) throw new NotFoundException('Страница истории не найдена в этом диалоге.');
         const candidates = (await db.query<{ id: string; bytes: string }>(`SELECT id,octet_length(to_jsonb(t)::text)-octet_length(input_text)+512+
             COALESCE((SELECT sum(octet_length(COALESCE(r.answer::text,''))+2048) FROM model_chat_agent_responses r WHERE r.turn_id=t.id),0)
+            +COALESCE((SELECT octet_length(c.selection::text)+octet_length(c.evidence::text)+128 FROM model_chat_text_contexts c WHERE c.turn_id=t.id),0)
             +COALESCE((SELECT sum(octet_length(COALESCE(s.output,''))+2048) FROM model_chat_discussion_steps s WHERE s.turn_id=t.id),0) AS bytes FROM model_chat_turns t
             WHERE conversation_id=$1 AND removed_at IS NULL AND ($2::bigint IS NULL OR position<$2) ORDER BY position DESC LIMIT $3`, [row.id, cursor?.position ?? null, limit + 1])).rows;
         const selected: string[] = []; let bytes = 0;
         for (const turn of candidates.slice(0, limit)) { const size = Number(turn.bytes); if (selected.length && bytes + size > 4 * 1024 ** 2) break; selected.push(turn.id); bytes += size; }
         const turns = (await db.query<TurnRow>('SELECT * FROM model_chat_turns WHERE conversation_id=$1 AND id=ANY($2::uuid[]) ORDER BY position', [row.id, selected])).rows;
+        if(turns.length){
+            const contexts=(await db.query<{turn_id:string;selection:NonNullable<TurnRow['text_context']>['selection'];evidence:NonNullable<TurnRow['text_context']>['evidence']}>(
+                'SELECT c.turn_id,c.selection,c.evidence FROM model_chat_text_contexts c JOIN model_chat_turns t ON t.id=c.turn_id WHERE t.conversation_id=$1 AND c.turn_id=ANY($2::uuid[])',[row.id,selected])).rows;
+            for(const turn of turns){const context=contexts.find(value=>value.turn_id===turn.id);if(context)turn.text_context={selection:context.selection,evidence:context.evidence};}
+        }
         const responses = (await db.query<ChatResponseRow>("SELECT id,conversation_id,turn_id,agent_id,snapshot-'definition' AS snapshot,request_id,status,processing_stage,answer,error FROM model_chat_agent_responses WHERE conversation_id=$1 AND turn_id=ANY($2::uuid[]) ORDER BY created_at,id", [row.id, selected])).rows;
         for (const turn of turns) turn.responses = responses.filter(response => response.turn_id === turn.id).sort((a, b) => turn.target_agent_ids.indexOf(a.agent_id) - turn.target_agent_ids.indexOf(b.agent_id));
         await projectExecutionState(db, row, turns);
@@ -115,9 +121,14 @@ export class ChatRepository {
     async priorTurn(db: ChatDb, conversation: string, requestId: string): Promise<TurnRow | undefined> {
         return (await db.query<TurnRow>('SELECT * FROM model_chat_turns WHERE conversation_id=$1 AND $2::uuid=ANY(request_ids)', [conversation, requestId])).rows[0];
     }
-    async addTurn(db: ChatDb, row: ConversationRow, input: { requestId: string; hash: string; prompt: string; attachmentIds: string[]; text: string; targetAgentIds?: string[]; research?: import('./chat-research.types').ChatResearchRequest | null; agentTools?:import('../agent-tools/agent-tools.types').AgentToolGrant }): Promise<TurnRow> {
+    async addTurn(db: ChatDb, row: ConversationRow, input: { requestId: string; hash: string; prompt: string; attachmentIds: string[]; text: string; targetAgentIds?: string[]; research?: import('./chat-research.types').ChatResearchRequest | null; agentTools?:import('../agent-tools/agent-tools.types').AgentToolGrant;textContext?:TurnRow['text_context'] }): Promise<TurnRow> {
         const turn = (await db.query<TurnRow>(`INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,attachment_ids,input_text,status,lease_until,target_agent_ids,research_request,agent_tools_request)
             VALUES($1,$2,$3,ARRAY[$3::uuid],$4,$5,$6,$7,'pending',now()+interval '20 minutes',$8,$9::jsonb,$10::jsonb) RETURNING *`, [randomUUID(), row.id, input.requestId, input.hash, input.prompt, input.attachmentIds, input.text, input.targetAgentIds ?? [], input.research ? JSON.stringify(input.research) : null,input.agentTools?JSON.stringify(input.agentTools):null])).rows[0];
+        if(input.textContext){
+            if(!row.project_id)throw new ConflictException('Для текстового контекста нужен проект.');
+            await db.query('INSERT INTO model_chat_text_contexts(turn_id,project_id,selection,evidence) VALUES($1,$2,$3::jsonb,$4::jsonb)',[turn.id,row.project_id,JSON.stringify(input.textContext.selection),JSON.stringify(input.textContext.evidence)]);
+            turn.text_context=input.textContext;
+        }
         await this.bump(db, row); return turn;
     }
     async attachment(db: ChatDb, conversation: string, id: string): Promise<AttachmentRow> {

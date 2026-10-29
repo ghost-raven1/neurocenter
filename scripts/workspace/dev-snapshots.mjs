@@ -56,7 +56,7 @@ function dockerFailure(result,seconds){
 /** Inspect only: startup must not install packages, build an image or mutate signing state. */
 export function inspectDevSnapshotImage(root,environment=process.env){
  const image=environment.SNAPSHOT_VERIFIER_IMAGE||'neurocenter-snapshot-verifier:local';
- const recovery=environment.SNAPSHOT_VERIFIER_IMAGE?'Загрузите выбранный готовый образ или уберите SNAPSHOT_VERIFIER_IMAGE и выполните scripts/dev.sh install или scripts/dev.sh build.':'Выполните scripts/dev.sh install или scripts/dev.sh build.';
+ const recovery=environment.SNAPSHOT_VERIFIER_IMAGE?'Загрузите выбранный готовый образ или уберите SNAPSHOT_VERIFIER_IMAGE и выполните scripts/dev.sh install --profile standard или scripts/dev.sh build --profile standard.':'Выполните scripts/dev.sh install --profile standard или scripts/dev.sh build --profile standard.';
  const inspected=spawnSync('docker',['image','inspect',image,'--format','{{.Id}}'],{cwd:root,encoding:'utf8',timeout:15000,killSignal:'SIGKILL'}),failure=dockerFailure(inspected,15);
  if(failure)throw new Error(`Образ проверки снимков недоступен: ${failure}. ${recovery} Прежний запуск сохранён.`,{cause:inspected.error});
  const imageId=String(inspected.stdout??'').trim();if(!/^sha256:[a-f0-9]{64}$/.test(imageId))throw new Error(`Образ проверки снимков недоступен: Docker не вернул корректный digest. ${recovery} Прежний запуск сохранён.`);
@@ -77,8 +77,20 @@ export async function buildDevSnapshotImage(root,environment=process.env){
  return inspectDevSnapshotImage(root,environment);
 }
 
-/** A missing signing key must never be replaced while signed snapshots or profiles exist. */
-export async function prepareDevSnapshots(root,environment=process.env,checkedImageId){
+/** Preserve configured identity references without creating files, reading private bytes or contacting the executor. */
+function snapshotCatalogEnvironment(root,environment,executorEnabled){
+ const secrets=path.join(root,'.run/project-snapshots/secrets');
+ return {...Object.fromEntries(Object.entries(environment).filter(([key])=>key.startsWith('SNAPSHOT_')&&!key.startsWith('SNAPSHOT_RUNNER_')&&!['SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS','SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS','SNAPSHOT_VERIFIER_BUILD_NETWORK','SNAPSHOT_VERIFIER_REGISTRY_IPV4','SNAPSHOT_VERIFIER_TLS_VERIFY'].includes(key))),
+  SNAPSHOT_SIGNING_KEY_FILE:path.resolve(root,environment.SNAPSHOT_SIGNING_KEY_FILE||path.join(secrets,'signing.pem')),
+  SNAPSHOT_VERIFIER_TOKEN_FILE:path.resolve(root,environment.SNAPSHOT_VERIFIER_TOKEN_FILE||path.join(secrets,'verifier-token')),
+  ...(environment.SNAPSHOT_TRUSTED_KEYS_FILE?{SNAPSHOT_TRUSTED_KEYS_FILE:path.resolve(root,environment.SNAPSHOT_TRUSTED_KEYS_FILE)}:{}),
+  SNAPSHOT_EXECUTOR_ENABLED:executorEnabled?'1':'0'};
+}
+
+/** Core retains signing references; explicit preparation alone may create a missing, history-safe identity. */
+export async function prepareDevSnapshots(root,environment=process.env,checkedImageId,{executorEnabled=true}={}){
+ const catalog=snapshotCatalogEnvironment(root,environment,executorEnabled);
+ if(!executorEnabled)return {catalog};
  const imageId=checkedImageId??inspectDevSnapshotImage(root,environment);
  if(typeof imageId!=='string'||!/^sha256:[a-f0-9]{64}$/.test(imageId))throw new Error('Некорректный digest подготовленного образа проверки снимков.');
  const directory=path.join(root,'.run/project-snapshots'),secrets=path.join(directory,'secrets');await fs.mkdir(secrets,{recursive:true,mode:0o700});
@@ -105,5 +117,5 @@ export async function prepareDevSnapshots(root,environment=process.env,checkedIm
  try{await privateSnapshotFile(tokenFile,1024);}catch(error){if(error.code!=='ENOENT')throw error;try{await fs.writeFile(tokenFile,randomBytes(32).toString('hex')+'\n',{flag:'wx',mode:0o600});}catch(writeError){if(writeError.code!=='EEXIST')throw writeError;}}
  const token=(await privateSnapshotFile(tokenFile,1024)).toString('utf8').trim();if(!/^[a-f0-9]{64,128}$/.test(token))throw new Error('Некорректный токен исполнителя снимков.');
 
- return {catalog:{...Object.fromEntries(Object.entries(environment).filter(([key])=>key.startsWith('SNAPSHOT_')&&!key.startsWith('SNAPSHOT_RUNNER_')&&!['SNAPSHOT_VERIFIER_BUILD_TIMEOUT_SECONDS','SNAPSHOT_VERIFIER_NPM_DIAGNOSTICS','SNAPSHOT_VERIFIER_BUILD_NETWORK','SNAPSHOT_VERIFIER_REGISTRY_IPV4','SNAPSHOT_VERIFIER_TLS_VERIFY'].includes(key))),SNAPSHOT_SIGNING_KEY_FILE:keyFile,SNAPSHOT_VERIFIER_TOKEN_FILE:tokenFile,SNAPSHOT_VERIFIER_IMAGE_DIGEST:imageId,...(environment.SNAPSHOT_TRUSTED_KEYS_FILE?{SNAPSHOT_TRUSTED_KEYS_FILE:path.resolve(root,environment.SNAPSHOT_TRUSTED_KEYS_FILE)}:{})},runner:{PATH:environment.PATH,HOME:environment.HOME,TMPDIR:environment.TMPDIR,SNAPSHOT_MAX_BYTES:environment.SNAPSHOT_MAX_BYTES||String(16*1024**3),SNAPSHOT_STAGING_MAX_BYTES:environment.SNAPSHOT_STAGING_MAX_BYTES||String(32*1024**3),SNAPSHOT_RUNNER_DIRECTORY:path.join(directory,'work'),SNAPSHOT_RUNNER_CATALOG_URL:'http://127.0.0.1:4100',SNAPSHOT_RUNNER_IMAGE:imageId,SNAPSHOT_RUNNER_TOKEN_FILE:tokenFile}};
+ return {catalog:{...catalog,SNAPSHOT_VERIFIER_IMAGE_DIGEST:imageId},runner:{PATH:environment.PATH,HOME:environment.HOME,TMPDIR:environment.TMPDIR,SNAPSHOT_MAX_BYTES:environment.SNAPSHOT_MAX_BYTES||String(16*1024**3),SNAPSHOT_STAGING_MAX_BYTES:environment.SNAPSHOT_STAGING_MAX_BYTES||String(32*1024**3),SNAPSHOT_RUNNER_DIRECTORY:path.join(directory,'work'),SNAPSHOT_RUNNER_CATALOG_URL:'http://127.0.0.1:4100',SNAPSHOT_RUNNER_IMAGE:imageId,SNAPSHOT_RUNNER_TOKEN_FILE:tokenFile}};
 }

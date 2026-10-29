@@ -67,6 +67,19 @@ test('External cancellation aborts verification, sends no completion/rejection a
   await started;controller.abort(Error('RUNNER_STOPPED'));await assert.rejects(run,/RUNNER_STOPPED/);assert.equal(f.calls.some(row=>/\/(complete|reject)$/.test(row.route)),false);assert.deepEqual(await fs.readdir(f.directory),[]);
  }finally{await f.dispose();}
 });
+test('A stopped verification can materialize and finish the same accepted bytes on the next execution',async()=>{
+ const f=await fixture(),controller=new AbortController();let entered;const started=new Promise(resolve=>{entered=resolve;});
+ try{
+  const running=executeSnapshotVerification(f.claim,{directory:f.directory,workerId,imageId:'sha256:'+'a'.repeat(64),api:f.api,signal:controller.signal,
+   verify:async(_stage,_image,{signal})=>{entered();return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}));}});
+  await started;controller.abort(Error('RUNNER_STOPPED'));await assert.rejects(running,/RUNNER_STOPPED/);
+  assert.equal(f.calls.some(row=>/\/(complete|reject)$/.test(row.route)),false);
+  const resumed=await executeSnapshotVerification(f.claim,{directory:f.directory,workerId,imageId:'sha256:'+'a'.repeat(64),api:f.api,
+   verify:async stage=>{assert.deepEqual(await fs.readFile(path.join(stage,'database/documents.lance/data/part.lance')),f.payload);return {readRows:0};}});
+  assert.equal(resumed.status,'VERIFIED');assert.equal(f.calls.at(-1).route,f.claim.snapshotId+'/complete');assert.equal(f.calls.some(row=>row.route.endsWith('/reject')),false);
+  assert.deepEqual(await fs.readdir(f.directory),[]);
+ }finally{await f.dispose();}
+});
 test('Lease renewal refusal cancels the in-flight verifier rather than signing a late result',{timeout:45000},async()=>{
  const f=await fixture();let entered;const started=new Promise(resolve=>{entered=resolve;});
  try{const api=(route,options)=>route.endsWith('/renew')?Promise.reject(Error('LEASE_REVOKED')):f.api(route,options);

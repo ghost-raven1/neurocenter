@@ -31,6 +31,8 @@ vi.mock('../src/common/components/AccessibleDrawer', () => ({ default: ({ open, 
 vi.mock('../src/modules/Operations/OperationsButton', () => ({ default: () => null }));
 vi.mock('../src/features/ModelChat/ChatLauncher', () => ({ChatLauncher:()=>null}));
 vi.mock('../src/features/McpBridge/BridgePairing', () => ({ BridgePairing: () => null }));
+vi.mock('../src/features/ComputerSetup/ComputerEnvironment', () => ({ComputerEnvironmentProvider: ({children}: {children: ReactNode}) => children}));
+vi.mock('../src/features/ComputerSetup/ComputerHeader', () => ({ComputerHeader: () => createElement('div', {'data-computer-header': true}, 'Рабочий компьютер · OpenCode')}));
 vi.mock('antd', () => {
     const content = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
     return { Grid: { useBreakpoint: () => ({ lg: !fixture.compact }) },
@@ -39,40 +41,29 @@ vi.mock('antd', () => {
         Badge: ({ status }: { status: string }) => createElement('i', { 'data-status': status }) };
 });
 
-function render(live: boolean, compact: boolean, menuOpen = false): string {
+function render(compact: boolean, menuOpen = false): string {
     fixture.compact = compact;
-    // Снимок оболочки: меню и операции закрыты; проверяем только представление канала событий.
-    fixture.states = [menuOpen, false, live];
+    fixture.states = [menuOpen, false];
     return renderToStaticMarkup(createElement(Core, { modulesStructure: [], children: 'Содержимое страницы' }));
 }
 
-describe('Канал событий сайта отделён от доступности моста', () => {
-    it.each([false, true])('Подключённый канал имеет точную подпись и доступное имя, компактный режим=%s', compact => {
-        const html = render(true, compact);
-        expect(html).toContain('role="status"');
-        expect(html).toContain('aria-label="Автообновление данных подключено."');
-        expect(html).toContain('Изменения на сайте приходят автоматически');
-        expect(html.replaceAll('<wbr/>','')).toContain('class="app__live-label">Автообновление</span>');
-        expect(html).not.toContain('На связи');
+describe('Header keeps computer status separate from background events', () => {
+    it.each([false, true])('shows computer/OpenCode instead of the auto-update label, compact=%s', compact => {
+        const html = render(compact);
+        expect(html).toContain('data-computer-header="true"');
+        expect(html).toContain('Рабочий компьютер · OpenCode');
+        expect(html).not.toContain('app__live');
+        expect(html).not.toContain('Автообновление');
+        expect(html).not.toContain('Нет автообновления');
     });
-
-    it('Потеря канала обозначена как недоступность обновлений сайта', () => {
-        const html = render(false, true);
-        expect(html.replaceAll('<wbr/>','')).toContain('Нет автообновления');
-        expect(html).toContain('Автообновление данных недоступно. Восстанавливаем соединение.');
-        expect(html).toContain('Статус компьютеров находится в списке мостов');
-        expect(html).toContain('app__live--disconnected');
-    });
-
     it('Мобильное меню оставляет короткий заголовок без слогана', () => {
-        const html = render(true, true, true);
+        const html = render(true, true);
         expect(html).toContain('<section data-drawer="true"><span class="app__drawer-brand">');
         expect(html).toContain('Нейроцентр</span>');
         expect(html).not.toContain('Рабочее пространство команды');
         expect(html).not.toContain('app__brand');
     });
-
     it('Постоянная боковая панель сохраняет название и существующее описание', () => {
-        expect(render(true, false)).toContain('Рабочее пространство команды');
+        expect(render(false)).toContain('Рабочее пространство команды');
     });
 });

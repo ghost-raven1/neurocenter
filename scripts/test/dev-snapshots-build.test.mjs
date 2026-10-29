@@ -76,6 +76,23 @@ test('runtime preparation inspects a ready image and ignores all build-only cont
     await f.unchanged();
 });
 
+for(const seed of [false,true])test('core snapshot state preserves references without Docker, PostgreSQL or new identities: '+seed,async t=>{
+    const f=await fixture(t,{seed}),prepared=await prepareSnapshotRuntime(f.root,f.environment,undefined,{executorEnabled:false});
+    assert.deepEqual(f.calls,[]);assert.deepEqual(await f.dbEvents(),[]);await f.unchanged();
+    assert.equal(prepared.runner,undefined);assert.equal(prepared.catalog.SNAPSHOT_EXECUTOR_ENABLED,'0');
+    assert.equal(prepared.catalog.SNAPSHOT_SIGNING_KEY_FILE,f.keyFile);assert.equal(prepared.catalog.SNAPSHOT_VERIFIER_TOKEN_FILE,f.tokenFile);
+    if(!seed)await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});
+});
+
+test('core keeps explicitly configured signing, token and trusted-key references without reading or replacing them',async t=>{
+    const f=await fixture(t,{seed:false}),environment={...f.environment,SNAPSHOT_SIGNING_KEY_FILE:'private/existing.pem',
+        SNAPSHOT_VERIFIER_TOKEN_FILE:'private/existing-token',SNAPSHOT_TRUSTED_KEYS_FILE:'private/trusted.json',SNAPSHOT_VERIFIER_IMAGE_DIGEST:digest};
+    const prepared=await prepareSnapshotRuntime(f.root,environment,undefined,{executorEnabled:false});
+    for(const name of ['SNAPSHOT_SIGNING_KEY_FILE','SNAPSHOT_VERIFIER_TOKEN_FILE','SNAPSHOT_TRUSTED_KEYS_FILE'])assert.equal(prepared.catalog[name],path.resolve(f.root,environment[name]));
+    assert.equal(prepared.catalog.SNAPSHOT_VERIFIER_IMAGE_DIGEST,digest);assert.equal(prepared.catalog.SNAPSHOT_EXECUTOR_ENABLED,'0');
+    assert.deepEqual(f.calls,[]);assert.deepEqual(await f.dbEvents(),[]);await assert.rejects(fs.stat(path.join(f.root,'private')),{code:'ENOENT'});
+});
+
 test('missing prepared image fails with install guidance before PostgreSQL and signing writes',async t=>{
     const f=await fixture(t,{seed:false,inspect:result({status:1})});
     assert.throws(()=>inspectDevSnapshotImage(f.root,f.environment),/scripts\/dev\.sh install/);

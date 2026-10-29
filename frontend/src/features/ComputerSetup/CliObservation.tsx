@@ -2,17 +2,17 @@ import {Button, Space, Spin, Tag, Typography} from 'antd';
 import type {useBridge} from '../McpBridge/useBridge';
 import {cliTerminal} from './model';
 import {useCliObservation} from './useCliObservation';
+import {cliObservationPresentation} from './presentation';
 
 /** Compact status reports only the selected computer's validated receipt, never a model or installer result. */
 export function CliObservation({bridge, canStart: masterEnabled}: {bridge: ReturnType<typeof useBridge>; canStart: boolean}): JSX.Element {
-    const {state, controller, blocker, canStart, canCancel, roleChanged} = useCliObservation(bridge, masterEnabled);
-    const {job, intent} = state, observation = job?.observation;
-    const running = !!job && !cliTerminal(job), unknown = !!intent && !job;
-    const label = observation?.status === 'installed' ? `OpenCode ${observation.version}` : observation?.status === 'missing' ? 'OpenCode не найден'
-        : observation?.status === 'timed-out' ? 'Проверка превысила срок' : observation?.status === 'failed' || job?.state === 'failed' ? 'Проверка не завершена'
-            : job?.state === 'cancelled' ? 'Проверка отменена' : job?.state === 'queued' ? 'Проверка в очереди' : job?.state === 'reconciling' ? 'Подтверждаем результат…'
-                : running ? 'Мост проверяет OpenCode…' : unknown ? state.reading ? 'Проверяем принятие отправки…' : 'Отправка пока не подтверждена' : 'Версия ещё не проверена';
-    const notice = state.storageError || state.error;
+    return <CliObservationDetails control={useCliObservation(bridge, masterEnabled)}/>;
+}
+
+/** Reuse the shell's controller without mounting another automatic observation. */
+export function CliObservationDetails({control}: {control: ReturnType<typeof useCliObservation>}): JSX.Element {
+    const {state, controller, blocker, canStart, canCancel, roleChanged} = control;
+    const {job} = state, {label, observation, running, unknown, notice} = cliObservationPresentation(state);
     return <div role="group" aria-label="Проверка OpenCode на выбранном компьютере">
         <Space size="small" wrap>
             {(state.reading || running) && <Spin size="small"/>}

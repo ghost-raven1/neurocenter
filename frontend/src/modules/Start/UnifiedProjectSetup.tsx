@@ -8,8 +8,8 @@ import {PageHeading} from '../../common/components/PageHeading';
 import {useAuthRequestOwner} from '../../features/UserBlock/useAuthRequestOwner';
 import {isMainAdminRole,projectRoleLevel} from '../../features/UserBlock/roles';
 import {useFeatureAvailability} from '../../features/FeatureFlags/FeatureAvailability';
-import {useBridge} from '../../features/McpBridge/useBridge';
-import {useBridgeInstaller} from '../../features/McpBridge/useBridgeInstaller';
+import {useComputerEnvironment} from '../../features/ComputerSetup/ComputerEnvironment';
+import {cliObservationPresentation} from '../../features/ComputerSetup/presentation';
 import {BridgeInstallerCommand} from '../../features/McpBridge/BridgeInstallerCommand';
 import {bridgeDeviceTarget} from '../../features/McpBridge/bridgeSource';
 import {WorkspaceBindingWizard} from '../../features/McpBridge/WorkspaceBindingWizard';
@@ -22,8 +22,6 @@ import {BridgeSetup} from './BridgeSetup';
 import {startQueryUrl,startSetupRequested} from './startQuery';
 import {setupBinding,unifiedSetupStep} from './projectSetupModel';
 import {StartProjectAssets} from './StartProjectAssets';
-import {SetupProgress} from './SetupProgress';
-import {CliObservation} from '../../features/ComputerSetup/CliObservation';
 import './Start.less';
 
 async function copyCommand(value:string){
@@ -35,7 +33,7 @@ async function copyCommand(value:string){
 export default function UnifiedProjectSetup(){
     const history=useHistory(),location=useLocation(),availability=useFeatureAvailability('unified_project_setup');
     const {scope}=useAuthRequestOwner(),user=useSelector((state:RootState)=>state.userBlock.user),projects=useAvailableProjects();
-    const bridge=useBridge(),installer=useBridgeInstaller(),[bindingOpen,setBindingOpen]=useState<string>(),[platform,setPlatform]=useState<'posix'|'windows'>();
+    const {bridge,installer,cli}=useComputerEnvironment(),[bindingOpen,setBindingOpen]=useState<string>(),[platform,setPlatform]=useState<'posix'|'windows'>();
     const [helpOpen,setHelpOpen]=useState(false);
     const params=new URLSearchParams(location.search),opened=startSetupRequested(location.search),step=unifiedSetupStep(location.search);
     const requested=params.get('p'),project=projects.ready&&!projects.error?(projects.projects.find(item=>item.id===requested)??projects.projects.find(item=>item.name===requested)):undefined;
@@ -49,6 +47,8 @@ export default function UnifiedProjectSetup(){
     const sourceScope=JSON.stringify([scope,project?.id,bridge.device?.id]);
     const projectCatalog=useProjectCatalog(project?.id,scope);
     const assets=projectCatalog.ready&&!projectCatalog.error?projectCatalog.assets:[];
+    const cliView=cliObservationPresentation(cli.state),checking=cli.state.busy||cli.state.reading||cliView.running||cliView.unknown;
+    const inspect=!!bridge.device&&(checking||!!cli.state.job&&cliView.observation?.status!=='missing');
     const projectChoice=<Space direction="vertical" style={{width:'100%'}}>
         {projects.error&&<Alert type="error" showIcon message="Не удалось загрузить проекты" description={projects.error} action={<Button onClick={()=>{void projects.refresh();}}>Повторить загрузку проектов</Button>}/>}
         <Select aria-label="Проект единой установки" placeholder="Выберите проект" value={project?.id} disabled={!projects.ready||!!projects.error} loading={projects.loading} showSearch optionFilterProp="label"
@@ -58,10 +58,12 @@ export default function UnifiedProjectSetup(){
     </Space>;
     return <div className="start"><PageHeading title="Начало работы" description="OpenCode, мост и окружение проекта — в одном мастере." actions={<Space><Button onClick={()=>setHelpOpen(true)}>Помощь</Button><Button onClick={()=>history.push('/projects')}>Мои проекты</Button></Space>}/>
         <Card className="start__setup"><Space direction="vertical" size={20} style={{width:'100%'}}>
-            <div><Typography.Title level={2}>Установите OpenCode и подготовьте проект</Typography.Title><Typography.Paragraph>Установщик подготовит OpenCode и мост. Затем подключите компьютер, выберите папку, агентов и инструменты проекта. Ручные настройки сохраняются.</Typography.Paragraph></div>
+            <div><Typography.Title level={2}>Подготовьте компьютер и проект</Typography.Title><Typography.Paragraph>Подключите компьютер, проверьте OpenCode и выберите папку, агентов и инструменты проекта.</Typography.Paragraph></div>
             {!enabled&&<Alert type="info" showIcon message={availability.reason} description="Новые действия единого мастера выключены. Состояние, история и восстановление сохраняются."/>}
-            <SetupProgress bridge={bridge} cli={<CliObservation bridge={bridge} canStart={enabled}/>}/>
-            {!opened?<Button type="primary" size="large" icon={<RocketOutlined/>} onClick={()=>go(step)}>{enabled?'Установить OpenCode':'Посмотреть состояние и настройку'}</Button>:<>
+            {!opened?<Space wrap><Button type="primary" size="large" icon={<RocketOutlined/>} loading={enabled&&inspect&&checking}
+                disabled={enabled&&inspect&&(checking||!cli.canStart||cli.state.denied)}
+                onClick={()=>{if(enabled&&inspect){void cli.controller.start();}else go(step);}}>{enabled?inspect?'Проверить OpenCode':'Установить OpenCode':'Посмотреть состояние и настройку'}</Button>
+                {enabled&&inspect&&<Button type="link" onClick={()=>go(binding?2:1)}>Настроить проект</Button>}</Space>:<>
                 <Typography.Text strong>Открыт шаг {step+1} из 4. Состояние окружения проверяется отдельно.</Typography.Text>
                 <div role="group" aria-label="Этапы основной настройки" onKeyDown={event=>{
                     if((event.key==='Enter'||event.key===' ')&&event.target instanceof HTMLElement&&event.target.getAttribute('role')==='button'){

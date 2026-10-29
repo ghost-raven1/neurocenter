@@ -7,6 +7,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {test} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {workspacePackages} from '../workspace/check-plan.mjs';
+import {devServices} from '../workspace/dev-service-health.mjs';
 
 import {healthHttpHook} from './dev-health-http-hook.fixture.mjs';
 
@@ -40,13 +41,14 @@ async function fixture(t, mode = 'ready') {
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `require('node:fs').appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'npm',args:process.argv.slice(2),home:process.env.HOME,
-        configKeys:Object.keys(process.env).filter(key=>/^npm_config_/i.test(key)),hasToken:!!(process.env.NPM_TOKEN||process.env.NODE_AUTH_TOKEN)})+'\\n');
+        cwd:process.cwd(),configKeys:Object.keys(process.env).filter(key=>/^npm_config_/i.test(key)),hasToken:!!(process.env.NPM_TOKEN||process.env.NODE_AUTH_TOKEN)})+'\\n');
         process.exitCode=7;`);
     const hook = path.join(directory, 'isolated-network.mjs');
     await fs.writeFile(hook, `import {appendFileSync} from 'node:fs';
         import http from 'node:http'; import https from 'node:https'; import net from 'node:net';
         import {syncBuiltinESMExports} from 'node:module';
         const record=value=>appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify(value)+'\\n');
+        if(process.env.DEV_CLI_TTY==='1')for(const stream of [process.stdin,process.stdout])Object.defineProperty(stream,'isTTY',{value:true});
         const deny=()=>{record({kind:'unexpected-network'});throw Error('REAL_NETWORK_FORBIDDEN');};
         const timeout=AbortSignal.timeout.bind(AbortSignal);
         AbortSignal.timeout=ms=>{record({kind:'timeout',ms});return timeout(ms);};
@@ -62,6 +64,10 @@ async function fixture(t, mode = 'ready') {
             const ok=(process.env.DEV_CLI_MODE!=='unavailable'||url.port!=='4300')&&!(process.env.DEV_CLI_MODE==='dependency-failed'&&url.port==='4100'&&url.pathname==='/ready');
             return new Response(JSON.stringify({ok}),{status:ok?200:503,headers:{'Content-Type':'application/json'}});
         };
+        if(process.env.DEV_CLI_CORE_STARTUP==='1'){
+            const {EventEmitter}=await import('node:events');
+            net.createServer=()=>{const server=new EventEmitter();server.listen=()=>queueMicrotask(()=>server.emit('listening'));server.close=done=>queueMicrotask(done);return server;};
+        }
         http.request=http.get=https.request=https.get=net.connect=net.createConnection=deny; syncBuiltinESMExports();
         ${healthHttpHook}`);
     const env = {PATH: [bin, path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter), NODE_BIN: process.execPath, NPM_CLI_JS: npm, LOGDIR: logs,
@@ -176,7 +182,7 @@ test('отмена только dev check завершает его потомк
 });
 
 for(const args of [['up','--profile'],['up','--profile='],['up','--profile','unknown'],['up','--profile=fast','--profile','full'],
-    ['up','--profile','fast','extra'],['build','--profile','fast'],['status','--profile=full']]) {
+    ['up','--profile','fast','extra'],['build','--profile','unknown'],['status','--profile=full']]) {
     test(`Некорректный профиль ${args.join(' ')} отклоняется до побочных действий`,async t=>{
         const f=await fixture(t),result=await f.run(...args);
         assert.equal(result.status,1);assert.match(result.stderr,/Неизвестная команда или параметры/);
@@ -193,7 +199,7 @@ test('Статус показывает адреса всех сервисов �
     assert.doesNotMatch(result.stdout,/Все сервисы готовы/);
     assert.match(result.stdout,/checkout: неизвестен/);
     const requests = result.events.filter(event => event.kind === 'health');
-    assert.deepEqual(requests.map(event => event.port).sort(), ['22222','22222','4000','4100','4100','4100','4200','4300','4300','4400','4400','5173']);
+    assert.deepEqual(requests.map(event => event.port).sort(), ['22222','22222','4000','4100','4100','4200','4300','4300','4400','4400','5173']);
     assert.deepEqual(requests.find(event => event.port === '5173'), {
         kind: 'health', port: '5173', path: '/node_modules/antd/dist/antd.less', search: '?direct',
     });
@@ -215,7 +221,7 @@ for (const [mode, description] of [
         for (const label of ['Вход и сессии', 'Каталог', 'Флаги функций', 'Скиллы', 'Базы знаний', 'API']) {
             assert.match(result.stdout, new RegExp(label + '[^\\n]*процесс: отвечает'));
         }
-        assert.match(result.stderr, /Подтверждена готовность сервисов: 1\/8/);
+        assert.match(result.stderr, /Подтверждена готовность сервисов: 0\/7/);
         await assert.rejects(fs.access(path.join(f.checkout, '.run/processes.json')), {code: 'ENOENT'});
     });
 }
@@ -225,7 +231,7 @@ test('Недоступный сервис остаётся заметен и с�
     assert.equal(result.status, 1);
     assert.match(result.stdout, /4300/);
     assert.match(result.stdout, /процесс: не отвечает/);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 12);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 11);
 });
 
 test('status reports failed dependencies despite health 200 and does not claim full readiness',async t=>{
@@ -239,7 +245,7 @@ test('status with details disabled keeps legacy probes and labels readiness unkn
     const f=await fixture(t);f.env.NEUROCENTER_DEV_MCP_SERVICE_DETAILS='0';const result=await f.run('status');
     assert.equal(result.status,0);assert.match(result.stdout,/готовность: проверка отключена/);
     assert.match(result.stdout,/checkout: проверка отключена/);assert.doesNotMatch(result.stdout,/Все сервисы готовы/);
-    assert.equal(result.events.filter(event=>event.kind==='health').length,8);
+    assert.equal(result.events.filter(event=>event.kind==='health').length,7);
     assert.equal(result.events.filter(event=>event.kind==='health'&&event.path==='/ready').length,0);
 });
 
@@ -284,7 +290,7 @@ for (const failed of [true, false]) {
         await fs.writeFile(path.join(f.checkout, 'scripts/workspace/dev-bridge-runtime.mjs'), `${record}
             import {writeFileSync} from 'node:fs';
             export async function prepareDevBridge(){record('bridge-publish');writeFileSync(${JSON.stringify(pointer)},'accepted-release\\n');}`);
-        const result = await f.run('install');
+        const result = await f.run('install', '--profile', 'standard');
         assert.equal(result.status, failed ? 1 : 0, result.stdout + result.stderr);
         assert.deepEqual(result.events.filter(event => ['snapshot-build', 'bridge-publish'].includes(event.kind)).map(event => event.kind),
             failed ? ['snapshot-build'] : ['snapshot-build', 'bridge-publish']);
@@ -293,6 +299,102 @@ for (const failed of [true, false]) {
         else { assert.match(result.stdout, /Зависимости установлены/); }
     });
 }
+
+for (const command of ['install', 'build']) for (const tty of [false, true]) {
+    test(`${command} fast preserves existing bridge and keys without Native or verifier preparation (${tty ? 'TTY' : 'headless'})`, async t => {
+        const f = await fixture(t), pointer = path.join(f.checkout, '.run/dev-bridge/runtime/current.json');
+        const signing = path.join(f.checkout, '.run/project-snapshots/secrets/signing.pem');
+        for (const [file, bytes] of [[pointer, 'previous-supply\n'], [signing, 'preserve-existing-identity\n']]) {
+            await fs.mkdir(path.dirname(file), {recursive: true}); await fs.writeFile(file, bytes, {mode: 0o600});
+        }
+        await fs.rm(path.join(f.checkout, 'mcp'), {recursive: true});
+        await fs.writeFile(f.env.NPM_CLI_JS, (await fs.readFile(f.env.NPM_CLI_JS, 'utf8')).replace('process.exitCode=7;', 'process.exitCode=0;'));
+        await fs.writeFile(path.join(f.checkout, 'scripts/workspace/compose.mjs'), 'export async function ensureCompose(){} export function checkCompose(){}');
+        f.env.DEV_CLI_TTY = tty ? '1' : '0';
+        const result = await f.run(command);
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        assert.equal(result.events.filter(event => event.kind === 'npm').length, 8);
+        assert.equal(result.events.some(event => event.cwd?.includes('neurocenter-asset-sync')), false);
+        assert.equal(await fs.readFile(pointer, 'utf8'), 'previous-supply\n');
+        assert.equal(await fs.readFile(signing, 'utf8'), 'preserve-existing-identity\n');
+        assert.match(result.stdout, /fast/);
+    });
+}
+
+/** Exercise the full CLI startup while all OS, service and storage effects stay inside this checkout. */
+async function coreStartupFixture(t,tty){
+    const f=await fixture(t);f.env.DEV_CLI_TTY=tty?'1':'0';f.env.DEV_CLI_CORE_STARTUP='1';f.env.DEV_BRIDGE_RUNTIME_DIR=path.join(f.checkout,'.run/dev-bridge/runtime');
+    await fs.rm(path.join(f.checkout,'mcp'),{recursive:true});
+    await fs.writeFile(f.env.NPM_CLI_JS,(await fs.readFile(f.env.NPM_CLI_JS,'utf8')).replace('process.exitCode=7;','process.exitCode=0;'));
+    const record=`import {appendFileSync} from 'node:fs';const record=(kind,extra={})=>appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind,...extra})+'\\n');`;
+    const child=`const child=()=>({exitCode:null,signalCode:null,unref(){}});`;
+    const modules={
+        'compose.mjs':`${record} export async function ensureCompose(){} export function checkCompose(){record('compose-ready');}`,
+        'dev-processes.mjs':`export function devServiceEntry(root,service){return root+'/'+service.dir+'/dist/main.js';} export const discoverDevProcesses=()=>[];export const ownsDevProcess=()=>false;`,
+        'dev-launch-provenance.mjs':`${record}${child}let pid=42000;export async function launchDevService({service,environment}){record('service-launch',{name:service.name,snapshotExecutor:environment.SNAPSHOT_EXECUTOR_ENABLED??null,devBridgeOverride:environment.DEV_BRIDGE_RUNTIME_DIR??null,assetSyncMcpBin:environment.ASSET_SYNC_MCP_BIN??null});return {child:child(),record:{name:service.name,pid:++pid},logFile:'fixture.log'};}export async function currentDevLaunchId(){}`,
+        'dev-launch-recovery.mjs':`export async function recoverDevLaunch(){throw Error('UNEXPECTED_RECOVERY');}`,
+        'dev-watch-control.mjs':`${record}${child}export async function startDevWatch({services}){for(const service of services)record('service-launch',{name:service.name,snapshotExecutor:service.environment.SNAPSHOT_EXECUTOR_ENABLED??null,devBridgeOverride:service.environment.DEV_BRIDGE_RUNTIME_DIR??null,assetSyncMcpBin:service.environment.ASSET_SYNC_MCP_BIN??null});return {child:child(),record:{name:'source-watch',pid:42010}};}export async function stopDevWatch(){} export async function devWatchStatus(){}`,
+        'dev-service-health.mjs':`${record}export const devServices=${JSON.stringify(devServices)};export const serviceDetailsFlag=()=>true;export const devServiceHealth=services=>async()=>services.map(service=>({service:service.name,ready:true,liveness:{ok:true},compilation:{ok:true},readiness:{state:'http-ok',ok:true},ownership:{state:'owned'}}));export async function probeLocalEndpoint(){throw Error('UNEXPECTED_VERIFIER_PROBE');}`,
+        'dev-model-credentials.mjs':`export async function prepareDevModelCredentials(){return {};}`,
+        'dev-chat-storage.mjs':`export async function prepareDevChatStorage(){return {};}`,
+        'dev-bridge-startup.mjs':`${record}export async function applyPublishedDevBridge(){record('bridge-apply');throw Error('UNEXPECTED_BRIDGE_APPLY');}`,
+    };
+    for(const [file,source]of Object.entries(modules))await fs.writeFile(path.join(f.checkout,'scripts/workspace',file),source);
+    await fs.writeFile(path.join(f.checkout,'scripts/assets/selection.mjs'),`${record}export async function selectStartupAssets(){record('asset-selection');throw Error('UNEXPECTED_ASSET_SELECTION');}`);
+    const docker=path.join(path.dirname(f.env.NPM_CLI_JS),'bin/docker');
+    await fs.writeFile(docker,`#!${process.execPath}\nconst fs=require('node:fs'),args=process.argv.slice(2);fs.appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'docker',args})+'\\n');
+        if(JSON.stringify(args)===JSON.stringify(['compose','up','-d','--wait','--wait-timeout','45','postgres']))process.exitCode=0;
+        else if(JSON.stringify(args)===JSON.stringify(['compose','ps','-q','postgres']))process.stdout.write('owned-fixture-postgres\\n');
+        else process.exitCode=92;`,{mode:0o700});
+    return f;
+}
+
+for(const command of ['up','watch'])for(const tty of [false,true])test(`${command} fast reaches core readiness without assets, Native or snapshot executor (${tty?'TTY':'headless'})`,async t=>{
+    const f=await coreStartupFixture(t,tty),result=await f.run(command);
+    assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);assert.match(result.stdout,/новые публикации недоступны/);
+    assert.deepEqual(result.events.filter(event=>event.kind==='service-launch').map(event=>event.name),devServices.map(service=>service.name));
+    assert.equal(result.events.find(event=>event.kind==='service-launch'&&event.name==='catalog').snapshotExecutor,'0');
+    assert.equal(result.events.find(event=>event.kind==='service-launch'&&event.name==='gateway').devBridgeOverride,null);
+    assert.equal(result.events.some(event=>['asset-selection','bridge-apply'].includes(event.kind)),false);
+    assert.equal(result.events.filter(event=>event.kind==='docker').length,2);assert.equal(result.events.filter(event=>event.kind==='npm').length,7);
+    await assert.rejects(fs.stat(path.join(f.checkout,'.run/project-snapshots/secrets')),{code:'ENOENT'});
+});
+
+for(const command of ['up','watch'])for(const manual of [false,true])test(`${command} fast preserves ${manual?'the manual MCP path':'an unset MCP path'} without a Native checkout`,async t=>{
+    const f=await coreStartupFixture(t,false),manualPath=path.join(f.checkout,'manual bridge','index.js');
+    if(manual)f.env.ASSET_SYNC_MCP_BIN=manualPath;
+    const result=await f.run(command);assert.equal(result.status,0,result.stdout+result.stderr);
+    const launched=result.events.filter(event=>event.kind==='service-launch');assert.equal(launched.length,devServices.length);
+    for(const service of launched)assert.equal(service.assetSyncMcpBin,manual?manualPath:null,service.name);
+    await assert.rejects(fs.stat(path.join(f.checkout,'mcp')),{code:'ENOENT'});
+});
+
+for(const profile of ['standard','full'])for(const command of ['up','watch'])test(`${command} extended startup excludes model weights even with an old saved model selection (${profile})`,async t=>{
+    const f=await fixture(t),selection=path.join(f.checkout,'.run/assets-selection.json');await fs.mkdir(path.dirname(selection));
+    const previous=JSON.stringify({selected:['old-model','old-tool'],withoutModels:false});await fs.writeFile(selection,previous);
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/compose.mjs'),'export function checkCompose(){} export async function ensureCompose(){}');
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-snapshots.mjs'),"export function inspectDevSnapshotImage(){return 'sha256:'+'a'.repeat(64);} export function buildDevSnapshotImage(){} export function prepareDevSnapshots(){throw Error('UNEXPECTED_SNAPSHOT_PREPARATION');}");
+    await fs.writeFile(path.join(f.checkout,'scripts/assets/startup.mjs'),`import {appendFileSync,readFileSync} from 'node:fs';
+        export async function prepareStartupAssets(options){appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'startup-assets',withoutModels:options.withoutModels,savedSelection:JSON.parse(readFileSync(${JSON.stringify(selection)},'utf8')).selected})+'\\n');throw Error('STOP_AFTER_ASSET_ADMISSION');}`);
+    const result=await f.run(command,'--profile',profile);assert.equal(result.status,1);assert.match(result.stderr,/STOP_AFTER_ASSET_ADMISSION/);
+    assert.deepEqual(result.events.filter(event=>event.kind==='startup-assets'),[{kind:'startup-assets',withoutModels:true,savedSelection:['old-model','old-tool']}]);
+    assert.equal(await fs.readFile(selection,'utf8'),previous);
+});
+
+test('full starts prepared hosting without requesting model installation or activation',async t=>{
+    const f=await coreStartupFixture(t,false);await fs.mkdir(path.join(f.checkout,'mcp/neurocenter-asset-sync'),{recursive:true});
+    f.env.ASSET_SYNC_MCP_BIN=path.join(f.checkout,'manual bridge','index.js');
+    const record=`import {appendFileSync} from 'node:fs';const record=(kind,extra={})=>appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind,...extra})+'\\n');`;
+    const token=path.join(f.checkout,'.run/project-snapshots/secrets/verifier-token');await fs.mkdir(path.dirname(token),{recursive:true});await fs.writeFile(token,'a'.repeat(64)+'\n',{mode:0o600});
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-snapshots.mjs'),"export function inspectDevSnapshotImage(){return 'sha256:'+'a'.repeat(64);} export function buildDevSnapshotImage(){} export function prepareDevSnapshots(){return {catalog:{SNAPSHOT_EXECUTOR_ENABLED:'1'},runner:{}};}");
+    await fs.writeFile(path.join(f.checkout,'scripts/assets/startup.mjs'),`${record}export async function prepareStartupAssets(options){record('startup-assets',{withoutModels:options.withoutModels});return {ok:true};}`);
+    await fs.writeFile(path.join(f.checkout,'scripts/models/startup.mjs'),`${record}export function modelRuntimeEnvironment(){return {};}export async function startModelRuntime(options){record('hosting-start',{preparedOnly:options.preparedOnly});return {ok:true};}`);
+    const health=path.join(f.checkout,'scripts/workspace/dev-service-health.mjs');await fs.writeFile(health,(await fs.readFile(health,'utf8')).replace("throw Error('UNEXPECTED_VERIFIER_PROBE');","return {ok:true};"));
+    const result=await f.run('up','--profile','full');assert.equal(result.status,0,result.stdout+result.stderr);
+    assert.deepEqual(result.events.filter(event=>event.kind==='startup-assets'),[{kind:'startup-assets',withoutModels:true}]);
+    assert.deepEqual(result.events.filter(event=>event.kind==='hosting-start'),[{kind:'hosting-start',preparedOnly:true}]);
+    for(const service of result.events.filter(event=>event.kind==='service-launch'&&event.name!=='snapshot-verifier'))assert.equal(service.assetSyncMcpBin,path.join(f.checkout,'mcp/neurocenter-asset-sync/dist/index.js'));
+});
 
 test('Ошибка сборки видна в stderr и не подменяется сообщением об успехе', async t => {
     const f = await fixture(t), result = await f.run('build');

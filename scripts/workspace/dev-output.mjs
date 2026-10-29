@@ -26,8 +26,8 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
             output.info('Использование', 'scripts/dev.sh <команда> [--profile fast|standard|full]');
             line('');
             for (const [command, description] of [
-                ['install', 'Подготовить Compose, зависимости и поставку моста; установленный мост обновится при up'],
-                ['build', 'Собрать сервисы, интерфейс и пакет моста'],
+                ['install', 'Подготовить Compose и зависимости основных приложений'],
+                ['build', 'Собрать основные сервисы и интерфейс'],
                 ['check', 'Выполнить проверки проекта'],
                 ['up', 'Собрать и запустить проект'],
                 ['watch', 'Запустить с последовательной пересборкой изменённых сервисов'],
@@ -37,20 +37,23 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
             ]) { line(`  ${paint(stdout, '1', command.padEnd(10))} ${description}`); }
             line('\n  Пересборка при изменениях: scripts/dev.sh up --watch (или scripts/dev.sh watch).');
             line('  Статус — status; остановка watcher и его сервисов — down. npm ci на изменениях не выполняется.');
-            line('\n  Профиль выбирается для up/watch:');
-            line('    up --profile fast      приложения; выбор ассетов в терминале, иначе сохранённый кэш');
+            line('\n  Профиль выбирается для install/build/up/watch:');
+            line('    up --profile fast      основные приложения, без ассетов, упаковки моста и проверщика снимков');
             line('    up --profile standard  мост и инструменты, без загрузки весов и запуска моделей');
-            line('    up --profile full      вся поставка и хостинг моделей');
+            line('    up --profile full      инструменты и запуск уже подготовленного хостинга моделей');
             if(defaultProfile)output.info('Профиль без параметров',defaultProfile);
-            line('  В full веса моделей занимают около 4.13 ГиБ; мост и инструменты требуют место отдельно.');
-            line('  Fast без TTY пропускает загрузку ассетов. npm и Docker могут обращаться к сети во всех профилях.');
+            line('  Веса моделей не скачиваются ни одним профилем; добавьте GGUF или архив вручную.');
+            line('  Full не скачивает и не собирает образ хостинга: нужен подготовленный локальный runtime.');
+            line('  Fast одинаков в терминале и без TTY; компоненты добавляются архивом на странице «Ассеты».');
+            line('  Npm и Docker могут обращаться к сети во всех профилях; доступ к хранилищу ассетов для fast не нужен.');
+            line('  Проверщик снимков и поставку моста готовит install --profile standard; запускает up --profile standard.');
             line('  Кэш и уже работающий хостинг моделей сохраняются при выборе лёгкого профиля.');
             line('  Подготовка файлов не добавляет карточки: состав общего каталога выбирается в «Ассетах».');
             line('');
             output.info('Требования', 'Node.js 24, npm, Git и Docker; Compose подготовит install');
             line('\n  Первый запуск:');
             line('    scripts/dev.sh install');
-            line('    scripts/dev.sh up --profile standard');
+            line('    scripts/dev.sh up');
             line('\n  Справка: scripts/dev.sh --help\n');
         },
     };

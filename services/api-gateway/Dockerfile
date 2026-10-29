@@ -20,6 +20,7 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_STRICT_SSL=false
 
 WORKDIR /app
+COPY vendor/asset-contract/ /vendor/asset-contract/
 COPY services/api-gateway/package*.json ./
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
 COPY services/api-gateway/ .

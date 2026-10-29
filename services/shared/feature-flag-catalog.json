@@ -240,6 +240,14 @@
     "defaultEnabled": true
   },
   {
+    "key": "project_text_knowledge",
+    "name": "Текстовая база знаний",
+    "description": "Загрузка текстов, поиск цитат и явно выбранный контекст проекта без embedding-модели. История и квитанции сохраняются при выключении.",
+    "group": "knowledge",
+    "dependsOn": [],
+    "defaultEnabled": true
+  },
+  {
     "key": "project_search",
     "name": "Поиск по проекту",
     "description": "Новый семантический поиск и подбор контекста проекта для ответов.",

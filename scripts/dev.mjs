@@ -57,9 +57,9 @@ async function prepareWorkspaceDependencies() {
 }
 
 /** Установка и сборка охватывают сервисы, интерфейс и мост. */
-async function forPackages(command, next, {repairDependencies = true} = {}) {
+async function forPackages(command, next, {repairDependencies = true, selection = packages} = {}) {
     const npm = npmCli(process.env);
-    for (const {dir, label} of packages) {
+    for (const {dir, label} of selection) {
         next(`${command === 'install' ? 'Зависимости' : 'Сборка'} · ${label}`);
         const started = Date.now();
         const cwd = path.join(root, dir);
@@ -178,7 +178,7 @@ async function assertServicePortsAvailable() {
 }
 
 /** Liveness, passive dependency checks and OS ownership are separate evidence. */
-async function health(deadline = Infinity, cancellation) {
+async function health(deadline = Infinity, cancellation, snapshotsEnabled = readProcesses().some(record=>record.name===snapshotWorker.name)) {
     const read=devServiceHealth(services,{root,deadline,detailsEnabled:serviceDetailsFlag()});
     const readWorker=async()=>{
         try{
@@ -188,7 +188,7 @@ async function health(deadline = Infinity, cancellation) {
             return {...snapshotWorker,ok:probe.ok===true,available:probe.ok===true};
         }catch{return {...snapshotWorker,ok:false,available:false};}
     };
-    const [probes,worker]=await Promise.all([read(cancellation),readWorker()]);
+    const [probes,worker]=await Promise.all([read(cancellation),snapshotsEnabled?readWorker():{...snapshotWorker,optional:true,ok:false,available:false}]);
     const results=probes.map(result=>{
         const base=result.service==='frontend'?result.compilation:result.liveness;
         const available=base.ok===true&&(result.readiness.state==='skipped'||result.readiness.ok===true)&&result.ownership.state!=='foreign';
@@ -201,6 +201,7 @@ async function health(deadline = Infinity, cancellation) {
 /** Show unknown checks explicitly so a healthy HTTP process cannot imply full readiness. */
 function reportHealth(results){
     for(const service of results){
+        if(service.optional){output.info('Снимки проектов','Для этого запуска проверщик не подготовлен; новые публикации недоступны. Подготовка: scripts/dev.sh install --profile standard, затем up --profile standard.');continue;}
         if(!service.liveness){output.service(service);continue;}
         const live=service.name==='frontend'?`компиляция: ${service.compilation.ok===true?'готова (частичная проверка)':'не готова'}`
             :`процесс: ${service.liveness.ok===true?'отвечает':'не отвечает'}`;
@@ -213,31 +214,32 @@ function reportHealth(results){
 }
 
 async function start(profile,watchMode=false) {
-    const prepareAssets = profile !== 'fast' || process.stdin.isTTY === true && process.stdout.isTTY === true, prepareModels = profile === 'full';
-    output.info('Профиль запуска', {fast:'fast — приложения; выбор ассетов в терминале, иначе сохранённый кэш',standard:'standard — мост и инструменты, без весов моделей',full:'full — мост, инструменты и все модели'}[profile]);
-    const next = progress(packages.length + 8);
+    const extended=profile!=='fast',startHosting=profile==='full',selectedPackages=extended?packages:services;
+    output.info('Профиль запуска', {fast:'fast — основные приложения; компоненты можно добавить архивом через «Ассеты»',standard:'standard — мост и инструменты, без весов моделей',full:'full — мост, инструменты и уже подготовленный хостинг; модели добавляются вручную'}[profile]);
+    const next = progress(selectedPackages.length + 8);
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
-    const snapshotImageId = await inspectDevSnapshotImage(root,process.env);
+    const snapshotImageId = extended?await inspectDevSnapshotImage(root,process.env):undefined;
     next('Выбор и подготовка ассетов');
-    if (prepareAssets) { await withBuildNetwork(() => prepareStartupAssets({root,output,environment:process.env,withoutModels:!prepareModels})); }
-    else { output.info('Ассеты', 'Используются уже сохранённые файлы; загрузка поставки пропущена.'); }
+    if (extended) { await withBuildNetwork(() => prepareStartupAssets({root,output,environment:process.env,withoutModels:true})); }
+    else { output.info('Ассеты', 'Источник не запрашивается; компоненты можно добавить архивом на странице «Ассеты».'); }
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
-    await forPackages('build', next, {repairDependencies:false});
+    await forPackages('build', next, {repairDependencies:false,selection:selectedPackages});
     next('Запуск PostgreSQL');
     run('docker', [ 'compose', 'up', '-d', '--wait', '--wait-timeout', '45', 'postgres' ]);
     const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], {cwd:root,encoding:'utf8'});
     if (postgres.status !== 0 || !postgres.stdout.trim()) { throw new Error('Не найден контейнер PostgreSQL'); }
     output.success('PostgreSQL готов');
     next('Запуск хостинга моделей');
-    if (prepareModels) { await startModelRuntime({root,output,environment:process.env}); }
-    else { output.info('Хостинг моделей', 'Подготовка весов и запуск runtime пропущены выбранным профилем.'); }
+    if (startHosting) { await startModelRuntime({root,output,environment:process.env,preparedOnly:true}); }
+    else { output.info('Хостинг моделей', 'Запуск runtime пропущен выбранным профилем. Веса добавляются вручную из GGUF или архива.'); }
     next('Каталог инструментов');
     output.info('Состав каталога', 'Выбирается главным администратором на странице «Ассеты». Запуск сохраняет текущие карточки.');
     const modelCredentials=await prepareDevModelCredentials(root,process.env);
-    output.info('Снимки LanceDB','Проверка ключа и изолированного SDK-исполнителя');
-    const snapshots=await prepareDevSnapshots(root,process.env,snapshotImageId);
+    output.info('Снимки LanceDB',extended?'Проверка ключа и изолированного SDK-исполнителя':'Сохранение настроек; исполнитель не запускается');
+    const snapshots=await prepareDevSnapshots(root,process.env,snapshotImageId,{executorEnabled:extended});
+    const activeServices=extended?managedServices:services;
     output.info('Файлы чата', 'Подготовка приватного S3-хранилища');
     const chatStorage=await prepareDevChatStorage(root,process.env,{output});
     const runtimeEnvironment=modelRuntimeEnvironment(root,process.env);
@@ -248,6 +250,7 @@ async function start(profile,watchMode=false) {
     mkdirSync(logDir, { recursive: true });
 
     const commonEnvironment={...process.env};
+    delete commonEnvironment.DEV_BRIDGE_RUNTIME_DIR;
     for(const key of Object.keys(commonEnvironment))if(key.startsWith('SNAPSHOT_'))delete commonEnvironment[key];
     for(const key of Object.keys(commonEnvironment))if(key.startsWith('CHAT_S3_'))delete commonEnvironment[key];
     delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY;delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE;
@@ -267,9 +270,9 @@ async function start(profile,watchMode=false) {
         RAG_PG_URL: process.env.RAG_PG_URL || 'postgresql://rag:rag@localhost:5432/rag',
         PROJECTS_ROOT: path.resolve(root, process.env.PROJECTS_ROOT || path.join(homedir(), 'projects')),
         SKILLS_STORAGE_PATH: path.resolve(root, process.env.SKILLS_STORAGE_PATH || 'data/skills'),
-        // Dev всегда запускает мост текущего checkout, а не путь из чужого контейнера.
         ASSET_SYNC_NODE_BIN: node,
-        ASSET_SYNC_MCP_BIN: path.join(root, 'mcp/neurocenter-asset-sync/dist/index.js'),
+        // Расширенный профиль использует Native checkout; fast сохраняет ручной путь или его отсутствие.
+        ...extended?{ASSET_SYNC_MCP_BIN:path.join(root, 'mcp/neurocenter-asset-sync/dist/index.js')}:{},
         SSO_DISABLE: process.env.SSO_DISABLE || 'true',
         RAG_AUTH_DISABLED: 'false',
         AUTH_GUARD_ENABLED: 'true',
@@ -285,13 +288,13 @@ async function start(profile,watchMode=false) {
     try {
         next('Запуск сервисов');
         const environmentFor=service=>({...service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}),
-            ...(service.name==='gateway'?{NODE_ENV:'development', DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}), PORT:String(service.port)},
+            ...(service.name==='gateway'?{NODE_ENV:'development',...extended?{DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}}:{}), PORT:String(service.port)},
             NEUROCENTER_DEV_LAUNCH_PROVENANCE:process.env.NEUROCENTER_DEV_LAUNCH_PROVENANCE});
         if(watchMode){
             const {startDevWatch}=await import('./workspace/dev-watch-control.mjs');
-            const watcher=await startDevWatch({root,node,logDir,signal:cancellation.signal,services:managedServices.map(service=>({...service,entry:entryFor(service),environment:environmentFor(service)}))});
+            const watcher=await startDevWatch({root,node,logDir,signal:cancellation.signal,nativeEnabled:extended,services:activeServices.map(service=>({...service,entry:entryFor(service),environment:environmentFor(service)}))});
             records.push(watcher.record);children.push({child:watcher.child,service:watchService,logFile:path.join(logDir,'neurocenter-source-watch.log')});
-        }else for (const service of managedServices) {
+        }else for (const service of activeServices) {
             cancellation.signal.throwIfAborted();
             const {child,record,logFile} = await launchDevService({root,node,service,entry:entryFor(service),environment:environmentFor(service),logDir,signal:cancellation.signal});
             children.push({child, service, logFile});
@@ -305,18 +308,18 @@ async function start(profile,watchMode=false) {
         while (Date.now() < deadline) {
             cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
-            const results = await health(deadline, cancellation.signal);
+            const results = await health(deadline, cancellation.signal, extended),required=results.filter(service=>!service.optional);
             cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
-            if (results.every(service => service.available)) {
+            if (required.every(service => service.available)) {
                 reportHealth(results);
-                try {
+                if(extended)try {
                     const {applyPublishedDevBridge} = await import('./workspace/dev-bridge-startup.mjs');
                     await applyPublishedDevBridge({root, node, environment: process.env, output});
-                } catch (error) { output.warning('Обновление установленного моста отложено: '+error.message+' Сервисы продолжают работать; повторите scripts/dev.sh up.'); }
+                } catch (error) { output.warning('Обновление установленного моста отложено: '+error.message+' Сервисы продолжают работать; повторите scripts/dev.sh up --profile '+profile+'.'); }
                 cancellation.signal.throwIfAborted();
                 assertServicesRunning(children);
-                const fullyReady=results.every(service=>service.ok);
+                const fullyReady=required.every(service=>service.ok);
                 output.heading(fullyReady?'Готов к работе':'Сервисы запущены');
                 if(!fullyReady)output.warning('Полная готовность не подтверждена: выше перечислены пропущенные проверки и неизвестная принадлежность процессов.');
                 output.info('Интерфейс', 'http://localhost:5173');
@@ -365,7 +368,7 @@ async function main() {
     for (let index = 1; index < args.length && !invalid; index++) {
         const argument = args[index];
         if((command==='up'||command==='watch')&&argument==='--watch'&&!seenWatch){watchMode=true;seenWatch=true;continue;}
-        if (!['up','watch'].includes(command) || seenProfile || !(argument === '--profile' || argument.startsWith('--profile='))) { invalid = true; break; }
+        if (!['install','build','up','watch'].includes(command) || seenProfile || !(argument === '--profile' || argument.startsWith('--profile='))) { invalid = true; break; }
         profile = argument === '--profile' ? args[++index] : argument.slice('--profile='.length);
         seenProfile = true;
         if (!['fast','standard','full'].includes(profile)) { invalid = true; }
@@ -395,29 +398,32 @@ async function main() {
     process.env.NODE_BIN = node;
     logDir = process.env.LOGDIR || path.join(stateDir, 'logs');
 
-    const titles = {install:'Установка зависимостей и обновление моста',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',watch:'Запуск с пересборкой исходников',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
+    const titles = {install:'Установка зависимостей',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',watch:'Запуск с пересборкой исходников',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
     output.heading(titles[command]);
+    const extended=profile!=='fast',selectedPackages=extended?packages:services;
+    if(command==='install'||command==='build')output.info('Профиль подготовки',profile);
     if (command === 'install') {
-        const next = progress(packages.length + 4);
+        const next = progress(selectedPackages.length + (extended?4:2));
         next('Проверка и подготовка Docker Compose');
         await ensureCompose();
         next('Установка общего контракта ассетов');
         await prepareWorkspaceDependencies();
-        await forPackages(command, next);
-        next('Подготовка образа проверки снимков');
-        await buildDevSnapshotImage(root,process.env);
-        next('Подготовка dev-поставки моста');
-        const {prepareDevBridge} = await import('./workspace/dev-bridge-runtime.mjs');
-        await prepareDevBridge({root, node, environment: process.env, output});
+        await forPackages(command, next, {selection:selectedPackages});
+        if(extended){
+            next('Подготовка образа проверки снимков');
+            await buildDevSnapshotImage(root,process.env);
+            next('Подготовка dev-поставки моста');
+            const {prepareDevBridge} = await import('./workspace/dev-bridge-runtime.mjs');
+            await prepareDevBridge({root, node, environment: process.env, output});
+        }
         output.success('Зависимости установлены');
-        output.info('Запустить проект', 'scripts/dev.sh up');
+        output.info('Запустить проект', 'scripts/dev.sh up'+(extended?' --profile '+profile:''));
     }
     else if (command === 'build') {
-        const next = progress(packages.length + 2);
+        const next = progress(selectedPackages.length + (extended?2:1));
         next('Установка общего контракта ассетов'); await prepareWorkspaceDependencies();
-        await forPackages(command, next);
-        next('Подготовка образа проверки снимков');
-        await buildDevSnapshotImage(root,process.env);
+        await forPackages(command, next, {selection:selectedPackages});
+        if(extended){next('Подготовка образа проверки снимков');await buildDevSnapshotImage(root,process.env);}
         output.success('Проект собран');
     }
     else if (command === 'up'||command==='watch') { await start(profile,watchMode); }
@@ -432,11 +438,11 @@ async function main() {
         const results = await health();
         if(existsSync(path.join(stateDir,'dev-watch/status.json'))){const {devWatchStatus}=await import('./workspace/dev-watch-control.mjs');const watch=await devWatchStatus(root);if(watch){output.info('Watch',watch.alive?watch.phase:'остановлен');if(watch.lastBuild?.ok===false)output.warning('Последняя пересборка не применена: '+watch.lastBuild.code+'; предыдущие сервисы сохранены. Лог: '+path.join(stateDir,'dev-watch/last-failure'));}}
         reportHealth(results);
-        const ready = results.filter(service => service.ok).length;
-        if (ready === results.length) { output.success(`Все сервисы готовы: ${ready}/${results.length}`); output.info('Интерфейс', 'http://localhost:5173'); }
+        const required=results.filter(service=>!service.optional),ready=required.filter(service=>service.ok).length;
+        if (ready === required.length) { output.success(`Все основные сервисы готовы: ${ready}/${required.length}`); output.info('Интерфейс', 'http://localhost:5173'); }
         else {
-            output.warning(`Подтверждена готовность сервисов: ${ready}/${results.length}; остальные проверки не пройдены или пропущены. Запуск: scripts/dev.sh up`);
-            if(results.some(service=>!service.available))process.exitCode=1;
+            output.warning(`Подтверждена готовность сервисов: ${ready}/${required.length}; остальные проверки не пройдены или пропущены. Запуск: scripts/dev.sh up`);
+            if(required.some(service=>!service.available))process.exitCode=1;
         }
         output.info('Логи', logDir);
     } else if (command === 'tail') {

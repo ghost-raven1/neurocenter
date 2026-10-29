@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, HttpException, ServiceUnavailableException } from '@nestjs/common';
+import {ProjectTextKnowledge} from '../project-text/project-text.service';
+import type {TextContext} from '../../../shared/project-text-knowledge.cjs';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
 import type { ModelsService } from '../models/models.service';
@@ -20,11 +22,40 @@ const text = (value: unknown, max: number): value is string => typeof value === 
 const integer = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0;
 const cut = (value: string, length: number): string => Array.from(value).slice(0, length).join('');
 
-/** Project documents are ephemeral user-role data, excluded from immutable history and its summaries. */
+/** Semantic excerpts are ephemeral; explicitly accepted text sources are pinned by the calling history owner. */
 export class ModelChatProjectContext {
     readonly client = new ProjectRagClient();
+    readonly text:ProjectTextKnowledge;
     private readonly selections: ProjectEmbeddingRepository;
-    constructor(private readonly models: ModelsService, private readonly runtime: IModelInferenceRuntime) { this.selections = new ProjectEmbeddingRepository(models.pool); }
+    constructor(private readonly models: ModelsService, private readonly runtime: IModelInferenceRuntime) { this.selections = new ProjectEmbeddingRepository(models.pool);this.text=new ProjectTextKnowledge(models); }
+
+    async captureText(req:Request,projectId:string,selection:TextContext):Promise<ProjectContextCapture>{
+        await requireFeatureEnabled('project_text_knowledge');
+        const checked=await this.text.assertContext(req,projectId,selection),project=await this.models.resolveProject(req,projectId,2);
+        return {identity:ragRequestHash({projectId,textContext:checked}),searchEnabled:true,evidence:{status:'metadata',mode:'text',textRevision:checked.revision,corpusHash:checked.corpusHash,
+            project:{id:project.id,name:project.name,state:project.state,headRevision:project.headRevision},sources:[]}};
+    }
+    async assertTextIdentity(req:Request,projectId:string,selection:TextContext,identity:string):Promise<void>{
+        const checked=await this.text.assertContext(req,projectId,selection);
+        if(ragRequestHash({projectId,textContext:checked})!==identity)throw new ConflictException('Разрешение текстового контекста изменилось. Подготовьте запуск заново.');
+    }
+
+    /** Explicit text retrieval never touches the embedding runtime or the selected semantic generation. */
+    async prepareText(req:Request,projectId:string,selection:TextContext,signal:AbortSignal,accepted?:ChatProjectEvidence):Promise<PreparedProjectContext>{
+        signal.throwIfAborted();await requireFeatureEnabled('project_text_knowledge');
+        const current=await this.text.assertContext(req,projectId,selection),project=await this.models.resolveProject(req,projectId,2);
+        const assertCurrent=async()=>{signal.throwIfAborted();await this.text.assertContext(req,projectId,current);signal.throwIfAborted();};
+        const beforeInference=async()=>{await requireFeatureEnabled('project_text_knowledge');await assertCurrent();};
+        let evidence=accepted;
+        if(!evidence){
+            const found=await this.text.search(req,projectId,{query:current.query,revision:current.revision},signal);
+            if(found.corpusHash!==current.corpusHash)throw new ConflictException('Текстовая база изменилась во время поиска. Повторите выбор контекста.');
+            evidence={status:found.sources.length?'ready':'empty',mode:'text',textRevision:found.revision,corpusHash:found.corpusHash,
+                project:{id:project.id,name:project.name,state:project.state,headRevision:project.headRevision},sources:found.sources};
+        }
+        if(evidence.mode!=='text'||evidence.project?.id!==project.id||evidence.textRevision!==current.revision||evidence.corpusHash!==current.corpusHash)throw new ConflictException('Принятый текстовый контекст относится к другому корпусу.');
+        await assertCurrent();return this.prepared(evidence,assertCurrent,beforeInference,['project_text_knowledge']);
+    }
 
     private async state(req: Request, projectId: string, db?: Pick<PoolClient, 'query'>) {
         const project = await this.models.resolveProject(req, projectId, 2), selected = await this.selections.read(project.id, db);

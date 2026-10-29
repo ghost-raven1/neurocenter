@@ -1,5 +1,5 @@
 import { BrandMark } from '../../common/components/BrandMark';
-import { DisconnectOutlined, MenuOutlined, SyncOutlined } from '@ant-design/icons';
+import { MenuOutlined } from '@ant-design/icons';
 import { Alert, Button, Grid, Layout, Space, Typography } from 'antd';
 import { FC, ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSelector, useStore } from 'react-redux';
@@ -27,6 +27,9 @@ import {useTabNotifications} from '../../features/TabNotifications/useTabNotific
 import {useNotificationSounds} from '../../features/NotificationSounds/useNotificationSounds';
 import {AppNavigation} from '../../features/AppNavigation/AppNavigation';
 import {navigationEntries, selectedNavigationEntry} from '../../features/AppNavigation/model';
+import {ComputerEnvironmentProvider} from '../../features/ComputerSetup/ComputerEnvironment';
+import {ComputerHeader} from '../../features/ComputerSetup/ComputerHeader';
+import {startQueryUrl} from '../Start/startQuery';
 
 interface ICoreProps { modulesStructure: IMenuItem[]; children: ReactNode; }
 
@@ -70,7 +73,6 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
             history.replace(location.pathname + (search.size ? `?${search}` : '') + location.hash);
         }
     };
-    const [live,setLive]=useState(false);
     const connectedComputer=useCallback((id:string)=>selectConnectedComputer(user?.email||'',id),[user?.email]);
 
     useEffect(() => { dispatch(authInit()); }, [dispatch]);
@@ -80,22 +82,28 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
         return () => { setUnauthorizedHandler(() => undefined); };
     }, [dispatch, store]);
     useEffect(()=>{
-        if(!isAuth){socketClient.disconnect();setLive(false);return;}
-        const connected=():void=>setLive(true);const disconnected=():void=>setLive(false);const refresh=():void=>{void dispatch(authInit());};
-        socketClient.connect();socketClient.on('connect',connected);socketClient.on('disconnect',disconnected);socketClient.on('connect_error',disconnected);socketClient.on('auth:changed',refresh);socketClient.on('connect',refresh);
-        return()=>{socketClient.off('connect',connected);socketClient.off('disconnect',disconnected);socketClient.off('connect_error',disconnected);socketClient.off('auth:changed',refresh);socketClient.off('connect',refresh);};
+        if(!isAuth){socketClient.disconnect();return;}
+        const refresh=():void=>{void dispatch(authInit());};
+        socketClient.connect();socketClient.on('auth:changed',refresh);socketClient.on('connect',refresh);
+        return()=>{socketClient.off('auth:changed',refresh);socketClient.off('connect',refresh);};
     },[isAuth,dispatch]);
 
     if (!isAuth) { return <LoginScreen />; }
 
     const items = navigationEntries(modulesStructure, user?.routePermissions ?? []);
     const selected = selectedNavigationEntry(items, location.pathname);
+    const openComputerSetup = (): void => {
+        const params = new URLSearchParams(location.pathname === '/start' ? location.search : '');
+        const project = new URLSearchParams(location.search).get('p');
+        if (project) params.set('p', project);
+        history.push(startQueryUrl(params.toString(), {setup: true, step: 1}, location.pathname === '/start' ? location.hash : ''));
+    };
     const brand = <div className="app__brand"><BrandMark/><div><strong>Нейроцентр</strong><span>Рабочее пространство команды</span></div></div>;
     const menu = <AppNavigation entries={items} pathname={location.pathname} active={!compact || menuOpen}
         onNavigate={route => history.push(route)} onClose={() => setMenuOpen(false)}/>;
 
     return (
-        <Layout className="app">
+        <ComputerEnvironmentProvider><Layout className="app">
             <a className="app__skip" href="#main-content">Перейти к содержимому</a>
             {!compact && <Layout.Sider width={248} className="app__sidebar">{brand}{menu}<div className="app__sidebar-note">Инструменты, знания и проекты.<br />Всё необходимое для работы.{modelMonitorUrl && <a href={modelMonitorUrl} target="_blank" rel="noreferrer">Мониторинг моделей ↗</a>}</div></Layout.Sider>}
             <Layout className="app__workspace">
@@ -106,10 +114,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                         <span className="app__location-separator">/</span><Typography.Text strong>{selected?.title ?? 'Нейроцентр'}</Typography.Text>
                     </div>
                     <Space size={16} className="app__header-actions">
-                        <span className={`app__live${live ? '' : ' app__live--disconnected'}`} role="status" aria-label={live?'Автообновление данных подключено.':'Автообновление данных недоступно. Восстанавливаем соединение.'}
-                            title={live?'Изменения на сайте приходят автоматически. Статус компьютеров находится в списке мостов.':'Изменения на сайте временно не приходят автоматически. Восстанавливаем соединение. Статус компьютеров находится в списке мостов.'}>
-                            {live ? <SyncOutlined aria-hidden="true" /> : <DisconnectOutlined aria-hidden="true" />}<span className="app__live-label">{live?'Авто':'Нет авто'}<wbr />{live?'обновление':'обновления'}</span>
-                        </span>
+                        <ComputerHeader onSetup={openComputerSetup}/>
                         <OperationsButton triggerRef={operationsTrigger} open={operationsVisible} onClick={() => setOpsOpen(true)} />
                         <ChatLauncher/>
                         <UserInfo />
@@ -132,7 +137,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                     }
                 }} destroyOnClose>{operationsVisible && <OperationsQueue />}</AccessibleDrawer>
             <BridgePairing onConnected={connectedComputer}/>
-        </Layout>
+        </Layout></ComputerEnvironmentProvider>
     );
 };
 

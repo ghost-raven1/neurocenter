@@ -10,6 +10,7 @@ export interface ChatProjectEvidence {
     status: 'none' | 'metadata' | 'ready' | 'empty' | 'unavailable';
     project?: { id: string; name: string; state: string; headRevision: number };
     generation?: string; snapshot?: string; sources: ChatProjectSource[]; message?: string;
+    mode?:'text';textRevision?:number;corpusHash?:string;
 }
 export interface PreparedProjectContext {
     messages: ChatMessage[]; evidence: ChatProjectEvidence;

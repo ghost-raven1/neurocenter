@@ -1,4 +1,5 @@
 import type {AgentToolGrant} from '../agent-tools/agent-tools.types';
+import type {TextContext} from '../../../shared/project-text-knowledge.cjs';
 import type { IChatContext } from './chat-context';
 import { responseView, type ChatAgentResponse, type ChatParticipant, type ChatResponseRow } from './chat-group.types';
 import type { ChatProjectEvidence } from './chat-project-context.types';
@@ -17,6 +18,7 @@ export interface ChatTurn {
     executionState?: 'waiting' | 'running' | null;
     processingStage: 'compacting' | 'responding' | 'researching';
     agentTools?:AgentToolGrant; research?: ChatResearchRequest; researchSteps?: ChatResearchStepSummary[];
+    textContext?:{selection:TextContext;evidence:ChatProjectEvidence};
     answer?: { content: string; finishReason: 'stop' | 'length'; usage: ChatUsage; evidence?: ChatProjectEvidence; learning?: ChatLearningReceipt; researchSources?: ResearchExternalSource[]; researchLimited?: boolean };
     targetAgentIds?: string[]; responses?: ChatAgentResponse[];
     discussion?: { mode: 'automatic'; callsStarted: number; maxCalls: number };
@@ -31,7 +33,7 @@ export interface ChatCreateInput { modelId: string; projectId?: string; expected
 export interface ChatRevisionInput { expectedRevision: number }
 export interface ChatRenameInput extends ChatRevisionInput { title: string }
 export interface ChatUploadInput { name: string; contentBase64: string; requestId: string }
-export interface ChatSendInput extends ChatRevisionInput { requestId: string; expectedModelPin: string; prompt: string; attachmentIds: string[]; targetAgentIds?: string[]; research?: ChatResearchRequest;agentTools?:AgentToolGrant }
+export interface ChatSendInput extends ChatRevisionInput { requestId: string; expectedModelPin: string; prompt: string; attachmentIds: string[]; targetAgentIds?: string[]; research?: ChatResearchRequest;agentTools?:AgentToolGrant;textContext?:TextContext }
 export interface ChatRetryInput extends ChatRevisionInput { requestId: string; expectedModelPin: string }
 export interface ChatPreviewInput { prompt: string; attachmentIds: string[]; targetAgentIds?: string[] }
 export interface ConversationRow {
@@ -39,6 +41,7 @@ export interface ConversationRow {
     revision: number; created_at: Date | string; updated_at: Date | string; mode: 'model' | 'group'; agent_ids: string[];
 }
 export interface TurnRow {
+    text_context?:{selection:TextContext;evidence:ChatProjectEvidence};
     execution_state?: ChatTurn['executionState'];
     position: number | string; processing_stage: ChatTurn['processingStage']; research_request?: ChatResearchRequest | null;agent_tools_request?:AgentToolGrant|null;
     id: string; conversation_id: string; request_id: string; request_ids: string[]; request_hash: string;
@@ -55,6 +58,6 @@ export const conversationView = (row: ConversationRow): ChatConversation => ({ i
     modelPin: row.model_pin, revision: row.revision, createdAt: new Date(row.created_at).toISOString(), updatedAt: new Date(row.updated_at).toISOString() });
 export const turnView = (row: TurnRow): ChatTurn => ({ id: row.id, requestId: row.request_id, prompt: row.prompt, attachmentIds: row.attachment_ids, processingStage: row.processing_stage,
     executionState: row.status === 'pending' ? row.execution_state ?? 'waiting' : null,
-    status: row.status, ...(row.agent_tools_request?{agentTools:row.agent_tools_request}:{}), ...(row.research_request ? { research: row.research_request } : {}), ...(row.target_agent_ids?.length ? { targetAgentIds: row.target_agent_ids, responses: (row.responses ?? []).map(responseView) } : row.answer ? { answer: row.answer } : {}), ...(row.error ? { error: row.error } : {}), createdAt: new Date(row.created_at).toISOString() });
+    status: row.status, ...(row.text_context?{textContext:row.text_context}:{}), ...(row.agent_tools_request?{agentTools:row.agent_tools_request}:{}), ...(row.research_request ? { research: row.research_request } : {}), ...(row.target_agent_ids?.length ? { targetAgentIds: row.target_agent_ids, responses: (row.responses ?? []).map(responseView) } : row.answer ? { answer: row.answer } : {}), ...(row.error ? { error: row.error } : {}), createdAt: new Date(row.created_at).toISOString() });
 export const attachmentView = (row: AttachmentRow): ChatAttachment => ({ id: row.id, name: row.name, mediaType: row.media_type, bytes: row.bytes, textBytes: row.text_bytes,
     ...(row.pages === null ? {} : { pages: row.pages }), ...(row.warning ? { warning: row.warning } : {}), createdAt: new Date(row.created_at).toISOString() });

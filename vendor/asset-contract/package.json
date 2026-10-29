@@ -1,0 +1,44 @@
+{
+  "name": "@neurocenter/asset-contract",
+  "version": "1.2.1",
+  "description": "Native asset descriptors, pinned repository reader and publication adapters for Neurocenter",
+  "type": "module",
+  "main": "./lib/index.mjs",
+  "types": "./index.d.ts",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./lib/index.mjs",
+      "require": "./lib/index.mjs",
+      "default": "./lib/index.mjs"
+    }
+  },
+  "bin": {
+    "neurocenter-assets": "./bin/assets.mjs"
+  },
+  "files": [
+    "lib",
+    "bin",
+    "index.d.ts",
+    "docs/contract.md",
+    "skills/neurocenter-packaging",
+    "README.md",
+    "agent-prompts",
+    "skills/neurocenter-project-context",
+    "skills/neurocenter-project-learning",
+    "skills/neurocenter-system-assistance"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node bin/assets.mjs validate .",
+    "check:native": "node bin/check-native.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ghost-raven1/neurocenter-assets.git"
+  }
+}

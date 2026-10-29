@@ -1,17 +1,18 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {backendSelection} from './dev-watch-plan.mjs';
+import {watchPackageSelection} from './dev-watch-plan.mjs';
 import {sourceSnapshot,linkDependencies,artifactTree} from './isolated-build-source.mjs';
 export const watchDirectory=root=>path.join(root,'.run/dev-watch');
 /** Atomic, private metadata never includes environment values, raw compiler output or credentials. */
 export async function writeWatchFile(root,name,value){const directory=watchDirectory(root);await fs.mkdir(directory,{recursive:true,mode:0o700});const file=path.join(directory,name),temporary=file+'.'+randomUUID();try{await fs.writeFile(temporary,JSON.stringify(value,null,2)+'\n',{mode:0o600,flag:'wx'});await fs.rename(temporary,file);}finally{await fs.rm(temporary,{force:true});}}
 export async function readWatchFile(root,name){try{return JSON.parse(await fs.readFile(path.join(watchDirectory(root),name),'utf8'));}catch(error){if(error.code==='ENOENT')return null;throw error;}}
 /** Freeze the already-built initial runtime so a later failed restart can use its previous shared bytes. */
-export async function initialWatchGeneration(root,signal){
+export async function initialWatchGeneration(root,signal,options){
+    const selection=watchPackageSelection(options);
     const folder=path.join(watchDirectory(root),'generations',randomUUID()),repository=path.join(folder,'repository');await fs.mkdir(repository,{recursive:true,mode:0o700});
-    try{const source=await sourceSnapshot(root,{destination:repository,signal});if(source.bytes>64*1024**2)throw Error('WATCH_RUNTIME_INPUT_LIMIT');await linkDependencies(root,repository,backendSelection);
-        for(const [,relative,entry]of backendSelection){signal?.throwIfAborted();const source=await fs.realpath(path.join(root,relative,'dist'));const artifacts=await artifactTree(source);if(!artifacts.files[entry])throw Error('WATCH_INITIAL_BUILD_MISSING');await fs.cp(source,path.join(repository,relative,'dist'),{recursive:true,dereference:false});}
+    try{const source=await sourceSnapshot(root,{destination:repository,signal});if(source.bytes>64*1024**2)throw Error('WATCH_RUNTIME_INPUT_LIMIT');await linkDependencies(root,repository,selection);
+        for(const [,relative,entry]of selection){signal?.throwIfAborted();const source=await fs.realpath(path.join(root,relative,'dist'));const artifacts=await artifactTree(source);if(!artifacts.files[entry])throw Error('WATCH_INITIAL_BUILD_MISSING');await fs.cp(source,path.join(repository,relative,'dist'),{recursive:true,dereference:false});}
         return {folder,repository,sourceSha256:source.digest};
     }catch(error){await fs.rm(folder,{recursive:true,force:true});throw error;}
 }

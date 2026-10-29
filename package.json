@@ -2,7 +2,7 @@
   "name": "neurocenter-workspace",
   "private": true,
   "dependencies": {
-    "@neurocenter/asset-contract": "https://codeload.github.com/ghost-raven1/neurocenter-assets/tar.gz/e1255b4e522a0b38e471d5624cc63f5f13442649"
+    "@neurocenter/asset-contract": "file:vendor/asset-contract"
   },
   "scripts": {
     "check": "node scripts/workspace/check.mjs",

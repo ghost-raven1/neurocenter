@@ -3,7 +3,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {isolatedBuild} from './isolated-build.mjs';
 import {devProcessIdentity} from './dev-processes.mjs';
 import {groupAlive} from './dev-watch-owned.mjs';
-import {watchSnapshot,changedWatchInputs,affectedPackages,backendSelection} from './dev-watch-plan.mjs';
+import {watchSnapshot,changedWatchInputs,affectedPackages,watchPackageSelection} from './dev-watch-plan.mjs';
 import {createWatchQueue} from './dev-watch-queue.mjs';
 import {initialWatchGeneration,publishWatchGeneration,cleanupWatchBuild,writeWatchFile,entryGeneration} from './dev-watch-files.mjs';
 import {WatchRuntime} from './dev-watch-runtime.mjs';
@@ -30,14 +30,15 @@ async function run(config){
     const prepared=config.initialGeneration;
     if(prepared&&(!entryGeneration(config.root,path.join(prepared.repository,'services/catalog-service/dist/main.js'))||path.dirname(prepared.repository)!==prepared.folder))throw Error('WATCH_UNSAFE_GENERATION');
     const sourceBaseline=preparedSnapshot(prepared);
-    runtime=new WatchRuntime(config,send);const baseline=prepared??await initialWatchGeneration(config.root,lifecycle.signal);lifecycle.signal.throwIfAborted();await runtime.start(baseline,lifecycle.signal);
-    let previous=await watchSnapshot(config.root);
+    const options={nativeEnabled:config.nativeEnabled!==false};
+    runtime=new WatchRuntime(config,send);const baseline=prepared??await initialWatchGeneration(config.root,lifecycle.signal,options);lifecycle.signal.throwIfAborted();await runtime.start(baseline,lifecycle.signal);
+    let previous=await watchSnapshot(config.root,options);
     queue=createWatchQueue({onState:update,build:async(selection,signal)=>{const groups=[];try{return await isolatedBuild(config.root,selection,{signal,buildOwnerFile:path.join(config.root,'scripts/workspace/dev-watch-child.mjs'),onBuildProcess:pid=>{const record={pid,identity:devProcessIdentity(pid)};groups.push(record);send({kind:'group',record});}});}finally{for(const record of groups)if(!groupAlive(record.pid))send({kind:'release',pid:record.pid});}},
         publish:async(result,selection,signal)=>{if(result.inputs?.bytes>64*1024**2)throw Object.assign(Error(),{code:'WATCH_RUNTIME_INPUT_LIMIT'});const generation=await publishWatchGeneration(config.root,result);try{await runtime.publish(generation,selection,signal);}finally{await runtime.prune();}},
         cleanup:result=>cleanupWatchBuild(config.root,result)});
     update({phase:'watching'});await writes;send({kind:'ready'});
     // Ordinary starts rebuild once; a prepared baseline retains only edits made after its source verification.
-    const initialSelection=sourceBaseline?affectedPackages(changedWatchInputs(sourceBaseline,previous)):backendSelection;
+    const initialSelection=sourceBaseline?affectedPackages(changedWatchInputs(sourceBaseline,previous),options):watchPackageSelection(options);
     if(initialSelection.length)queue.enqueue(initialSelection);
-    while(!stopping){await delay(750,undefined,{signal:lifecycle.signal}).catch(()=>{});if(stopping)break;try{const next=await watchSnapshot(config.root),changed=changedWatchInputs(previous,next);previous=next;if(changed.length)queue.enqueue(affectedPackages(changed));}catch{update({phase:'watch-input-error',lastBuild:{ok:false,code:'WATCH_INPUT_UNAVAILABLE'}});}}
+    while(!stopping){await delay(750,undefined,{signal:lifecycle.signal}).catch(()=>{});if(stopping)break;try{const next=await watchSnapshot(config.root,options),changed=changedWatchInputs(previous,next);previous=next;if(changed.length)queue.enqueue(affectedPackages(changed,options));}catch{update({phase:'watch-input-error',lastBuild:{ok:false,code:'WATCH_INPUT_UNAVAILABLE'}});}}
 }

@@ -4,7 +4,7 @@ import type { RootState } from '../../store';
 import socket from '../../core/socket/socketClient';
 import { bridgeApi, type IBridgeDevice, type IBridgeJob,type IBridgeInstallation } from './api';
 import { readBridgeResources, type TBridgeErrors, type TBridgeReadResult, type TBridgeResource } from './bridgeRead';
-import {CONNECTED_DEVICE_EVENT} from './pairingProgress';
+import {CONNECTED_DEVICE_EVENT, selectConnectedComputer} from './pairingProgress';
 import { authDataScope } from '../UserBlock/authDataScope';
 
 const emptyErrors = (): TBridgeErrors => ({ devices: '', jobs: '', installations: '' });
@@ -132,12 +132,7 @@ export function useBridge(enabled=true) {
         };
     }, [email, reload,enabled]);
     const choose = (id: string): void => {
-        setSelected(id);
-        try {
-            localStorage.setItem('neurocenter.device.' + email, id);
-        } catch {
-            /* Приватный режим браузера. */
-        }
+        selectConnectedComputer(email, id);
     };
     const current = owner === scope;
     // Срок снимка считается от получения ответа: часы сервера и браузера могут различаться.

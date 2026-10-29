@@ -11,10 +11,11 @@ import {ragWriteAdmissionUncertain} from '../../../shared/rag-write-authorizatio
 import {readIndexManifest,readIndexSummary,bindIndexProfile,invalidateIndexSeal,sealIndex,requireUsableVectors,validateIndexWrite,
     type IRagIndexWrite,type IRagIndexManifest,type IRagIndexSummary} from './rag-index-state';
 import {migrateRag,checkRagQuotaMigration} from '../database/migrations';
-import {GENERATION_MIGRATION,IDENTITY_MIGRATION} from '../database/migration-definitions';
+import {GENERATION_MIGRATION,IDENTITY_MIGRATION,PROJECT_TEXT_MIGRATION} from '../database/migration-definitions';
 import {RagGenerations,ensureGenerationSearchIndex} from './rag-generations';
 import {buildUpsert,parseVector,type IUpsertRow} from './rag-rows';
 import {searchProjectIndex,type ProjectSearchInput} from './rag-search';
+import {ProjectTextStore} from '../project-text/text-store';
 export {buildUpsert,type IUpsertRow} from './rag-rows';
 
 export interface IRagDbConfig {
@@ -42,6 +43,7 @@ export class RagDb {
     private readonly quotaPolicy=ragQuotaPolicy();
     private readonly scope:'base'|'project';
     public readonly generations:RagGenerations;
+    public readonly text:ProjectTextStore;
 
     public search(input:ProjectSearchInput){return searchProjectIndex(this.pool,input);}
 
@@ -49,6 +51,7 @@ export class RagDb {
         this.scope=config.scope??'project';
         this.pool = createPool({ connectionString: config.url, max: 5 },'rag-data');
         this.generations=new RagGenerations(this.pool);
+        this.text=new ProjectTextStore(this.pool);
     }
 
     /**
@@ -68,6 +71,7 @@ export class RagDb {
         await setupRagQuota(this.pool,this.quotaPolicy);
         if(!await checkRagQuotaMigration(this.pool))throw new Error('Миграция квоты RAG не подтверждена.');
         await migrateRag(this.pool,[PLATFORM_QUOTA_CACHE_MIGRATION]);
+        if(this.scope==='project')await migrateRag(this.pool,[PROJECT_TEXT_MIGRATION]);
         if(this.scope==='base') {
             await migrateRag(this.pool,[PLATFORM_QUOTA_MIGRATION]);
             await seedPlatformQuotaPolicy(this.pool);

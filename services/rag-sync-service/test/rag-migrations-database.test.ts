@@ -1,4 +1,4 @@
-import {afterAll,describe,expect,it} from 'vitest';
+import {afterEach,describe,expect,it} from 'vitest';
 import {Client,Pool} from 'pg';
 import {randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
@@ -10,7 +10,7 @@ import {RagDb} from '../src/rag/rag-db';
 import {RAG_GENERATION_SCHEMA} from '../src/rag/rag-generation-schema';
 import {setupDatabaseLifecycle} from '../src/retired-databases/lifecycle-schema';
 import {DATABASE_LIFECYCLE_SCHEMA,PROJECT_IDENTITY_SCHEMA} from '../src/database/migration-sql';
-import {GENERATION_MIGRATION,IDENTITY_MIGRATION,LIFECYCLE_MIGRATION,sqlChecksum} from '../src/database/migration-definitions';
+import {GENERATION_MIGRATION,IDENTITY_MIGRATION,LIFECYCLE_MIGRATION,PROJECT_TEXT_MIGRATION,sqlChecksum} from '../src/database/migration-definitions';
 import {migrateRag,checkRagMigrations} from '../src/database/migrations';
 import {checkBaseMigrations,migrateBase} from '../src/database/migration-cli';
 import {setupRagQuota,ragQuotaPolicy} from '../src/rag/quota/rag-quota';
@@ -32,7 +32,8 @@ describe('Offline migration inventory',()=>{
             {scope:'project',version:'project-identity-1',name:'project-identity',checksum:sqlChecksum(PROJECT_IDENTITY_SCHEMA)},
             {scope:'base',version:'platform-quota-policy-1',name:'platform-quota-policy',checksum:expect.stringMatching(/^[a-f0-9]{64}$/)},
             {scope:'data',version:'platform-quota-applied-1',name:'platform-quota-applied',checksum:expect.stringMatching(/^[a-f0-9]{64}$/)},
-        ]));expect(result).toHaveLength(6);
+            {scope:'project',version:'project-text-1',name:'project-text-knowledge',checksum:sqlChecksum(PROJECT_TEXT_MIGRATION.sql)},
+        ]));expect(result).toHaveLength(7);
     });
     it('Manifest rejects trailing arguments before opening any secret or connection',async()=>{
         await expect(cli(['manifest','garbage'],{NODE_ENV:'production',RAG_PG_URL_FILE:'/missing/never-read'})).rejects.toMatchObject({code:1});
@@ -50,13 +51,13 @@ describe.skipIf(!connection)('Versioned RAG migrations in disposable databases',
     }
     async function oldGeneration(pool:Pool){await pool.query(RAG_GENERATION_SCHEMA);
         await pool.query("CREATE TABLE neurocenter_rag_schema_versions(version TEXT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now());INSERT INTO neurocenter_rag_schema_versions(version) VALUES('project-generations-1')");}
-    afterAll(async()=>{for(const value of fixtures){await Promise.all(value.stores.map(store=>store.close()));await value.pool.end();await value.admin.query(`DROP DATABASE "${value.name}"`);await value.admin.end();}},30000);
+    afterEach(async()=>{for(const value of fixtures.splice(0)){await Promise.all(value.stores.map(store=>store.close()));await value.pool.end();try{await value.admin.query(`DROP DATABASE "${value.name}"`);}finally{await value.admin.end();}}},30000);
     it('Fresh project setup records immutable checksums and prepares identity without control tables',async()=>{
         const f=await fixture();await f.store().setup();
         const names=(await f.pool.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")).rows.map(row=>row.tablename);
         expect(names).toContain('neurocenter_database_identity');expect(names).not.toContain('neurocenter_project_databases');
         const versions=(await f.pool.query('SELECT version,checksum FROM neurocenter_rag_schema_versions ORDER BY version')).rows;
-        expect(versions).toEqual(['platform-quota-applied-1','project-generations-1','project-identity-1'].map(version=>({version,checksum:expect.stringMatching(/^[a-f0-9]{64}$/)})));
+        expect(versions).toEqual(['platform-quota-applied-1','project-generations-1','project-identity-1','project-text-1'].map(version=>({version,checksum:expect.stringMatching(/^[a-f0-9]{64}$/)})));
     });
     it('Lifecycle setup records its migration instead of untracked runtime DDL',async()=>{
         const f=await fixture();await setupDatabaseLifecycle(f.pool);
@@ -100,7 +101,7 @@ describe.skipIf(!connection)('Versioned RAG migrations in disposable databases',
     it('Parallel project initialization and replay leave one immutable receipt per migration',async()=>{
         const f=await fixture();await Promise.all(Array.from({length:4},()=>f.store().setup()));
         const before=(await f.pool.query('SELECT * FROM neurocenter_rag_schema_versions ORDER BY version')).rows;
-        await f.store().setup();expect((await f.pool.query('SELECT * FROM neurocenter_rag_schema_versions ORDER BY version')).rows).toEqual(before);expect(before).toHaveLength(3);
+        await f.store().setup();expect((await f.pool.query('SELECT * FROM neurocenter_rag_schema_versions ORDER BY version')).rows).toEqual(before);expect(before).toHaveLength(4);
         expect((await f.pool.query('SELECT count(*)::int AS count FROM neurocenter_database_identity')).rows[0].count).toBe(0);
     });
     it.each(['project-generations-1','project-identity-1','database-lifecycle-1'])('A changed checksum for %s fails before another migration or data write',async version=>{
