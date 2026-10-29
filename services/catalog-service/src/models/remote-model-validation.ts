@@ -20,24 +20,21 @@ export function remoteModelBaseUrl(value: unknown): string {
     return url.origin + url.pathname.replace(/\/+$/, '');
 }
 
-/** Секрет можно заменить или сохранить; он не входит в описание модели и экспорт ассета. */
+/** Общая настройка хранит адрес и режим; личные ключи настраиваются отдельным API. */
 export function remoteConnectionInput(value: unknown): IRemoteConnectionInput {
     if (!value || typeof value !== 'object' || Array.isArray(value)) { throw new BadRequestException('Передайте настройки удалённого подключения.'); }
     const body = value as Record<string, unknown>;
-    if (Object.keys(body).some(key => !['expectedRevision', 'expectedModelRevision', 'baseUrl', 'requestDimensions', 'credential', 'apiKey', 'credentialEnv', 'options', 'timeoutMs'].includes(key))
+    if(body.apiKey!==undefined||body.credentialEnv!==undefined||body.credential!==undefined&&body.credential!=='none')throw new BadRequestException('Общий ключ больше не настраивается. Выберите режим авторизации и сохраните личный ключ в «Мой доступ».');
+    const authMode=body.authMode??(body.credential==='none'?'none':undefined);
+    if (Object.keys(body).some(key => !['expectedRevision', 'expectedModelRevision', 'baseUrl', 'requestDimensions', 'credential', 'authMode', 'options', 'timeoutMs'].includes(key))
         || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 0
         || !Number.isSafeInteger(body.expectedModelRevision) || Number(body.expectedModelRevision) < 1
-        || typeof body.requestDimensions !== 'boolean' || typeof body.credential !== 'string' || !['none', 'stored', 'environment'].includes(body.credential)) {
+        || typeof body.requestDimensions !== 'boolean' || typeof authMode!=='string'||!['none','optional','required'].includes(authMode)) {
         throw new BadRequestException('Проверьте ревизию, способ авторизации и размерность подключения.');
     }
-    if (body.apiKey !== undefined && (body.credential !== 'stored' || typeof body.apiKey !== 'string' || !body.apiKey.trim()
-        || body.apiKey.length > 8192 || /[\x00-\x20\x7f]/.test(body.apiKey))) { throw new BadRequestException('Введите непустой API-ключ без пробелов и управляющих знаков.'); }
-    if (body.credential === 'environment' ? typeof body.credentialEnv !== 'string' || !/^NEUROCENTER_REMOTE_MODEL_[A-Z0-9_]{1,100}$/.test(body.credentialEnv)
-        : body.credentialEnv !== undefined) { throw new BadRequestException('Для ключа окружения используйте имя NEUROCENTER_REMOTE_MODEL_*.'); }
     return { expectedRevision: Number(body.expectedRevision), expectedModelRevision: Number(body.expectedModelRevision), baseUrl: remoteModelBaseUrl(body.baseUrl), requestDimensions: body.requestDimensions,
         options: remoteModelOptions(body.options), timeoutMs: remoteModelTimeout(body.timeoutMs),
-        credential: body.credential as IRemoteConnectionInput['credential'], ...(body.apiKey === undefined ? {} : { apiKey: String(body.apiKey) }),
-        ...(body.credentialEnv === undefined ? {} : { credentialEnv: String(body.credentialEnv) }) };
+        credential:'none', authMode:authMode as 'none'|'optional'|'required' };
 }
 
 /** Pin отражает семантику API; ротация ключа отдельно проверяется ревизией приватного подключения. */

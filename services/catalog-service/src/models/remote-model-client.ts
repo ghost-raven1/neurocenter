@@ -10,6 +10,7 @@ import { RemoteModelError } from './remote-model-error';
 import { openaiResponsesBody, openaiResponsesResult } from './remote-openai-responses';
 import { ADAPTER_PARAMETER_DEFINITIONS, applyAdapterParameters } from '../../../shared/adapter-parameters.cjs';
 import {markModelProviderUnavailable} from './model-provider-availability';
+import {currentModelUsage} from '../model-usage/model-usage.context';
 export { RemoteModelError } from './remote-model-error';
 
 type Json = Record<string, unknown>;
@@ -122,13 +123,26 @@ export class RemoteModelClient {
 
     private async request(url: string, body: Json, apiKey?: string, signal?: AbortSignal, timeoutMs?: number): Promise<Json> {
         signal?.throwIfAborted();
+        const wire=currentModelUsage().providerWire;
+        const lease=wire?(wire.current??await wire.acquire(signal)):undefined;
+        if(wire&&lease)wire.current=lease;
+        const currentKey=lease?lease.apiKey:apiKey;
+        let release:Promise<void>|undefined;
         const deadline = AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs ?? timeoutMs ?? 90000), ...(signal ? [signal] : [])]);
         try {
+            signal?.throwIfAborted();
+            lease?.assertCurrent?.();
             const request:RequestInit={ method: 'POST', redirect: 'error', signal: deadline,
-                headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: 'Bearer ' + apiKey } : {}) }, body: JSON.stringify(body) };
+                headers: { 'content-type': 'application/json', ...(currentKey ? { authorization: 'Bearer ' + currentKey } : {}) }, body: JSON.stringify(body) };
             let response:Response;
             try {
-                response = await (this.options.fetch ?? fetch)(url,request);
+                let accepted:Promise<Response>;
+                try {accepted=(this.options.fetch ?? fetch)(url,request);}
+                finally {
+                    // The exact physical invocation, not a generic async admission action, consumes the lock.
+                    if(wire&&lease){wire.current=undefined;release=lease.release().catch(()=>undefined);}
+                }
+                response = await accepted;
             } catch {
                 signal?.throwIfAborted();
                 throw markModelProviderUnavailable(new RemoteModelError('unavailable', deadline.aborted ? 'Удалённая модель не ответила вовремя.' : 'Не удалось соединиться с удалённым API модели.'));
@@ -157,6 +171,9 @@ export class RemoteModelClient {
             signal?.throwIfAborted();
             if (cause instanceof RemoteModelError) { throw cause; }
             throw new RemoteModelError('unavailable', deadline.aborted ? 'Удалённая модель не ответила вовремя.' : 'Не удалось соединиться с удалённым API модели.');
+        } finally {
+            if(wire&&wire.current===lease){wire.current=undefined;release=lease?.release().catch(()=>undefined);}
+            await release;
         }
     }
 }

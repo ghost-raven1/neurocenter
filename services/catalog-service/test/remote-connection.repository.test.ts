@@ -6,6 +6,7 @@ import { modelFromRow, saveModelVersion, type IModelRow } from '../src/models/mo
 import { RemoteConnectionRepository } from '../src/models/remote-connection.repository';
 import { remoteConnectionInput, remoteVerificationDigest } from '../src/models/remote-model-validation';
 import type { IModel } from '../src/models/model.types';
+import type {IRemoteConnectionInput} from '../src/models/remote-model.types';
 
 const connection = process.env.CATALOG_TEST_PG_URL;
 const databases: Array<{ pool: Pool; admin: Pool; name: string }> = [];
@@ -25,8 +26,12 @@ async function fixture() {
     const environment = { NEUROCENTER_MODEL_CREDENTIAL_KEY: randomBytes(32).toString('base64'), NEUROCENTER_REMOTE_MODEL_FIXTURE: 'env-secret' };
     return { pool, repository: new RemoteConnectionRepository(pool, environment), model: modelFromRow(row) };
 }
-const input = (model: IModel, revision: number, patch: Record<string, unknown> = {}) => remoteConnectionInput({ expectedRevision: revision,
-    expectedModelRevision: model.revision, baseUrl: 'http://127.0.0.1:11434', requestDimensions: false, credential: 'stored', apiKey: 'provider-fixture-secret', ...patch });
+/** Historical repository seed only: the public provider API now rejects shared key/env writes. */
+const input = (model: IModel, revision: number, patch: Record<string, unknown> = {}):IRemoteConnectionInput => {
+    const {credential='stored',apiKey='provider-fixture-secret',credentialEnv,...publicOptions}=patch;
+    return {...remoteConnectionInput({expectedRevision:revision,expectedModelRevision:model.revision,baseUrl:'http://127.0.0.1:11434',requestDimensions:false,authMode:'required',...publicOptions}),
+        credential:credential as IRemoteConnectionInput['credential'],...(Object.prototype.hasOwnProperty.call(patch,'apiKey')&&patch.apiKey===undefined?{}:{apiKey:apiKey as string}),...(credentialEnv?{credentialEnv:String(credentialEnv)}:{})};
+};
 const read = async (pool: Pool) => modelFromRow((await pool.query<IModelRow>("SELECT * FROM model_catalog WHERE id='fixture-model'")).rows[0]);
 afterEach(async () => { for (const { pool, admin, name } of databases.splice(0)) { await pool.end(); await admin.query('DROP DATABASE ' + name); await admin.end(); } });
 
@@ -56,7 +61,7 @@ describe.skipIf(!connection)('Private model connection history — disposable Po
         const retained = (await pool.query('SELECT * FROM model_remote_connections WHERE model_id=$1 AND revision=1', [model.id])).rows[0];
         expect({ ...retained, semantic_sha: null, verified_at: null }).toEqual(original);
     });
-    it('Clones every private option and reseals the credential when a checked semantic pin changes', async () => {
+    it('Clones options on a changed semantic pin while retaining shared ciphertext only on its historical row', async () => {
         const { pool, repository, model } = await fixture();
         await repository.save(model.id, input(model, 0, { options: { topP: 0.8, maxOutputTokens: 8192 }, timeoutMs: 110000 }), 'fixture', authorize);
         const row = (await repository.head(model.id))!, digest = remoteVerificationDigest(model, repository.connection(row), null);
@@ -66,7 +71,8 @@ describe.skipIf(!connection)('Private model connection history — disposable Po
         await repository.verify(revised, 1, remoteVerificationDigest(revised, repository.connection(row), null), null, 'fixture', authorize);
         const cloned = (await repository.head(model.id))!;
         expect(cloned.revision).toBe('2'); expect(cloned.options).toEqual(row.options); expect(cloned.timeout_ms).toBe(110000);
-        expect(cloned.credential).not.toEqual(row.credential); expect(repository.connection(cloned).apiKey).toBe('provider-fixture-secret');
+        expect(cloned.credential).toBeNull();expect(cloned.auth_mode).toBe('required');expect(repository.connection(cloned).apiKey).toBeUndefined();
+        expect(repository.connection(row).apiKey).toBe('provider-fixture-secret');
         expect((await repository.pinned(checked)).revision).toBe('1');
     });
     it('Rejects unsupported options, invalid timeout, auth changes without a new key and failed authorization atomically', async () => {

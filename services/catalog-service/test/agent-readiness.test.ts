@@ -13,6 +13,7 @@ import type { IModel } from '../src/models/model.types';
 import type { ModelsService } from '../src/models/models.service';
 import type { PreparedProjectContext } from '../src/model-chat/chat-project-context.types';
 import { ProjectEmbeddingRepository } from '../src/models/project-embedding.repository';
+import {currentModelUsage} from '../src/model-usage/model-usage.context';
 
 const model: IModel = { id: 'model-trial', name: 'Trial', description: '', model: 'trial:1', runtime: 'remote-openai', capability: 'chat', verificationSha256: 'b'.repeat(64),
     manifestSha256: null, dimension: null, source: 'custom', revision: 1, createdAt: '', updatedAt: '' };
@@ -51,10 +52,11 @@ describe('Diagnostic trial contract', () => {
 describe('Bounded real-call diagnostic protocol', () => {
     const fixture = (target = row()) => {
         const query = vi.fn(async () => ({ rows: [{ options: { contextWindow: 4096 } as { contextWindow?: number; maxOutputTokens?: number } }] }));
-        const policy = { models: { pool: { query } } } as unknown as AgentTrialPolicy;
-        const runtime = { infer: vi.fn(async () => reply({ nonce: target.snapshot.nonce, sum: 42 })) };
+        const actor=vi.fn(async()=>({email:target.owner_email,activeRole:'Разработчик'})),scopes:ReturnType<typeof currentModelUsage>[]=[];
+        const policy = { models: { pool: { query } },actor } as unknown as AgentTrialPolicy;
+        const runtime = { infer: vi.fn(async () => {scopes.push(currentModelUsage());return reply({ nonce: target.snapshot.nonce, sum: 42 });}) };
         const runner = new AgentTrialRunner(policy, runtime), checkpoint = vi.fn(async () => model);
-        return { target, query, runtime, runner, checkpoint, signal: new AbortController().signal };
+        return { target, query, runtime, runner, checkpoint,actor,scopes, signal: new AbortController().signal };
     };
     it('tests a tool-less agent once with its exact saved prompt and honest unknown usage', async () => {
         const f = fixture(); await f.runner.run({} as Request, f.target, f.target.receipt, f.signal, f.checkpoint);
@@ -64,6 +66,8 @@ describe('Bounded real-call diagnostic protocol', () => {
             stream: false, options: { num_predict: 256, temperature: 0.2, top_p: 0.6 } }, f.signal]);
         expect(f.target.receipt.checks.map(check => check.status)).toEqual(['passed', 'passed']);
         expect(f.target.receipt.usage).toEqual({ calls: 1, reported: false, inputTokens: null, outputTokens: null });
+        expect(f.actor).toHaveBeenCalledWith({},f.target.project_id);
+        expect(f.scopes[0]).toMatchObject({actorEmail:f.target.owner_email,actorRole:'Разработчик',projectId:f.target.project_id,agentId:f.target.agent_id});
     });
     it('respects a lower configured output limit in both admission reservation and the actual call', async () => {
         const f = fixture(); f.query.mockResolvedValue({ rows: [{ options: { contextWindow: 256, maxOutputTokens: 64 } }] });

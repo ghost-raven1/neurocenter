@@ -28,7 +28,7 @@ export function SystemRoleChat({ agentId, initialInstruction, projectId, canExec
     const appliedLaunch = useRef<number | undefined>(launch?.key);
     const automaticRead = useRef<{owner: object; id: string}>(), [readRetry, setReadRetry] = useState(0);
     const newDraftOwner = useRef<object>(); // Explicit New stays blank until history is selected or the context owner changes.
-    const value = useSystemRoleChat(projectId, availability.enabled && canExecute && !historyOnly, {transport, agentId, origin: originKey, suspended: embedded && !origin,
+    const value = useSystemRoleChat(projectId, availability.enabled && canExecute && !historyOnly, {transport, agentId, origin: originKey, suspended: embedded && !origin, readOverview: canExecute && !historyOnly,
         onAccepted: turn => {currentLaunch.current?.onAccepted?.(turn.instruction); setActiveLaunch(undefined); if (agentId) {clearRoleDraft(scope, projectId, agentId); initialTask.current = ''; setDraft(item => item + 1);}}});
     useEffect(() => {
         if (newDraftOwner.current === value.owner || (!embedded && !agentId) || !value.dialogs.length || value.detail || value.receipt || value.busy) return;
@@ -86,7 +86,7 @@ export function SystemRoleChat({ agentId, initialInstruction, projectId, canExec
         </MessageLog>
         {embedded && !availability.enabled && <Alert type="info" showIcon message={availability.reason} description="История, проверка отправки и отмена принятых задач доступны."/>}
         {agentId && value.detail?.dialog.legacy && <Alert type="info" showIcon message="Прежняя история этой роли" description="Сообщения и действия сохранены. Для новой задачи начните новый диалог этой роли."/>}
-        {!historyOnly && (!agentId || !value.detail?.dialog.legacy || !!value.pendingIntent) && (!embedded || availability.enabled || value.pendingIntent) && (!embedded || activeLaunch || value.pendingIntent || value.prepared) && <ServiceComposer key={value.receipt ? 'pending' : draft + ':' + (activeLaunch?.key ?? 'new')} value={value} projectId={projectId} canExecute={canExecute} fixedAgentId={agentId}
+        {canExecute && !historyOnly && (!agentId || !value.detail?.dialog.legacy || !!value.pendingIntent) && (!embedded || availability.enabled || value.pendingIntent) && (!embedded || activeLaunch || value.pendingIntent || value.prepared) && <ServiceComposer key={value.receipt ? 'pending' : draft + ':' + (activeLaunch?.key ?? 'new')} value={value} projectId={projectId} canExecute={canExecute} fixedAgentId={agentId}
             initial={activeLaunch && launch?.key === activeLaunch.key ? {...activeLaunch,instruction: launch.instruction} : activeLaunch ?? (agentId ? {agentId,instruction: initialTask.current ?? ''} : undefined)} compact={embedded} onActionChange={activeLaunch ? onActionChange : undefined} />}
     </div>;
 }

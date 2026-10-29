@@ -12,6 +12,7 @@ import type { ModelsService } from '../src/models/models.service';
 import { RemoteConnectionService } from '../src/models/remote-connection.service';
 import type { IRemoteConnectionRow } from '../src/models/remote-connection.repository';
 import { RemoteModelClient, RemoteModelError } from '../src/models/remote-model-client';
+import {anonymousProviderAccess} from './remote-provider.fixture';
 
 vi.mock('../src/models/model-events', () => ({ notifyModelCatalogChange: vi.fn(async () => undefined) }));
 vi.mock('../src/features/require-feature-enabled', () => ({ requireFeaturesEnabled: vi.fn(async () => undefined) }));
@@ -22,7 +23,7 @@ const row = { model_id: model.id, revision: 1, base_url: 'http://127.0.0.1:1/v1'
     verified_at: null, failure_message: null, revoked_at: null } satisfies IRemoteConnectionRow;
 const answer = { message: { content: 'completed provider answer' } };
 function remote() {
-    const service = new RemoteConnectionService({ pool: {} } as ModelsService);
+    const service = new RemoteConnectionService({ pool: {} } as ModelsService,undefined,undefined,anonymousProviderAccess);
     const pinned = vi.spyOn(service.repository, 'pinned').mockResolvedValue(row);
     const failure = vi.spyOn(service.repository, 'failure').mockRejectedValue(new Error('private SQL failure'));
     const infer = vi.spyOn(RemoteModelClient.prototype, 'infer').mockResolvedValue(answer);
@@ -39,17 +40,17 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('Optional remote connection diagnostics do not replace provider outcomes', () => {
-    it('returns the completed answer when clearing a stale health error fails', async () => {
+    it('returns the completed personal answer without writing a common credential-health state', async () => {
         const f = remote();
         await expect(f.service.infer(model, 'chat', {})).resolves.toBe(answer);
-        expect(f.infer).toHaveBeenCalledOnce(); expect(f.failure).toHaveBeenCalledExactlyOnceWith(row, null);
+        expect(f.infer).toHaveBeenCalledOnce(); expect(f.failure).not.toHaveBeenCalled();
         expect(f.pinned).toHaveBeenCalledTimes(2);
     });
-    it('preserves the sanitized provider error when recording its health failure fails', async () => {
+    it('preserves the sanitized personal error without blocking other users through common health', async () => {
         const f = remote(); f.infer.mockRejectedValue(new RemoteModelError('response', 'Безопасная ошибка провайдера.'));
         const error = await f.service.infer(model, 'chat', {}).catch(error => error);
         expect(error.getStatus()).toBe(503); expect(error.message).toBe('Безопасная ошибка провайдера.');
-        expect(f.failure).toHaveBeenCalledExactlyOnceWith(row, 'Безопасная ошибка провайдера.');
+        expect(f.failure).not.toHaveBeenCalled();
         expect(f.infer).toHaveBeenCalledOnce();
     });
     it('preserves a failed probe outcome when the diagnostic write fails', async () => {

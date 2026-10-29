@@ -1,3 +1,5 @@
+import {REMOTE_PROVIDER_SCHEMA_SQL} from '../remote-providers/remote-provider.schema';
+import {REMOTE_PROVIDER_SCHEMA_ASSERT_SQL} from '../remote-providers/remote-provider.schema-verification';
 import {GGUF_RUNTIME_SCHEMA_SQL} from '../models/gguf-runtime/gguf-runtime.schema';
 import {GGUF_RUNTIME_SCHEMA_ASSERT_SQL} from '../models/gguf-runtime/gguf-runtime.schema-verification';
 import {GGUF_IMPORT_SCHEMA_SQL} from '../models/gguf-import/gguf-import.schema';
@@ -137,4 +139,5 @@ export const CATALOG_MIGRATIONS:readonly CatalogMigration[]=[
     {version:48,name:'durable-gguf-model-import',sql:GGUF_IMPORT_SCHEMA_SQL+'\n'+GGUF_IMPORT_SCHEMA_ASSERT_SQL},
     {version:49,name:'configurable-runtime-limits',sql:RUNTIME_LIMITS_SCHEMA_SQL+'\n'+RUNTIME_LIMITS_SCHEMA_ASSERT_SQL},
     {version:50,name:'recoverable-gguf-runtime-intents',sql:GGUF_RUNTIME_SCHEMA_SQL+'\n'+GGUF_RUNTIME_SCHEMA_ASSERT_SQL},
+    {version:51,name:'personal-remote-provider-credentials',sql:REMOTE_PROVIDER_SCHEMA_SQL+'\n'+REMOTE_PROVIDER_SCHEMA_ASSERT_SQL},
 ];

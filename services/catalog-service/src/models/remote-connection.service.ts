@@ -13,13 +13,16 @@ import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
 import { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 import {isModelProviderUnavailable,markModelProviderUnavailable} from './model-provider-availability';
+import {RemoteProviderAccessService} from '../remote-providers/remote-provider.service';
+import {remoteModelOptions,remoteModelTimeout} from './remote-model-options';
+import type {IRemoteConnectionRow} from './remote-connection.repository';
 
 /** Все запросы провайдеру выполняются сервером; bridge получает только Gateway API и project pin. */
 @Injectable()
 export class RemoteConnectionService {
     readonly repository: RemoteConnectionRepository;
     private readonly client: RemoteModelClient;
-    constructor(private readonly models: ModelsService, private readonly usage?: ModelUsageService, admission?: ModelApiAdmission) {
+    constructor(private readonly models: ModelsService, private readonly usage?: ModelUsageService, admission?: ModelApiAdmission,private readonly personal?:RemoteProviderAccessService) {
         this.repository = new RemoteConnectionRepository(models.pool); this.client = new RemoteModelClient({ admission });
     }
     private async remote(id: string): Promise<IModel> {
@@ -29,6 +32,7 @@ export class RemoteConnectionService {
     }
     async read(id: string) { const model = await this.remote(id); return this.repository.view(id, await this.repository.head(id), model.revision); }
     async save(id: string, value: unknown, actor: string, authorize: () => Promise<unknown>) {
+        await requireFeaturesEnabled(['personal_remote_provider_credentials']);
         await this.remote(id);
         const saved = await this.repository.save(id, remoteConnectionInput(value), actor, authorize);
         await notifyModelCatalogChange(); return saved;
@@ -47,18 +51,16 @@ export class RemoteConnectionService {
         const row = await this.repository.head(model.id);
         if (!row || row.revoked_at) return { state: 'unavailable', message: 'Настройте подключение удалённого API.', checkedAt: null };
         const view = this.repository.view(model.id, row, model.revision);
-        try { this.repository.connection(row); }
-        catch (cause) { return { state: 'unavailable', message: cause instanceof ServiceUnavailableException ? cause.message : 'Ключ подключения недоступен.', checkedAt: null }; }
-        if (row.credential_kind !== 'none' && !view.hasKey) return { state: 'unavailable', message: 'Нужен API-ключ подключения. Обратитесь к главному администратору.', checkedAt: null };
-        if (row.failure_message) return { state: 'error', message: row.failure_message, checkedAt: view.checkedAt };
         if (!row.semantic_sha || row.semantic_sha !== model.verificationSha256) return { state: 'stopped', message: 'Подключение сохранено. Выполните проверку модели перед использованием.', checkedAt: null };
-        return { state: 'ready', message: 'Подключение проверено. Текущая доступность подтверждается каждым запросом.', checkedAt: view.checkedAt };
+        return { state: 'ready', message: 'Провайдер проверен. Личный доступ настраивается отдельно; текущая доступность подтверждается запросом.', checkedAt: view.checkedAt };
     }
     /** Probe закрепляет фактическую размерность и конфигурацию только после повторной проверки прав и CAS. */
     async check(model: IModel, actor: string, authorize: () => Promise<unknown>, signal?: AbortSignal): Promise<void> {
         const row = await this.repository.head(model.id);
         if (!row || row.revoked_at) throw new ConflictException('Сначала настройте подключение удалённого API.');
-        const connection = this.repository.connection(row);
+        const connection = this.connectionMetadata(row);
+        if(!this.personal)throw new ServiceUnavailableException('Сервис личного доступа не настроен. Общий ключ не используется.');
+        const providerWire=this.personal.wire(model,row);
         try {
             const infer = async (signal?: AbortSignal) => {
                 // The usage reservation can wait; admit this new paid probe after that wait.
@@ -79,7 +81,7 @@ export class RemoteConnectionService {
                 if (!current || current.revoked_at || Number(current.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось. Повторите проверку.');
                 signal?.throwIfAborted();
             };
-            const result = await withModelUsage({ purpose: 'verification', actorEmail: actor, beforeInference }, () => this.usage ? this.usage.observe(model, model.capability === 'embedding' ? 'embed' : 'chat', infer, signal) : infer(signal));
+            const result = await withModelUsage({ purpose: 'verification', actorEmail: actor, beforeInference,providerWire }, () => this.usage ? this.usage.observe(model, model.capability === 'embedding' ? 'embed' : 'chat', infer, signal) : infer(signal));
             if (model.capability === 'vision') {
                 let observed: Record<string, unknown>;
                 try { observed = JSON.parse((result.message as { content: string }).content); } catch { throw new RemoteModelError('response', 'Модель не распознала тестовое изображение.'); }
@@ -92,12 +94,14 @@ export class RemoteConnectionService {
             await this.repository.verify(model, connection.revision, digest, dimension, actor, async () => { signal?.throwIfAborted(); await authorize(); signal?.throwIfAborted(); });
             await notifyModelCatalogChange();
         } catch (cause) {
-            if (cause instanceof RemoteModelError) await this.repository.failure(row, cause.message).catch(() => undefined);
+            // A personal key, allowance or provider response never changes global health for other users.
             throw cause;
         }
     }
     async infer(model: IModel, endpoint: 'embed' | 'chat', body: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
         const row = await this.repository.pinned(model);
+        if(!this.personal)throw new ServiceUnavailableException('Сервис личного доступа не настроен. Общий ключ не используется.');
+        const providerWire=this.personal.wire(model,row);
         try {
             const context = currentModelUsage(), inherited = context.beforeInference;
             const beforeInference = async () => {
@@ -106,20 +110,22 @@ export class RemoteConnectionService {
                 if (Number(fresh.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось. Повторите действие.');
                 signal?.throwIfAborted();
             };
-            const result = await withModelUsage({ purpose: context.purpose, beforeInference }, () => this.client.infer(model, this.repository.connection(row), endpoint, body, signal));
+            const result = await withModelUsage({ purpose: context.purpose, beforeInference,providerWire }, () => this.client.infer(model, this.connectionMetadata(row), endpoint, body, signal));
             signal?.throwIfAborted();
             const current = await this.repository.pinned(model);
             if (Number(current.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось во время запроса. Повторите действие.');
-            await this.repository.failure(row, null).catch(() => undefined);
             return result;
         } catch (cause) {
             signal?.throwIfAborted();
             if (cause instanceof RemoteModelError) {
-                await this.repository.failure(row, cause.message).catch(() => undefined);
                 const error=new ServiceUnavailableException(cause.message);
                 throw isModelProviderUnavailable(cause)?markModelProviderUnavailable(error):error;
             }
             throw cause;
         }
+    }
+    private connectionMetadata(row:IRemoteConnectionRow){
+        return {modelId:row.model_id,revision:Number(row.revision),baseUrl:row.base_url,requestDimensions:row.request_dimensions,
+            options:remoteModelOptions(row.options),timeoutMs:remoteModelTimeout(row.timeout_ms)};
     }
 }

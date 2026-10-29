@@ -5,6 +5,7 @@ import {DeviceEmbeddingService} from '../src/models/device-embedding.service';
 import type {HostedRagGrantService} from '../src/models/hosted-rag-grant.service';
 import type {OllamaClient} from '../src/models/ollama-client';
 import {deviceEmbeddingInput,projectEmbeddingUpdate} from '../src/models/project-embedding.validation';
+import {currentModelUsage} from '../src/model-usage/model-usage.context';
 
 const email='developer@example.test',projectId='prj-fixture',bindingId='a'.repeat(64),instanceId='11111111-1111-4111-8111-111111111111';
 const device={id:'device',email,role:'Разработчик',report:{bindings:[{projectId,bindingId,instanceId,valid:true}]}} as unknown as Device;
@@ -30,6 +31,7 @@ describe('Embedding-брокер подключённого устройства
         expect(requireGrant).toHaveBeenCalledWith(device,context);expect(infer).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
     });
     it('Батч использует реальный тег карточки и возвращает точный alias, не credentials',async()=>{
+        infer.mockImplementationOnce(async()=>{expect(currentModelUsage()).toMatchObject({actorEmail:device.email,actorRole:device.role,projectId});return{embeddings:[[1,0,0],[0,1,0]],prompt_eval_count:4};});
         const result=await service.embed(device,input);
         expect(infer).toHaveBeenCalledWith(configured.model,'embed',{input:input.input,truncate:false},expect.any(AbortSignal));
         expect(result).toEqual({object:'list',model:alias,data:[{object:'embedding',index:0,embedding:[1,0,0]},{object:'embedding',index:1,embedding:[0,1,0]}],usage:{prompt_tokens:4,total_tokens:4}});

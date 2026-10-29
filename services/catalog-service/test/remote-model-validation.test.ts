@@ -62,11 +62,8 @@ describe('Приватная настройка удалённого API', () =>
         const result = (() => { try { remoteConnectionInput({ ...connection, credential }); } catch (error) { return error; } })();
         expect(result).toMatchObject({ status: 400 });
     });
-    it.each([
-        { credential: 'none' }, { credential: 'stored', apiKey: 'fixture-key' },
-        { credential: 'environment', credentialEnv: 'NEUROCENTER_REMOTE_MODEL_PROVIDER' },
-    ])('Сохраняет явный строковый режим авторизации $credential', value => {
-        expect(remoteConnectionInput({ ...connection, ...value })).toMatchObject(value);
+    it.each(['none','optional','required'])('Сохраняет явный режим личной авторизации %s без общего секрета', authMode => {
+        expect(remoteConnectionInput({ ...connection, authMode })).toMatchObject({authMode,credential:'none'});
     });
     it('Разрешает явно выбранные self-hosted адреса и префикс API', () => {
         expect(remoteModelBaseUrl('http://127.0.0.1:11434/')).toBe('http://127.0.0.1:11434');
@@ -77,11 +74,14 @@ describe('Приватная настройка удалённого API', () =>
         'http://169.254.169.254', 'http://metadata.google.internal', 'http://[fe80::1]', 'http://0.0.0.0', 'http://224.0.0.1', 'https://example.test/%2e%2e/'])('Не разрешает служебный или неявный адрес %s', value => {
         expect(() => remoteModelBaseUrl(value)).toThrow();
     });
-    it('Ограничивает env-ссылки ключами моделей и не принимает секрет одновременно с другим режимом', () => {
+    it('Не принимает общий секрет или env-ссылку в новом provider setup', () => {
         const base = { expectedRevision: 0, expectedModelRevision: 1, baseUrl: 'https://api.example.test/v1', requestDimensions: false };
-        expect(remoteConnectionInput({ ...base, credential: 'environment', credentialEnv: 'NEUROCENTER_REMOTE_MODEL_PROVIDER' })).toMatchObject({ credential: 'environment' });
+        expect(()=>remoteConnectionInput({ ...base, credential: 'environment', credentialEnv: 'NEUROCENTER_REMOTE_MODEL_PROVIDER' })).toThrow('Мой доступ');
         expect(() => remoteConnectionInput({ ...base, credential: 'environment', credentialEnv: 'CATALOG_PG_URL' })).toThrow();
         expect(() => remoteConnectionInput({ ...base, credential: 'none', apiKey: 'secret' })).toThrow();
         expect(() => remoteConnectionInput({ ...base, credential: 'stored', apiKey: 'secret\nheader' })).toThrow();
+    });
+    it.each([['none'],null,{},new String('none')])('Не превращает неоднозначный authMode %j в строку',authMode=>{
+        expect(()=>remoteConnectionInput({...connection,authMode})).toThrow();
     });
 });

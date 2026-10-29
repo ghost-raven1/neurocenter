@@ -1,3 +1,4 @@
+import {anonymousProviderAccess} from './remote-provider.fixture';
 import 'reflect-metadata';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ServiceUnavailableException } from '@nestjs/common';
@@ -34,7 +35,7 @@ describe('Actual model transports classify optional RAG outages', () => {
             if (mode === 'network') throw new TypeError('private upstream address');
             return new Response('<html>private upstream error</html>', { status: mode });
         });
-        const f = projectContextPort(models => new ModelRuntime(new OllamaClient({ fetch: request, env: { NODE_ENV: 'test' } }), new RemoteConnectionService(models)));
+        const f = projectContextPort(models => new ModelRuntime(new OllamaClient({ fetch: request, env: { NODE_ENV: 'test' } }), new RemoteConnectionService(models,undefined,undefined,anonymousProviderAccess)));
         const prepared = await f.prepare();
         expect(prepared.evidence).toMatchObject({ status: 'unavailable', sources: [] });
         expect(prepared.messages[0].content).not.toContain('private upstream');
@@ -47,20 +48,20 @@ describe('Actual model transports classify optional RAG outages', () => {
         ['unknown upstream 500', () => new Response('error', { status: 500 })], ['authorization 403', () => new Response('denied', { status: 403 })],
     ] as const)('A local embedding %s remains fatal and is never labelled an outage', async (_name, response) => {
         const request = vi.fn(async (input: string | URL | Request) => String(input).endsWith('/api/tags') ? tags() : response());
-        const f = projectContextPort(models => new ModelRuntime(new OllamaClient({ fetch: request, env: { NODE_ENV: 'test' } }), new RemoteConnectionService(models)));
+        const f = projectContextPort(models => new ModelRuntime(new OllamaClient({ fetch: request, env: { NODE_ENV: 'test' } }), new RemoteConnectionService(models,undefined,undefined,anonymousProviderAccess)));
         const error = await f.prepare().catch(error => error);
         expect(error).toBeInstanceOf(Error); expect(isModelProviderUnavailable(error)).toBe(false);
         expect(f.context.client.call).not.toHaveBeenCalled();
     });
     it('An invalid local runtime configuration is not a network outage', async () => {
         const request = vi.fn();
-        const f = projectContextPort(models => new ModelRuntime(new OllamaClient({ fetch: request, env: { MODEL_RUNTIME_URL: 'not-a-url' } }), new RemoteConnectionService(models)));
+        const f = projectContextPort(models => new ModelRuntime(new OllamaClient({ fetch: request, env: { MODEL_RUNTIME_URL: 'not-a-url' } }), new RemoteConnectionService(models,undefined,undefined,anonymousProviderAccess)));
         await expect(f.prepare()).rejects.toMatchObject({ status: 503 }); expect(request).not.toHaveBeenCalled();
     });
     it('Cancellation during a local fetch remains cancellation', async () => {
         let cancel!: () => void;
         const request = vi.fn(async (input: string | URL | Request) => { if (String(input).endsWith('/api/tags')) return tags(); cancel(); throw new TypeError('aborted fetch'); });
-        const f = projectContextPort(models => new ModelRuntime(new OllamaClient({ fetch: request, env: { NODE_ENV: 'test' } }), new RemoteConnectionService(models)));
+        const f = projectContextPort(models => new ModelRuntime(new OllamaClient({ fetch: request, env: { NODE_ENV: 'test' } }), new RemoteConnectionService(models,undefined,undefined,anonymousProviderAccess)));
         cancel = () => f.abort.abort(); await expect(f.prepare()).rejects.toMatchObject({ name: 'AbortError' });
         expect(f.context.client.call).not.toHaveBeenCalled();
     });
@@ -69,7 +70,7 @@ describe('Actual model transports classify optional RAG outages', () => {
 describe('Real admission owners fail closed before provider dispatch', () => {
     it('An actual usage reservation failure cannot be swallowed as optional embedding unavailability', async () => {
         const request = vi.fn(); let usage!: ModelUsageService;
-        const f = projectContextPort(models => { usage = new ModelUsageService(models); return new ModelRuntime(new OllamaClient({ fetch: request }), new RemoteConnectionService(models), usage); });
+        const f = projectContextPort(models => { usage = new ModelUsageService(models); return new ModelRuntime(new OllamaClient({ fetch: request }), new RemoteConnectionService(models,undefined,undefined,anonymousProviderAccess), usage); });
         try {
             const error = await f.prepare().catch(error => error);
             expect(error).toBeInstanceOf(ServiceUnavailableException); expect(isModelProviderUnavailable(error)).toBe(false);
@@ -81,7 +82,7 @@ describe('Real admission owners fail closed before provider dispatch', () => {
         const request = vi.fn(async (input: string | URL | Request) => { paths.push(new URL(String(input)).pathname); return tags(); });
         const f = projectContextPort(models => {
             limits = new ModelRateLimitsService(models);
-            return new ModelRuntime(new OllamaClient({ fetch: request, env: { NODE_ENV: 'test' }, admission: new ModelApiAdmission(limits) }), new RemoteConnectionService(models));
+            return new ModelRuntime(new OllamaClient({ fetch: request, env: { NODE_ENV: 'test' }, admission: new ModelApiAdmission(limits) }), new RemoteConnectionService(models,undefined,undefined,anonymousProviderAccess));
         });
         try {
             const error = await f.prepare().catch(error => error);
@@ -99,7 +100,7 @@ describe('Remote provider wrappers preserve the genuine outage classification on
     const fixture = (response: () => Response | Promise<Response>, connection = row) => {
         vi.stubGlobal('fetch', vi.fn(response));
         return projectContextPort(models => {
-            const remote = new RemoteConnectionService(models);
+            const remote = new RemoteConnectionService(models,undefined,undefined,anonymousProviderAccess);
             vi.spyOn(remote.repository, 'pinned').mockResolvedValue(connection); vi.spyOn(remote.repository, 'failure').mockResolvedValue(undefined);
             return new ModelRuntime(new OllamaClient(), remote);
         }, model);
