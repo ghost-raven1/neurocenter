@@ -13,7 +13,7 @@ const temporary = [];
 let fixtureRoot, fixtureDocument, actual;
 
 /** Fixtures are compiler inputs only: a top-level throw proves services are never executed. */
-function fixture(source) {
+function fixture(source, filename = 'fixture.controller.ts') {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neurocenter-openapi-'));
     temporary.push(directory);
     const gateway = path.join(directory, 'services/api-gateway');
@@ -22,7 +22,9 @@ function fixture(source) {
     fs.mkdirSync(catalog, {recursive: true});
     fs.writeFileSync(path.join(gateway, 'package.json'), '{"version":"0.0.1-fixture"}');
     fs.symlinkSync(path.join(root, 'services/api-gateway/node_modules'), path.join(directory, 'node_modules'), 'dir');
-    fs.writeFileSync(path.join(catalog, 'fixture.controller.ts'), source);
+    const controller = path.join(catalog, filename);
+    fs.mkdirSync(path.dirname(controller), {recursive: true});
+    fs.writeFileSync(controller, source);
     return directory;
 }
 
@@ -113,6 +115,17 @@ test('Static Nest decorators, aliases, prefix arrays and gateway boundaries defi
     for (const hidden of ['/internal/secrets', '/health', '/api/fake', '/api/skills/orphan']) assert.equal(fixtureDocument.paths[hidden], undefined, hidden);
 });
 
+test('Feature-owned controller.ts contributes its Nest routes without executing the source', () => {
+    const directory = fixture(`
+import {Controller, Get} from '@nestjs/common';
+throw new Error('A source scanner must not execute this module');
+@Controller('api/bare-feature') class FeatureController { @Get() read(): string { return 'ready'; } }
+`, 'feature/controller.ts');
+    const operation = generateOpenApi(directory).paths['/api/bare-feature']?.get;
+    assert.ok(operation, 'The feature directory owns a bare controller.ts');
+    assert.deepEqual(operation.security, [{sessionCookie:[]}]);
+});
+
 test('Typed bodies preserve required fields, literal unions, null, collections and explicit unknown data', () => {
     const schema = fixtureDocument.paths['/api/sample'].post.requestBody.content['application/json'].schema;
     assert.deepEqual(schema.required, ['name', 'kind', 'enabled', 'nullable', 'values', 'metadata', 'timestamp','selected']);
@@ -164,8 +177,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 251);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 311);
+    assert.equal(Object.keys(actual.paths).length, 308);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 377);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for (const pathname of Object.keys(actual.paths)) assert.match(pathname, /^\/(?:api|auth)\//);
     for (const privatePath of ['/api/{path}','/api/device-channel/mcp-host/authorize','/internal/device-channel/identity','/api/rag/health','/health','/metrics','/bridge/install.sh']) assert.equal(actual.paths[privatePath], undefined, privatePath);
@@ -230,7 +243,7 @@ test('Personal chat contracts expose bounded document inputs and CAS only to bro
     for(const operation of Object.values(actual.paths[chat]))assert.equal(operation.parameters.some(parameter=>/^x-(?:bridge|neurocenter-internal)/i.test(parameter.name)),false);
 });
 
-test('Learning has the audited browser surface and only four device-bound channels', () => {
+test('Learning separates browser review, four core device actions and owned sync channels', () => {
     const prefix='/api/projects/{id}/learning';
     const browser={
         '':['get'], '/context':['get'], '/history':['get'], '/requests/{key}':['get'],
@@ -243,16 +256,18 @@ test('Learning has the audited browser surface and only four device-bound channe
         '/analyses':['post'], '/analyses/{analysisId}':['get'], '/analyses/requests/{key}':['get'],
     };
     const device=['context','record','observe','propose'].map(suffix=>'/api/device-channel/learning/'+suffix);
-    const expected=[...Object.keys(browser).map(suffix=>prefix+suffix),...device].sort();
+    const sync=['/api/device-channel/learning-memory/context','/api/device-channel/learning-quirks/import'];
+    const expected=[...Object.keys(browser).map(suffix=>prefix+suffix),...device,...sync].sort();
     assert.deepEqual(Object.keys(actual.paths).filter(pathname=>pathname.includes('/learning')).sort(),expected);
     for(const [suffix,methods] of Object.entries(browser)){
         const pathname=prefix+suffix,operations=actual.paths[pathname];
         assert.deepEqual(Object.keys(operations).sort(),[...methods].sort(),pathname);
         for(const operation of Object.values(operations))assert.deepEqual(operation.security,[{sessionCookie:[]}],pathname);
     }
-    for(const pathname of device){
+    for(const pathname of [...device,...sync]){
         assert.deepEqual(Object.keys(actual.paths[pathname]),['post']);
         assert.deepEqual(actual.paths[pathname].post.security,[{deviceBearer:[]}]);
+        assert.equal(actual.paths[pathname].post['x-neurocenter-service'],'catalog-service');
     }
     for(const suffix of ['approve','reject','revoke','activate','analyses'])assert.equal(actual.paths['/api/device-channel/learning/'+suffix],undefined);
 });
@@ -415,10 +430,17 @@ test('Retained disabled endpoints advertise their error instead of a fabricated 
 test('Remote connection docs expose bounded generation defaults and a write-only key with the model CAS receipt', () => {
     const item = actual.paths['/api/models/{id}/connection'];
     const body = item.put.requestBody.content['application/json'].schema;
-    assert.deepEqual(Object.keys(body.properties.options.properties).sort(), ['contextWindow','maxOutputTokens','responseModel','temperature','tokenLimitParameter','topP']);
-    assert.deepEqual(body.properties.options.properties.tokenLimitParameter.enum,['max_tokens','max_completion_tokens']);
-    assert.match(body.properties.options.properties.responseModel.description,/exact response identity/);
-    assert.match(body.properties.options.properties.contextWindow.description, /Remote Ollama/);
+    const options = body.properties.options.properties;
+    assert.deepEqual(Object.keys(options).sort(), ['apiFormat','contextWindow','maxOutputTokens','providerParameters','reasoningEffort','responseModel','store','temperature','tokenLimitParameter','topP']);
+    assert.deepEqual(options.apiFormat.enum,['chat-completions','responses']);
+    assert.deepEqual(options.reasoningEffort.enum,['none','minimal','low','medium','high','xhigh','max']);
+    assert.equal(options.store.type,'boolean');
+    assert.deepEqual(options.store.enum,[false,true]);
+    assert.equal(options.providerParameters.type,'object');
+    assert.ok(options.providerParameters.additionalProperties);
+    assert.deepEqual(options.tokenLimitParameter.enum,['max_tokens','max_completion_tokens']);
+    assert.match(options.responseModel.description,/exact response identity/);
+    assert.match(options.contextWindow.description, /Remote Ollama/);
     assert.match(body.properties.timeoutMs.description, /1000 to 300000/);
     assert.match(body.properties.apiKey.description, /Write-only/);
     assert.ok(!body.required.includes('options')); assert.ok(!body.required.includes('apiKey'));
