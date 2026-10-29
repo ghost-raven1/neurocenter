@@ -1,4 +1,4 @@
-import {normalizeOpenCodeCliRequest} from '../../../../services/shared/computer-setup.cjs';
+import {normalizeOpenCodeCliRequest} from '@neurocenter/computer-setup';
 import {roleLevel} from '../UserBlock/roles';
 import {cliUuid,record,type CliIntent} from './model';
 

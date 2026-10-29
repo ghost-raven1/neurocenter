@@ -1,4 +1,4 @@
-import {OPENCODE_CLI_INSPECT_JOB, normalizeOpenCodeCliRequest} from '../../../../services/shared/computer-setup.cjs';
+import {OPENCODE_CLI_INSPECT_JOB, normalizeOpenCodeCliRequest} from '@neurocenter/computer-setup';
 import {errorMessage} from '../../common/utils/errorMessage';
 import {createBridgeRequestKey} from '../McpBridge/bridgeRequestKey';
 import type {CliObservationApi} from './api';

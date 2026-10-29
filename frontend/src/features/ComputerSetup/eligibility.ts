@@ -1,4 +1,4 @@
-import {OPENCODE_CLI_CAPABILITY} from '../../../../services/shared/computer-setup.cjs';
+import {OPENCODE_CLI_CAPABILITY} from '@neurocenter/computer-setup';
 import type {IBridgeDevice} from '../McpBridge/api';
 import {roleLevel} from '../UserBlock/roles';
 import {cliUuid} from './model';
