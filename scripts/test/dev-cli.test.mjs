@@ -267,6 +267,33 @@ test('Пустые логи объясняются пользователю бе
     assert.deepEqual(result.events, []);
 });
 
+for (const failed of [true, false]) {
+    test(`install ${failed ? 'сохраняет прежнюю поставку при отказе' : 'публикует мост после готовности'} проверщика снимков`, async t => {
+        const f = await fixture(t), pointer = path.join(f.checkout, '.run/dev-bridge/runtime/current.json');
+        await fs.mkdir(path.dirname(pointer), {recursive: true});
+        await fs.writeFile(pointer, 'previous-release\n');
+        const npm = f.env.NPM_CLI_JS;
+        await fs.writeFile(npm, (await fs.readFile(npm, 'utf8')).replace('process.exitCode=7;', 'process.exitCode=0;'));
+        const record = `import {appendFileSync} from 'node:fs';
+            const record=kind=>appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind})+'\\n');`;
+        await fs.writeFile(path.join(f.checkout, 'scripts/workspace/compose.mjs'), `${record}
+            export async function ensureCompose(){record('compose-ready');} export function checkCompose(){throw Error('UNEXPECTED_START');}`);
+        await fs.writeFile(path.join(f.checkout, 'scripts/workspace/dev-snapshots.mjs'), `${record}
+            export async function buildDevSnapshotImage(){record('snapshot-build');${failed ? "throw Error('FIXTURE_SNAPSHOT_BUILD_FAILED');" : ''}}
+            export function inspectDevSnapshotImage(){throw Error('UNEXPECTED_START');} export function prepareDevSnapshots(){throw Error('UNEXPECTED_START');}`);
+        await fs.writeFile(path.join(f.checkout, 'scripts/workspace/dev-bridge-runtime.mjs'), `${record}
+            import {writeFileSync} from 'node:fs';
+            export async function prepareDevBridge(){record('bridge-publish');writeFileSync(${JSON.stringify(pointer)},'accepted-release\\n');}`);
+        const result = await f.run('install');
+        assert.equal(result.status, failed ? 1 : 0, result.stdout + result.stderr);
+        assert.deepEqual(result.events.filter(event => ['snapshot-build', 'bridge-publish'].includes(event.kind)).map(event => event.kind),
+            failed ? ['snapshot-build'] : ['snapshot-build', 'bridge-publish']);
+        assert.equal(await fs.readFile(pointer, 'utf8'), failed ? 'previous-release\n' : 'accepted-release\n');
+        if (failed) { assert.match(result.stderr, /FIXTURE_SNAPSHOT_BUILD_FAILED/); assert.doesNotMatch(result.stdout, /Зависимости установлены/); }
+        else { assert.match(result.stdout, /Зависимости установлены/); }
+    });
+}
+
 test('Ошибка сборки видна в stderr и не подменяется сообщением об успехе', async t => {
     const f = await fixture(t), result = await f.run('build');
     assert.equal(result.status, 1);
