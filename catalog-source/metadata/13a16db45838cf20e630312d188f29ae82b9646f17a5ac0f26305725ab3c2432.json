@@ -1,0 +1,130 @@
+{
+  "card": {
+    "compatibility": "JavaScript; bundled Node 24; 8 платформ моста",
+    "config": {
+      "args": [],
+      "transport": "stdio"
+    },
+    "description": "Пошаговое рассуждение для сложных задач: пересмотр шагов и ветвление гипотез. Готовый npm-комплект; сервер не вызывает отдельную модель и не требует API-ключа.",
+    "files": [],
+    "kind": "mcp",
+    "name": "MCP Sequential Thinking",
+    "origin": "https://www.npmjs.com/package/@modelcontextprotocol/server-sequential-thinking",
+    "revision": "1.0.0",
+    "tags": [
+      "Планирование",
+      "npm",
+      "Готовый комплект"
+    ],
+    "version": 1
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 3697342,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 3836,
+          "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+          "target": "darwin-arm64",
+          "unpackedBytes": 18073429
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3697342,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 3836,
+          "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+          "target": "darwin-x64",
+          "unpackedBytes": 18073429
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3697342,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 3836,
+          "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+          "target": "linux-arm64-glibc",
+          "unpackedBytes": 18073429
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3697342,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 3836,
+          "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+          "target": "linux-arm64-musl",
+          "unpackedBytes": 18073429
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3697342,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 3836,
+          "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 18073429
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3697342,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 3836,
+          "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+          "target": "linux-x64-musl",
+          "unpackedBytes": 18073429
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3697342,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 3836,
+          "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+          "target": "win32-arm64",
+          "unpackedBytes": 18073429
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3697342,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 3836,
+          "sha256": "0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146",
+          "target": "win32-x64",
+          "unpackedBytes": 18073429
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/0d13f139c3d68431a74d3b3563669a9a62be8ced15d1e7882295ad0cf32fb146.tar.gz"
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "mcp-sequential-thinking",
+  "kind": "mcp",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "965f5b19ce1045e25bf09b33fe7715b38cf47c0a",
+    "path": "scripts/catalog-plugins/catalog-release.json",
+    "repository": "https://github.com/ghost-raven1/neurocenter",
+    "type": "git"
+  },
+  "version": "1.0.0"
+}

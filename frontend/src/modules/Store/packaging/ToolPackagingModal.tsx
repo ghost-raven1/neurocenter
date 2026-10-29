@@ -140,6 +140,7 @@ export const ToolPackagingModal: FC<Props> = ({ open, start, scope, projectId, o
     useEffect(() => {
         const request = build.draft?.request;
         if (!request) return;
+        if(request.source.type==='bundled'){setError('Закреплённая подготовка каталога восстанавливается на странице «Ассеты».');return;}
         publication.restore(request);
         const restored = request.source;
         agent.restore(request.agent);

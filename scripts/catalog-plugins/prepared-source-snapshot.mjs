@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-export const PREPARED_SOURCE_MAX_FILES=135;
+export const PREPARED_SOURCE_MAX_FILES=160;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'package.json','package-lock.json',
@@ -49,6 +49,14 @@ export const PREPARED_SOURCE_INPUTS=Object.freeze([
     'services/catalog-service/src/publication/publication-validation.ts',
     'services/shared/tool-supply-paths.cjs','services/shared/tool-supply-paths.d.cts','services/shared/tool-import-deadline.cjs','services/shared/skill-source.mjs',
     'services/shared/python-runtime-pins.cjs','services/shared/python-runtime-pins.d.cts','services/shared/python-source-plan.cjs','services/shared/python-source-plan.d.cts',
+    'services/shared/bundled-catalog.cjs','services/shared/bundled-catalog.d.cts','services/shared/bundled-catalog.lock.json',
+    'catalog-source/producer.json',
+    'services/shared/asset-source-client.cjs','services/shared/asset-source-client.d.cts',
+    ...['SOURCE.json','source/src/index.ts','source/src/Fetcher.ts','source/src/YouTubeTranscript.ts','source/src/types.ts',
+        'source/package.json','source/package-lock.json','source/tsconfig.json','source/LICENSE','source/README.md','source/pnpm-lock.yaml']
+        .map(name=>'catalog-source/components/fetch-mcp/'+name),
+    ...['SOURCE.json','NOTICE.md',...['auth-session.ts','auth-provider.ts','auth-login.ts','connection.ts','executable.ts','types.ts'].map(name=>'source/'+name)]
+        .map(name=>'catalog-source/components/codex-connector/'+name),
 ].sort());
 const stamp=value=>[value.dev,value.ino,value.size,value.mtimeNs,value.ctimeNs].map(String).join(':');
 
@@ -67,7 +75,9 @@ export async function capturePreparedSource(repositoryRoot=root){
         const filename=path.join(directory,relative),handle=await fs.open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
         try{
             const before=await handle.stat({bigint:true});if(!before.isFile()||before.nlink!==1n||before.size>1048576n)throw new Error('Prepared source snapshot: нужны обычные публичные файлы до 1 МиБ.');
-            const bytes=await handle.readFile(),content=bytes.toString('utf8'),identity=stamp(before);total+=bytes.length;
+            const bytes=Buffer.alloc(Number(before.size));let offset=0;
+            while(offset<bytes.length){const read=await handle.read(bytes,offset,bytes.length-offset,offset);if(!read.bytesRead)throw new Error('Prepared source snapshot изменился во время чтения.');offset+=read.bytesRead;}
+            const content=bytes.toString('utf8'),identity=stamp(before);total+=bytes.length;
             if(bytes.includes(0)||!Buffer.from(content).equals(bytes)||total>5*1048576)throw new Error('Prepared source snapshot: UTF-8 без NUL и до 5 МиБ.');
             if(stamp(await handle.stat({bigint:true}))!==identity||stamp(await fs.lstat(filename,{bigint:true}))!==identity)throw new Error('Prepared source snapshot изменился во время чтения.');
             files.push({path:relative,content});seen.push([filename,identity]);

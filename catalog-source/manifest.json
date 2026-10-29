@@ -1,0 +1,1032 @@
+{
+  "schemaVersion": 1,
+  "kind": "app-bundled-catalog",
+  "current": [
+    {
+      "id": "mcp-fetch-mcp",
+      "kind": "mcp",
+      "name": "MCP Fetch",
+      "metadataSha256": "16d33f59f91ca283a9afd20412853c36fe992c38c1221259ba5f5a0ce34fca15",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/components/fetch-mcp/recipe.json"
+      },
+      "sourceRevision": "git-1ddb1a59cb09a2d38e759f2d7a97829680cbe514",
+      "description": "Получение веб-страниц через MCP."
+    },
+    {
+      "id": "mcp-filesystem",
+      "kind": "mcp",
+      "name": "MCP Filesystem",
+      "metadataSha256": "62cde495f47a0af6803bbc6d26b8065a4bebc7c28a2ab59bbee74c7a453d0cc4",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/recipes/mcp-filesystem.json",
+        "recipeSha256": "3ffc8e609435f419417b05c0c0304e5b9dd3f0e36297f25d8c3821178d2a0a74",
+        "adapter": "filesystem"
+      },
+      "sourceRevision": "1.0.0-pack.1",
+      "description": "Чтение, поиск и редактирование файлов только в папке выбранного проекта. Готовый npm-комплект с зависимостями; мост запускает его своим Node без npm на компьютере."
+    },
+    {
+      "id": "mcp-memory",
+      "kind": "mcp",
+      "name": "MCP Memory",
+      "metadataSha256": "c4c042517b6fbd3f36fd04246dbf00a6dd0125972c10edaf7496d80c2f88f902",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/recipes/mcp-memory.json",
+        "recipeSha256": "100073c18dc0bf3c24b3192f22eab08ac3827437d2eafb4a508f6f5ea768a894",
+        "adapter": "memory"
+      },
+      "sourceRevision": "1.0.0-pack.2",
+      "description": "Локальный граф памяти: сущности, связи и наблюдения между сессиями агента. Данные хранятся в .opencode/neurocenter-memory проекта. Готовый npm-комплект без облака и API-ключей."
+    },
+    {
+      "id": "mcp-sequential-thinking",
+      "kind": "mcp",
+      "name": "MCP Sequential Thinking",
+      "metadataSha256": "13a16db45838cf20e630312d188f29ae82b9646f17a5ac0f26305725ab3c2432",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/recipes/mcp-sequential-thinking.json",
+        "recipeSha256": "c7c3254110847c7fb7c1274e533e1e760d486e019cbf1dd5df2db456b5285261",
+        "adapter": "sequential-thinking"
+      },
+      "sourceRevision": "1.0.0-pack.1",
+      "description": "Пошаговое рассуждение для сложных задач: пересмотр шагов и ветвление гипотез. Готовый npm-комплект; сервер не вызывает отдельную модель и не требует API-ключа."
+    },
+    {
+      "id": "model-embedding-qwen3-4b",
+      "kind": "model",
+      "name": "Qwen3 Embedding 4B",
+      "metadataSha256": "21c0ba1d17b11f4f90f0c926188164feb2f681a80d9fa379320fae84182e7303",
+      "delivery": {
+        "type": "model-archive",
+        "automatic": false
+      },
+      "sourceRevision": "models-2026-10-19.1",
+      "assetVersion": "models-2026-10-19.1",
+      "description": "Локальная embedding-модель для поиска по смыслу и базы знаний проекта. Веса и runtime размещаются на сервере Нейроцентра."
+    },
+    {
+      "id": "model-vision-qwen3-vl-2b",
+      "kind": "model",
+      "name": "Qwen3 VL 2B Instruct",
+      "metadataSha256": "9cd12897cd970f12db9f7d07d921c87c5a8e204161fcddbf2f917cbfed37ffa7",
+      "delivery": {
+        "type": "model-archive",
+        "automatic": false
+      },
+      "sourceRevision": "models-2026-10-19.1",
+      "assetVersion": "models-2026-10-19.1",
+      "description": "Локальная vision-модель для анализа изображений. Историческая поставка Qwen3 VL 2B; веса и runtime размещаются на сервере Нейроцентра."
+    },
+    {
+      "id": "plugin-git-context",
+      "kind": "plugin",
+      "name": "Контекст Git",
+      "metadataSha256": "752f4f6601fb4123a42733957f6335379ef63ee1af90a2db2814b300849e107e",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/recipes/plugin-git-context.json",
+        "recipeSha256": "6e1d9d65edfbdaab94b3e85a3ea0200ec03407108e04d2fad07b1bfe8672bf2a",
+        "adapter": "git-context"
+      },
+      "sourceRevision": "1.0.0-pack.1",
+      "description": "Добавляет текущую ветку и краткий список изменений Git в контекст OpenCode. Только локальное чтение, без сети. Отдельный JS-файл без зависимостей; требуется установленный Git."
+    },
+    {
+      "id": "plugin-opencode-snip",
+      "kind": "plugin",
+      "name": "opencode-snip",
+      "metadataSha256": "a2d29d2deaf76c5036404cab38819542c6f9074fc64a432503a08e59ef8ed562",
+      "delivery": {
+        "type": "archive-required",
+        "recipe": "catalog-source/recipes/plugin-opencode-snip.json",
+        "recipeSha256": "1e05b8c3a914bae44661dad49008f71ef76074aa30a80b6fdfc7f417329faae5",
+        "adapter": "opencode-snip"
+      },
+      "sourceRevision": "2.0.0+snip.0.25.2.pack.1",
+      "description": "Сокращает вывод терминальных команд через opencode-snip и закреплённый snip CLI. Для этой optional-поставки выберите готовый локальный архив; GitHub Releases автоматически не скачиваются."
+    },
+    {
+      "id": "plugin-project-context",
+      "kind": "plugin",
+      "name": "Контекст проекта",
+      "metadataSha256": "886162707c25793c294487d959767f52c4787478484c2a91c6bef51521d6850a",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/recipes/plugin-project-context.json",
+        "recipeSha256": "ae461d7f9010e08c8d6e64284a242a9ae275273b8604e25e14f52f6ada775a2f",
+        "adapter": "project-context"
+      },
+      "sourceRevision": "1.0.1-pack.1",
+      "description": "Автоматически добавляет менеджер пакетов и названия scripts из package.json в контекст OpenCode. Не запускает команды. Отдельный JS-файл без зависимостей."
+    },
+    {
+      "id": "plugin-python-context",
+      "kind": "plugin",
+      "name": "Контекст Python",
+      "metadataSha256": "46f9c50165a8cc922f7311d950b7cbd2a42dddb2821ed05e4fec8c258acc7bcb",
+      "delivery": {
+        "type": "local-project",
+        "recipe": "catalog-source/components/python-context/recipe.json"
+      },
+      "sourceRevision": "1.0.0",
+      "description": "Добавляет в контекст OpenCode настройки Python, uv, Poetry, pytest, Ruff и mypy. Читает имена файлов и requires-python, команды не запускает. Собран из TypeScript единым сборщиком."
+    },
+    {
+      "id": "skill-accessibility-compliance",
+      "kind": "skill",
+      "name": "Интерфейс: доступность WCAG 2.2",
+      "metadataSha256": "6ceaac1debbde6c5b5906dce3f7543c19605bc46837c197e9fc0692071f99140",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Семантика и ARIA, клавиатура, фокус, контраст, экранные дикторы и адаптация интерфейсов по WCAG 2.2. Автор wshobson."
+    },
+    {
+      "id": "skill-api-design-principles",
+      "kind": "skill",
+      "name": "API: REST и GraphQL",
+      "metadataSha256": "b5af7ca3ff50ef8d0c833aa8c4ad3f8322ff0a5566c61d626af958a73c88ed00",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Проектирование REST и GraphQL: ресурсы, схемы, версионирование, пагинация, ошибки, контракты и чек-лист проверки. Автор wshobson."
+    },
+    {
+      "id": "skill-code-review-excellence",
+      "kind": "skill",
+      "name": "Code review: качество и обратная связь",
+      "metadataSha256": "7540dcb7d1ab93f779793e8059b2b278574431199f0ab46f69a2d8d6f24e85dd",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Системная проверка изменений, поиск ошибок и граничных случаев, приоритет замечаний и понятная обратная связь. Автор wshobson."
+    },
+    {
+      "id": "skill-deployment-pipeline-design",
+      "kind": "skill",
+      "name": "CI/CD: развёртывание и откат",
+      "metadataSha256": "946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Стадии pipeline, проверки готовности, canary и blue-green, продвижение между окружениями и восстановление после неудачного релиза. Автор wshobson."
+    },
+    {
+      "id": "skill-mcp-builder",
+      "kind": "skill",
+      "name": "MCP: разработка серверов",
+      "metadataSha256": "4f6d72515d1c320c61d4a62b52a5be5b8462ed31bc8137b46a7864d378f19836",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Официальный skill Anthropic для MCP-серверов на TypeScript и Python: инструменты, схемы, транспорты, ошибки и проверочные сценарии."
+    },
+    {
+      "id": "skill-nestjs-best-practices",
+      "kind": "skill",
+      "name": "NestJS 11: архитектура и API",
+      "metadataSha256": "a37448a27255b516ebcf336e57154997e956bf6195fc1babbf41508e67b00767",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Модули, DI, DTO и валидация, guards, работа с БД, микросервисы и тесты NestJS 11. Автор ejirocodes."
+    },
+    {
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "name": "Упаковка ассетов Neurocenter",
+      "metadataSha256": "09b9fcd410357d017b0d151d826fa9210098d7f1fc8e6793a9b808dfec8bb10b",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.1.0",
+      "assetVersion": "1.1.0",
+      "description": "Подготовка, проверка и публикация MCP, плагинов, скиллов, моделей и моста в общем формате neurocenter-assets."
+    },
+    {
+      "id": "skill-playwright-best-practices",
+      "kind": "skill",
+      "name": "Playwright: надёжные E2E и негативные сценарии",
+      "metadataSha256": "1ffa170b2faa9c2f3b9a2f16dd7a7fbe212a8c0533591820857ac092bc0fd6a2",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Практики Currents.dev для Playwright и TypeScript: локаторы, ожидания, flaky-тесты, формы, offline, WebSocket, multi-user, доступность и CI."
+    },
+    {
+      "id": "skill-react-state-management",
+      "kind": "skill",
+      "name": "React: состояние и Zustand",
+      "metadataSha256": "f8668d778c6a878790a307d253449458dd0057ebc968aba1d7578ab07889b535",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Выбор между локальным, глобальным, серверным и URL-состоянием. Паттерны Zustand, Redux Toolkit, Jotai и React Query. Автор wshobson."
+    },
+    {
+      "id": "skill-supabase-postgres-best-practices",
+      "kind": "skill",
+      "name": "Postgres: практики Supabase",
+      "metadataSha256": "0f54db74c354535295cdf9ed5719c029063c9841341b4554983f8e396935a4d5",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Проектирование схем, индексы и JSONB, EXPLAIN, подключения, блокировки и RLS для PostgreSQL. Официальный гайд Supabase."
+    },
+    {
+      "id": "skill-typescript-advanced-types",
+      "kind": "skill",
+      "name": "TypeScript: продвинутые типы",
+      "metadataSha256": "03006ac31d88ab29c2aa2b1641f6c09be56b3c4524833fd314f2ea656ceba1de",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Generics, conditional и mapped types, template literals и типобезопасные API, формы и конфигурация. Автор wshobson."
+    },
+    {
+      "id": "skill-vite",
+      "kind": "skill",
+      "name": "Vite 8 / Rolldown",
+      "metadataSha256": "5c5804d09e44d80e72d203f028cb743e7fcee1176f889bfda4ba8d04385e6438",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Настройка Vite 8, плагины, сборка и SSR, миграция на Rolldown. Anthony Fu. Для Vite 8; учитывайте версию проекта."
+    },
+    {
+      "id": "skill-vitest",
+      "kind": "skill",
+      "name": "Vitest 5: тестирование",
+      "metadataSha256": "0f253adca052c9a7eb16f6c447182aaa6d72d74a8634bc95266356612eb99f35",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Тесты, моки, покрытие, фикстуры и проекты Vitest. Anthony Fu. Редакция для Vitest 5; учитывайте версию проекта."
+    },
+    {
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "name": "Neurocenter Bridge",
+      "metadataSha256": "6d75e2dc713259466fa78e06c86c55ffc598944d9c8e9e3aa647c27b5b82a810",
+      "delivery": {
+        "type": "app-bridge",
+        "automatic": false
+      },
+      "sourceRevision": "application",
+      "description": "Мост для подключения компьютера к Нейроцентру."
+    },
+    {
+      "id": "mcp-opencode-rag",
+      "kind": "mcp",
+      "name": "OpenCodeRAG",
+      "metadataSha256": "2da42b9e71ad8c3958c23b0a92430c7031e5241b3046c347de37ad0089eac73a",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/recipes/mcp-opencode-rag.json",
+        "recipeSha256": "8adba8f998671ef22a470cec33fba435264cad42d3a1cc886be3e6d5b4614fc1",
+        "adapter": "opencode-rag"
+      },
+      "sourceRevision": "2.12.2-mcp.pack.1",
+      "description": "Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; модель и размерность подключаются в настройках проекта через мост. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается."
+    },
+    {
+      "id": "plugin-opencode-rag-plugin",
+      "kind": "plugin",
+      "name": "OpenCodeRAG (плагин)",
+      "metadataSha256": "f3e79dfad6508ec2c52698f07fde91abc486cfd9e4eb731bcb2cdb813ba94fa9",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/recipes/plugin-opencode-rag-plugin.json",
+        "recipeSha256": "3f2e548875576355a89d9d89976f14fad51fd75eb6d5f7b68bf83b9e552ae8b9",
+        "adapter": "opencode-rag-plugin"
+      },
+      "sourceRevision": "2.12.2-plugin.pack.1",
+      "description": "Плагин MrDoe/OpenCodeRAG 2.12.2 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Модель и размерность подключаются в настройках проекта через мост; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается."
+    },
+    {
+      "id": "skill-neurocenter-project-context",
+      "kind": "skill",
+      "name": "Контекст проекта Neurocenter",
+      "metadataSha256": "33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Использовать подтверждённый контекст проекта Neurocenter при планировании, реализации, проверке и ответах по коду: RAG, разрешённые публичные чаты, файлы и фактически предоставленные MCP."
+    },
+    {
+      "id": "skill-neurocenter-system-assistance",
+      "kind": "skill",
+      "name": "Помощь системных ролей Neurocenter",
+      "metadataSha256": "f461efcc6e4a4e703cfa94971ed5806753e7df8f16e0181819e8707fee22b9d4",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Запросить помощь системных ролей Neurocenter для диагностики, справки и настройки, когда задача проекта зависит от состояния RAG, моделей, моста, очереди или установленных инструментов."
+    },
+    {
+      "id": "skill-neurocenter-project-learning",
+      "kind": "skill",
+      "name": "Опыт и знания проекта Neurocenter",
+      "metadataSha256": "e11db4238f54908bd638b409df8d85af5a147f0576d6ad52f3c3689caf3c6cd9",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.0.0",
+      "assetVersion": "1.0.0",
+      "description": "Читать принятые знания проекта Neurocenter, сохранять подтверждённый опыт выполненной задачи и по запросу предлагать проверяемые гипотезы с основаниями."
+    },
+    {
+      "id": "agent-planner",
+      "kind": "agent",
+      "name": "Планировщик",
+      "metadataSha256": "a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.1.0",
+      "assetVersion": "1.1.0",
+      "description": "Планирует изменение и критерии проверки без правки файлов."
+    },
+    {
+      "id": "agent-developer",
+      "kind": "agent",
+      "name": "Разработчик",
+      "metadataSha256": "dead26971305dd00dd661cdd02c43bd729df7eb491d78b0de3b28bfe0fa59a53",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.1.0",
+      "assetVersion": "1.1.0",
+      "description": "Реализует согласованные изменения и проверяет результат."
+    },
+    {
+      "id": "agent-reviewer",
+      "kind": "agent",
+      "name": "Ревьюер",
+      "metadataSha256": "ba81bca273c9fbfdc98c3147d8fc5507d857c2b1144c4bcffbc828e0ea959fe1",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.1.0",
+      "assetVersion": "1.1.0",
+      "description": "Проверяет изменения и находит конкретные дефекты."
+    },
+    {
+      "id": "agent-tester",
+      "kind": "agent",
+      "name": "Тестировщик",
+      "metadataSha256": "98dac69c7827e93c04a6dafb760cb6b1870361638c09ec342d720c3c9734500a",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.1.0",
+      "assetVersion": "1.1.0",
+      "description": "Проверяет поведение и отрицательные сценарии на изолированных данных."
+    },
+    {
+      "id": "agent-documenter",
+      "kind": "agent",
+      "name": "Документатор",
+      "metadataSha256": "1cb1748c3ea5b2f9ed048b59d9ef992a99d6504d6aeb98defdd2fbcb4f46c846",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "1.1.0",
+      "assetVersion": "1.1.0",
+      "description": "Поддерживает точные инструкции и документацию проекта."
+    }
+  ],
+  "history": {
+    "repository": "ghost-raven1/neurocenter-assets",
+    "snapshots": [
+      {
+        "commit": "e1255b4e522a0b38e471d5624cc63f5f13442649",
+        "indexSha256": "c16495fb5b0c2151612fa6f83ba8ad2de31e575ffc8c843d85009631fcf19ce7"
+      },
+      {
+        "commit": "6834ebf442023ddaab05a020a3855d5623338e06",
+        "indexSha256": "c16495fb5b0c2151612fa6f83ba8ad2de31e575ffc8c843d85009631fcf19ce7"
+      },
+      {
+        "commit": "5a82c73484ee7f2831db54309835e1305c0ff609",
+        "indexSha256": "7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa"
+      },
+      {
+        "commit": "ef4c28680e25eef0e8ce9942326676a99207a46d",
+        "indexSha256": "7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa"
+      },
+      {
+        "commit": "6e9aa43876f5cba78a38695f6f002af9bcdb75d4",
+        "indexSha256": "7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa"
+      },
+      {
+        "commit": "ac387096140a592539b345e0e82d6838f2614ff1",
+        "indexSha256": "2e017fc82ed364db961f5dd886dade678c6d184034acc7c9e4a1d9a98c307c6f"
+      },
+      {
+        "commit": "4abc5ae3c54d2b472ceed32757b46d084bdac0d8",
+        "indexSha256": "2e017fc82ed364db961f5dd886dade678c6d184034acc7c9e4a1d9a98c307c6f"
+      },
+      {
+        "commit": "41f2771dfcfdd15790d68995ab1b0cc8ca91e65b",
+        "indexSha256": "e057607b0464cd01e594d584d28ee6dc0634da563aa66062bae0e2a7852a7d12"
+      },
+      {
+        "commit": "af07a391b601cc4253be8c67c6df889dd2af7c1a",
+        "indexSha256": "e057607b0464cd01e594d584d28ee6dc0634da563aa66062bae0e2a7852a7d12"
+      },
+      {
+        "commit": "846c45e91eeb9d082bc4d89c745d431bc14c5461",
+        "indexSha256": "7ab1b7290c8ab7e62098c8beaee6e653773933e238ec7d58788f9761c296b5c6"
+      },
+      {
+        "commit": "2bcbdcbd77d003c078ce6357d64375de6ede1ff6",
+        "indexSha256": "1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177"
+      },
+      {
+        "commit": "2033f692c83de4d1a89072e9c73ee7cec2eb9774",
+        "indexSha256": "1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177"
+      },
+      {
+        "commit": "329bd3bc44ef86e1ecda87ab798044d4c3c123b0",
+        "indexSha256": "1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177"
+      },
+      {
+        "commit": "fb4c3146786596a61f438233e5658a86d3e5c56e",
+        "indexSha256": "1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177"
+      },
+      {
+        "commit": "76920853ece2d44b2e4fa3dc7aa7fa281afe0ce3",
+        "indexSha256": "bffca01f1720021c1bd3485bfbc35cb85b49f778f0c01ea82c2251758b4601cf"
+      },
+      {
+        "commit": "0dca89f66819f22bf77c5df37b60d8c9e1e5d8fa",
+        "indexSha256": "bffca01f1720021c1bd3485bfbc35cb85b49f778f0c01ea82c2251758b4601cf"
+      },
+      {
+        "commit": "431494e61e43b5428f005c398339ce1e36d1b815",
+        "indexSha256": "f4ffe0b20860b596d24649a7a7616faefc9d6d0d0214167eb1c3dbaff6b68565"
+      },
+      {
+        "commit": "08cde180f56c2c46483170ba8183b95c60651b3f",
+        "indexSha256": "1e952782362d2e7696c05e5ff5fa9e6d624bb838d65c8188c3e412dd77401af2"
+      },
+      {
+        "commit": "2886e49c0d7871ac0167dedf448ea358de261494",
+        "indexSha256": "257cb9196b75d11cfe02cb889ba3033ba539661d8a9427a1137c5b8b3fe98d46"
+      },
+      {
+        "commit": "f8c03dace486f951250f578bdb749558f0135371",
+        "indexSha256": "1e78b939d8328ed338e1629310e7903526ef7813bdb9a577f348eb3ec2baeb51"
+      },
+      {
+        "commit": "3cea243aa083802943235a0cbda64d7cb92126ca",
+        "indexSha256": "a82e3320f8c2b7c7b66589d93fd38ed9800c11a12abb4e8bc296d10964cad13d"
+      },
+      {
+        "commit": "6532e14bceb931f493ab9bb37956ec479162d08c",
+        "indexSha256": "d10f8e1f1c3c8f2812345e4e0d4abf5cdcb66b814d95e303e22244ecda874f79"
+      }
+    ]
+  },
+  "files": [
+    {
+      "path": "components/codex-connector/NOTICE.md",
+      "sha256": "26b152260a09d710498f6f4fb410c52403cda21e0e7284c4ebc9983e06624fc2",
+      "bytes": 226
+    },
+    {
+      "path": "components/codex-connector/SOURCE.json",
+      "sha256": "b084998ee420262e6fb5018ad7f1387063d147b6897b1eab4ca8295b71d2c8d2",
+      "bytes": 1366
+    },
+    {
+      "path": "components/codex-connector/source/auth-login.ts",
+      "sha256": "3dacea708db56eb332fd123377eeb8ca0e2bd8bf4a7e65cfbc4f596f5ef71cea",
+      "bytes": 2661
+    },
+    {
+      "path": "components/codex-connector/source/auth-provider.ts",
+      "sha256": "55a4b680a8879dba2c15237c94f891a07bf66e15f4dee494ab839474fa67f11e",
+      "bytes": 3913
+    },
+    {
+      "path": "components/codex-connector/source/auth-session.ts",
+      "sha256": "f1be79a24e884e60843a435016b24fb2f8a7d90c56e17b1d0c14131db5e9bfda",
+      "bytes": 5208
+    },
+    {
+      "path": "components/codex-connector/source/connection.ts",
+      "sha256": "3a3bdbb87ff8376d49f2c975928a155c17291ffe8ca2c6004ee2d55dcf1bf162",
+      "bytes": 4504
+    },
+    {
+      "path": "components/codex-connector/source/executable.ts",
+      "sha256": "9391645d0eee4739f475e7ff709325bbb02f1f3f05175566a9501ea5a7bfc5e2",
+      "bytes": 581
+    },
+    {
+      "path": "components/codex-connector/source/types.ts",
+      "sha256": "69b82afa9ba910cf773dddf8dc835d26fc5288dee17f6fb7a257199d2f4bc462",
+      "bytes": 748
+    },
+    {
+      "path": "components/fetch-mcp/recipe.json",
+      "sha256": "7ac1f680e29354aa94839b85ede61dd712cc08149e625d243db7db8ea1032bd1",
+      "bytes": 300
+    },
+    {
+      "path": "components/fetch-mcp/SOURCE.json",
+      "sha256": "3bf0407400d3b660525aef32a27b6a6b63a0262169cb892ee97b40172fa0db92",
+      "bytes": 2081
+    },
+    {
+      "path": "components/fetch-mcp/source/LICENSE",
+      "sha256": "6e3276d74176e109a3fcd3bbc705df4eb2a32106d25c2b8b3157542fe6f45d48",
+      "bytes": 1122
+    },
+    {
+      "path": "components/fetch-mcp/source/package-lock.json",
+      "sha256": "d1c57eb778da8d7cf6006d442e2190a329dff1cdde3dae9b6640e8ceed81f645",
+      "bytes": 69945
+    },
+    {
+      "path": "components/fetch-mcp/source/package.json",
+      "sha256": "8675cc9fe3bfaef51ba9480d43be58572db2e7517213ee8fed3a75f8d3f2b980",
+      "bytes": 1634
+    },
+    {
+      "path": "components/fetch-mcp/source/pnpm-lock.yaml",
+      "sha256": "eb2805042a412746856efb23e576829988b7af0b2671247f61a6114d908eb560",
+      "bytes": 103085
+    },
+    {
+      "path": "components/fetch-mcp/source/README.md",
+      "sha256": "a166a7aadf98692e95993263a1023093f385a70c2b3424d41cded8a6ee1f7e0e",
+      "bytes": 4576
+    },
+    {
+      "path": "components/fetch-mcp/source/src/Fetcher.ts",
+      "sha256": "a2f1c33338c0817eb5cb77bc5ceee14b6a9a34c3b1ec1dba6449c38bb023a4eb",
+      "bytes": 12775
+    },
+    {
+      "path": "components/fetch-mcp/source/src/index.ts",
+      "sha256": "72a37b4a3d371948d0075184b299fc5d62557ee74f27195f5c57d4214811b4be",
+      "bytes": 8048
+    },
+    {
+      "path": "components/fetch-mcp/source/src/types.ts",
+      "sha256": "7ef5bdbf4bc0db1e0b77a774bd0efd0ce9cc453ca9ddeba46abdd8b79aa0060b",
+      "bytes": 1327
+    },
+    {
+      "path": "components/fetch-mcp/source/src/YouTubeTranscript.ts",
+      "sha256": "d23d3f83cae459b2977c01b0dd9bb0731e41e7d255a4e31da96011304ab379e9",
+      "bytes": 2244
+    },
+    {
+      "path": "components/fetch-mcp/source/tsconfig.json",
+      "sha256": "690cf86978c8bffe1e7e516561c5d2dbb1e8f8c03427e9baca4cf54287aa07fb",
+      "bytes": 399
+    },
+    {
+      "path": "components/python-context/recipe.json",
+      "sha256": "fcb3213a4d5ae1089678f03fb7c68ee7e3e4a33a97a06e536d457691300a75ae",
+      "bytes": 597
+    },
+    {
+      "path": "components/python-context/source/index.ts",
+      "sha256": "042db40fdd88c902d73a7a58234fa78767085a6497fc9d5615c140c3b03c3506",
+      "bytes": 1842
+    },
+    {
+      "path": "metadata/00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007.json",
+      "sha256": "00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007",
+      "bytes": 1647
+    },
+    {
+      "path": "metadata/03006ac31d88ab29c2aa2b1641f6c09be56b3c4524833fd314f2ea656ceba1de.json",
+      "sha256": "03006ac31d88ab29c2aa2b1641f6c09be56b3c4524833fd314f2ea656ceba1de",
+      "bytes": 30444
+    },
+    {
+      "path": "metadata/09b9fcd410357d017b0d151d826fa9210098d7f1fc8e6793a9b808dfec8bb10b.json",
+      "sha256": "09b9fcd410357d017b0d151d826fa9210098d7f1fc8e6793a9b808dfec8bb10b",
+      "bytes": 6557
+    },
+    {
+      "path": "metadata/09fcb2fdffbcefc4446b29966abc87ae57b06a91a3b12a74317c95b51c395aad.json",
+      "sha256": "09fcb2fdffbcefc4446b29966abc87ae57b06a91a3b12a74317c95b51c395aad",
+      "bytes": 1709
+    },
+    {
+      "path": "metadata/0f253adca052c9a7eb16f6c447182aaa6d72d74a8634bc95266356612eb99f35.json",
+      "sha256": "0f253adca052c9a7eb16f6c447182aaa6d72d74a8634bc95266356612eb99f35",
+      "bytes": 122911
+    },
+    {
+      "path": "metadata/0f54db74c354535295cdf9ed5719c029063c9841341b4554983f8e396935a4d5.json",
+      "sha256": "0f54db74c354535295cdf9ed5719c029063c9841341b4554983f8e396935a4d5",
+      "bytes": 79670
+    },
+    {
+      "path": "metadata/13a16db45838cf20e630312d188f29ae82b9646f17a5ac0f26305725ab3c2432.json",
+      "sha256": "13a16db45838cf20e630312d188f29ae82b9646f17a5ac0f26305725ab3c2432",
+      "bytes": 5250
+    },
+    {
+      "path": "metadata/16d33f59f91ca283a9afd20412853c36fe992c38c1221259ba5f5a0ce34fca15.json",
+      "sha256": "16d33f59f91ca283a9afd20412853c36fe992c38c1221259ba5f5a0ce34fca15",
+      "bytes": 5127
+    },
+    {
+      "path": "metadata/1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177.json",
+      "sha256": "1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177",
+      "bytes": 10281
+    },
+    {
+      "path": "metadata/1cb1748c3ea5b2f9ed048b59d9ef992a99d6504d6aeb98defdd2fbcb4f46c846.json",
+      "sha256": "1cb1748c3ea5b2f9ed048b59d9ef992a99d6504d6aeb98defdd2fbcb4f46c846",
+      "bytes": 3512
+    },
+    {
+      "path": "metadata/1da6a236243342d29c4461d8614688bc072fbfa90218a538cd702b151a427cc9.json",
+      "sha256": "1da6a236243342d29c4461d8614688bc072fbfa90218a538cd702b151a427cc9",
+      "bytes": 7066
+    },
+    {
+      "path": "metadata/1e78b939d8328ed338e1629310e7903526ef7813bdb9a577f348eb3ec2baeb51.json",
+      "sha256": "1e78b939d8328ed338e1629310e7903526ef7813bdb9a577f348eb3ec2baeb51",
+      "bytes": 7357
+    },
+    {
+      "path": "metadata/1e952782362d2e7696c05e5ff5fa9e6d624bb838d65c8188c3e412dd77401af2.json",
+      "sha256": "1e952782362d2e7696c05e5ff5fa9e6d624bb838d65c8188c3e412dd77401af2",
+      "bytes": 8479
+    },
+    {
+      "path": "metadata/1ffa170b2faa9c2f3b9a2f16dd7a7fbe212a8c0533591820857ac092bc0fd6a2.json",
+      "sha256": "1ffa170b2faa9c2f3b9a2f16dd7a7fbe212a8c0533591820857ac092bc0fd6a2",
+      "bytes": 855001
+    },
+    {
+      "path": "metadata/21c0ba1d17b11f4f90f0c926188164feb2f681a80d9fa379320fae84182e7303.json",
+      "sha256": "21c0ba1d17b11f4f90f0c926188164feb2f681a80d9fa379320fae84182e7303",
+      "bytes": 4848
+    },
+    {
+      "path": "metadata/257cb9196b75d11cfe02cb889ba3033ba539661d8a9427a1137c5b8b3fe98d46.json",
+      "sha256": "257cb9196b75d11cfe02cb889ba3033ba539661d8a9427a1137c5b8b3fe98d46",
+      "bytes": 7626
+    },
+    {
+      "path": "metadata/2b6236ca8ce5f125a74cbf7c6a2657a86d5cd6a9772815fc75a1e30bfddc7034.json",
+      "sha256": "2b6236ca8ce5f125a74cbf7c6a2657a86d5cd6a9772815fc75a1e30bfddc7034",
+      "bytes": 2453
+    },
+    {
+      "path": "metadata/2bf11391013fc3aa23da793573c7f4c03ad29ed47c83b2e6e92a47b72f1d6987.json",
+      "sha256": "2bf11391013fc3aa23da793573c7f4c03ad29ed47c83b2e6e92a47b72f1d6987",
+      "bytes": 940
+    },
+    {
+      "path": "metadata/2da42b9e71ad8c3958c23b0a92430c7031e5241b3046c347de37ad0089eac73a.json",
+      "sha256": "2da42b9e71ad8c3958c23b0a92430c7031e5241b3046c347de37ad0089eac73a",
+      "bytes": 7175
+    },
+    {
+      "path": "metadata/2e017fc82ed364db961f5dd886dade678c6d184034acc7c9e4a1d9a98c307c6f.json",
+      "sha256": "2e017fc82ed364db961f5dd886dade678c6d184034acc7c9e4a1d9a98c307c6f",
+      "bytes": 11079
+    },
+    {
+      "path": "metadata/33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7.json",
+      "sha256": "33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7",
+      "bytes": 3908
+    },
+    {
+      "path": "metadata/34cecf3143157dce2e659fd36943add7ff801c351f5317db3e683287af542fb6.json",
+      "sha256": "34cecf3143157dce2e659fd36943add7ff801c351f5317db3e683287af542fb6",
+      "bytes": 1578
+    },
+    {
+      "path": "metadata/3bb2d420442ec184cb04edb6d7b4a6f828ca2b18895dc357b7c5f31c518a03b0.json",
+      "sha256": "3bb2d420442ec184cb04edb6d7b4a6f828ca2b18895dc357b7c5f31c518a03b0",
+      "bytes": 5577
+    },
+    {
+      "path": "metadata/43bcf4a1a5561902990be83d90a0dc399a12eddc3ad8981d314729500968aff0.json",
+      "sha256": "43bcf4a1a5561902990be83d90a0dc399a12eddc3ad8981d314729500968aff0",
+      "bytes": 2453
+    },
+    {
+      "path": "metadata/46f9c50165a8cc922f7311d950b7cbd2a42dddb2821ed05e4fec8c258acc7bcb.json",
+      "sha256": "46f9c50165a8cc922f7311d950b7cbd2a42dddb2821ed05e4fec8c258acc7bcb",
+      "bytes": 5251
+    },
+    {
+      "path": "metadata/4f6d72515d1c320c61d4a62b52a5be5b8462ed31bc8137b46a7864d378f19836.json",
+      "sha256": "4f6d72515d1c320c61d4a62b52a5be5b8462ed31bc8137b46a7864d378f19836",
+      "bytes": 141170
+    },
+    {
+      "path": "metadata/5047834f6846a62932ccd00deb79c497c9352f21880dd65c2a881c15301c59c5.json",
+      "sha256": "5047834f6846a62932ccd00deb79c497c9352f21880dd65c2a881c15301c59c5",
+      "bytes": 2453
+    },
+    {
+      "path": "metadata/5c5804d09e44d80e72d203f028cb743e7fcee1176f889bfda4ba8d04385e6438.json",
+      "sha256": "5c5804d09e44d80e72d203f028cb743e7fcee1176f889bfda4ba8d04385e6438",
+      "bytes": 41380
+    },
+    {
+      "path": "metadata/62cde495f47a0af6803bbc6d26b8065a4bebc7c28a2ab59bbee74c7a453d0cc4.json",
+      "sha256": "62cde495f47a0af6803bbc6d26b8065a4bebc7c28a2ab59bbee74c7a453d0cc4",
+      "bytes": 5212
+    },
+    {
+      "path": "metadata/659b6ea40d20f9231b1fa1e1cc3a56fabef81b2cd680039b36b4361d6e4e9766.json",
+      "sha256": "659b6ea40d20f9231b1fa1e1cc3a56fabef81b2cd680039b36b4361d6e4e9766",
+      "bytes": 7365
+    },
+    {
+      "path": "metadata/6ceaac1debbde6c5b5906dce3f7543c19605bc46837c197e9fc0692071f99140.json",
+      "sha256": "6ceaac1debbde6c5b5906dce3f7543c19605bc46837c197e9fc0692071f99140",
+      "bytes": 62656
+    },
+    {
+      "path": "metadata/6d75e2dc713259466fa78e06c86c55ffc598944d9c8e9e3aa647c27b5b82a810.json",
+      "sha256": "6d75e2dc713259466fa78e06c86c55ffc598944d9c8e9e3aa647c27b5b82a810",
+      "bytes": 2453
+    },
+    {
+      "path": "metadata/74e1f28c4b843b22b24d4576a7ee53440440d570293930044368af594c16c89a.json",
+      "sha256": "74e1f28c4b843b22b24d4576a7ee53440440d570293930044368af594c16c89a",
+      "bytes": 7159
+    },
+    {
+      "path": "metadata/752f4f6601fb4123a42733957f6335379ef63ee1af90a2db2814b300849e107e.json",
+      "sha256": "752f4f6601fb4123a42733957f6335379ef63ee1af90a2db2814b300849e107e",
+      "bytes": 5155
+    },
+    {
+      "path": "metadata/7540dcb7d1ab93f779793e8059b2b278574431199f0ab46f69a2d8d6f24e85dd.json",
+      "sha256": "7540dcb7d1ab93f779793e8059b2b278574431199f0ab46f69a2d8d6f24e85dd",
+      "bytes": 25599
+    },
+    {
+      "path": "metadata/7ab1b7290c8ab7e62098c8beaee6e653773933e238ec7d58788f9761c296b5c6.json",
+      "sha256": "7ab1b7290c8ab7e62098c8beaee6e653773933e238ec7d58788f9761c296b5c6",
+      "bytes": 10547
+    },
+    {
+      "path": "metadata/7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa.json",
+      "sha256": "7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa",
+      "bytes": 11670
+    },
+    {
+      "path": "metadata/7c284591a088d8546761fc65e2c017d2c6c1dc763a3ad50edbef97341af62a2d.json",
+      "sha256": "7c284591a088d8546761fc65e2c017d2c6c1dc763a3ad50edbef97341af62a2d",
+      "bytes": 1002
+    },
+    {
+      "path": "metadata/7f6750251571082e6c498f4434f8cb80af7eb270a16f60bfefe65a2f57c3d283.json",
+      "sha256": "7f6750251571082e6c498f4434f8cb80af7eb270a16f60bfefe65a2f57c3d283",
+      "bytes": 5413
+    },
+    {
+      "path": "metadata/886162707c25793c294487d959767f52c4787478484c2a91c6bef51521d6850a.json",
+      "sha256": "886162707c25793c294487d959767f52c4787478484c2a91c6bef51521d6850a",
+      "bytes": 5193
+    },
+    {
+      "path": "metadata/946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894.json",
+      "sha256": "946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894",
+      "bytes": 45319
+    },
+    {
+      "path": "metadata/98dac69c7827e93c04a6dafb760cb6b1870361638c09ec342d720c3c9734500a.json",
+      "sha256": "98dac69c7827e93c04a6dafb760cb6b1870361638c09ec342d720c3c9734500a",
+      "bytes": 4021
+    },
+    {
+      "path": "metadata/9cd12897cd970f12db9f7d07d921c87c5a8e204161fcddbf2f917cbfed37ffa7.json",
+      "sha256": "9cd12897cd970f12db9f7d07d921c87c5a8e204161fcddbf2f917cbfed37ffa7",
+      "bytes": 7947
+    },
+    {
+      "path": "metadata/a2d29d2deaf76c5036404cab38819542c6f9074fc64a432503a08e59ef8ed562.json",
+      "sha256": "a2d29d2deaf76c5036404cab38819542c6f9074fc64a432503a08e59ef8ed562",
+      "bytes": 5237
+    },
+    {
+      "path": "metadata/a37448a27255b516ebcf336e57154997e956bf6195fc1babbf41508e67b00767.json",
+      "sha256": "a37448a27255b516ebcf336e57154997e956bf6195fc1babbf41508e67b00767",
+      "bytes": 162128
+    },
+    {
+      "path": "metadata/a82e3320f8c2b7c7b66589d93fd38ed9800c11a12abb4e8bc296d10964cad13d.json",
+      "sha256": "a82e3320f8c2b7c7b66589d93fd38ed9800c11a12abb4e8bc296d10964cad13d",
+      "bytes": 5034
+    },
+    {
+      "path": "metadata/a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df.json",
+      "sha256": "a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df",
+      "bytes": 4015
+    },
+    {
+      "path": "metadata/adb31139414497eb4bd6958f32a26f908905e6cef899b695436a7f3d82dc435e.json",
+      "sha256": "adb31139414497eb4bd6958f32a26f908905e6cef899b695436a7f3d82dc435e",
+      "bytes": 2453
+    },
+    {
+      "path": "metadata/b55b7bf350c5fef45d39f5ed4b14e7f769a87dc0c98f987d4a39857636007c53.json",
+      "sha256": "b55b7bf350c5fef45d39f5ed4b14e7f769a87dc0c98f987d4a39857636007c53",
+      "bytes": 2554
+    },
+    {
+      "path": "metadata/b5af7ca3ff50ef8d0c833aa8c4ad3f8322ff0a5566c61d626af958a73c88ed00.json",
+      "sha256": "b5af7ca3ff50ef8d0c833aa8c4ad3f8322ff0a5566c61d626af958a73c88ed00",
+      "bytes": 50452
+    },
+    {
+      "path": "metadata/ba81bca273c9fbfdc98c3147d8fc5507d857c2b1144c4bcffbc828e0ea959fe1.json",
+      "sha256": "ba81bca273c9fbfdc98c3147d8fc5507d857c2b1144c4bcffbc828e0ea959fe1",
+      "bytes": 3574
+    },
+    {
+      "path": "metadata/bffca01f1720021c1bd3485bfbc35cb85b49f778f0c01ea82c2251758b4601cf.json",
+      "sha256": "bffca01f1720021c1bd3485bfbc35cb85b49f778f0c01ea82c2251758b4601cf",
+      "bytes": 9011
+    },
+    {
+      "path": "metadata/c16495fb5b0c2151612fa6f83ba8ad2de31e575ffc8c843d85009631fcf19ce7.json",
+      "sha256": "c16495fb5b0c2151612fa6f83ba8ad2de31e575ffc8c843d85009631fcf19ce7",
+      "bytes": 13827
+    },
+    {
+      "path": "metadata/c4c042517b6fbd3f36fd04246dbf00a6dd0125972c10edaf7496d80c2f88f902.json",
+      "sha256": "c4c042517b6fbd3f36fd04246dbf00a6dd0125972c10edaf7496d80c2f88f902",
+      "bytes": 5204
+    },
+    {
+      "path": "metadata/cdac7f2e82af5584acfee65ca1a93dc7894091b7cb3ebfb82f8533554cb6009e.json",
+      "sha256": "cdac7f2e82af5584acfee65ca1a93dc7894091b7cb3ebfb82f8533554cb6009e",
+      "bytes": 1543
+    },
+    {
+      "path": "metadata/d10f8e1f1c3c8f2812345e4e0d4abf5cdcb66b814d95e303e22244ecda874f79.json",
+      "sha256": "d10f8e1f1c3c8f2812345e4e0d4abf5cdcb66b814d95e303e22244ecda874f79",
+      "bytes": 1419
+    },
+    {
+      "path": "metadata/d380d33d6c5d3523053f3d20e0974dfd68ea7132ae74dd2d1514cd027c9624ed.json",
+      "sha256": "d380d33d6c5d3523053f3d20e0974dfd68ea7132ae74dd2d1514cd027c9624ed",
+      "bytes": 996
+    },
+    {
+      "path": "metadata/d8debdb3984a7c45ab8d3324a953e844ac01eac70e6e3f70ce1b18d994150eb1.json",
+      "sha256": "d8debdb3984a7c45ab8d3324a953e844ac01eac70e6e3f70ce1b18d994150eb1",
+      "bytes": 14321
+    },
+    {
+      "path": "metadata/dead26971305dd00dd661cdd02c43bd729df7eb491d78b0de3b28bfe0fa59a53.json",
+      "sha256": "dead26971305dd00dd661cdd02c43bd729df7eb491d78b0de3b28bfe0fa59a53",
+      "bytes": 4204
+    },
+    {
+      "path": "metadata/df571c6953ac23385479c049cae6c1a6864b6f54f74510e4a56745052265aaf0.json",
+      "sha256": "df571c6953ac23385479c049cae6c1a6864b6f54f74510e4a56745052265aaf0",
+      "bytes": 2453
+    },
+    {
+      "path": "metadata/e057607b0464cd01e594d584d28ee6dc0634da563aa66062bae0e2a7852a7d12.json",
+      "sha256": "e057607b0464cd01e594d584d28ee6dc0634da563aa66062bae0e2a7852a7d12",
+      "bytes": 10813
+    },
+    {
+      "path": "metadata/e11db4238f54908bd638b409df8d85af5a147f0576d6ad52f3c3689caf3c6cd9.json",
+      "sha256": "e11db4238f54908bd638b409df8d85af5a147f0576d6ad52f3c3689caf3c6cd9",
+      "bytes": 3808
+    },
+    {
+      "path": "metadata/e6082bdf03049ce9cf23cff363d7deb08a95265d04480db9097894ecd34d7797.json",
+      "sha256": "e6082bdf03049ce9cf23cff363d7deb08a95265d04480db9097894ecd34d7797",
+      "bytes": 943
+    },
+    {
+      "path": "metadata/f3e79dfad6508ec2c52698f07fde91abc486cfd9e4eb731bcb2cdb813ba94fa9.json",
+      "sha256": "f3e79dfad6508ec2c52698f07fde91abc486cfd9e4eb731bcb2cdb813ba94fa9",
+      "bytes": 5594
+    },
+    {
+      "path": "metadata/f461efcc6e4a4e703cfa94971ed5806753e7df8f16e0181819e8707fee22b9d4.json",
+      "sha256": "f461efcc6e4a4e703cfa94971ed5806753e7df8f16e0181819e8707fee22b9d4",
+      "bytes": 3783
+    },
+    {
+      "path": "metadata/f4d0041fe9108c98ea0535f64f61cfd9b40c3c915c14355aea2be89f7a0fada2.json",
+      "sha256": "f4d0041fe9108c98ea0535f64f61cfd9b40c3c915c14355aea2be89f7a0fada2",
+      "bytes": 1660
+    },
+    {
+      "path": "metadata/f4ffe0b20860b596d24649a7a7616faefc9d6d0d0214167eb1c3dbaff6b68565.json",
+      "sha256": "f4ffe0b20860b596d24649a7a7616faefc9d6d0d0214167eb1c3dbaff6b68565",
+      "bytes": 8745
+    },
+    {
+      "path": "metadata/f8668d778c6a878790a307d253449458dd0057ebc968aba1d7578ab07889b535.json",
+      "sha256": "f8668d778c6a878790a307d253449458dd0057ebc968aba1d7578ab07889b535",
+      "bytes": 20543
+    },
+    {
+      "path": "metadata/fcb3213a4d5ae1089678f03fb7c68ee7e3e4a33a97a06e536d457691300a75ae.json",
+      "sha256": "fcb3213a4d5ae1089678f03fb7c68ee7e3e4a33a97a06e536d457691300a75ae",
+      "bytes": 597
+    },
+    {
+      "path": "producer.json",
+      "sha256": "a36fc68f922e8009d5cf492b38c4011b4a4535e70ae5b431a95ea1f303f0b2e4",
+      "bytes": 28509
+    },
+    {
+      "path": "recipes/mcp-filesystem.json",
+      "sha256": "3ffc8e609435f419417b05c0c0304e5b9dd3f0e36297f25d8c3821178d2a0a74",
+      "bytes": 592
+    },
+    {
+      "path": "recipes/mcp-memory.json",
+      "sha256": "100073c18dc0bf3c24b3192f22eab08ac3827437d2eafb4a508f6f5ea768a894",
+      "bytes": 584
+    },
+    {
+      "path": "recipes/mcp-opencode-rag.json",
+      "sha256": "8adba8f998671ef22a470cec33fba435264cad42d3a1cc886be3e6d5b4614fc1",
+      "bytes": 759
+    },
+    {
+      "path": "recipes/mcp-sequential-thinking.json",
+      "sha256": "c7c3254110847c7fb7c1274e533e1e760d486e019cbf1dd5df2db456b5285261",
+      "bytes": 630
+    },
+    {
+      "path": "recipes/plugin-git-context.json",
+      "sha256": "6e1d9d65edfbdaab94b3e85a3ea0200ec03407108e04d2fad07b1bfe8672bf2a",
+      "bytes": 609
+    },
+    {
+      "path": "recipes/plugin-opencode-rag-plugin.json",
+      "sha256": "3f2e548875576355a89d9d89976f14fad51fd75eb6d5f7b68bf83b9e552ae8b9",
+      "bytes": 819
+    },
+    {
+      "path": "recipes/plugin-opencode-snip.json",
+      "sha256": "1e05b8c3a914bae44661dad49008f71ef76074aa30a80b6fdfc7f417329faae5",
+      "bytes": 706
+    },
+    {
+      "path": "recipes/plugin-project-context.json",
+      "sha256": "ae461d7f9010e08c8d6e64284a242a9ae275273b8604e25e14f52f6ada775a2f",
+      "bytes": 607
+    }
+  ],
+  "index": {
+    "path": "bundled/index.json",
+    "sha256": "659b6ea40d20f9231b1fa1e1cc3a56fabef81b2cd680039b36b4361d6e4e9766"
+  },
+  "sourceCommit": "e1255b4e522a0b38e471d5624cc63f5f13442649"
+}

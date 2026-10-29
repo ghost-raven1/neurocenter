@@ -29,7 +29,7 @@ export function assetSelectionChoices(supply,{withoutModels=false,receipt}={}){
     return supply.index.assets.filter(entry=>entry.current&&records.has(entry.id)&&(!withoutModels||entry.kind!=='model')).map(entry=>{
         const record=records.get(entry.id);
         const {asset}=record,closure=selectAssets(supply.assets,[asset.id]),artifacts=new Map();
-        for(const item of closure)for(const artifact of downloadArtifacts(item.asset))artifacts.set(artifact.sha256,artifact);
+        for(const item of closure)for(const artifact of item.asset.kind==='model'?[]:downloadArtifacts(item.asset))artifacts.set(artifact.sha256,artifact);
         const previous=receipt?.assets?.find(item=>item.id===asset.id);
         return {id:asset.id,name:asset.card.name||asset.id,kind:asset.kind,version:asset.card.revision||asset.version,
             bytes:[...artifacts.values()].reduce((sum,item)=>sum+item.bytes,0),
@@ -93,7 +93,7 @@ export async function selectStartupAssets({root,environment=process.env,output,w
     }else output.info('Выбор ассетов',`Без TTY используется прежний набор: ${ids.length}. Новые ID не добавляются.`);
     if(selected.skip)return {skip:true,reason:'assets-skipped'};
     const planned=selectAssets(supply.assets,selected.ids),artifacts=new Map();
-    for(const record of planned)for(const artifact of downloadArtifacts(record.asset))artifacts.set(artifact.sha256,artifact);
+    for(const record of planned)for(const artifact of record.asset.kind==='model'?[]:downloadArtifacts(record.asset))artifacts.set(artifact.sha256,artifact);
     output.info('Подтверждённый набор',`${selected.ids.length} выбранных ассетов, ${planned.length} вместе с зависимостями; ${size([...artifacts.values()].reduce((sum,item)=>sum+item.bytes,0))} файлов поставки. Повторно загружаются только отсутствующие SHA.`);
     const current=await readSourcePin(root);
     if(current.lockSha256!==supply.lockSha256)throw Object.assign(Error('Источник ассетов изменился во время выбора. Повторите запуск; файлы сохранены.'),{code:'ASSET_SOURCE_CHANGED'});

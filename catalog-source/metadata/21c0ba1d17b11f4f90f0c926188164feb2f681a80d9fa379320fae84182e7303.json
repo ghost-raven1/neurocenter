@@ -1,0 +1,103 @@
+{
+  "card": {
+    "descriptor": {
+      "capability": "embedding",
+      "description": "Локальная embedding-модель для поиска по смыслу и базы знаний проекта. Веса и runtime размещаются на сервере Нейроцентра.",
+      "dimension": 2560,
+      "manifestSha256": "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907",
+      "model": "qwen3-embedding:4b",
+      "runtime": "ollama",
+      "source": "builtin"
+    },
+    "id": "model-embedding-qwen3-4b",
+    "name": "Qwen3 Embedding 4B"
+  },
+  "compatibility": {},
+  "delivery": {
+    "bundle": {
+      "files": [
+        {
+          "parts": [
+            {
+              "name": "model-2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b-001.bin",
+              "sha256": "15d508ff58985fc3b9da6dd6258163d51d265ed3154280f0f0fea0dc45ccc5bc",
+              "size": 1073741824
+            },
+            {
+              "name": "model-2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b-002.bin",
+              "sha256": "cea9d0f2734952389e8dac8aa74192ff7275f6e3e0fca241ec5065b0d7da9e5f",
+              "size": 1073741824
+            },
+            {
+              "name": "model-2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b-003.bin",
+              "sha256": "7c89166e6e758cf8a21df3f4b948a41f30655ccfb034f342844f55830b4c3d38",
+              "size": 349220128
+            }
+          ],
+          "path": "models/blobs/sha256-2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b",
+          "sha256": "2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b",
+          "size": 2496703776
+        },
+        {
+          "parts": [
+            {
+              "name": "model-2ca34c70bbf2dc85cb69688daf0b423bdc361504ea29d7f5a35c19f739d8ee0d-001.bin",
+              "sha256": "2ca34c70bbf2dc85cb69688daf0b423bdc361504ea29d7f5a35c19f739d8ee0d",
+              "size": 265
+            }
+          ],
+          "path": "models/blobs/sha256-2ca34c70bbf2dc85cb69688daf0b423bdc361504ea29d7f5a35c19f739d8ee0d",
+          "sha256": "2ca34c70bbf2dc85cb69688daf0b423bdc361504ea29d7f5a35c19f739d8ee0d",
+          "size": 265
+        },
+        {
+          "inlineBase64": "eyJzY2hlbWFWZXJzaW9uIjoyLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi92bmQuZG9ja2VyLmRpc3RyaWJ1dGlvbi5tYW5pZmVzdC52Mitqc29uIiwiY29uZmlnIjp7Im1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5kb2NrZXIuY29udGFpbmVyLmltYWdlLnYxK2pzb24iLCJkaWdlc3QiOiJzaGEyNTY6MmNhMzRjNzBiYmYyZGM4NWNiNjk2ODhkYWYwYjQyM2JkYzM2MTUwNGVhMjlkN2Y1YTM1YzE5ZjczOWQ4ZWUwZCIsInNpemUiOjI2NX0sImxheWVycyI6W3sibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLm9sbGFtYS5pbWFnZS5tb2RlbCIsImRpZ2VzdCI6InNoYTI1NjoyYjBjZjhmMTdiNGM3MjNjMjczMDMwMTUzODNjMjdlYzRiZjJkODMxNGJiNjc3ZDA1ZTkyMGRkNzBiYjBmMTZiIiwic2l6ZSI6MjQ5NjcwMzc3NiwiZnJvbSI6Ii9Vc2Vycy9vbGxhbWEvLm9sbGFtYS9tb2RlbHMvYmxvYnMvc2hhMjU2LTJiMGNmOGYxN2I0YzcyM2MyNzMwMzAxNTM4M2MyN2VjNGJmMmQ4MzE0YmI2NzdkMDVlOTIwZGQ3MGJiMGYxNmIifV19",
+          "path": "models/manifests/registry.ollama.ai/library/qwen3-embedding/4b",
+          "sha256": "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907",
+          "size": 531
+        }
+      ],
+      "kind": "neurocenter-model-bundle",
+      "releaseBaseUrl": "https://github.com/ghost-raven1/neurocenter/releases/download/models-2026-10-19.1",
+      "schemaVersion": 1
+    },
+    "lock": {
+      "dimension": 2560,
+      "image": "ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c",
+      "manifest": {
+        "config": {
+          "digest": "sha256:2ca34c70bbf2dc85cb69688daf0b423bdc361504ea29d7f5a35c19f739d8ee0d",
+          "mediaType": "application/vnd.docker.container.image.v1+json",
+          "size": 265
+        },
+        "layers": [
+          {
+            "digest": "sha256:2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b",
+            "from": "/Users/ollama/.ollama/models/blobs/sha256-2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b",
+            "mediaType": "application/vnd.ollama.image.model",
+            "size": 2496703776
+          }
+        ],
+        "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+        "schemaVersion": 2
+      },
+      "manifestSha256": "df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907",
+      "model": "qwen3-embedding:4b",
+      "registryManifestUrl": "https://registry.ollama.ai/v2/library/qwen3-embedding/manifests/4b",
+      "schemaVersion": 1
+    },
+    "type": "model-bundle"
+  },
+  "id": "model-embedding-qwen3-4b",
+  "kind": "model",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/ghost-raven1/neurocenter",
+    "tag": "models-2026-10-19.1",
+    "type": "release"
+  },
+  "version": "models-2026-10-19.1"
+}

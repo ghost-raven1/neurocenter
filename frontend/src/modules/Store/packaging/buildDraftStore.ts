@@ -22,6 +22,7 @@ const text=(value:unknown):value is string=>typeof value==='string'&&!!value.tri
 /** Повреждённая запись не должна попасть в форму с вызовами trim/map или в повторный POST. */
 function validSource(value:unknown):boolean {
     if(!object(value))return false;
+    if(value.type==='bundled')return fields(value,['type','id','revision'])&&typeof value.id==='string'&&/^(?:mcp|plugin)-[a-z0-9-]{1,120}$/.test(value.id)&&typeof value.revision==='string'&&/^[a-f0-9]{64}$/.test(value.revision);
     if(value.type==='upload')return fields(value,['type','uploadId','sha256','bytes','entrypoint'])&&typeof value.uploadId==='string'&&uuid.test(value.uploadId)
         &&typeof value.sha256==='string'&&/^[a-f0-9]{64}$/.test(value.sha256)&&Number.isSafeInteger(value.bytes)&&Number(value.bytes)>0&&Number(value.bytes)<=256*1024**2&&text(value.entrypoint);
     if(value.type==='npm')return fields(value,['type','specifier','entrypoint'])&&text(value.specifier)
@@ -56,6 +57,7 @@ function requestJSON(request:ToolBuildRequest):string {
     if(request.kind==='skill'&&(request.source.type!=='files'&&request.source.type!=='repository'
         ||!/(?:^|\/)SKILL\.md$/.test(request.source.entrypoint)||request.source.entrypoint.split('/').some(part=>!part||part==='.'||part==='..'||/[\\\x00-\x1f\x7f]/.test(part))||'release'in request.source&&request.source.release!==undefined
         ||'args'in request.source&&request.source.args!==undefined))throw new Error('Скилл восстанавливается из SKILL.md и ресурсов, без команды запуска.');
+    if(request.source.type==='bundled'&&(request.kind==='skill'||request.agent))throw new Error('Закреплённый рецепт инструмента не использует агента упаковки.');
     const bytes=JSON.stringify(request);
     if(new TextEncoder().encode(bytes).length>maximumBytes)throw new Error('Исходники упаковки превышают лимит локального восстановления.');
     return bytes;

@@ -34,6 +34,8 @@ export async function syncAssets({root=repository,environment=process.env,artifa
         const cache=new AssetCache(supply.directories.blobs),missing=[];
         const report={ok:true,mode:metadataOnly?'metadata':'prefetch',verifyOnly,revision:supply.revision,sourceCommit:supply.pin.commit,directories:supply.directories,
             selected:supply.selected,assets:supply.assets.map(({asset,sha256})=>({id:asset.id,kind:asset.kind,version:asset.version,sha256})),
+            sourcePlans:supply.sourcePlans.map(({id,kind,sourceRevision,delivery})=>({id,kind,sourceRevision,state:delivery.type==='model-archive'?'explicit-model-archive':delivery.type==='app-bridge'?'application-bridge-archive':'prepare-required'})),
+            ...(supply.assets.some(({asset})=>asset.kind==='model')?{modelWeights:'explicit-archive-required',deferredModels:supply.assets.filter(({asset})=>asset.kind==='model').map(({asset})=>asset.id)}:{}),
             files:supply.artifacts.length,bytes:supply.artifacts.reduce((sum,item)=>sum+item.bytes,0),downloaded:0,...(withoutModels?{withoutModels:true}:{}),...(offlineReady?{offlineReady:true}:{})};
         for(const artifact of metadataOnly?[]:supply.artifacts){
             signal?.throwIfAborted();

@@ -1,0 +1,149 @@
+{
+  "assets": [
+    {
+      "current": true,
+      "id": "mcp-filesystem",
+      "kind": "mcp",
+      "path": "assets/mcp-filesystem/1.0.0/asset.json",
+      "sha256": "62cde495f47a0af6803bbc6d26b8065a4bebc7c28a2ab59bbee74c7a453d0cc4",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "plugin-git-context",
+      "kind": "plugin",
+      "path": "assets/plugin-git-context/1.0.0-pack.1/asset.json",
+      "sha256": "752f4f6601fb4123a42733957f6335379ef63ee1af90a2db2814b300849e107e",
+      "version": "1.0.0-pack.1"
+    },
+    {
+      "current": true,
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "path": "assets/neurocenter-bridge/0.9.10/asset.json",
+      "sha256": "b55b7bf350c5fef45d39f5ed4b14e7f769a87dc0c98f987d4a39857636007c53",
+      "version": "0.9.10"
+    },
+    {
+      "current": true,
+      "id": "model-embedding-qwen3-4b",
+      "kind": "model",
+      "path": "assets/model-embedding-qwen3-4b/models-2026-10-19.1/asset.json",
+      "sha256": "21c0ba1d17b11f4f90f0c926188164feb2f681a80d9fa379320fae84182e7303",
+      "version": "models-2026-10-19.1"
+    },
+    {
+      "current": false,
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "path": "assets/skill-neurocenter-packaging/1.0.0/asset.json",
+      "sha256": "d8debdb3984a7c45ab8d3324a953e844ac01eac70e6e3f70ce1b18d994150eb1",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-vite",
+      "kind": "skill",
+      "path": "assets/skill-vite/1.0.0/asset.json",
+      "sha256": "5c5804d09e44d80e72d203f028cb743e7fcee1176f889bfda4ba8d04385e6438",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-vitest",
+      "kind": "skill",
+      "path": "assets/skill-vitest/1.0.0/asset.json",
+      "sha256": "0f253adca052c9a7eb16f6c447182aaa6d72d74a8634bc95266356612eb99f35",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-supabase-postgres-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-supabase-postgres-best-practices/1.0.0/asset.json",
+      "sha256": "0f54db74c354535295cdf9ed5719c029063c9841341b4554983f8e396935a4d5",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-nestjs-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-nestjs-best-practices/1.0.0/asset.json",
+      "sha256": "a37448a27255b516ebcf336e57154997e956bf6195fc1babbf41508e67b00767",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-playwright-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-playwright-best-practices/1.0.0/asset.json",
+      "sha256": "1ffa170b2faa9c2f3b9a2f16dd7a7fbe212a8c0533591820857ac092bc0fd6a2",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-mcp-builder",
+      "kind": "skill",
+      "path": "assets/skill-mcp-builder/1.0.0/asset.json",
+      "sha256": "4f6d72515d1c320c61d4a62b52a5be5b8462ed31bc8137b46a7864d378f19836",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-react-state-management",
+      "kind": "skill",
+      "path": "assets/skill-react-state-management/1.0.0/asset.json",
+      "sha256": "f8668d778c6a878790a307d253449458dd0057ebc968aba1d7578ab07889b535",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-typescript-advanced-types",
+      "kind": "skill",
+      "path": "assets/skill-typescript-advanced-types/1.0.0/asset.json",
+      "sha256": "03006ac31d88ab29c2aa2b1641f6c09be56b3c4524833fd314f2ea656ceba1de",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-api-design-principles",
+      "kind": "skill",
+      "path": "assets/skill-api-design-principles/1.0.0/asset.json",
+      "sha256": "b5af7ca3ff50ef8d0c833aa8c4ad3f8322ff0a5566c61d626af958a73c88ed00",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-accessibility-compliance",
+      "kind": "skill",
+      "path": "assets/skill-accessibility-compliance/1.0.0/asset.json",
+      "sha256": "6ceaac1debbde6c5b5906dce3f7543c19605bc46837c197e9fc0692071f99140",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-code-review-excellence",
+      "kind": "skill",
+      "path": "assets/skill-code-review-excellence/1.0.0/asset.json",
+      "sha256": "7540dcb7d1ab93f779793e8059b2b278574431199f0ab46f69a2d8d6f24e85dd",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-deployment-pipeline-design",
+      "kind": "skill",
+      "path": "assets/skill-deployment-pipeline-design/1.0.0/asset.json",
+      "sha256": "946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "path": "assets/skill-neurocenter-packaging/1.1.0/asset.json",
+      "sha256": "09b9fcd410357d017b0d151d826fa9210098d7f1fc8e6793a9b808dfec8bb10b",
+      "version": "1.1.0"
+    }
+  ],
+  "schemaVersion": 1
+}

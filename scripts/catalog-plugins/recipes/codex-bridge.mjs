@@ -2,8 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
-import {download,installDependencies,TARGETS} from './upstream.mjs';
+import {installDependencies,TARGETS} from './upstream.mjs';
+import {createHash} from 'node:crypto';
 import pin from '../../../services/shared/codex-connector-pin.json' with {type:'json'};
+import bundledCatalog from '../../../services/shared/bundled-catalog.cjs';
 
 const require=createRequire(new URL('../../../services/catalog-service/package.json',import.meta.url));
 export const CODEX_REVISION=`${pin.version}-auth.pack.1`;
@@ -13,13 +15,16 @@ const triples={darwin:{arm64:'aarch64-apple-darwin',x64:'x86_64-apple-darwin'},l
 const replaceOnce=(source,before,after)=>{if(source.split(before).length!==2)throw new Error('Изменился закреплённый исходник Codex. Обновите адаптер.');return source.replace(before,after);};
 
 /** Package only official authentication/model transport; delegation, voice and global installers are excluded. */
-export async function prepareCodexBridge({target,directory},{downloadFile=download,install=installDependencies}={}){
+export async function prepareCodexBridge({target,directory},options={}){
+    const {downloadFile,install=installDependencies}=options;
     const platform=TARGETS[target];if(!platform)throw new Error('Неизвестная платформа: '+target);
     await fs.mkdir(path.join(directory,'upstream'),{recursive:true});
     const compiler=require('esbuild');
+    const component=downloadFile?undefined:await bundledCatalog.readBundledComponent('codex-connector');
     for(const [name,sha256]of Object.entries(pin.files)){
-        const filename=await downloadFile(`https://raw.githubusercontent.com/ghost-raven1/opencode_codex_bridge/${pin.sourceCommit}/packages/bridge/src/${name}`,sha256);
-        let source=await fs.readFile(filename,'utf8');
+        const bytes=downloadFile?await fs.readFile(await downloadFile(`https://raw.githubusercontent.com/ghost-raven1/opencode_codex_bridge/${pin.sourceCommit}/packages/bridge/src/${name}`,sha256)):component.files.get('source/'+name);
+        if(!bytes||createHash('sha256').update(bytes).digest('hex')!==sha256)throw new Error('Закреплённый исходник Codex отсутствует или повреждён в приложении.');
+        let source=bytes.toString('utf8');
         if(name==='executable.ts')continue;
         if(name==='auth-session.ts'){
             source=replaceOnce(source,'async function loadSession(refreshToken: boolean): Promise<CodexSession> {\n  const connection = new CodexConnection();','export async function loadSession(refreshToken: boolean, options?: { env?: NodeJS.ProcessEnv }): Promise<CodexSession> {\n  const connection = new CodexConnection(undefined, [], options?.env);');

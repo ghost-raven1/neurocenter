@@ -85,6 +85,7 @@ export class PackageAgentService {
         return {num_predict:outputTokens,temperature:0,...(window===null?{}:{num_ctx:window})};
     }
     private async run(stage:PackageAgentStage,config:BuildConfiguration,context:PackageAgentContext,report?:PackageAgentRuntimeReport):Promise<AgentRunResult> {
+        if(config.source.type==='bundled')throw new ConflictException('Закреплённый рецепт каталога не меняется агентом.');
         const agent=this.agent(config,context),journal=new PackageAgentJournal(context,config);
         context.signal.throwIfAborted();await context.authorize();
         const model=await this.pinned(agent),feedback=report??(context.feedback?packageAgentReport(context.feedback):undefined);

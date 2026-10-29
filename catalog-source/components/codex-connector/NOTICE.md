@@ -1,0 +1,1 @@
+Pinned source from ghost-raven1/opencode_codex_bridge at de21db304bef59af6421079c10e8a43404fd09fa. The upstream tree does not declare a license. Original source and authorship are preserved; no additional license is asserted.

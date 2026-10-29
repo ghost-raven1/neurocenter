@@ -10,12 +10,13 @@ import {inspectSkillSource} from './skill-source';
 import type {SkillSourceFile} from '../../../shared/skill-source.cjs';
 import {validateBuildPublication,type BuildPublicationTarget,type PinnedBuildPublication} from './publication-target';
 import {validatePackageAgentInput,type PackageAgentInput} from './package-agent.model';
+import {validateBundledBuildSource,type BundledBuildSource} from '../../../shared/bundled-catalog.cjs';
 
 export type BuildState = 'QUEUED' | 'RUNNING' | 'CANCELLING' | 'CANCELLED' | 'SUCCEEDED' | 'FAILED';
 export interface BuildSourceNpm { type: 'npm'; specifier: string; entrypoint?: string }
 export interface BuildSourceFiles { type: 'files'; files: SkillSourceFile[]; entrypoint: string; args?: string[] }
-export interface BuildInput {requestKey: string; kind: 'mcp' | 'plugin' | 'skill'; name: string; description: string; tags?: string[]; targets?: string[]; publication?:BuildPublicationTarget; agent?:PackageAgentInput; source: BuildSourceNpm | BuildSourceFiles | RepositoryInput | UploadBuildSource}
-export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source' | 'publication'> {recipeVersion?:2;recipeInventory?:BuildSourceInventory;buildPlan?:ExecutableBuildPlan;buildDiagnostics?:Array<{attempt:number;report:BuildDiagnostic}>;publication?:PinnedBuildPublication;agentCandidates?:string[];targets: string[]; tags: string[]; source: BuildSourceFiles | RepositorySource | PinnedUploadSource | (BuildSourceNpm & {package: string; version: string; entrypoint: string; recommendedKind?: 'mcp' | 'plugin'; supportedTargets?: string[]})}
+export interface BuildInput {requestKey: string; kind: 'mcp' | 'plugin' | 'skill'; name: string; description: string; tags?: string[]; targets?: string[]; publication?:BuildPublicationTarget; agent?:PackageAgentInput; source: BuildSourceNpm | BuildSourceFiles | RepositoryInput | UploadBuildSource | BundledBuildSource}
+export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source' | 'publication'> {recipeVersion?:2;recipeInventory?:BuildSourceInventory;buildPlan?:ExecutableBuildPlan;buildDiagnostics?:Array<{attempt:number;report:BuildDiagnostic}>;publication?:PinnedBuildPublication;agentCandidates?:string[];targets: string[]; tags: string[]; source: BuildSourceFiles | RepositorySource | PinnedUploadSource | BundledBuildSource | (BuildSourceNpm & {package: string; version: string; entrypoint: string; recommendedKind?: 'mcp' | 'plugin'; supportedTargets?: string[]})}
 export interface BuildResult {catalogId: string; name: string; version: number; kind?:'skill';assetId?:string;sourceVersion?:string;sourceSha256?:string}
 export interface BuildRow {id: string; actor: string; request_key: string; request_hash: string; config: BuildConfiguration; state: BuildState; percent: number; message: string; result: BuildResult | null; error: string | null; created_at: string; updated_at: string; publication_started_at?: string | null;execution_nonce?:string|null;execution_host?:string|null;execution_pid?:number|null;execution_started?:boolean}
 export const buildView = (row: BuildRow) => ({id: row.id, requestKey:row.request_key, publicationStartedAt:row.publication_started_at??null, name: row.config?.name, operationId: 'tool-build-' + row.id, state: row.state, percent: row.percent,
@@ -44,6 +45,10 @@ export function validateBuildInput(raw: unknown): BuildInput & {targets: string[
     const agent=raw.agent===undefined?undefined:validatePackageAgentInput(raw.agent);
     const publication=validateBuildPublication(raw.publication),base={requestKey:raw.requestKey,kind:raw.kind as BuildInput['kind'],name,description,tags,targets:[...targets],...(publication?{publication}:{}),...(agent?{agent}:{})};
     const source = raw.source;
+    if(source.type==='bundled'){
+        if(raw.kind==='skill'||agent)throw new BadRequestException('Закреплённый рецепт инструмента не использует агента упаковки.');
+        try{return {...base,source:validateBundledBuildSource(source)};}catch(error){throw new BadRequestException(error instanceof Error?error.message:'Некорректный рецепт каталога.');}
+    }
     if(raw.kind==='skill'&&!['files','repository'].includes(String(source.type)))throw new BadRequestException('Для скилла выберите папку, архив исходников или репозиторий GitHub с SKILL.md.');
     if (source.type === 'upload') {return {...base,source:validateUploadBuildSource(source)};}
     if (source.type === 'repository') {

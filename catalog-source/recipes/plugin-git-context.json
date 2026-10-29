@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "key": "plugin-git-context",
+  "name": "Контекст Git",
+  "kind": "plugin",
+  "description": "Добавляет текущую ветку и краткий список изменений Git в контекст OpenCode. Только локальное чтение, без сети. Отдельный JS-файл без зависимостей; требуется установленный Git.",
+  "tags": [
+    "Git",
+    "JS-файл",
+    "Контекст"
+  ],
+  "revision": "1.0.0-pack.1",
+  "source": {
+    "type": "prepared",
+    "adapter": "git-context"
+  }
+}

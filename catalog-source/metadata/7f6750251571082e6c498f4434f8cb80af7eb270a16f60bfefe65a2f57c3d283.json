@@ -1,0 +1,134 @@
+{
+  "card": {
+    "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+    "config": {
+      "entrypoint": "rag-plugin.mjs",
+      "extra": {
+        "hostedEmbedding": {
+          "profileSchemaVersion": 2,
+          "schemaVersion": 1
+        },
+        "localUi": {
+          "application": "opencode-rag",
+          "args": [
+            "ui",
+            "--port",
+            "0",
+            "--no-open"
+          ],
+          "entrypoint": "opencode-rag.mjs",
+          "schemaVersion": 1
+        }
+      }
+    },
+    "description": "Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Без конфига использует локальную qwen3-embedding:4b на порту 11435 и автоиндексацию; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.",
+    "files": [],
+    "kind": "plugin",
+    "name": "OpenCodeRAG (плагин)",
+    "origin": "neurocenter:recipe/opencode-rag-plugin",
+    "revision": "2.4.4-plugin.pack.8",
+    "tags": [
+      "RAG",
+      "GitHub",
+      "Автоиндексация"
+    ]
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 108265616,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11221,
+          "sha256": "816b56f7c5aa5150cf0b2c480a9cfda4b91c4acbb20a5af1db2ffb755b93772c",
+          "target": "darwin-arm64",
+          "unpackedBytes": 341616268
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/816b56f7c5aa5150cf0b2c480a9cfda4b91c4acbb20a5af1db2ffb755b93772c.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 181950455,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11241,
+          "sha256": "a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9",
+          "target": "linux-arm64-glibc",
+          "unpackedBytes": 525929597
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 181950455,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11241,
+          "sha256": "a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9",
+          "target": "linux-arm64-musl",
+          "unpackedBytes": 525929597
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/a455dda41d2ccd422e9a5455eb755f93b19f41c0e508fcde6c0f8dfa9f379ce9.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 188571852,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11243,
+          "sha256": "905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 564796663
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 188571852,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11243,
+          "sha256": "905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a",
+          "target": "linux-x64-musl",
+          "unpackedBytes": 564796663
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/905469fdcbd938c6e5445668a6c40111402dd32367a70e357439097cd086e47a.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 113584825,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11213,
+          "sha256": "15bcc3dc373fc1a771ea9eb036a7c8cb25bfd1ee1908eeb2cb3e2fe5448e7316",
+          "target": "win32-arm64",
+          "unpackedBytes": 369476029
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/15bcc3dc373fc1a771ea9eb036a7c8cb25bfd1ee1908eeb2cb3e2fe5448e7316.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 119866396,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11219,
+          "sha256": "fbb48a1082073bbdcb912ca28d2c87f3cbc96c0da31ccaf226940e3406b4b7fa",
+          "target": "win32-x64",
+          "unpackedBytes": 403256690
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/fbb48a1082073bbdcb912ca28d2c87f3cbc96c0da31ccaf226940e3406b4b7fa.tar.gz"
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "plugin-opencode-rag-plugin",
+  "kind": "plugin",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "965f5b19ce1045e25bf09b33fe7715b38cf47c0a",
+    "path": "scripts/catalog-plugins/catalog-release.json",
+    "repository": "https://github.com/ghost-raven1/neurocenter",
+    "type": "git"
+  },
+  "version": "2.4.4-plugin.pack.8"
+}

@@ -23,6 +23,8 @@ const hooks=vi.hoisted(()=>{
 });
 const ui=vi.hoisted(()=>({owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',searches:new Map<string,{onChange:(event:{target:{value:string}})=>void}>(),archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>(),job:undefined as IAssetImport|undefined,retry:vi.fn(),retryButton:undefined as undefined|(()=>void)}));
 const archiveUi=vi.hoisted(()=>({modal:undefined as ArchiveModalProps|undefined,buttons:[]as Array<{label:string;disabled?:boolean;onClick:()=>void}>,checkboxes:[]as Array<{'aria-label':string;disabled?:boolean;checked?:boolean;onChange:(event:{target:{checked:boolean}})=>void}>,blocked:false,start:vi.fn(),emptyDescription:''}));
+const bundledUi=vi.hoisted(()=>({props:undefined as {plans:unknown[];scope:string}|undefined}));
+vi.mock('../src/features/AssetSources/BundledCatalogSources',()=>({BundledCatalogSources:(props:{plans:unknown[];scope:string})=>{bundledUi.props=props;return null;}}));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),...hooks}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>{const scope=ui.owner;let captureOwner=ui.owners.get(scope);if(!captureOwner){captureOwner=()=>()=>scope===ui.owner;ui.owners.set(scope,captureOwner);}return{scope,captureOwner};}}));
 vi.mock('../src/core/api',()=>({baseApi:{get:vi.fn(),post:vi.fn(),put:vi.fn()},bffApi:{getSkill:vi.fn(),getAiPlugin:vi.fn()}}));
@@ -47,6 +49,11 @@ async function settle(){for(let n=0;n<15;n++)await Promise.resolve();return rend
 function deferred<T>(){let resolve!:(value:T)=>void,reject!:(cause:Error)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail;});return{promise,resolve,reject};}
 beforeEach(()=>{vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.refreshButtons.clear();ui.searches.clear();ui.editor=undefined;ui.draft='';ui.editorId='';ui.job=undefined;ui.retryButton=undefined;archiveUi.modal=undefined;archiveUi.blocked=false;vi.mocked(baseApi.get).mockResolvedValue({data:source});});
 afterEach(()=>hooks.dispose());
+
+it('Current source read failure keeps the scoped bundled build recovery mounted with no actionable recipes',async()=>{
+    vi.mocked(baseApi.get).mockRejectedValueOnce(Error('Source unavailable'));render();const html=await settle();
+    expect(html).toContain('Source unavailable');expect(bundledUi.props).toEqual({plans:[],scope:'admin-a',blocked:false,onPublished:expect.any(Function),onImportArchive:expect.any(Function)});
+});
 
 it('Двойной клик и открытие второй карточки во время GET не создают конкурирующий редактор',async()=>{
     const first=deferred<ICatalogAgent>();vi.mocked(agentCatalogApi.get).mockReturnValue(first.promise);render();await settle();const[openA,openB]=ui.buttons;

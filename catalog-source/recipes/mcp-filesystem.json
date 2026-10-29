@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "key": "mcp-filesystem",
+  "name": "MCP Filesystem",
+  "kind": "mcp",
+  "description": "Чтение, поиск и редактирование файлов только в папке выбранного проекта. Готовый npm-комплект с зависимостями; мост запускает его своим Node без npm на компьютере.",
+  "tags": [
+    "Файлы",
+    "npm",
+    "Готовый комплект"
+  ],
+  "revision": "1.0.0-pack.1",
+  "source": {
+    "type": "prepared",
+    "adapter": "filesystem"
+  }
+}

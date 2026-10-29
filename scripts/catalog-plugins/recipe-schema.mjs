@@ -21,7 +21,7 @@ export function javascriptEntrypoint(value) {
 
 /** Декларация описывает данные и закреплённый источник, без shell-команд и install hooks. */
 export function validateRecipe(input) {
-    if (!exact(input, ['schemaVersion', 'key', 'name', 'kind', 'description', 'revision', 'tags', 'config', 'source', 'targets',...(input.schemaVersion===2?['inventory','buildPlan']:[])])
+    if (!exact(input, ['schemaVersion', 'key', 'name', 'kind', 'description', 'revision', 'tags', 'config', 'source', 'targets','producer',...(input.schemaVersion===2?['inventory','buildPlan']:[])])
         || ![1,2].includes(input.schemaVersion) || !text(input.key, 128) || !/^[a-z0-9][a-z0-9._-]*$/.test(input.key)
         || !text(input.name, 128) || !['mcp', 'plugin'].includes(input.kind)
         || typeof input.description !== 'string' || input.description.length > 2000 || input.description.includes('\0')
@@ -38,6 +38,9 @@ export function validateRecipe(input) {
         || config.extra !== undefined && !exact(config.extra, ['localConfiguration'])) {
         throw new Error('Builder сам задаёт точку входа и готовые архивы. В config допустимы локальный MCP node/stdio, args, env и extra.localConfiguration; shell-команды и runtimeArtifacts запрещены.');
     }
+    const binding=input.producer;
+    if(binding!==undefined&&(!exact(binding,['schemaVersion','id','revision','producerSha256'])||binding.schemaVersion!==1||binding.id!==input.key
+        ||!binding.id.startsWith(input.kind+'-')||!/^[a-f0-9]{64}$/.test(binding.revision??'')||!/^[a-f0-9]{64}$/.test(binding.producerSha256??'')))throw new Error('Привязка каталога требует точный ID, application revision и SHA-256 producer.');
     const source = input.source;
     let normalizedSource = source;
     if (!object(source)) { throw new Error('Укажите объект source.'); }

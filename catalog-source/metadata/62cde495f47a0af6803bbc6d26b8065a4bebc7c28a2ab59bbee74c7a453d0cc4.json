@@ -1,0 +1,130 @@
+{
+  "card": {
+    "compatibility": "JavaScript; bundled Node 24; 8 платформ моста",
+    "config": {
+      "args": [],
+      "transport": "stdio"
+    },
+    "description": "Чтение, поиск и редактирование файлов только в папке выбранного проекта. Готовый npm-комплект с зависимостями; мост запускает его своим Node без npm на компьютере.",
+    "files": [],
+    "kind": "mcp",
+    "name": "MCP Filesystem",
+    "origin": "https://www.npmjs.com/package/@modelcontextprotocol/server-filesystem",
+    "revision": "1.0.0",
+    "tags": [
+      "Файлы",
+      "npm",
+      "Готовый комплект"
+    ],
+    "version": 1
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 5178568,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 4083,
+          "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+          "target": "darwin-arm64",
+          "unpackedBytes": 24433351
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 5178568,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 4083,
+          "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+          "target": "darwin-x64",
+          "unpackedBytes": 24433351
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 5178568,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 4083,
+          "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+          "target": "linux-arm64-glibc",
+          "unpackedBytes": 24433351
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 5178568,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 4083,
+          "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+          "target": "linux-arm64-musl",
+          "unpackedBytes": 24433351
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 5178568,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 4083,
+          "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 24433351
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 5178568,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 4083,
+          "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+          "target": "linux-x64-musl",
+          "unpackedBytes": 24433351
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 5178568,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 4083,
+          "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+          "target": "win32-arm64",
+          "unpackedBytes": 24433351
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 5178568,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 4083,
+          "sha256": "dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce",
+          "target": "win32-x64",
+          "unpackedBytes": 24433351
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/dc2eaeccb0ef616a812db3d59ac7a9ac41c79094bef9cfa1b58991b0f3a635ce.tar.gz"
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "mcp-filesystem",
+  "kind": "mcp",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "965f5b19ce1045e25bf09b33fe7715b38cf47c0a",
+    "path": "scripts/catalog-plugins/catalog-release.json",
+    "repository": "https://github.com/ghost-raven1/neurocenter",
+    "type": "git"
+  },
+  "version": "1.0.0"
+}
