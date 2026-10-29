@@ -1,4 +1,4 @@
-import {OPENCODE_CLI_INSPECT_JOB,normalizeOpenCodeCliResult} from '../../../../services/shared/computer-setup.cjs';
+import {OPENCODE_CLI_INSPECT_JOB,normalizeOpenCodeCliResult} from '@neurocenter/computer-setup';
 import type {OpenCodeCliRequest,OpenCodeCliResult} from '../../../../services/shared/computer-setup.cjs';
 
 export interface CliIntent {version:1;email:string;role:string;request:OpenCodeCliRequest;jobId?:string}

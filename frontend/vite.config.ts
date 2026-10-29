@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
  */
 const DEFAULT_AUTH_PROXY_TARGET = 'http://localhost:22222';
 const DEFAULT_API_PROXY_TARGET = 'http://localhost:4000';
+const computerSetup = fileURLToPath(new URL('../services/shared/computer-setup.cjs', import.meta.url));
 
 /**
  * Vite-конфиг (function-форма, чтобы прочитать переменные окружения через loadEnv).
@@ -41,6 +42,13 @@ export default defineConfig((configEnv) => {
 
     return {
         plugins: [react()],
+        resolve: {
+            alias: { '@neurocenter/computer-setup': computerSetup },
+        },
+        // Linked CommonJS needs pre-bundling for named imports in the dev browser.
+        optimizeDeps: {
+            include: ['@neurocenter/computer-setup'],
+        },
         css: {
             preprocessorOptions: {
                 less: {
@@ -89,6 +97,10 @@ export default defineConfig((configEnv) => {
                 '/socket.io': { ...shared, target: apiTarget, ws: true },
             },
         },
-        build: { outDir: 'dist', sourcemap: false },
+        build: {
+            outDir: 'dist',
+            sourcemap: false,
+            commonjsOptions: { include: [/node_modules/, computerSetup] },
+        },
     };
 });
