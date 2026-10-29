@@ -11,6 +11,7 @@ import type { IRemoteConnectionRow } from '../src/models/remote-connection.repos
 import { RemoteModelClient, RemoteModelError } from '../src/models/remote-model-client';
 import { remoteVerificationDigest } from '../src/models/remote-model-validation';
 import { notifyModelCatalogChange } from '../src/models/model-events';
+import {anonymousProviderAccess} from './remote-provider.fixture';
 
 // Exercise the real usage reservation/cancellation path without opening SQL or contacting a provider.
 vi.mock('../src/database/pool', () => ({ createPool: () => ({ end: vi.fn(async () => undefined) }) }));
@@ -29,7 +30,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(
 
 describe('Remote verification admission after a durable usage reservation', () => {
     const fixture = () => {
-        const models = { pool: {} } as ModelsService, usage = new ModelUsageService(models), remote = new RemoteConnectionService(models, usage);
+        const models = { pool: {} } as ModelsService, usage = new ModelUsageService(models), remote = new RemoteConnectionService(models, usage,undefined,anonymousProviderAccess);
         const started = deferred(), held = deferred(), authorize = vi.fn(async () => undefined);
         const begin = vi.spyOn(usage.repository, 'begin').mockImplementation(async () => { started.release(); await held.promise; });
         const finish = vi.spyOn(usage.repository, 'finish').mockResolvedValue(undefined);
@@ -131,7 +132,7 @@ describe('Remote verification admission after a durable usage reservation', () =
     });
     it('preserves the provider error and never retries paid verification', async () => {
         const f = fixture(), error = new RemoteModelError('authorization', 'Safe provider refusal'); f.held.release(); f.infer.mockRejectedValue(error);
-        try { await expect(f.send()).rejects.toBe(error); expect(f.infer).toHaveBeenCalledOnce(); expect(f.verify).not.toHaveBeenCalled(); expect(f.failure).toHaveBeenCalledExactlyOnceWith(row, error.message); }
+        try { await expect(f.send()).rejects.toBe(error); expect(f.infer).toHaveBeenCalledOnce(); expect(f.verify).not.toHaveBeenCalled(); expect(f.failure).not.toHaveBeenCalled(); }
         finally { await f.close(); }
     });
     it('preserves late authorization refusal without republishing or repeating the completed probe', async () => {

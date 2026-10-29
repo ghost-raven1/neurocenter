@@ -1,120 +1,73 @@
-import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
-import { Alert, Button, Checkbox, Form, Input, Modal, Popconfirm, Select, Space, Spin, Typography } from 'antd';
-import { useEffect, useRef, useState } from 'react';
-import { errorMessage } from '../../common/utils/errorMessage';
-import { useAuthRequestOwner } from '../UserBlock/useAuthRequestOwner';
-import { modelCatalogApi } from './api';
-import type { ICatalogModel, IRemoteConnection, IRemoteConnectionHint, IRemoteConnectionInput } from './types';
-import { isRemoteApiUrl, remoteModelOptions, type TRemoteModelOptionValues } from './remoteModelForm';
-import { RemoteModelParameters } from './RemoteModelParameters';
+import {FeatureButton} from '../FeatureFlags/FeatureAvailability';
+import {Alert,Button,Checkbox,Form,Input,Modal,Popconfirm,Select,Space,Spin,Typography} from 'antd';
+import {useLayoutEffect,useRef,useState} from 'react';
+import {errorMessage} from '../../common/utils/errorMessage';
+import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
+import {modelCatalogApi} from './api';
+import type {ICatalogModel,IRemoteConnection,IRemoteConnectionHint,IRemoteConnectionInput} from './types';
+import {isRemoteApiUrl,remoteModelOptions,type TRemoteModelOptionValues} from './remoteModelForm';
+import {RemoteModelParameters} from './RemoteModelParameters';
 
-interface IProps { model: ICatalogModel; hint?: IRemoteConnectionHint; onClose: () => void; onSaved: () => Promise<void>; }
-type Values = Omit<IRemoteConnectionInput, 'expectedRevision' | 'expectedModelRevision' | 'options' | 'timeoutMs'> & { options?: TRemoteModelOptionValues; timeoutMs?: number | null };
+interface Props {model:ICatalogModel;hint?:IRemoteConnectionHint;onClose:()=>void;onSaved:()=>Promise<void>;}
+type Values=Pick<IRemoteConnectionInput,'baseUrl'|'requestDimensions'|'authMode'>&{options?:TRemoteModelOptionValues;timeoutMs?:number|null};
 
-/** URL и write-only ключ находятся в приватной настройке площадки, вне карточки и source envelope. */
-export function RemoteConnectionModal({ model, hint, onClose, onSaved }: IProps): JSX.Element {
-    const { captureOwner } = useAuthRequestOwner();
-    const [form] = Form.useForm<Values>();
-    const credential = Form.useWatch('credential', form) ?? 'stored';
-    const [view, setView] = useState<IRemoteConnection>();
-    const [current, setCurrent] = useState(model);
-    const [loading, setLoading] = useState(true);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState('');
-    const [pendingCheck, setPendingCheck] = useState(false);
-    const [checkAcknowledged, setCheckAcknowledged] = useState(false);
-    const lock = useRef(false), mounted = useRef(false);
-    const hasStoredKey = view?.credential === 'stored' && view.hasKey;
-    const read = async (): Promise<void> => {
-        const owns = captureOwner(); setLoading(true); setError('');
-        try {
-            const result = await modelCatalogApi.connection(model.id);
-            if (!owns() || !mounted.current) return;
-            if (result.modelRevision !== model.revision) throw new Error('Карточка модели изменилась. Обновите каталог и откройте подключение снова.');
-            setView(result);
-            const active = result.revision > 0 && !!result.baseUrl;
-            form.setFieldsValue({ baseUrl: active ? result.baseUrl : result.baseUrl || hint?.baseUrl, requestDimensions: result.requestDimensions,
-                credential: active ? result.credential : 'stored', credentialEnv: active ? result.credentialEnv ?? undefined : undefined,
-                options: active ? result.options : hint?.options ?? result.options,
-                timeoutMs: active ? result.timeoutMs : hint?.timeoutMs ?? result.timeoutMs });
-        } catch (cause) { if (owns() && mounted.current) setError(errorMessage(cause, 'Не удалось прочитать настройки подключения.')); }
-        finally { if (owns() && mounted.current) setLoading(false); }
+/** Provider configuration is shared; personal secrets are entered separately in My Access. */
+export function RemoteConnectionModal(props:Props):JSX.Element{
+    const {scope}=useAuthRequestOwner();
+    return <ProviderConnectionForm key={JSON.stringify([scope,props.model.id,props.model.revision])} {...props}/>;
+}
+function ProviderConnectionForm({model,hint,onClose,onSaved}:Props):JSX.Element{
+    const {scope,captureOwner}=useAuthRequestOwner(),[form]=Form.useForm<Values>();
+    const ownerKey=JSON.stringify([scope,model.id,model.revision]),currentOwner=useRef(ownerKey);currentOwner.current=ownerKey;
+    const [loadedFor,setLoadedFor]=useState('');
+    const [view,setView]=useState<IRemoteConnection>(),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false);
+    const mounted=useRef(false),lock=useRef(false);
+    const read=async()=>{
+        const owns=captureOwner(),at=ownerKey;setLoading(true);setError('');
+        const active=()=>owns()&&mounted.current&&currentOwner.current===at;
+        try{const value=await modelCatalogApi.connection(model.id);if(!active())return;
+            if(value.modelId!==model.id||value.modelRevision!==model.revision)throw Error('Карточка модели изменилась. Обновите каталог и откройте настройку снова.');
+            setView(value);form.resetFields();form.setFieldsValue({baseUrl:value.baseUrl||hint?.baseUrl,requestDimensions:value.requestDimensions,
+                authMode:value.authMode??(value.credential==='none'?'none':'required'),options:value.baseUrl?value.options:hint?.options??value.options,timeoutMs:value.baseUrl?value.timeoutMs:hint?.timeoutMs??value.timeoutMs});
+        }catch(cause){if(active())setError(errorMessage(cause,'Не удалось прочитать настройки провайдера.'));}
+        finally{if(active()){setLoading(false);setLoadedFor(at);}}
     };
-    useEffect(() => { mounted.current = true; void read(); return () => { mounted.current = false; }; }, [model.id]);
-    const availability = useFeatureAvailability(...(checkAcknowledged ? [] : ['model_hosting' as const, ...(!pendingCheck ? ['model_catalog' as const] : [])]));
-    const submit = async (values: Values): Promise<void> => {
-        if (!availability.enabled) return;
-        const owns = captureOwner(); if (!view || !owns() || lock.current) return;
-        if (!checkAcknowledged && !pendingCheck && values.credential === 'stored' && (!view.canStoreKey || !hasStoredKey && !values.apiKey?.trim())) {
-            setError(view.canStoreKey ? 'Введите API-ключ.' : 'Хранилище ключей не настроено. Выберите ключ из окружения сервера или API без ключа.');
-            return;
-        }
-        const active = () => owns() && mounted.current;
-        lock.current = true; setBusy(true); setError('');
-        let saved = pendingCheck, checkStarted = checkAcknowledged;
-        try {
-            if (!checkStarted) {
-                let selected = current;
-                if (!saved) {
-                    const result = await modelCatalogApi.configure(model.id, { expectedRevision: view.revision, expectedModelRevision: selected.revision,
-                        baseUrl: values.baseUrl.trim(), requestDimensions: !!values.requestDimensions, credential: values.credential,
-                        options: remoteModelOptions(values.options, model), timeoutMs: values.timeoutMs ?? 90000,
-                        ...(values.credential === 'stored' && values.apiKey ? { apiKey: values.apiKey } : {}),
-                        ...(values.credential === 'environment' ? { credentialEnv: values.credentialEnv?.trim() } : {}) });
-                    if (!active()) return;
-                    setView(result); form.setFieldValue('apiKey', undefined);
-                    selected = { ...selected, revision: result.modelRevision, verificationSha256: null };
-                    setCurrent(selected); setPendingCheck(true); saved = true;
-                }
-                const fresh = await modelCatalogApi.get(model.id);
-                if (!active()) return;
-                if (fresh.revision !== selected.revision) throw new Error('Карточка модели изменилась. Обновите каталог и откройте подключение снова.');
-                selected = fresh; setCurrent(selected);
-                await modelCatalogApi.operate(selected, 'check');
-                if (!active()) return;
-                checkStarted = true; setCheckAcknowledged(true);
-            }
-            await onSaved(); if (active()) onClose();
-        } catch (cause) {
-            if (active()) setError((checkStarted ? 'Проверка запущена. Не удалось обновить каталог: ' : saved ? 'Настройки сохранены. Проверка не запущена: ' : '') + errorMessage(cause, 'Не удалось подключить модель.'));
-        } finally { lock.current = false; if (active()) setBusy(false); }
+    useLayoutEffect(()=>{mounted.current=true;setView(undefined);setSaved(false);void read();return()=>{mounted.current=false;};},[ownerKey,captureOwner]);
+    const submit=async(values:Values)=>{
+        const owns=captureOwner();if(!owns()||!view||view.modelId!==model.id||loadedFor!==ownerKey||lock.current)return;lock.current=true;setBusy(true);setError('');
+        let accepted=saved;
+        try{
+            if(!accepted){const result=await modelCatalogApi.configure(model.id,{expectedRevision:view.revision,expectedModelRevision:view.modelRevision,
+                baseUrl:values.baseUrl.trim(),requestDimensions:!!values.requestDimensions,authMode:values.authMode,credential:'none',
+                options:remoteModelOptions(values.options,model),timeoutMs:values.timeoutMs??90000});
+                if(!owns()||!mounted.current)return;setView(result);setSaved(true);accepted=true;}
+            await onSaved();if(owns()&&mounted.current)onClose();
+        }catch(cause){if(owns()&&mounted.current)setError((accepted?'Провайдер сохранён. Не удалось обновить каталог: ':'')+errorMessage(cause,'Настройка не подтверждена; введённые значения сохранены.'));}
+        finally{lock.current=false;if(owns()&&mounted.current)setBusy(false);}
     };
-    const revoke = async (): Promise<void> => {
-        const owns = captureOwner(); if (!view || !owns() || lock.current) return;
-        lock.current = true; setBusy(true); setError('');
-        try {
-            await modelCatalogApi.revoke(current, view.revision);
-            if (!owns() || !mounted.current) return;
-            await onSaved(); if (owns() && mounted.current) onClose();
-        } catch (cause) {
-            if (owns() && mounted.current) {
-                const projects = (cause as { response?: { data?: { projects?: Array<{ name: string }> } } })?.response?.data?.projects;
-                setError(errorMessage(cause, 'Не удалось удалить подключение.') + (projects?.length ? ' Проекты: ' + projects.map(project => project.name).join(', ') + '.' : ''));
-            }
-        } finally { lock.current = false; if (owns() && mounted.current) setBusy(false); }
+    const revoke=async()=>{
+        const owns=captureOwner();if(!owns()||!view||lock.current)return;lock.current=true;setBusy(true);setError('');
+        try{await modelCatalogApi.revoke({...model,revision:view.modelRevision},view.revision);if(!owns()||!mounted.current)return;await onSaved();if(owns()&&mounted.current)onClose();}
+        catch(cause){if(owns()&&mounted.current)setError(errorMessage(cause,'Не удалось отозвать подключение. Переключите использующие его проекты и повторите.'));}
+        finally{lock.current=false;if(owns()&&mounted.current)setBusy(false);}
     };
-    return <Modal open centered className="model-details" title={`Подключение «${model.name}»`} width={620} footer={null}
-        onCancel={() => { if (!lock.current) onClose(); }} closable={!busy} maskClosable={!busy} keyboard={!busy}>
-        {error && <Alert type="error" showIcon message={error} className="model-catalog__notice" action={!view ? <Button onClick={() => { void read(); }}>Повторить</Button> : undefined} />}
-        {loading ? <div role="status" aria-live="polite"><Spin tip="Читаем настройки…" /></div> : view && <Form form={form} layout="vertical" disabled={busy}
-            onValuesChange={() => {setPendingCheck(false); setCheckAcknowledged(false);}} onFinish={values => { void submit(values); }}>
-            <Typography.Paragraph type="secondary">API-подключение общее для команды. «Сохранить и подключить» сохранит адрес и авторизацию и выполнит тестовый запрос к внешней модели. Добавьте модель в проект отдельно.</Typography.Paragraph>
-            {hint?.hasKey && !view.baseUrl && <Alert type="info" showIcon message="Ключ OpenCode остался на компьютере" description="Введите API-ключ для Нейроцентра или выберите ключ из окружения сервера." className="model-catalog__notice" />}
-            {hint && view.baseUrl && <Alert type="info" showIcon message="Сохранённое подключение уже настроено" description="Повторный импорт не заменяет адрес, авторизацию и параметры. Их можно изменить в этой форме." className="model-catalog__notice" />}
-            <Form.Item name="baseUrl" label="Адрес API" extra={(model.runtime === 'remote-openai' ? 'Базовый адрес OpenAI API с префиксом, например https://provider.example/v1.' : 'Адрес Ollama без /api/embed.')+' Запрос выполняет сервер: localhost здесь относится к серверу, а не к выбранному компьютеру.'}
-                rules={[{ required: true, whitespace: true, message: 'Укажите адрес API' }, { validator: (_rule, value) => !value || isRemoteApiUrl(value) ? Promise.resolve() : Promise.reject(new Error('Укажите HTTP(S) адрес без ключа, пароля и параметров')) }]}><Input autoComplete="off" placeholder={model.runtime === 'remote-openai' ? 'https://provider.example/v1' : 'http://models.internal:11434'} /></Form.Item>
-            {model.capability === 'embedding' && <Form.Item name="requestDimensions" valuePropName="checked"><Checkbox>Запрашивать {model.dimension || 'указанную'} размерность у провайдера</Checkbox></Form.Item>}
-            <Form.Item name="credential" label="Авторизация" rules={[{ required: true }]}><Select options={[{ value: 'stored', label: 'API-ключ' }, { value: 'environment', label: 'Ключ из окружения сервера' }, { value: 'none', label: 'API без ключа' }]} /></Form.Item>
-            {credential === 'stored' && <>
-                {!view.canStoreKey && <Alert type="warning" showIcon message="Хранилище ключей не настроено" description="Администратору сервера нужно задать NEUROCENTER_MODEL_CREDENTIAL_KEY. Можно использовать ключ из окружения сервера." className="model-catalog__notice" />}
-                <Form.Item name="apiKey" label="API-ключ" extra={hasStoredKey ? 'Ключ уже сохранён. Оставьте поле пустым, чтобы сохранить его.' : 'Значение сохраняется зашифрованным и больше не показывается.'}
-                    rules={[{ required: !hasStoredKey, whitespace: true, message: 'Введите API-ключ' }]}><Input.Password autoComplete="new-password" placeholder={hasStoredKey ? 'Сохранённый ключ скрыт' : 'Введите ключ'} /></Form.Item>
-            </>}
-            {credential === 'environment' && <Form.Item name="credentialEnv" label="Имя переменной окружения" extra="В форме задаётся имя, значение остаётся на сервере." rules={[{ required: true, message: 'Укажите имя переменной' }, { pattern: /^NEUROCENTER_REMOTE_MODEL_[A-Z0-9_]{1,100}$/, message: 'Имя должно начинаться с NEUROCENTER_REMOTE_MODEL_' }]}><Input placeholder="NEUROCENTER_REMOTE_MODEL_PROVIDER" autoComplete="off" /></Form.Item>}
-            <RemoteModelParameters model={model} />
+    return <Modal open centered className="model-details" title={`Провайдер «${model.name}»`} width={620} footer={null}
+        onCancel={()=>{if(!lock.current)onClose();}} closable={!busy} maskClosable={!busy} keyboard={!busy}>
+        {error&&<Alert showIcon type="error" message={error} className="model-catalog__notice" action={!view?<Button onClick={()=>{void read();}}>Повторить</Button>:undefined}/>}
+        {loading||loadedFor!==ownerKey?<Spin tip="Читаем настройки…"/>:view&&<Form form={form} layout="vertical" disabled={busy||saved} onFinish={values=>{void submit(values);}}>
+            <Typography.Paragraph type="secondary">Адрес и параметры провайдера общие для команды. Каждый пользователь вводит собственный ключ в разделе «Мой доступ» карточки модели. Сохранение не выполняет запрос к модели.</Typography.Paragraph>
+            {hint?.hasKey&&<Alert showIcon type="info" message="Ключ OpenCode остаётся на компьютере" description="Локальная авторизация OpenCode не переносится на сервер." className="model-catalog__notice"/>}
+            <Form.Item name="baseUrl" label="Адрес API" extra="Запрос выполняет сервер: localhost относится к серверу Нейроцентра." rules={[{required:true,whitespace:true,message:'Укажите адрес API'},{validator:(_rule,value)=>!value||isRemoteApiUrl(value)?Promise.resolve():Promise.reject(Error('Укажите HTTP(S) адрес без пароля, ключа и параметров'))}]}>
+                <Input autoComplete="off" placeholder={model.runtime==='remote-openai'?'https://provider.example/v1':'http://models.internal:11434'}/>
+            </Form.Item>
+            <Form.Item name="authMode" label="Авторизация пользователей" rules={[{required:true,message:'Выберите режим авторизации'}]}><Select options={[{value:'none',label:'Без ключа'},{value:'optional',label:'Личный ключ необязателен'},{value:'required',label:'Личный API-ключ обязателен'}]}/></Form.Item>
+            {view.credential!=='none'&&<Typography.Paragraph type="secondary">Прежний общий секрет остаётся сохранённым. Новые запросы его не используют.</Typography.Paragraph>}
+            {model.capability==='embedding'&&<Form.Item name="requestDimensions" valuePropName="checked"><Checkbox>Запрашивать {model.dimension||'указанную'} размерность</Checkbox></Form.Item>}
+            <RemoteModelParameters model={model}/>
             <Space wrap className="model-catalog__form-actions">
-                {view.revision > 0 && view.baseUrl && <Popconfirm title="Отозвать все версии этого подключения?" onConfirm={() => { void revoke(); }} okText="Отозвать" cancelText="Отмена"><Button danger disabled={busy}>Удалить подключение</Button></Popconfirm>}
-                <Button disabled={busy} onClick={onClose}>Отмена</Button><FeatureButton features={checkAcknowledged ? [] : pendingCheck ? ['model_hosting'] : ['model_catalog','model_hosting']} type="primary" htmlType="submit" loading={busy} disabled={!checkAcknowledged && credential === 'stored' && !view.canStoreKey}>{checkAcknowledged ? 'Обновить каталог' : pendingCheck ? 'Запустить проверку' : 'Сохранить и подключить'}</FeatureButton>
+                {view.revision>0&&view.baseUrl&&<Popconfirm title="Отозвать все версии подключения?" okText="Отозвать" cancelText="Отмена" onConfirm={()=>{void revoke();}}><Button danger disabled={busy}>Отозвать подключение</Button></Popconfirm>}
+                <Button disabled={busy} onClick={onClose}>Отмена</Button>
+                <FeatureButton features={saved?[]:['model_catalog','personal_remote_provider_credentials']} type="primary" htmlType="submit" loading={busy} disabled={busy}>{saved?'Обновить каталог':'Сохранить провайдера'}</FeatureButton>
             </Space>
         </Form>}
     </Modal>;

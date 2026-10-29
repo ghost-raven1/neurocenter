@@ -200,7 +200,8 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
             if(row.action!=='stop')await requireFeaturesEnabled(['model_hosting']);
             if (isRemoteModel(model)) {
                 if (!this.remote) throw new Error('Сервис удалённых подключений не зарегистрирован.');
-                await withModelUsage({ purpose: 'verification', actorEmail: row.actor, operationId: row.id }, () => this.remote!.check(model, row.actor, async () => {
+                // Hosting commands are main-admin-only and the fresh claims above proved that exact role.
+                await withModelUsage({ purpose: 'verification', actorEmail: row.actor,actorRole:'Главный админ', operationId: row.id }, () => this.remote!.check(model, row.actor, async () => {
                     abort.signal.throwIfAborted();
                     const current = await this.access.claims(row.actor);
                     if (!current.userRoles.includes('Главный админ')) throw new Error('Права управления подключением отозваны.');

@@ -95,6 +95,13 @@ describe('Production saved-chat methods trace the durable turn and each request 
         expect(f.repository.finish).not.toHaveBeenCalled();expect(f.runtime.infer).toHaveBeenCalledOnce();
         expect(f.repository.fail).toHaveBeenCalledWith(f.conversation.id,f.turnId,expect.any(String),'failed',message);
     });
+    it('an absent personal key explains My Access without exposing provider details or retrying',async()=>{
+        const f=fixture(),message='Откройте «Мой доступ» в карточке этой модели и сохраните свой API-ключ.';
+        f.runtime.infer.mockRejectedValueOnce(new HttpException({code:'PERSONAL_PROVIDER_KEY_REQUIRED',message:'private-provider-secret'},403));
+        await expect(f.send()).resolves.toMatchObject({turns:[{status:'failed',error:message}]});
+        expect(f.runtime.infer).toHaveBeenCalledOnce();expect(f.repository.finish).not.toHaveBeenCalled();
+        expect(JSON.stringify(f.repository.fail.mock.calls)).not.toContain('private-provider-secret');
+    });
     it.each([{status:429,code:'PROVIDER_RATE_LIMIT'},{status:500,code:'MODEL_TOKEN_QUOTA_EXCEEDED'}])('an unrelated provider error stays private ($status/$code)',async({status,code})=>{
         const f=fixture();f.runtime.infer.mockRejectedValueOnce(new HttpException({statusCode:status,code,message:'private-provider-secret'},status));
         await expect(f.send()).resolves.toMatchObject({turns:[{status:'failed',error:'Модель не выполнила запрос. Проверьте подключение и повторите.'}]});

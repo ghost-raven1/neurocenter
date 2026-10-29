@@ -58,12 +58,14 @@ export interface IDeviceCodexConnection {
     lastInferenceAt?: string | null;
 }
 export interface IRemoteConnection {
+    authMode?:'none'|'optional'|'required';
     modelId: string; modelRevision: number; revision: number; baseUrl: string; requestDimensions: boolean;
     credential: 'none' | 'stored' | 'environment'; credentialEnv: string | null; hasKey: boolean;
     checkedAt: string | null; verified: boolean; canStoreKey: boolean;
     options: IRemoteModelOptions; timeoutMs: number;
 }
 export interface IRemoteConnectionInput {
+    authMode?:'none'|'optional'|'required';
     expectedRevision: number; expectedModelRevision: number; baseUrl: string; requestDimensions: boolean;
     credential: IRemoteConnection['credential']; apiKey?: string; credentialEnv?: string;
     options?: IRemoteModelOptions; timeoutMs?: number;

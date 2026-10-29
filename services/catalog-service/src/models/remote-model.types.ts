@@ -36,6 +36,7 @@ export interface IRemoteModelConnection {
 }
 
 export interface IRemoteConnectionView {
+    authMode?:'none'|'optional'|'required';
     modelId: string;
     modelRevision: number;
     revision: number;
@@ -52,6 +53,7 @@ export interface IRemoteConnectionView {
 }
 
 export interface IRemoteConnectionInput {
+    authMode?:'none'|'optional'|'required';
     expectedRevision: number;
     expectedModelRevision: number;
     baseUrl: string;

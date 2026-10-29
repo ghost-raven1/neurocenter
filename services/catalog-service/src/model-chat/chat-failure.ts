@@ -3,6 +3,11 @@ import {BadRequestException, ConflictException, ForbiddenException, HttpExceptio
 /** Saved failures expose the owned quota denial while provider details remain private. */
 export function savedChatFailureMessage(error: unknown, cancelled: boolean): string {
     if (cancelled) return 'Запрос остановлен. Можно повторить его.';
+    if (error instanceof HttpException && error.getStatus() === 403) {
+        const response = error.getResponse();
+        if (typeof response === 'object' && response !== null && 'code' in response && response.code === 'PERSONAL_PROVIDER_KEY_REQUIRED')
+            return 'Откройте «Мой доступ» в карточке этой модели и сохраните свой API-ключ.';
+    }
     if (error instanceof HttpException && error.getStatus() === 429) {
         const response = error.getResponse();
         if (typeof response === 'object' && response !== null && 'code' in response && response.code === 'MODEL_TOKEN_QUOTA_EXCEEDED')

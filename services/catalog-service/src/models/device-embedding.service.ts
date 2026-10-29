@@ -59,7 +59,7 @@ export class DeviceEmbeddingService {
                 if(projectEmbeddingPin(current.model)!==projectEmbeddingPin(selected.model))throw new ConflictException('Закреплённая модель изменилась. Перечитайте подключение.');
                 signal.throwIfAborted();
             };
-            try{result=await withModelUsage({purpose:'device-embedding',actorEmail:device.email,projectId:input.projectId,beforeInference},()=>this.runtime.infer(selected.model,'embed',{input:texts,truncate:false},signal));}
+            try{result=await withModelUsage({purpose:'device-embedding',actorEmail:device.email,actorRole:device.role,projectId:input.projectId,beforeInference},()=>this.runtime.infer(selected.model,'embed',{input:texts,truncate:false},signal));}
             catch(cause){signal.throwIfAborted();if(cause instanceof HttpException)throw cause;throw new ServiceUnavailableException('Модель не выполнила embedding-запрос. Проверьте хостинг и повторите действие.');}
             // Отзыв прав, назначения или папки во время inference не отдаёт векторы старому подключению.
             signal.throwIfAborted();await this.current(device,input,signal);

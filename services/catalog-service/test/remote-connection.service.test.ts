@@ -5,6 +5,7 @@ import { RemoteModelClient } from '../src/models/remote-model-client';
 import type { ModelsService } from '../src/models/models.service';
 import type { IModel } from '../src/models/model.types';
 import type { IRemoteConnectionRow } from '../src/models/remote-connection.repository';
+import {anonymousProviderAccess} from './remote-provider.fixture';
 
 vi.mock('../src/models/model-events', () => ({ notifyModelCatalogChange: vi.fn(async () => undefined) }));
 const model: IModel = { id: 'remote', name: 'Remote', description: '', runtime: 'remote-openai', capability: 'chat', model: 'fixture', modelVersion: '2026-10',
@@ -14,7 +15,7 @@ const row: IRemoteConnectionRow = { model_id: model.id, revision: 1, base_url: '
 afterEach(() => vi.restoreAllMocks());
 describe('Remote connection check uses configured semantics', () => {
     it.each([undefined, 32, 8192])('Does not force temperature and bounds only the probe output for maxOutputTokens=%s', async maxOutputTokens => {
-        const service = new RemoteConnectionService({ pool: {} } as ModelsService);
+        const service = new RemoteConnectionService({ pool: {} } as ModelsService,undefined,undefined,anonymousProviderAccess);
         const options = maxOutputTokens === undefined ? {} : { maxOutputTokens, temperature: 0.7, topP: 0.8 };
         vi.spyOn(service.repository, 'head').mockResolvedValue({ ...row, options });
         vi.spyOn(service.repository, 'verify').mockResolvedValue(model);

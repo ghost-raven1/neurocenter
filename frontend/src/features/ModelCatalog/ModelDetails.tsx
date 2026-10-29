@@ -8,6 +8,7 @@ import type { ICatalogModel } from './types';
 import { ModelHosting } from './ModelHosting';
 import { ModelRateLimits } from '../ModelRateLimits/ModelRateLimits';
 import { ModelTokenQuotas } from '../ModelTokenQuotas/ModelTokenQuotas';
+import {RemoteProviderAccess} from '../RemoteProviderAccess/RemoteProviderAccess';
 
 interface IProps { model: ICatalogModel; projectId?: string; canManage: boolean; busy: boolean; error: string; onClose: () => void; onEdit: () => void; onRemove: () => void; onConfigure?: () => void; }
 
@@ -22,6 +23,7 @@ export function ModelDetails({ model, projectId, canManage, busy, error, onClose
         <ModelHosting model={model} canManage={canManage && !model.archivedAt} onManage={onConfigure} />
         <ModelRateLimits modelId={model.id} projectId={projectId}/>
         <ModelTokenQuotas modelId={model.id}/>
+        {(model.runtime==='remote-openai'||model.runtime==='remote-ollama')&&<RemoteProviderAccess modelId={model.id}/>}
         {canManage&&!model.archivedAt&&<details className="model-catalog__more model-details__management"><summary aria-label={`Управление моделью ${model.name}`}>Управление моделью</summary><Space wrap className="model-catalog__more-content">
             <FeatureButton features={['model_catalog']} disabled={busy} onClick={onEdit}>Изменить модель</FeatureButton>
             {model.runtime==='device-codex'&&onConfigure&&<Button disabled={busy} onClick={onConfigure}>Компьютер и вход</Button>}

@@ -7,10 +7,12 @@ import { canStoreModelCredential, openModelCredential, sealModelCredential, type
 import { isRemoteModel, type IRemoteConnectionInput, type IRemoteConnectionView, type IRemoteModelConnection } from './remote-model.types';
 import { assertRemoteModelOptions, remoteModelOptions, remoteModelTimeout } from './remote-model-options';
 import type { IRemoteModelOptions } from './remote-model.types';
+import {providerFence,remoteAuthMode} from '../remote-providers/remote-provider.identity';
 
 export interface IRemoteConnectionRow {
     model_id: string; revision: number | string; base_url: string; request_dimensions: boolean;
     options: IRemoteModelOptions; timeout_ms: number;
+    auth_mode?:'none'|'optional'|'required'|null;
     credential_kind: 'none' | 'stored' | 'environment'; credential: ISealedModelCredential | null; credential_env: string | null;
     semantic_sha: string | null; verified_at: string | Date | null; failure_message: string | null; revoked_at: string | Date | null;
 }
@@ -27,7 +29,7 @@ export class RemoteConnectionRepository {
     }
     view(id: string, row: IRemoteConnectionRow | null, modelRevision: number): IRemoteConnectionView {
         const active = row && !row.revoked_at;
-        return { modelId: id, modelRevision, revision: Number(row?.revision ?? 0), baseUrl: active ? row.base_url : '', requestDimensions: !!active && row.request_dimensions,
+        return { modelId: id, modelRevision, authMode:active?remoteAuthMode(row):'required', revision: Number(row?.revision ?? 0), baseUrl: active ? row.base_url : '', requestDimensions: !!active && row.request_dimensions,
             options: active ? remoteModelOptions(row.options) : {}, timeoutMs: active ? remoteModelTimeout(row.timeout_ms) : remoteModelTimeout(undefined),
             credential: active ? row.credential_kind : 'none', credentialEnv: active ? row.credential_env : null,
             hasKey: !!active && (row.credential_kind === 'stored' || row.credential_kind === 'environment' && !!this.environment[row.credential_env!]),
@@ -52,6 +54,7 @@ export class RemoteConnectionRepository {
     }
     async save(id: string, input: IRemoteConnectionInput, actor: string, authorize: () => Promise<unknown>): Promise<IRemoteConnectionView> {
         return this.transaction(async db => {
+            await this.providerWriteFence(db,id);
             const model = await this.lockModel(db, id); await authorize();
             const previous = await this.head(id, db);
             if (model.revision !== input.expectedModelRevision || Number(previous?.revision ?? 0) !== input.expectedRevision) throw changed();
@@ -68,9 +71,9 @@ export class RemoteConnectionRepository {
                 secret = sealModelCredential(key, id, revision, this.environment);
             }
             const result = await db.query<IRemoteConnectionRow>(`INSERT INTO model_remote_connections
-                (model_id,revision,base_url,request_dimensions,credential_kind,credential,credential_env,options,timeout_ms)
-                VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9) RETURNING *`,
-            [id, revision, input.baseUrl, input.requestDimensions, input.credential, secret ? JSON.stringify(secret) : null, input.credentialEnv ?? null, JSON.stringify(options), timeoutMs]);
+                (model_id,revision,base_url,request_dimensions,credential_kind,credential,credential_env,options,timeout_ms,auth_mode)
+                VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10) RETURNING *`,
+            [id, revision, input.baseUrl, input.requestDimensions, input.credential, secret ? JSON.stringify(secret) : null, input.credentialEnv ?? null, JSON.stringify(options), timeoutMs,input.authMode??(input.credential==='none'?'none':'required')]);
             // Новая конфигурация проверяется отдельно; активные проекты читают прежний immutable pin.
             const savedModel = await this.pin(db, model, null, model.dimension);
             await securityEvent(db, { actor, action: 'model.connection.update', resourceId: id,
@@ -80,6 +83,7 @@ export class RemoteConnectionRepository {
     }
     async verify(expected: IModel, connectionRevision: number, digest: string, dimension: number | null, actor: string, authorize: () => Promise<unknown>): Promise<IModel> {
         return this.transaction(async db => {
+            await this.providerWriteFence(db,expected.id);
             const current = await this.lockModel(db, expected.id); await authorize();
             const head = await this.head(expected.id, db);
             if (current.revision !== expected.revision || current.archivedAt || !head || head.revoked_at || Number(head.revision) !== connectionRevision) throw changed();
@@ -87,11 +91,11 @@ export class RemoteConnectionRepository {
             if(head.semantic_sha&&head.semantic_sha!==digest){
                 verifiedRevision=connectionRevision+1;if(!Number.isSafeInteger(verifiedRevision))throw changed();
                 // The old checked pin keeps its ciphertext; the new revision requires its own AAD.
-                const credential=head.credential_kind==='stored'?sealModelCredential(this.connection(head).apiKey!,expected.id,verifiedRevision,this.environment):null;
+                // The legacy shared ciphertext stays on its historical row, without copying it into new calls.
                 await db.query(`INSERT INTO model_remote_connections
-                    (model_id,revision,base_url,request_dimensions,credential_kind,credential,credential_env,semantic_sha,verified_at,options,timeout_ms)
-                    VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,now(),$9::jsonb,$10)`,
-                [expected.id,verifiedRevision,head.base_url,head.request_dimensions,head.credential_kind,credential?JSON.stringify(credential):null,head.credential_env,digest,JSON.stringify(head.options),head.timeout_ms]);
+                    (model_id,revision,base_url,request_dimensions,credential_kind,credential,credential_env,semantic_sha,verified_at,options,timeout_ms,auth_mode)
+                    VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,now(),$9::jsonb,$10,$11)`,
+                [expected.id,verifiedRevision,head.base_url,head.request_dimensions,'none',null,null,digest,JSON.stringify(head.options),head.timeout_ms,remoteAuthMode(head)]);
             }else await db.query('UPDATE model_remote_connections SET semantic_sha=$3,verified_at=now(),failure_message=NULL WHERE model_id=$1 AND revision=$2', [expected.id, connectionRevision, digest]);
             const saved = await this.pin(db, current, digest, dimension);
             await securityEvent(db, { actor, action: 'model.connection.verify', resourceId: current.id,
@@ -101,6 +105,7 @@ export class RemoteConnectionRepository {
     }
     async revoke(id: string, expectedModelRevision: number, expectedRevision: number, actor: string, authorize: () => Promise<unknown>): Promise<void> {
         await this.transaction(async db => {
+            await this.providerWriteFence(db,id);
             const current = await this.lockModel(db, id); await authorize(); const head = await this.head(id, db);
             if (current.revision !== expectedModelRevision || Number(head?.revision ?? 0) !== expectedRevision) throw changed();
             if (!head || head.revoked_at) return;
@@ -151,6 +156,10 @@ export class RemoteConnectionRepository {
         const model = modelFromRow(result.rows[0]);
         if (!isRemoteModel(model)) throw new BadRequestException('Эта модель использует управляемый серверный runtime.');
         return model;
+    }
+    private async providerWriteFence(db:Db,id:string):Promise<void>{
+        await db.query('SELECT pg_advisory_xact_lock_shared(72465381)');
+        await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[providerFence(id)]);
     }
     private async transaction<T>(work: (db: PoolClient) => Promise<T>): Promise<T> {
         const db = await this.pool.connect();
