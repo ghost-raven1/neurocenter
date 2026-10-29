@@ -5,6 +5,12 @@ const fail=(code,message)=>Object.assign(new Error(message),{code});
 
 /** Оператор выбирает публичный GitHub repository; каждый импорт закрепляет commit и SHA описи. */
 function validateSourcePin(pin){
+    if(pin?.schemaVersion===2){
+        if(Object.keys(pin).some(key=>!['schemaVersion','repository','commit','index'].includes(key))||pin.repository!=='app-bundled'
+            ||!pin.index||Object.keys(pin.index).some(key=>!['path','sha256'].includes(key))||pin.index.path!=='bundled/index.json'||!SHA(pin.index.sha256)
+            ||pin.commit!=='sha256:'+pin.index.sha256)throw fail('INVALID_PIN','Локальная опись каталога не закреплена точным SHA-256.');
+        return structuredClone(pin);
+    }
     if(!pin||typeof pin!=='object'||Array.isArray(pin)||Object.keys(pin).some(key=>!['schemaVersion','repository','commit','index'].includes(key))
         ||pin.schemaVersion!==1||typeof pin.repository!=='string'||! /^[a-z0-9][a-z0-9-]{0,38}\/[a-z0-9._-]{1,100}$/i.test(pin.repository)||['.','..'].includes(pin.repository.split('/')[1])||pin.repository.endsWith('.git')||typeof pin.commit!=='string'||!/^[a-f0-9]{40}$/.test(pin.commit)
         ||!pin.index||typeof pin.index!=='object'||Array.isArray(pin.index)||Object.keys(pin.index).some(key=>!['path','sha256'].includes(key))
@@ -14,14 +20,21 @@ function validateSourcePin(pin){
 
 /** Один bounded reader используется сервером импорта и CLI предзагрузки. */
 class AssetSourceClient {
-    constructor(pin,{contract,fetch:request=globalThis.fetch,signal,cache,offline=false}={}){
-        this.pin=validateSourcePin(pin);this.contract=contract;this.request=request;this.signal=signal;this.cache=cache;this.offline=offline;
+    constructor(pin,{contract,fetch:request=globalThis.fetch,signal,cache,offline=false,local}={}){
+        this.pin=validateSourcePin(pin);this.contract=contract;this.request=request;this.signal=signal;this.cache=cache;this.offline=offline;this.local=local;
     }
     async bytes(relative,expected,maximum){
         if(!safePath(relative)||!SHA(expected))throw fail('INVALID_SOURCE','В описи указан небезопасный путь или SHA-256.');
         this.signal?.throwIfAborted();
         const cached=await this.cache?.read(expected,maximum);
         if(cached&&cached.length<=maximum&&this.contract.assetDigest(cached)===expected)return cached;
+        if(this.pin.schemaVersion===2||this.pin.repository==='ghost-raven1/neurocenter-assets'){
+            const bundle=this.local?{pin:this.pin,metadata:this.local}:await(this.bundled??=require('./bundled-catalog.cjs').readBundledCatalog());
+            if(this.pin.schemaVersion===2&&this.pin.commit!==bundle.pin.commit)throw fail('ASSET_METADATA_MISSING','Эта опись сохранилась в истории. Для её восстановления нужен ранее сохранённый архив или SHA-кэш.');
+            const local=await bundle.metadata(expected,maximum);
+            if(local){await this.cache?.write?.(expected,local);return local;}
+            throw fail('ASSET_METADATA_MISSING','Точные байты описи отсутствуют в поставке приложения. Импортируйте сохранённый архив; внешний репозиторий ассетов больше не используется.');
+        }
         if(this.offline)throw fail(cached==null?'ASSET_METADATA_MISSING':'METADATA_MISSING','Закреплённая опись отсутствует или повреждена в кэше. Выполните npm run assets:sync.');
         const url=`https://raw.githubusercontent.com/${this.pin.repository}/${this.pin.commit}/${relative.split('/').map(encodeURIComponent).join('/')}`;
         const signal=AbortSignal.any([AbortSignal.timeout(15000),...(this.signal?[this.signal]:[])]);let response;

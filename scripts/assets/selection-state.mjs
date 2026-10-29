@@ -41,7 +41,7 @@ export async function previousAssetSelection(root){
     const selection=await readSelectionFile(root,'assets-selection.json');
     if(selection!==undefined){
         if(selection?.schemaVersion!==1||!validIds(selection.selected)||typeof selection.repository!=='string'
-            ||!/^[a-f0-9]{40}$/.test(selection.commit||'')||!/^[a-f0-9]{64}$/.test(selection.revision||'')||typeof selection.withoutModels!=='boolean')throw Error('Сохранённый выбор ассетов повреждён.');
+            ||!/^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64})$/.test(selection.commit||'')||!/^[a-f0-9]{64}$/.test(selection.revision||'')||typeof selection.withoutModels!=='boolean')throw Error('Сохранённый выбор ассетов повреждён.');
         return selection;
     }
     const receipt=await readSelectionFile(root,'assets-ready.json');

@@ -6,4 +6,5 @@ export interface IBridgeSourceView {
     sourceMode:'online'|'offline';
     url:string;revision:number;checkedAt?:string;error?:string;available?:IBridgeSourceRelease;
     imported?:IBridgeSourceRelease;importedError?:string;
+    sourceReady?:boolean;archiveRequired?:boolean;
 }

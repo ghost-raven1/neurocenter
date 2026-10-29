@@ -10,7 +10,7 @@ export const clone=structuredClone;
 /** Малые синтетические bytes проходят настоящий новый source contract, без старых supply manifests. */
 export async function assetFixture(t){
     const root=await realpath(await mkdtemp(path.join(tmpdir(),'nc asset source ')));t.after(()=>rm(root,{recursive:true,force:true}));
-    const payloads=new Map(),calls=[],commit='a'.repeat(40),raw=`https://raw.githubusercontent.com/ghost-raven1/neurocenter-assets/${commit}/`;
+    const payloads=new Map(),calls=[],commit='a'.repeat(40),raw=`https://raw.githubusercontent.com/example/app-source/${commit}/`;
     const source={type:'release',repository:'https://github.com/example/assets',tag:'v1.0.0'},base={schemaVersion:1,source,license:{spdx:'MIT'},compatibility:{packageFormat:5},version:'1.0.0'};
     const toolBytes=Buffer.from('synthetic runtime archive'),toolSha=sha(toolBytes),toolUrl=`https://github.com/example/assets/releases/download/v1.0.0/${toolSha}.tar.gz`;
     const tool={...base,id:'fixture-tool',kind:'plugin',card:{kind:'plugin',name:'Fixture plugin',description:'Описание',revision:'1.0.0',files:[],config:{}},
@@ -37,7 +37,7 @@ export async function assetFixture(t){
         for(const record of records){const asset=record.asset??record,current=record.current??true,bytes=serializeAsset(asset),relative=`assets/${asset.id}/${asset.version}/asset.json`;
             index.assets.push({id:asset.id,version:asset.version,kind:asset.kind,path:relative,sha256:sha(bytes),current});payloads.set(raw+relative,Buffer.from(bytes));}
         const bytes=Buffer.from(JSON.stringify(index)+'\n');payloads.set(raw+'index.json',bytes);
-        pin={schemaVersion:1,repository:'ghost-raven1/neurocenter-assets',commit,index:{path:'index.json',sha256:sha(bytes)}};await json('services/shared/asset-source.lock.json',pin);
+        pin={schemaVersion:1,repository:'example/app-source',commit,index:{path:'index.json',sha256:sha(bytes)}};await json('services/shared/asset-source.lock.json',pin);
     };
     await publish();
     const request=async(url,options={})=>{url=String(url);calls.push(url);options.signal?.throwIfAborted();const bytes=payloads.get(url);if(!bytes)throw new Error('Unexpected synthetic URL');return new Response(bytes,{headers:{'content-length':String(bytes.length)}});};

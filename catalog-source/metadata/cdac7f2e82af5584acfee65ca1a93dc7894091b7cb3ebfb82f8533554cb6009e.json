@@ -1,0 +1,43 @@
+{
+  "card": {
+    "definition": {
+      "description": "Проверяет изменения и находит конкретные дефекты.",
+      "mode": "subagent",
+      "permission": {
+        "bash": "ask",
+        "edit": "deny",
+        "external_directory": "ask",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "read": "allow",
+        "task": "ask",
+        "webfetch": "ask",
+        "websearch": "ask"
+      },
+      "prompt": "You are the project's code review agent. Find concrete, reproducible defects introduced by the change.\nRead the diff and surrounding execution paths. Check correctness, permissions, data preservation, concurrency, retries and observable behavior.\nPrioritize findings by impact. Give a precise file location, trigger and consequence for each issue, with a useful correction when clear.\nDo not invent findings or modify files. If no actionable defects are found, say so and identify material verification gaps separately.\n"
+    },
+    "id": "agent-reviewer",
+    "name": "Ревьюер",
+    "slug": "nc-reviewer"
+  },
+  "compatibility": {
+    "bridgeProtocol": 2
+  },
+  "delivery": {
+    "type": "inline"
+  },
+  "id": "agent-reviewer",
+  "kind": "agent",
+  "license": {
+    "spdx": "UNLICENSED"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "76920853ece2d44b2e4fa3dc7aa7fa281afe0ce3",
+    "path": "agent-prompts/reviewer.md",
+    "repository": "https://github.com/ghost-raven1/neurocenter-assets",
+    "type": "git"
+  },
+  "version": "1.0.0"
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "key": "mcp-opencode-rag",
+  "name": "OpenCodeRAG",
+  "kind": "mcp",
+  "revision": "2.4.4-mcp.pack.9",
+  "tags": [
+    "RAG",
+    "npm",
+    "Локальная настройка"
+  ],
+  "description": "Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; модель и размерность подключаются в настройках проекта через мост. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.",
+  "source": {
+    "type": "prepared",
+    "adapter": "opencode-rag"
+  },
+  "targets": [
+    "darwin-arm64",
+    "linux-arm64-glibc",
+    "linux-arm64-musl",
+    "linux-x64-glibc",
+    "linux-x64-musl",
+    "win32-arm64",
+    "win32-x64"
+  ],
+  "config": {}
+}

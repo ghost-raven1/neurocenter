@@ -1,0 +1,138 @@
+{
+  "card": {
+    "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+    "config": {
+      "entrypoint": "rag-plugin.mjs",
+      "extra": {
+        "hostedEmbedding": {
+          "profileSchemaVersion": 2,
+          "reindexSchemaVersion": 1,
+          "schemaVersion": 1
+        },
+        "localUi": {
+          "application": "opencode-rag",
+          "args": [
+            "ui",
+            "--port",
+            "0",
+            "--no-open"
+          ],
+          "entrypoint": "opencode-rag.mjs",
+          "schemaVersion": 1
+        }
+      }
+    },
+    "description": "Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Модель и размерность подключаются в настройках проекта через мост; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.",
+    "files": [],
+    "kind": "plugin",
+    "name": "OpenCodeRAG (плагин)",
+    "origin": "neurocenter:recipe/plugin-opencode-rag-plugin",
+    "revision": "2.4.4-plugin.pack.11",
+    "tags": [
+      "RAG",
+      "GitHub",
+      "Автоиндексация"
+    ]
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 108269949,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11223,
+          "sha256": "0e9b4fd1e1a6b286b488f32dfe8b4a338fc564d33aec68fdac80c714d2c5099f",
+          "target": "darwin-arm64",
+          "unpackedBytes": 341630863
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/plugin-opencode-rag-plugin-2.4.4-plugin.pack.11-darwin-arm64.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 181955466,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11243,
+          "sha256": "2e764c325c19d1806c38cc1c14ab19a895c616423753ea5f05cdf7182740afb1",
+          "target": "linux-arm64-glibc",
+          "unpackedBytes": 525944192
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/plugin-opencode-rag-plugin-2.4.4-plugin.pack.11-linux-arm64-glibc-musl.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 181955466,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11243,
+          "sha256": "2e764c325c19d1806c38cc1c14ab19a895c616423753ea5f05cdf7182740afb1",
+          "target": "linux-arm64-musl",
+          "unpackedBytes": 525944192
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/plugin-opencode-rag-plugin-2.4.4-plugin.pack.11-linux-arm64-glibc-musl.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 188577373,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11245,
+          "sha256": "d7ecc5f065adfe900dc1dab28aded4527a9d800f42bf41592cc42c71ff97dc69",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 564811258
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/plugin-opencode-rag-plugin-2.4.4-plugin.pack.11-linux-x64-glibc-musl.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 188577373,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11245,
+          "sha256": "d7ecc5f065adfe900dc1dab28aded4527a9d800f42bf41592cc42c71ff97dc69",
+          "target": "linux-x64-musl",
+          "unpackedBytes": 564811258
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/plugin-opencode-rag-plugin-2.4.4-plugin.pack.11-linux-x64-glibc-musl.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 113589254,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11215,
+          "sha256": "547ce40edbb85cc580aa4e060752c97c2ebcb1a001d12325801fd1ea1911fe58",
+          "target": "win32-arm64",
+          "unpackedBytes": 369490624
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/plugin-opencode-rag-plugin-2.4.4-plugin.pack.11-win32-arm64.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 119870391,
+          "entrypoint": "rag-plugin.mjs",
+          "filesCount": 11221,
+          "sha256": "1b6d82e48fee0d5061d28a856c0e1891fa8ad7d92ed5fefabc5585a601164882",
+          "target": "win32-x64",
+          "unpackedBytes": 403271285
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/rag-v2.4.4-pack.11/plugin-opencode-rag-plugin-2.4.4-plugin.pack.11-win32-x64.tar.gz"
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "plugin-opencode-rag-plugin",
+  "kind": "plugin",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "recipe": {
+    "path": "recipes/plugin-opencode-rag-plugin/2.4.4-plugin.pack.11/recipe.json",
+    "sha256": "d380d33d6c5d3523053f3d20e0974dfd68ea7132ae74dd2d1514cd027c9624ed"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "bytes": 1381303,
+    "sha256": "b3f3b1bb278efce00e0a6ce26e6c43baf449c35aeab373631ea0b1c544fb67d1",
+    "type": "archive"
+  },
+  "version": "2.4.4-plugin.pack.11"
+}

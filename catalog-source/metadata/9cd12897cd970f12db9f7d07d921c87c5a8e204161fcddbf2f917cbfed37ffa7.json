@@ -1,0 +1,155 @@
+{
+  "card": {
+    "descriptor": {
+      "capability": "vision",
+      "description": "Локальная vision-модель для анализа изображений. Историческая поставка Qwen3 VL 2B; веса и runtime размещаются на сервере Нейроцентра.",
+      "dimension": null,
+      "manifestSha256": "afc393e3572c07db0bc84aa460d928a16c75f3fbb9ca9e0dccc4fbd2dafb573e",
+      "model": "qwen3-vl:2b-instruct",
+      "runtime": "ollama",
+      "source": "builtin"
+    },
+    "id": "model-vision-qwen3-vl-2b",
+    "name": "Qwen3 VL 2B Instruct"
+  },
+  "compatibility": {},
+  "delivery": {
+    "bundle": {
+      "files": [
+        {
+          "parts": [
+            {
+              "name": "model-2288b043131565ce643c8200cbfdec28f7621b84ffd7cc48336c812740e0b66a-001.bin",
+              "sha256": "2288b043131565ce643c8200cbfdec28f7621b84ffd7cc48336c812740e0b66a",
+              "size": 206
+            }
+          ],
+          "path": "models/blobs/sha256-2288b043131565ce643c8200cbfdec28f7621b84ffd7cc48336c812740e0b66a",
+          "sha256": "2288b043131565ce643c8200cbfdec28f7621b84ffd7cc48336c812740e0b66a",
+          "size": 206
+        },
+        {
+          "parts": [
+            {
+              "name": "model-4dc7bc5863d7fc3ad784acf677f72f009ab5fd3758855f1996b678b621817190-001.bin",
+              "sha256": "4dc7bc5863d7fc3ad784acf677f72f009ab5fd3758855f1996b678b621817190",
+              "size": 822540352
+            }
+          ],
+          "path": "models/blobs/sha256-4dc7bc5863d7fc3ad784acf677f72f009ab5fd3758855f1996b678b621817190",
+          "sha256": "4dc7bc5863d7fc3ad784acf677f72f009ab5fd3758855f1996b678b621817190",
+          "size": 822540352
+        },
+        {
+          "parts": [
+            {
+              "name": "model-7339fa418c9ad3e8e12e74ad0fd26a9cc4be8703f9c110728a992b193be85cb2-001.bin",
+              "sha256": "7339fa418c9ad3e8e12e74ad0fd26a9cc4be8703f9c110728a992b193be85cb2",
+              "size": 11355
+            }
+          ],
+          "path": "models/blobs/sha256-7339fa418c9ad3e8e12e74ad0fd26a9cc4be8703f9c110728a992b193be85cb2",
+          "sha256": "7339fa418c9ad3e8e12e74ad0fd26a9cc4be8703f9c110728a992b193be85cb2",
+          "size": 11355
+        },
+        {
+          "parts": [
+            {
+              "name": "model-bd2179e37645d5435e0214e5399e5997408a7e9685ba527cbb60726e6a32fd99-001.bin",
+              "sha256": "167627a42767728c7862a1c38d8ff58ebea39bb9c0cd7882bbf2f277407c206e",
+              "size": 1073741824
+            },
+            {
+              "name": "model-bd2179e37645d5435e0214e5399e5997408a7e9685ba527cbb60726e6a32fd99-002.bin",
+              "sha256": "3d05d77eecaff98217f94d732c1c4bb51057bc798ddf6ae09d2a157988638a38",
+              "size": 34274752
+            }
+          ],
+          "path": "models/blobs/sha256-bd2179e37645d5435e0214e5399e5997408a7e9685ba527cbb60726e6a32fd99",
+          "sha256": "bd2179e37645d5435e0214e5399e5997408a7e9685ba527cbb60726e6a32fd99",
+          "size": 1108016576
+        },
+        {
+          "parts": [
+            {
+              "name": "model-f6417cb1e26962991f8e875a93f3cb0f92bc9b4955e004881251ccbf934a19d2-001.bin",
+              "sha256": "f6417cb1e26962991f8e875a93f3cb0f92bc9b4955e004881251ccbf934a19d2",
+              "size": 42
+            }
+          ],
+          "path": "models/blobs/sha256-f6417cb1e26962991f8e875a93f3cb0f92bc9b4955e004881251ccbf934a19d2",
+          "sha256": "f6417cb1e26962991f8e875a93f3cb0f92bc9b4955e004881251ccbf934a19d2",
+          "size": 42
+        },
+        {
+          "inlineBase64": "eyJzY2hlbWFWZXJzaW9uIjoyLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi92bmQuZG9ja2VyLmRpc3RyaWJ1dGlvbi5tYW5pZmVzdC52Mitqc29uIiwiY29uZmlnIjp7Im1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5kb2NrZXIuY29udGFpbmVyLmltYWdlLnYxK2pzb24iLCJkaWdlc3QiOiJzaGEyNTY6MjI4OGIwNDMxMzE1NjVjZTY0M2M4MjAwY2JmZGVjMjhmNzYyMWI4NGZmZDdjYzQ4MzM2YzgxMjc0MGUwYjY2YSIsInNpemUiOjIwNn0sImxheWVycyI6W3sibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLm9sbGFtYS5pbWFnZS5tb2RlbCIsImRpZ2VzdCI6InNoYTI1NjpiZDIxNzllMzc2NDVkNTQzNWUwMjE0ZTUzOTllNTk5NzQwOGE3ZTk2ODViYTUyN2NiYjYwNzI2ZTZhMzJmZDk5Iiwic2l6ZSI6MTEwODAxNjU3NiwiZnJvbSI6ImRoaWx0Z2VuL3F3ZW4zLXZsOjJiLWluc3RydWN0LXE0X0tfTS1sbGFtYWNwcCJ9LHsibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLm9sbGFtYS5pbWFnZS5wcm9qZWN0b3IiLCJkaWdlc3QiOiJzaGEyNTY6NGRjN2JjNTg2M2Q3ZmMzYWQ3ODRhY2Y2NzdmNzJmMDA5YWI1ZmQzNzU4ODU1ZjE5OTZiNjc4YjYyMTgxNzE5MCIsInNpemUiOjgyMjU0MDM1MiwiZnJvbSI6ImRoaWx0Z2VuL3F3ZW4zLXZsOjJiLWluc3RydWN0LXE0X0tfTS1sbGFtYWNwcCJ9LHsibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLm9sbGFtYS5pbWFnZS5saWNlbnNlIiwiZGlnZXN0Ijoic2hhMjU2OjczMzlmYTQxOGM5YWQzZThlMTJlNzRhZDBmZDI2YTljYzRiZTg3MDNmOWMxMTA3MjhhOTkyYjE5M2JlODVjYjIiLCJzaXplIjoxMTM1NSwiZnJvbSI6ImRoaWx0Z2VuL3F3ZW4zLXZsOjJiLWluc3RydWN0LXE0X0tfTS1sbGFtYWNwcCJ9LHsibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLm9sbGFtYS5pbWFnZS5wYXJhbXMiLCJkaWdlc3QiOiJzaGEyNTY6ZjY0MTdjYjFlMjY5NjI5OTFmOGU4NzVhOTNmM2NiMGY5MmJjOWI0OTU1ZTAwNDg4MTI1MWNjYmY5MzRhMTlkMiIsInNpemUiOjQyLCJmcm9tIjoiZGhpbHRnZW4vcXdlbjMtdmw6MmItaW5zdHJ1Y3QtcTRfS19NLWxsYW1hY3BwIn1dLCJydW5uZXIiOiJsbGFtYWNwcCIsImZvcm1hdCI6ImdndWYifQ==",
+          "path": "models/manifests/registry.ollama.ai/library/qwen3-vl/2b-instruct",
+          "sha256": "afc393e3572c07db0bc84aa460d928a16c75f3fbb9ca9e0dccc4fbd2dafb573e",
+          "size": 1120
+        }
+      ],
+      "kind": "neurocenter-model-bundle",
+      "releaseBaseUrl": "https://github.com/ghost-raven1/neurocenter/releases/download/models-2026-10-19.1",
+      "schemaVersion": 1
+    },
+    "lock": {
+      "capability": "vision",
+      "image": "ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c",
+      "manifest": {
+        "config": {
+          "digest": "sha256:2288b043131565ce643c8200cbfdec28f7621b84ffd7cc48336c812740e0b66a",
+          "mediaType": "application/vnd.docker.container.image.v1+json",
+          "size": 206
+        },
+        "format": "gguf",
+        "layers": [
+          {
+            "digest": "sha256:bd2179e37645d5435e0214e5399e5997408a7e9685ba527cbb60726e6a32fd99",
+            "from": "dhiltgen/qwen3-vl:2b-instruct-q4_K_M-llamacpp",
+            "mediaType": "application/vnd.ollama.image.model",
+            "size": 1108016576
+          },
+          {
+            "digest": "sha256:4dc7bc5863d7fc3ad784acf677f72f009ab5fd3758855f1996b678b621817190",
+            "from": "dhiltgen/qwen3-vl:2b-instruct-q4_K_M-llamacpp",
+            "mediaType": "application/vnd.ollama.image.projector",
+            "size": 822540352
+          },
+          {
+            "digest": "sha256:7339fa418c9ad3e8e12e74ad0fd26a9cc4be8703f9c110728a992b193be85cb2",
+            "from": "dhiltgen/qwen3-vl:2b-instruct-q4_K_M-llamacpp",
+            "mediaType": "application/vnd.ollama.image.license",
+            "size": 11355
+          },
+          {
+            "digest": "sha256:f6417cb1e26962991f8e875a93f3cb0f92bc9b4955e004881251ccbf934a19d2",
+            "from": "dhiltgen/qwen3-vl:2b-instruct-q4_K_M-llamacpp",
+            "mediaType": "application/vnd.ollama.image.params",
+            "size": 42
+          }
+        ],
+        "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+        "runner": "llamacpp",
+        "schemaVersion": 2
+      },
+      "manifestSha256": "afc393e3572c07db0bc84aa460d928a16c75f3fbb9ca9e0dccc4fbd2dafb573e",
+      "model": "qwen3-vl:2b-instruct",
+      "registryManifestUrl": "https://registry.ollama.ai/v2/library/qwen3-vl/manifests/2b-instruct",
+      "schemaVersion": 1
+    },
+    "type": "model-bundle"
+  },
+  "id": "model-vision-qwen3-vl-2b",
+  "kind": "model",
+  "license": {
+    "spdx": "Apache-2.0",
+    "url": "https://github.com/ghost-raven1/neurocenter/releases/download/models-2026-10-19.1/LICENSE-APACHE-2.0.txt"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/ghost-raven1/neurocenter",
+    "tag": "models-2026-10-19.1",
+    "type": "release"
+  },
+  "version": "models-2026-10-19.1"
+}

@@ -17,6 +17,8 @@ export function bridgeSourceUrl(value:unknown):string {
     if(!/^[a-z0-9._-]{1,100}$/.test(repository)||['.','..'].includes(repository))throw new BadRequestException('Некорректное имя репозитория поставок моста.');
     return `https://github.com/${match[1].toLowerCase()}/${repository}`;
 }
+export const isRetiredBridgeSource=(url:string):boolean=>bridgeSourceUrl(url)==='https://github.com/ghost-raven1/neurocenter-assets';
+export const retiredBridgeSourceMessage='Поставка моста приходит с текущей версией приложения. Выберите подготовленный локальный архив; прежние установки и квитанции сохранены.';
 
 async function remote(request:typeof fetch,url:string,maximum:number,signal:AbortSignal):Promise<Buffer>{
     const bounded=AbortSignal.any([signal,AbortSignal.timeout(15000)]);let response:Response;
@@ -36,6 +38,7 @@ function json(bytes:Buffer):unknown {try{return JSON.parse(new TextDecoder('utf-
 
 /** One commit and index digest pin only the bridge graph; unrelated asset descriptors are not downloaded. */
 export async function readBridgeSource(url:string,signal:AbortSignal,request:typeof fetch=fetch):Promise<ISourceSnapshot>{
+    if(isRetiredBridgeSource(url))throw new ConflictException({code:'BRIDGE_SOURCE_ARCHIVE_REQUIRED',sourceReady:false,archiveRequired:true,message:retiredBridgeSourceMessage});
     const repository=bridgeSourceUrl(url).slice('https://github.com/'.length),api='https://api.github.com/repos/'+repository;
     const repo=json(await remote(request,api,64*1024,signal)) as {private?:unknown;default_branch?:unknown};
     if(repo?.private!==false||typeof repo.default_branch!=='string'||!repo.default_branch||repo.default_branch.length>240)throw new ConflictException('Источник должен быть публичным GitHub-репозиторием.');
@@ -56,6 +59,7 @@ export async function readBridgeSource(url:string,signal:AbortSignal,request:typ
 }
 
 export function bridgeReleaseView(snapshot:ISourceSnapshot){
+    if(snapshot.pin.repository==='ghost-raven1/neurocenter-assets')return undefined;
     const asset=snapshot.assets.find(record=>record.current&&record.asset.kind==='bridge')?.asset as BridgeAsset|undefined;
     if(!asset)return undefined;const release=toBridgeRelease(asset);
     return {assetId:asset.id,version:release.version,buildId:release.buildId,repositoryCommit:snapshot.pin.commit,

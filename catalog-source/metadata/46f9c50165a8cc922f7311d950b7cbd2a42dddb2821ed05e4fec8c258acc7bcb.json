@@ -1,0 +1,129 @@
+{
+  "card": {
+    "compatibility": "Готовый JavaScript; встроенный Node моста. Проверка запуска выполняется отдельно.",
+    "config": {},
+    "description": "Добавляет в контекст OpenCode настройки Python, uv, Poetry, pytest, Ruff и mypy. Читает имена файлов и requires-python, команды не запускает. Собран из TypeScript единым сборщиком.",
+    "files": [],
+    "kind": "plugin",
+    "name": "Контекст Python",
+    "origin": "neurocenter:recipe/plugin-python-context",
+    "revision": "1.0.0",
+    "tags": [
+      "Python",
+      "TypeScript",
+      "Контекст"
+    ]
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 1011,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 2,
+          "sha256": "4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e",
+          "target": "darwin-arm64",
+          "unpackedBytes": 2099
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/python-context-v1.0.0/4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 1011,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 2,
+          "sha256": "4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e",
+          "target": "darwin-x64",
+          "unpackedBytes": 2099
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/python-context-v1.0.0/4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 1011,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 2,
+          "sha256": "4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e",
+          "target": "linux-arm64-glibc",
+          "unpackedBytes": 2099
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/python-context-v1.0.0/4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 1011,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 2,
+          "sha256": "4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 2099
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/python-context-v1.0.0/4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 1011,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 2,
+          "sha256": "4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e",
+          "target": "linux-arm64-musl",
+          "unpackedBytes": 2099
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/python-context-v1.0.0/4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 1011,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 2,
+          "sha256": "4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e",
+          "target": "linux-x64-musl",
+          "unpackedBytes": 2099
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/python-context-v1.0.0/4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 1011,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 2,
+          "sha256": "4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e",
+          "target": "win32-arm64",
+          "unpackedBytes": 2099
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/python-context-v1.0.0/4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 1011,
+          "entrypoint": "entrypoint.mjs",
+          "filesCount": 2,
+          "sha256": "4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e",
+          "target": "win32-x64",
+          "unpackedBytes": 2099
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter-assets/releases/download/python-context-v1.0.0/4d1171bbe0c10f110a6e3b7c2bcaee75f63d82006333e5646b2debca7999439e.tar.gz"
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "plugin-python-context",
+  "kind": "plugin",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "recipe": {
+    "path": "recipes/plugin-python-context/1.0.0/recipe.json",
+    "sha256": "fcb3213a4d5ae1089678f03fb7c68ee7e3e4a33a97a06e536d457691300a75ae"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "bytes": 3621,
+    "sha256": "393613f80a2e835049db97ef5b5fcb1cd4259a2a06cf7aa0ca238e525f5520db",
+    "type": "archive"
+  },
+  "version": "1.0.0"
+}

@@ -9,6 +9,7 @@ interface IBootstrapAdmission {admit:()=>Promise<void>;signal?:AbortSignal;publi
 /** Metadata refresh не скачивает binaries и не меняет каталог; каждый intent сохраняет выбранный commit. */
 export class AssetSourceSnapshots {
     constructor(private readonly pool:Pool,private readonly initialPin:unknown,private readonly request:typeof fetch=fetch,private readonly transport:AssetSourceTransport=assetSourceTransport()) {}
+    private async configuredPin():Promise<IAssetSourcePin>{return validateSourcePin(this.initialPin==null?(await require('../../../shared/bundled-catalog.cjs').readBundledCatalog()).pin:typeof this.initialPin==='function'?await this.initialPin():this.initialPin);}
     async latest():Promise<ISourceSnapshot|undefined> {
         return (await this.pool.query<ISourceSnapshot>('SELECT * FROM asset_source_snapshots ORDER BY checked_at DESC,commit LIMIT 1')).rows[0];
     }
@@ -26,9 +27,10 @@ export class AssetSourceSnapshots {
         }};
         try{
             signal?.throwIfAborted();
-            if(await this.latest()||!this.initialPin||!this.transport.cache)return{retry:false};
-            const pin=validateSourcePin(this.initialPin);
-            if(await this.transport.cache.read(pin.index.sha256,512*1024)===undefined)return{retry:false};
+            if(!this.initialPin)return{retry:false};
+            const pin=await this.configuredPin(),latest=await this.latest();
+            if(latest&&(pin.schemaVersion!==2||latest.pin.commit===pin.commit||latest.archive_sha256))return{retry:false};
+            if(pin.schemaVersion!==2&&(!this.transport.cache||await this.transport.cache.read(pin.index.sha256,512*1024)===undefined))return{retry:false};
             await admission.admit();await this.load(pin,undefined,admission);return admission.published?{retry:false,published:true}:{retry:false};
         }catch(error){
             if(signal?.aborted)return{retry:false};
@@ -36,7 +38,7 @@ export class AssetSourceSnapshots {
             return{retry};
         }
     }
-    async get(commit:string,repository='ghost-raven1/neurocenter-assets'):Promise<ISourceSnapshot> {
+    async get(commit:string,repository=commit.startsWith('sha256:')?'app-bundled':'ghost-raven1/neurocenter-assets'):Promise<ISourceSnapshot> {
         const saved=(await this.pool.query<ISourceSnapshot>(`SELECT pin,index,assets,checked_at,archive_sha256 FROM asset_source_snapshots WHERE commit=$1 AND pin->>'repository'=$2
             UNION ALL SELECT pin,index,assets,checked_at,NULL::text AS archive_sha256 FROM bridge_source_checks WHERE commit=$1 AND repository=$2 LIMIT 1`,[commit,repository])).rows[0];
         if(!saved){throw new ConflictException('Выбранная проверенная версия источника уже недоступна. Обновите список.');}return saved;
@@ -44,7 +46,9 @@ export class AssetSourceSnapshots {
     /** Archive bytes may reuse only an application pin or a previously verified snapshot. */
     async trustedPins():Promise<IAssetSourcePin[]>{
         const saved=(await this.pool.query<{pin:IAssetSourcePin}>('SELECT pin FROM asset_source_snapshots ORDER BY checked_at DESC,commit')).rows.map(row=>validateSourcePin(row.pin));
-        return [...saved,...(this.initialPin?[validateSourcePin(this.initialPin)]:[])];
+        const configured=this.initialPin?[await this.configuredPin()]:[];
+        const historical=configured[0]?.schemaVersion===2?(await require('../../../shared/bundled-catalog.cjs').readBundledCatalog()).historicalPins:[];
+        return [...saved,...configured,...historical];
     }
     private async remote(url:string,maximum:number):Promise<Uint8Array> {
         let response:Response;
@@ -63,25 +67,27 @@ export class AssetSourceSnapshots {
     }
     async refresh():Promise<ISourceSnapshot> {
         try{
+            const configured=await this.configuredPin();if(configured.schemaVersion===2||configured.repository==='ghost-raven1/neurocenter-assets')return await this.load(configured);
             if(this.transport.offline){
-                const latest=await this.latest(),pin=latest?.archive_sha256?latest.pin:this.initialPin;
+                const latest=await this.latest(),pin=latest?.archive_sha256?latest.pin:configured;
                 if(!pin)throw new ConflictException('Локальная поставка не закреплена в конфигурации приложения.');
                 const saved=await this.load(validateSourcePin(pin));
                 await this.pool.query("INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),'') ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=''");return saved;
             }
-            if(!await this.latest()&&this.initialPin){return await this.load(validateSourcePin(this.initialPin));}
+            const repository=configured.repository;
+            if(repository==='ghost-raven1/neurocenter-assets')throw new ConflictException('Прежний источник доступен только по сохранённым SHA и архивам. Текущий каталог поставляется с приложением.');
             // Репозиторий доверенный и фиксированный. Mutable ref разрешается ровно один раз на явное действие администратора.
             // Ref API не включает diff: размер очередного commit не меняет возможность обновить список.
-            const bytes=await this.remote('https://api.github.com/repos/ghost-raven1/neurocenter-assets/git/ref/heads/main',64*1024);
+            const bytes=await this.remote('https://api.github.com/repos/'+repository+'/git/ref/heads/main',64*1024);
             let commit:string;try{
                 const reference=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
                 if(reference.ref!=='refs/heads/main'||reference.object?.type!=='commit'){throw new Error('Invalid branch reference');}
                 commit=reference.object.sha;
             }catch{throw new ConflictException('GitHub вернул неподдерживаемый ответ commit.');}
             if(typeof commit!=='string'||!/^[a-f0-9]{40}$/.test(commit)){throw new ConflictException('GitHub не подтвердил полный commit источника.');}
-            const indexBytes=await this.remote('https://raw.githubusercontent.com/ghost-raven1/neurocenter-assets/'+commit+'/index.json',512*1024);
+            const indexBytes=await this.remote('https://raw.githubusercontent.com/'+repository+'/'+commit+'/index.json',512*1024);
             let index:AssetIndex;try{index=validateIndex(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(indexBytes)));}catch{throw new ConflictException('Формат описи источника не поддерживается.');}
-            const saved=await this.load({schemaVersion:1,repository:'ghost-raven1/neurocenter-assets',commit,index:{path:'index.json',sha256:assetDigest(indexBytes)}},index);
+            const saved=await this.load({schemaVersion:1,repository,commit,index:{path:'index.json',sha256:assetDigest(indexBytes)}},index);
             await this.pool.query("INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),'') ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=''");return saved;
         }catch(error){await this.pool.query('INSERT INTO asset_source_refresh(id,attempted_at,message) VALUES(true,now(),$1) ON CONFLICT(id) DO UPDATE SET attempted_at=now(),message=EXCLUDED.message',[error instanceof Error?error.message:'Не удалось проверить источник.']).catch(()=>undefined);throw error;}
     }
@@ -107,12 +113,12 @@ export class AssetSourceSnapshots {
             await client.query('BEGIN');await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:asset-source-refresh',0))");
             if(bootstrap){
                 const existing=(await client.query<ISourceSnapshot>('SELECT * FROM asset_source_snapshots ORDER BY checked_at DESC,commit LIMIT 1')).rows[0];
-                if(existing){await client.query('COMMIT');return existing;}
+                if(existing&&(pin.schemaVersion!==2||existing.pin.commit===pin.commit||existing.archive_sha256)){await client.query('COMMIT');return existing;}
             }
             // Проверяются все известные snapshots, поэтому rollback ref не может забыть ранее опубликованную историю.
             const previous=await client.query<{index:AssetIndex;pin:IAssetSourcePin}>('SELECT index,pin FROM asset_source_snapshots');
             if(previous.rows.some(row=>row.pin.commit===pin.commit&&row.pin.index.sha256!==pin.index.sha256)){throw new ConflictException('Байты описи ранее проверенного commit изменились.');}
-            try{for(const row of previous.rows){assertIndexEvolution(row.index,checked);}}catch{throw new ConflictException('Источник переписал или удалил уже опубликованную версию ассета. Обновление отклонено.');}
+            try{for(const row of previous.rows){if(row.pin.repository===pin.repository)assertIndexEvolution(row.index,checked);}}catch{throw new ConflictException('Источник переписал или удалил уже опубликованную версию ассета. Обновление отклонено.');}
             await bootstrap?.admit();bootstrap?.signal?.throwIfAborted();
             await publish?.(client);
             const {rows}=await client.query<ISourceSnapshot>(`INSERT INTO asset_source_snapshots(commit,pin,index,assets,archive_sha256) VALUES($1,$2::jsonb,$3::jsonb,$4::jsonb,$5)

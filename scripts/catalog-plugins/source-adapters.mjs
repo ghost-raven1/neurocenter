@@ -25,6 +25,7 @@ import sourceEntrypoint from '../../services/shared/source-entrypoint.cjs';
 import ragSource from '../../services/shared/opencode-rag-source.cjs';
 import codexSource from '../../services/shared/codex-connector-source.cjs';
 import {prepareCodexBridge} from './recipes/codex-bridge.mjs';
+import {prepareBundledFetch} from './recipes/fetch-mcp.mjs';
 import {assertPortableSourceResources} from './source-resource-validation.mjs';
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
@@ -36,7 +37,7 @@ const localDirectory = value => typeof value === 'string' && (value === '.' || r
 export function validateAdditionalSource(source) {
     if(source.type==='archive')return archiveSource.validateArchiveSource(source);
     if (source.type === 'prepared') {
-        if (!exact(source, ['type', 'adapter']) || !['opencode-rag', 'opencode-rag-plugin', 'opencode-snip', 'opencode-codex-bridge', ...npmTools.map(tool => tool.key), ...filePlugins.map(tool => tool.key)].includes(source.adapter)) throw new Error('Неизвестный подготовленный адаптер.');
+        if (!exact(source, ['type', 'adapter']) || !['fetch-mcp', 'opencode-rag', 'opencode-rag-plugin', 'opencode-snip', 'opencode-codex-bridge', ...npmTools.map(tool => tool.key), ...filePlugins.map(tool => tool.key)].includes(source.adapter)) throw new Error('Неизвестный подготовленный адаптер.');
     } else if (source.type === 'repository') {
         return repositorySource.validateRepositorySource(source);
     } else if (source.type === 'runtime') {
@@ -271,6 +272,7 @@ export async function prepareAdditionalSource(recipe, context) {
         ? prepareOpenCodeRagPlugin(context) : prepareRepository(recipe, context, { extractRelease, prepareProject });
     if (source.type === 'runtime') return prepareRuntimeSource(recipe, context, { extractRelease });
     if (source.type === 'prepared') {
+        if (source.adapter === 'fetch-mcp') return prepareBundledFetch(recipe,context,{prepareProject});
         if (source.adapter === 'opencode-rag') return prepareOpenCodeRag(context);
         if (source.adapter === 'opencode-rag-plugin') return prepareOpenCodeRagPlugin(context);
         if (source.adapter === 'opencode-snip') return prepareOpenCodeSnip(context);

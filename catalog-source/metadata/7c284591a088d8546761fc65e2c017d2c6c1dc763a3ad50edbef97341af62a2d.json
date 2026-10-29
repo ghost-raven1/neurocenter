@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "key": "plugin-opencode-rag-plugin",
+  "name": "OpenCodeRAG (плагин)",
+  "kind": "plugin",
+  "revision": "2.4.4-plugin.pack.9",
+  "tags": [
+    "RAG",
+    "GitHub",
+    "Автоиндексация"
+  ],
+  "description": "Плагин MrDoe/OpenCodeRAG 2.4.4 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Модель и размерность подключаются в настройках проекта через мост; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.",
+  "source": {
+    "type": "prepared",
+    "adapter": "opencode-rag-plugin"
+  },
+  "targets": [
+    "darwin-arm64",
+    "linux-arm64-glibc",
+    "linux-arm64-musl",
+    "linux-x64-glibc",
+    "linux-x64-musl",
+    "win32-arm64",
+    "win32-x64"
+  ],
+  "config": {}
+}

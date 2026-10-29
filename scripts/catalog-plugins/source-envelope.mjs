@@ -56,7 +56,7 @@ export async function exportBuiltAsset({recipe,recipeDirectory,destination,publi
         const files=adapter?preparedInputs??await preparedSourceFiles()
             :['files','project'].includes(recipe.source.type)?await snapshotFiles(path.resolve(recipeDirectory,recipe.source.directory),'',[],
                 recipe.source.type==='project'?name=>ignoredProjectSource(name,recipe.source.entrypoint):undefined):undefined;
-        const bytes=JSON.stringify({...adapter?{schemaVersion:1,type:'neurocenter-prepared-producer',adapter,recipe}:{},
+        const bytes=JSON.stringify({...adapter?{schemaVersion:1,type:'neurocenter-prepared-producer',adapter,recipe}:{},...(recipe.producer?{producer:recipe.producer}:{}),
             declaration:recipe.source,...(files?{files}:{}),sources,locks:adapter?await producerLocks(destination,locks):locks},null,2)+'\n';
         if(adapter&&Buffer.byteLength(bytes)>5*1048576)throw new Error('Prepared source snapshot превышает 5 МиБ.');
         source={type:'archive',sha256:assetDigest(bytes),bytes:Buffer.byteLength(bytes)};

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "repository": "ghost-raven1/opencode_codex_bridge",
+  "commit": "de21db304bef59af6421079c10e8a43404fd09fa",
+  "license": null,
+  "scope": "Authentication and model transport source closure; delegation and installer excluded",
+  "files": [
+    {
+      "path": "source/auth-login.ts",
+      "sha256": "3dacea708db56eb332fd123377eeb8ca0e2bd8bf4a7e65cfbc4f596f5ef71cea",
+      "bytes": 2661,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/auth-provider.ts",
+      "sha256": "55a4b680a8879dba2c15237c94f891a07bf66e15f4dee494ab839474fa67f11e",
+      "bytes": 3913,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/auth-session.ts",
+      "sha256": "f1be79a24e884e60843a435016b24fb2f8a7d90c56e17b1d0c14131db5e9bfda",
+      "bytes": 5208,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/connection.ts",
+      "sha256": "3a3bdbb87ff8376d49f2c975928a155c17291ffe8ca2c6004ee2d55dcf1bf162",
+      "bytes": 4504,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/executable.ts",
+      "sha256": "9391645d0eee4739f475e7ff709325bbb02f1f3f05175566a9501ea5a7bfc5e2",
+      "bytes": 581,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/types.ts",
+      "sha256": "69b82afa9ba910cf773dddf8dc835d26fc5288dee17f6fb7a257199d2f4bc462",
+      "bytes": 748,
+      "origin": "upstream"
+    }
+  ]
+}

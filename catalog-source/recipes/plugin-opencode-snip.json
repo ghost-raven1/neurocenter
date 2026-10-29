@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "key": "plugin-opencode-snip",
+  "name": "opencode-snip",
+  "kind": "plugin",
+  "revision": "2.0.0+snip.0.25.2.pack.1",
+  "tags": [
+    "Терминал",
+    "GitHub Releases",
+    "Готовый комплект"
+  ],
+  "description": "Сокращает вывод команд терминала через opencode-snip и встроенный snip CLI. Готовые бинарники из GitHub Releases, SHA-256 проверен; ручная установка CLI и изменение PATH не нужны. Сложные shell-команды остаются без изменений.",
+  "source": {
+    "type": "prepared",
+    "adapter": "opencode-snip"
+  }
+}

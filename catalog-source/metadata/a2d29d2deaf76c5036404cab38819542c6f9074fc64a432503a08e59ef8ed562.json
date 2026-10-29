@@ -1,0 +1,129 @@
+{
+  "card": {
+    "compatibility": "Legacy Plugin API; snip CLI: 8 платформ моста",
+    "config": {
+      "entrypoint": "plugin.mjs"
+    },
+    "description": "Сокращает вывод команд терминала через opencode-snip и встроенный snip CLI. Готовые бинарники из GitHub Releases, SHA-256 проверен; ручная установка CLI и изменение PATH не нужны. Сложные shell-команды остаются без изменений.",
+    "files": [],
+    "kind": "plugin",
+    "name": "opencode-snip",
+    "origin": "https://github.com/edouard-claude/snip",
+    "revision": "2.0.0+snip.0.25.2",
+    "tags": [
+      "Терминал",
+      "GitHub Releases",
+      "Готовый комплект"
+    ],
+    "version": 1
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 4133039,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 6,
+          "sha256": "f76b20422a2d94a71f198f600acf3aef692bd2e4709965d91522db898a2385a4",
+          "target": "darwin-arm64",
+          "unpackedBytes": 10239205
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/f76b20422a2d94a71f198f600acf3aef692bd2e4709965d91522db898a2385a4.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 4365763,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 6,
+          "sha256": "7f4d8f74c5e0bb1a46c1c3dfa1e22c0da5d87ed3da2fc5a5b83e9e065f4f70c5",
+          "target": "darwin-x64",
+          "unpackedBytes": 10631075
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/7f4d8f74c5e0bb1a46c1c3dfa1e22c0da5d87ed3da2fc5a5b83e9e065f4f70c5.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3971957,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 6,
+          "sha256": "4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643",
+          "target": "linux-arm64-glibc",
+          "unpackedBytes": 9901899
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3971957,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 6,
+          "sha256": "4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643",
+          "target": "linux-arm64-musl",
+          "unpackedBytes": 9901899
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/4473ed63b6c32c1ae5722700ab78a1673d50fee9e5fbc47ec361af923c7ee643.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 4283973,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 6,
+          "sha256": "7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 10397515
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 4283973,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 6,
+          "sha256": "7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a",
+          "target": "linux-x64-musl",
+          "unpackedBytes": 10397515
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/7e50be071591e1f5d43494d0644f26f882f83a13a007a1128d55ea978459b74a.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 3985425,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 6,
+          "sha256": "a920ba200acd0944771ad9fcf25138228ca8548d06ef8fcbcca140402334ab67",
+          "target": "win32-arm64",
+          "unpackedBytes": 10032787
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/a920ba200acd0944771ad9fcf25138228ca8548d06ef8fcbcca140402334ab67.tar.gz"
+      },
+      {
+        "descriptor": {
+          "compressedBytes": 4363861,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 6,
+          "sha256": "1362e838152edb025e3ff8f3b7f38fe0a39d1082970615e7b5f844d7b62488da",
+          "target": "win32-x64",
+          "unpackedBytes": 10657939
+        },
+        "url": "https://github.com/ghost-raven1/neurocenter/releases/download/catalog-2026-10-20.3/1362e838152edb025e3ff8f3b7f38fe0a39d1082970615e7b5f844d7b62488da.tar.gz"
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "plugin-opencode-snip",
+  "kind": "plugin",
+  "license": {
+    "spdx": "NOASSERTION"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "965f5b19ce1045e25bf09b33fe7715b38cf47c0a",
+    "path": "scripts/catalog-plugins/catalog-release.json",
+    "repository": "https://github.com/ghost-raven1/neurocenter",
+    "type": "git"
+  },
+  "version": "2.0.0+snip.0.25.2"
+}

@@ -1,0 +1,405 @@
+{
+  "assets": [
+    {
+      "id": "agent-developer",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-developer/1.0.0/asset.json",
+      "sha256": "00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007",
+      "current": false
+    },
+    {
+      "id": "agent-documenter",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-documenter/1.0.0/asset.json",
+      "sha256": "f4d0041fe9108c98ea0535f64f61cfd9b40c3c915c14355aea2be89f7a0fada2",
+      "current": false
+    },
+    {
+      "id": "agent-planner",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-planner/1.0.0/asset.json",
+      "sha256": "34cecf3143157dce2e659fd36943add7ff801c351f5317db3e683287af542fb6",
+      "current": false
+    },
+    {
+      "id": "agent-reviewer",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-reviewer/1.0.0/asset.json",
+      "sha256": "cdac7f2e82af5584acfee65ca1a93dc7894091b7cb3ebfb82f8533554cb6009e",
+      "current": false
+    },
+    {
+      "id": "agent-tester",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-tester/1.0.0/asset.json",
+      "sha256": "09fcb2fdffbcefc4446b29966abc87ae57b06a91a3b12a74317c95b51c395aad",
+      "current": false
+    },
+    {
+      "id": "mcp-fetch-mcp",
+      "version": "git-1ddb1a59cb09a2d38e759f2d7a97829680cbe514-compat.1",
+      "kind": "mcp",
+      "path": "assets/mcp-fetch-mcp/git-1ddb1a59cb09a2d38e759f2d7a97829680cbe514-compat.1/asset.json",
+      "sha256": "16d33f59f91ca283a9afd20412853c36fe992c38c1221259ba5f5a0ce34fca15",
+      "current": true
+    },
+    {
+      "current": true,
+      "id": "mcp-filesystem",
+      "kind": "mcp",
+      "path": "assets/mcp-filesystem/1.0.0/asset.json",
+      "sha256": "62cde495f47a0af6803bbc6d26b8065a4bebc7c28a2ab59bbee74c7a453d0cc4",
+      "version": "1.0.0"
+    },
+    {
+      "id": "mcp-memory",
+      "version": "1.0.0",
+      "kind": "mcp",
+      "path": "assets/mcp-memory/1.0.0/asset.json",
+      "sha256": "c4c042517b6fbd3f36fd04246dbf00a6dd0125972c10edaf7496d80c2f88f902",
+      "current": true
+    },
+    {
+      "id": "mcp-opencode-rag",
+      "version": "2.4.4-mcp.pack.8",
+      "kind": "mcp",
+      "path": "assets/mcp-opencode-rag/2.4.4-mcp.pack.8/asset.json",
+      "sha256": "1da6a236243342d29c4461d8614688bc072fbfa90218a538cd702b151a427cc9",
+      "current": false
+    },
+    {
+      "id": "mcp-opencode-rag",
+      "kind": "mcp",
+      "version": "2.4.4-mcp.pack.9",
+      "path": "assets/mcp-opencode-rag/2.4.4-mcp.pack.9/asset.json",
+      "sha256": "74e1f28c4b843b22b24d4576a7ee53440440d570293930044368af594c16c89a",
+      "current": false
+    },
+    {
+      "id": "mcp-sequential-thinking",
+      "version": "1.0.0",
+      "kind": "mcp",
+      "path": "assets/mcp-sequential-thinking/1.0.0/asset.json",
+      "sha256": "13a16db45838cf20e630312d188f29ae82b9646f17a5ac0f26305725ab3c2432",
+      "current": true
+    },
+    {
+      "current": true,
+      "id": "model-embedding-qwen3-4b",
+      "kind": "model",
+      "path": "assets/model-embedding-qwen3-4b/models-2026-10-19.1/asset.json",
+      "sha256": "21c0ba1d17b11f4f90f0c926188164feb2f681a80d9fa379320fae84182e7303",
+      "version": "models-2026-10-19.1"
+    },
+    {
+      "id": "model-vision-qwen3-vl-2b",
+      "version": "models-2026-10-19.1",
+      "kind": "model",
+      "path": "assets/model-vision-qwen3-vl-2b/models-2026-10-19.1/asset.json",
+      "sha256": "9cd12897cd970f12db9f7d07d921c87c5a8e204161fcddbf2f917cbfed37ffa7",
+      "current": true
+    },
+    {
+      "current": false,
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "path": "assets/neurocenter-bridge/0.9.10/asset.json",
+      "sha256": "b55b7bf350c5fef45d39f5ed4b14e7f769a87dc0c98f987d4a39857636007c53",
+      "version": "0.9.10"
+    },
+    {
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "version": "0.9.12",
+      "path": "assets/neurocenter-bridge/0.9.12/asset.json",
+      "sha256": "df571c6953ac23385479c049cae6c1a6864b6f54f74510e4a56745052265aaf0",
+      "current": false
+    },
+    {
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "version": "0.9.13",
+      "path": "assets/neurocenter-bridge/0.9.13/asset.json",
+      "sha256": "adb31139414497eb4bd6958f32a26f908905e6cef899b695436a7f3d82dc435e",
+      "current": false
+    },
+    {
+      "id": "neurocenter-bridge",
+      "version": "0.9.14",
+      "kind": "bridge",
+      "path": "assets/neurocenter-bridge/0.9.14/asset.json",
+      "sha256": "5047834f6846a62932ccd00deb79c497c9352f21880dd65c2a881c15301c59c5",
+      "current": false
+    },
+    {
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "version": "0.9.15",
+      "path": "assets/neurocenter-bridge/0.9.15/asset.json",
+      "sha256": "43bcf4a1a5561902990be83d90a0dc399a12eddc3ad8981d314729500968aff0",
+      "current": false
+    },
+    {
+      "current": true,
+      "id": "plugin-git-context",
+      "kind": "plugin",
+      "path": "assets/plugin-git-context/1.0.0-pack.1/asset.json",
+      "sha256": "752f4f6601fb4123a42733957f6335379ef63ee1af90a2db2814b300849e107e",
+      "version": "1.0.0-pack.1"
+    },
+    {
+      "id": "plugin-opencode-rag-plugin",
+      "version": "2.4.4-plugin.pack.8",
+      "kind": "plugin",
+      "path": "assets/plugin-opencode-rag-plugin/2.4.4-plugin.pack.8/asset.json",
+      "sha256": "7f6750251571082e6c498f4434f8cb80af7eb270a16f60bfefe65a2f57c3d283",
+      "current": false
+    },
+    {
+      "id": "plugin-opencode-rag-plugin",
+      "kind": "plugin",
+      "version": "2.4.4-plugin.pack.9",
+      "path": "assets/plugin-opencode-rag-plugin/2.4.4-plugin.pack.9/asset.json",
+      "sha256": "3bb2d420442ec184cb04edb6d7b4a6f828ca2b18895dc357b7c5f31c518a03b0",
+      "current": false
+    },
+    {
+      "id": "plugin-opencode-snip",
+      "version": "2.0.0+snip.0.25.2",
+      "kind": "plugin",
+      "path": "assets/plugin-opencode-snip/2.0.0+snip.0.25.2/asset.json",
+      "sha256": "a2d29d2deaf76c5036404cab38819542c6f9074fc64a432503a08e59ef8ed562",
+      "current": true
+    },
+    {
+      "id": "plugin-project-context",
+      "version": "1.0.1-pack.1",
+      "kind": "plugin",
+      "path": "assets/plugin-project-context/1.0.1-pack.1/asset.json",
+      "sha256": "886162707c25793c294487d959767f52c4787478484c2a91c6bef51521d6850a",
+      "current": true
+    },
+    {
+      "id": "plugin-python-context",
+      "kind": "plugin",
+      "version": "1.0.0",
+      "sha256": "46f9c50165a8cc922f7311d950b7cbd2a42dddb2821ed05e4fec8c258acc7bcb",
+      "path": "assets/plugin-python-context/1.0.0/asset.json",
+      "current": true
+    },
+    {
+      "current": true,
+      "id": "skill-accessibility-compliance",
+      "kind": "skill",
+      "path": "assets/skill-accessibility-compliance/1.0.0/asset.json",
+      "sha256": "6ceaac1debbde6c5b5906dce3f7543c19605bc46837c197e9fc0692071f99140",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-api-design-principles",
+      "kind": "skill",
+      "path": "assets/skill-api-design-principles/1.0.0/asset.json",
+      "sha256": "b5af7ca3ff50ef8d0c833aa8c4ad3f8322ff0a5566c61d626af958a73c88ed00",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-code-review-excellence",
+      "kind": "skill",
+      "path": "assets/skill-code-review-excellence/1.0.0/asset.json",
+      "sha256": "7540dcb7d1ab93f779793e8059b2b278574431199f0ab46f69a2d8d6f24e85dd",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-deployment-pipeline-design",
+      "kind": "skill",
+      "path": "assets/skill-deployment-pipeline-design/1.0.0/asset.json",
+      "sha256": "946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-mcp-builder",
+      "kind": "skill",
+      "path": "assets/skill-mcp-builder/1.0.0/asset.json",
+      "sha256": "4f6d72515d1c320c61d4a62b52a5be5b8462ed31bc8137b46a7864d378f19836",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-nestjs-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-nestjs-best-practices/1.0.0/asset.json",
+      "sha256": "a37448a27255b516ebcf336e57154997e956bf6195fc1babbf41508e67b00767",
+      "version": "1.0.0"
+    },
+    {
+      "current": false,
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "path": "assets/skill-neurocenter-packaging/1.0.0/asset.json",
+      "sha256": "d8debdb3984a7c45ab8d3324a953e844ac01eac70e6e3f70ce1b18d994150eb1",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "path": "assets/skill-neurocenter-packaging/1.1.0/asset.json",
+      "sha256": "09b9fcd410357d017b0d151d826fa9210098d7f1fc8e6793a9b808dfec8bb10b",
+      "version": "1.1.0"
+    },
+    {
+      "current": true,
+      "id": "skill-playwright-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-playwright-best-practices/1.0.0/asset.json",
+      "sha256": "1ffa170b2faa9c2f3b9a2f16dd7a7fbe212a8c0533591820857ac092bc0fd6a2",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-react-state-management",
+      "kind": "skill",
+      "path": "assets/skill-react-state-management/1.0.0/asset.json",
+      "sha256": "f8668d778c6a878790a307d253449458dd0057ebc968aba1d7578ab07889b535",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-supabase-postgres-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-supabase-postgres-best-practices/1.0.0/asset.json",
+      "sha256": "0f54db74c354535295cdf9ed5719c029063c9841341b4554983f8e396935a4d5",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-typescript-advanced-types",
+      "kind": "skill",
+      "path": "assets/skill-typescript-advanced-types/1.0.0/asset.json",
+      "sha256": "03006ac31d88ab29c2aa2b1641f6c09be56b3c4524833fd314f2ea656ceba1de",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-vite",
+      "kind": "skill",
+      "path": "assets/skill-vite/1.0.0/asset.json",
+      "sha256": "5c5804d09e44d80e72d203f028cb743e7fcee1176f889bfda4ba8d04385e6438",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-vitest",
+      "kind": "skill",
+      "path": "assets/skill-vitest/1.0.0/asset.json",
+      "sha256": "0f253adca052c9a7eb16f6c447182aaa6d72d74a8634bc95266356612eb99f35",
+      "version": "1.0.0"
+    },
+    {
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "version": "0.9.16",
+      "path": "assets/neurocenter-bridge/0.9.16/asset.json",
+      "sha256": "2b6236ca8ce5f125a74cbf7c6a2657a86d5cd6a9772815fc75a1e30bfddc7034",
+      "current": false
+    },
+    {
+      "id": "neurocenter-bridge",
+      "kind": "bridge",
+      "version": "0.9.17",
+      "path": "assets/neurocenter-bridge/0.9.17/asset.json",
+      "sha256": "6d75e2dc713259466fa78e06c86c55ffc598944d9c8e9e3aa647c27b5b82a810",
+      "current": true
+    },
+    {
+      "id": "mcp-opencode-rag",
+      "kind": "mcp",
+      "version": "2.4.4-mcp.pack.11",
+      "path": "assets/mcp-opencode-rag/2.4.4-mcp.pack.11/asset.json",
+      "sha256": "2da42b9e71ad8c3958c23b0a92430c7031e5241b3046c347de37ad0089eac73a",
+      "current": true
+    },
+    {
+      "id": "plugin-opencode-rag-plugin",
+      "kind": "plugin",
+      "version": "2.4.4-plugin.pack.11",
+      "path": "assets/plugin-opencode-rag-plugin/2.4.4-plugin.pack.11/asset.json",
+      "sha256": "f3e79dfad6508ec2c52698f07fde91abc486cfd9e4eb731bcb2cdb813ba94fa9",
+      "current": true
+    },
+    {
+      "id": "skill-neurocenter-project-context",
+      "kind": "skill",
+      "version": "1.0.0",
+      "path": "assets/skill-neurocenter-project-context/1.0.0/asset.json",
+      "sha256": "33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7",
+      "current": true
+    },
+    {
+      "id": "skill-neurocenter-system-assistance",
+      "kind": "skill",
+      "version": "1.0.0",
+      "path": "assets/skill-neurocenter-system-assistance/1.0.0/asset.json",
+      "sha256": "f461efcc6e4a4e703cfa94971ed5806753e7df8f16e0181819e8707fee22b9d4",
+      "current": true
+    },
+    {
+      "id": "skill-neurocenter-project-learning",
+      "kind": "skill",
+      "version": "1.0.0",
+      "path": "assets/skill-neurocenter-project-learning/1.0.0/asset.json",
+      "sha256": "e11db4238f54908bd638b409df8d85af5a147f0576d6ad52f3c3689caf3c6cd9",
+      "current": true
+    },
+    {
+      "id": "agent-planner",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-planner/1.1.0/asset.json",
+      "sha256": "a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df",
+      "current": true
+    },
+    {
+      "id": "agent-developer",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-developer/1.1.0/asset.json",
+      "sha256": "dead26971305dd00dd661cdd02c43bd729df7eb491d78b0de3b28bfe0fa59a53",
+      "current": true
+    },
+    {
+      "id": "agent-reviewer",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-reviewer/1.1.0/asset.json",
+      "sha256": "ba81bca273c9fbfdc98c3147d8fc5507d857c2b1144c4bcffbc828e0ea959fe1",
+      "current": true
+    },
+    {
+      "id": "agent-tester",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-tester/1.1.0/asset.json",
+      "sha256": "98dac69c7827e93c04a6dafb760cb6b1870361638c09ec342d720c3c9734500a",
+      "current": true
+    },
+    {
+      "id": "agent-documenter",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-documenter/1.1.0/asset.json",
+      "sha256": "1cb1748c3ea5b2f9ed048b59d9ef992a99d6504d6aeb98defdd2fbcb4f46c846",
+      "current": true
+    }
+  ],
+  "schemaVersion": 1
+}
