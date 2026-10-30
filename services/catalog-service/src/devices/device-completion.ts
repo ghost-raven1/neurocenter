@@ -4,6 +4,7 @@ import {PROJECT_CONFIGURATION_JOB,normalizeProjectConfigurationReport} from '../
 import {completeDeviceCodex} from '../models/device-codex-completion';
 import {completeRuntimeCachePolicy} from './runtime-cache-jobs';
 import {completeComputerSetup,lockComputerSetupCompletionDevice} from './computer-setup-jobs';
+import {completeGlobalProviders,lockGlobalProvidersCompletionDevice} from './global-provider-jobs';
 import {PROJECT_AGENTS_JOB,PROJECT_AGENTS_NOTE} from '../../../shared/project-agents.cjs';
 import {assertAgentCompletionAccess} from '../agents/agent-completion-access';
 import {assertAgentConfigurationResult} from '../agents/agent-jobs';
@@ -59,6 +60,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
     try {
         await client.query('BEGIN');
         await lockComputerSetupCompletionDevice(client,deviceId,id,input.lease);
+        await lockGlobalProvidersCompletionDevice(client,deviceId,id,input.lease);
         const { rows } = await client.query<Job>(
             'SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3 FOR UPDATE',
             [id, deviceId, input.lease],
@@ -72,6 +74,8 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         if(cache){await client.query('COMMIT');if(!cache.repeated)await notifyDeviceOperations();return cache;}
         const computer=await completeComputerSetup(client,job,input);
         if(computer){await client.query('COMMIT');if(!computer.repeated)await notifyDeviceOperations();return computer;}
+        const providers=await completeGlobalProviders(client,job,input);
+        if(providers){await client.query('COMMIT');if(!providers.repeated)await notifyDeviceOperations();return providers;}
         const memory=await completeLearningMemory(client,job,input);
         if(memory){await client.query('COMMIT');if(!memory.repeated)await notifyDeviceOperations();return memory;}
         const quirks=await completeLearningQuirks(client,job,input);

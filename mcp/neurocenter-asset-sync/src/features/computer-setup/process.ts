@@ -6,6 +6,7 @@ import {CliCleanupError} from './receipts.js';
 export interface CliObservationContext {
     deviceId:string;jobId:string;home:string;environment:NodeJS.ProcessEnv;
     directories:readonly string[];bridgeRoots:readonly string[];
+    pathOnly?:boolean;
     journal:()=>Promise<RoleMcpProcessJournal>;
 }
 export type CliAuthorization=(signal:AbortSignal)=>Promise<void>;
@@ -33,13 +34,13 @@ export async function observeOpenCodeCli(context:CliObservationContext,authorize
     let abort:()=>void=()=>{};
     try{
         await authorized();
-        const executable=await beforeAbort(()=>findUserOpenCode(context.directories,context.bridgeRoots,signal),signal);
+        const executable=await beforeAbort(()=>findUserOpenCode(context.directories,context.bridgeRoots,signal,context.pathOnly),signal);
         if(!executable){
             await authorized();
-            if(await beforeAbort(()=>findUserOpenCode(context.directories,context.bridgeRoots,signal),signal))throw new Error('OpenCode изменился во время проверки.');
+            if(await beforeAbort(()=>findUserOpenCode(context.directories,context.bridgeRoots,signal,context.pathOnly),signal))throw new Error('OpenCode изменился во время проверки.');
             return receipt('missing');
         }
-        const current=async()=>{await authorized();await beforeAbort(()=>assertUserCliCurrent(executable,context.directories,context.bridgeRoots,signal),signal);};
+        const current=async()=>{await authorized();await beforeAbort(()=>assertUserCliCurrent(executable,context.directories,context.bridgeRoots,signal,context.pathOnly),signal);};
         const journal=await beforeAbort(context.journal,signal);
         const process=await startRoleMcpProcess(executable.file,['--version'],context.home,context.environment,current,signal,journal);
         stop=process.close;process.child.stdin.end();

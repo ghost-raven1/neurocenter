@@ -8,9 +8,10 @@ import {DeviceStore,type Device} from '../src/devices/device-store';
 import {INSTALLATION_MIGRATIONS} from '../src/devices/installation-migrations';
 import {requireFeaturesEnabled} from '../src/features/require-feature-enabled';
 import {deviceCompletionFixture,ownedDeviceTestAdminUrl} from './device-completion-postgres.fixture';
+import type {ComputerSetupSupplyApproval} from '../src/devices/computer-setup-supply-approval';
 
 /** Real AccessDb and queue/completion on an explicitly owned disposable database, never the application default. */
-export async function computerSetupPostgresFixture(value:string){
+export async function computerSetupPostgresFixture(value:string,computerSupply?:ComputerSetupSupplyApproval){
     const database=await deviceCompletionFixture(value),url=ownedDeviceTestAdminUrl(value);url.pathname='/'+database.database;
     const probe=new Pool({connectionString:url.href,max:2});
     try{
@@ -29,7 +30,7 @@ export async function computerSetupPostgresFixture(value:string){
             report:{protocolVersion:2,capabilities:['durable-completions','managed-installations','opencode-cli-v1']}};
         const access={pool:probe,claims:AccessDb.prototype.claims} as unknown as AccessDb;
         const claims=vi.fn(access.claims.bind(access)),owned=DeviceStore.prototype.owned.bind({pool:database.pool} as DeviceStore);
-        const service=new DeviceJobs({pool:database.pool,access:{claims},owned} as unknown as DeviceStore,{} as never,{} as never,{} as never,{} as never);
+        const service=new DeviceJobs({pool:database.pool,access:{claims},owned} as unknown as DeviceStore,{} as never,{} as never,{} as never,{} as never,undefined,computerSupply);
         // Other expiry owners have independent schema tests; this fixture exercises the real fixed CLI queue.
         vi.spyOn(service as unknown as {expire():Promise<void>},'expire').mockResolvedValue(undefined);
         let enabled=true;

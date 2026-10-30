@@ -29,7 +29,7 @@ const LoginScreen: FC = () => {
                     <Typography.Paragraph type="secondary">Продолжите с учётной записью вашей команды.</Typography.Paragraph>
                     <div className="login-screen__actions">
                         {error&&<Alert className="login-screen__error" role="alert" type="error" showIcon message={error}/>}
-                        <Button type="primary" block loading={processing} size="large" onClick={authLoginBlitz} icon={!processing?<ArrowRightOutlined/>:undefined}>Войти в Нейроцентр</Button>
+                        <Button type="primary" block loading={processing} size="large" onClick={authLoginBlitz} icon={!processing?<ArrowRightOutlined aria-hidden/>:undefined}>Войти в Нейроцентр</Button>
                     </div>
                     <Typography.Text type="secondary" className="login-screen__hint">Вы перейдёте на страницу входа организации.</Typography.Text>
                 </Card>

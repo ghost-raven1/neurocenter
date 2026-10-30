@@ -31,6 +31,9 @@ import {requireFeaturesEnabled} from '../features/require-feature-enabled';
 import {runtimeCacheWorkRole} from './runtime-cache-jobs';
 import {BRIDGE_UPDATE_CLEANUP_CAPABILITY} from '../../../shared/runtime-cache-policy.cjs';
 import {computerSetupReceiptIdentity} from './computer-setup-jobs';
+import {globalProvidersReceiptIdentity,authorizeGlobalProvidersSession} from './global-provider-jobs';
+import {OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB} from '../../../shared/opencode-local-providers.cjs';
+import {requiredJobFeatures} from '../../../shared/feature-policy.cjs';
 
 /** Browser управляет только своими устройствами; channel принимает только секрет привязанного MCP. */
 @Controller()
@@ -129,7 +132,7 @@ export class DeviceController {
     @Post('internal/device-channel/jobs/claim') async claim(
         @Req() req: Request,
     ) {
-        return this.jobs.claim(await this.device(req));
+        return this.jobs.claim(await this.device(req),String(req.headers.authorization||'').replace(/^Bearer /,''));
     }
     @Post('internal/device-channel/worker/pause') async pause(@Req() req: Request) {
         assertInternal(req.headers['x-neurocenter-internal']);
@@ -154,7 +157,7 @@ export class DeviceController {
         @Body() input: { lease: string },
         @Query('phase') phase?:string,
     ) {
-        return this.jobs.authorize(await this.device(req), id, input.lease,phase==='snapshot-receipt'?{snapshotReceipt:true}:undefined);
+        return this.jobs.authorize(await this.device(req), id, input.lease,{...(phase==='snapshot-receipt'?{snapshotReceipt:true}:{}),requestToken:String(req.headers.authorization||'').replace(/^Bearer /,'')});
     }
     @Post('internal/device-channel/agents/compile') async compileAgents(@Req() req:Request,@Body() input:unknown){return this.jobs.compileAgents(await this.device(req),input);}
     @Post('internal/device-channel/configuration-authorize') async configurationAuthorize(@Req() req:Request,@Body() input:unknown){
@@ -165,6 +168,9 @@ export class DeviceController {
     }
     @Post('internal/device-channel/opencode-provider/authorize') async providerAuthorize(@Req() req:Request,@Body() input:unknown){
         return this.jobs.authorizeProvider(await this.device(req),input);
+    }
+    @Post('internal/device-channel/opencode-global-providers/authorize') async globalProvidersAuthorize(@Req() req:Request,@Body() input:unknown){
+        return authorizeGlobalProvidersSession(this.devices,await this.device(req),input,()=>requireFeaturesEnabled(requiredJobFeatures(OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB)),String(req.headers.authorization||'').replace(/^Bearer /,''));
     }
     @Post('internal/device-channel/embedding/context') async embeddingContext(@Req() req:Request,@Body() input:unknown){
         return this.embedding.context(await this.device(req),input);
@@ -201,7 +207,7 @@ export class DeviceController {
         assertInternal(req.headers['x-neurocenter-internal']);
         const token=String(req.headers.authorization||'').replace(/^Bearer /,'');
         const device = await this.codex?.receiptIdentity(token,id,input?.lease)
-            ??await computerSetupReceiptIdentity(this.devices.pool,token,id,input?.lease)??await this.device(req);
+            ??await computerSetupReceiptIdentity(this.devices.pool,token,id,input?.lease)??await globalProvidersReceiptIdentity(this.devices.pool,token,id,input?.lease)??await this.device(req);
         return completeDeviceJob(this.devices.pool, device.id, id, input);
     }
 }

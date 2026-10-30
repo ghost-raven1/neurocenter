@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { connectBridge, watchPair } from '../src/bridge/connect.js';
 import { api, hash, readState, writeState, type Credentials } from '../src/bridge/state.js';
 import { ensureCurrentWorker } from '../src/bridge/worker-upgrade.js';
+import { openVerificationPage } from '../src/bridge/open-browser.js';
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn(() => ({ unref: vi.fn() })) }));
 vi.mock('../src/bridge/worker-upgrade.js', () => ({ ensureCurrentWorker: vi.fn(async () => undefined) }));
@@ -27,6 +28,26 @@ describe('Восстановление подключения без дубли�
         vi.mocked(api).mockResolvedValue(identity);
         expect(await connectBridge()).toMatchObject({ connected: true, deviceId: identity.id });
         expect(vi.mocked(api).mock.calls.map(call => call[0])).toEqual(['identity']);
+    });
+    it('Новая ссылка открывает явный шаг моста основного мастера', async () => {
+        vi.mocked(api).mockResolvedValue({ deviceCode: pending.deviceCode, userCode: pending.userCode, expiresIn: 600 });
+        const output = await connectBridge(true);
+        const url = 'http://127.0.0.1:1/start?setup=1&setupFlow=bridge-first&step=0&connect=' + pending.userCode;
+        expect(output).toMatchObject({ url });
+        expect(openVerificationPage).toHaveBeenCalledExactlyOnceWith(url);
+    });
+    it('Повторное открытие сохранённой пары использует новый маршрут без новой пары или ключа', async () => {
+        await writeState('pair', pending); vi.mocked(api).mockRejectedValue(new Error('Ещё не подтверждено'));
+        const output = await connectBridge(true);
+        expect(output).toMatchObject({ url: 'http://127.0.0.1:1/start?setup=1&setupFlow=bridge-first&step=0&connect=' + pending.userCode });
+        expect((await readState<typeof pending>('pair'))?.candidateToken).toBe(pending.candidateToken);
+        expect(vi.mocked(api).mock.calls.some(call => call[0] === 'pair/start')).toBe(false);
+    });
+    it('Существующее подключение предлагает продолжить с OpenCode перед папкой проекта', async () => {
+        await writeState('credentials', { token: 'c'.repeat(64), deviceId: identity.id, email: identity.email });
+        vi.mocked(api).mockResolvedValue(identity);
+        const output = await connectBridge();
+        expect(output.note).toContain('OpenCode'); expect(output.note).not.toContain('выберите папку');
     });
     it('Будущий ключ сохраняется только локально, в запрос отправляется хэш', async () => {
         vi.mocked(api).mockResolvedValue({ deviceCode: pending.deviceCode, userCode: pending.userCode, expiresIn: 600 });

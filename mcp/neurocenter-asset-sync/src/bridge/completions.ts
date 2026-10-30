@@ -10,6 +10,7 @@ import {acknowledgeCodexReceipt,codexDeliveryResult} from '../features/device-co
 import {acknowledgeRuntimeCachePolicyReceipt} from '../features/runtime-artifacts/cache-policy.js';
 import {AGENT_METHOD_WORKFLOW_PROTOCOL} from '../features/agent-method-workflow/contract.js';
 import {acknowledgeMethodReceipt,methodDeliveryResult} from '../features/agent-method-workflow/receipts.js';
+import {contract as globalProvidersContract} from '../features/opencode-local-providers/contract.js';
 
 export interface Completion {
     id: string;
@@ -21,16 +22,25 @@ export interface Completion {
 }
 const uuid = /^[-a-f0-9]{36}$/;
 const directory = () => path.join(stateDir(), 'completions');
+function providerInventory(item:Completion):boolean {
+    const kind=item.result?.kind;
+    if(kind!==globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB&&kind!==globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB)return false;
+    if(!item.deviceId)throw new Error('Локальная квитанция OpenCode не содержит компьютер.');
+    const result=globalProvidersContract.normalizeGlobalProvidersResult(item.result,{deviceId:item.deviceId,jobId:item.id,kind});
+    if((result.status!=='failed')!==(item.state==='succeeded'))throw new Error('Исход локального действия OpenCode не подтверждён.');
+    return kind===globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB;
+}
 function validate(value: unknown): Completion {
     const item = value as Completion | null;
     if (!item || !uuid.test(item.id) || !uuid.test(item.lease)
         || (item.deviceId !== undefined && !uuid.test(item.deviceId))
         || !['succeeded', 'failed'].includes(item.state)
         || typeof item.message !== 'string' || item.message.length > 1500
-        || !item.result || typeof item.result !== 'object' || Array.isArray(item.result)
-        || Buffer.byteLength(JSON.stringify(item.result)) > (item.result.schemaVersion === 1 && (item.result.status === 'prepared' || Array.isArray(item.result.entries)) ? 512 * 1024 : 10000)) {
+        || !item.result || typeof item.result !== 'object' || Array.isArray(item.result)) {
         throw new Error('Повреждено локальное подтверждение задания MCP.');
     }
+    const inventory=providerInventory(item);
+    if(Buffer.byteLength(JSON.stringify(item.result))>(item.result.schemaVersion===1&&(item.result.status==='prepared'||Array.isArray(item.result.entries)||inventory)?512*1024:10000))throw new Error('Повреждено локальное подтверждение задания MCP.');
     return item;
 }
 

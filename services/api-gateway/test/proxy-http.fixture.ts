@@ -9,6 +9,7 @@ import type {LiveService} from '../src/live/live.service';
 import {AuthGuardService} from '../src/auth/auth-guard.service';
 import {ProxyService} from '../src/proxy/proxy.service';
 import {sourceUploadConnection} from '../src/proxy/source-upload-stream';
+import {deviceChannelJson} from '../src/proxy/device-channel-json';
 import {sourceUploadContentRoute} from '../../shared/source-upload-route.cjs';
 import {assetSourceArchiveRoute} from '../../shared/asset-source-archive-route.cjs';
 import {snapshotContentRoute} from '../../shared/snapshot-content-route.cjs';
@@ -60,7 +61,7 @@ export async function proxyHttpFixture(){
  const config={get:(key:string)=>values[key as keyof typeof values]} as ConfigService;
  const auth=new AuthGuardService(config),proxy=new ProxyService(config,auth,live as unknown as LiveService);
  const active=new Set<Promise<unknown>>();
- const app=express(),json=express.json({limit:'50mb'});app.use(sourceUploadConnection);app.use((req,res,next)=>discussionAttachmentUploadRoute(req.method,req.path)||sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)||assetSourceArchiveRoute(req.method,req.path)?next():json(req,res,next));
+ const app=express(),json=express.json({limit:'50mb'});app.use(sourceUploadConnection);app.use('/api/device-channel',deviceChannelJson);app.use((req,res,next)=>discussionAttachmentUploadRoute(req.method,req.path)||sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)||assetSourceArchiveRoute(req.method,req.path)?next():json(req,res,next));
  app.use((req,res)=>{const status=res.status.bind(res);res.status=(code:number)=>{writes.push({path:req.path,status:code,destroyed:res.destroyed});return status(code);};const pending=proxy.forward(req,res).catch(()=>{if(!res.headersSent)res.status(503).json({message:'Synthetic outer error boundary.'});else res.destroy();}).finally(()=>active.delete(pending));active.add(pending);});
  const gateway=createServer(app),url=await listen(gateway);
  return {state,calls,writes,live,proxy,url,origin,

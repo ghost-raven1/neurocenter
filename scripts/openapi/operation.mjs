@@ -1,6 +1,8 @@
 import {describeRemoteProviderAccess} from './remote-provider-access.mjs';
 import {decorators,values} from './typescript.mjs';
 import {describeComputerSetup} from './computer-setup.mjs';
+import {describeOpenCodeCliInstall} from './opencode-cli-install.mjs';
+import {describeGlobalProviders} from './opencode-global-providers.mjs';
 import {describeProjectText} from './project-text.mjs';
 import {describeRuntimeLimits} from './runtime-limits.mjs';
 import {ggufImportOperation} from './gguf-import.mjs';
@@ -141,6 +143,6 @@ export function operation(ts,checker,mapper,route){
         for(const failure of thrownStatuses(ts,method,bindings))result.responses[failure]={description:'This endpoint rejects the operation. '+(documentation||'See the server error message.')};
         result.deprecated=true;result.description=(result.description?result.description+'\n\n':'')+'This retained endpoint has no successful response.';
     }
-    const described=describeRemoteProviderAccess(describeRuntimeLimits(describeProjectText(describeComputerSetup(result,path,http),path,http),path,http),path,http);
+    const described=describeRemoteProviderAccess(describeRuntimeLimits(describeProjectText(describeGlobalProviders(describeOpenCodeCliInstall(describeComputerSetup(result,path,http),path,http),path,http),path,http),path,http),path,http);
     return Object.assign(described,ggufImportOperation(http,path)??{});
 }

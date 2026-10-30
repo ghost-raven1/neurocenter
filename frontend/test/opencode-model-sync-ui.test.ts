@@ -28,28 +28,30 @@ vi.mock('antd', () => {
     };
 });
 const enabledLabel = 'Автоматически добавлять модели OpenCode', secretLabel = 'Разрешить перенос API-ключей с компьютера';
-const settings = { revision: 0, enabled: true, transferCredentials: false, canTransferCredentials: true, sources: [] };
+const settings = { revision: 0, enabled: true, transferCredentials: false, canTransferCredentials: false, legacyTransferCredentials: false, sources: [] };
 const render = (): string => { ui.cursor = 0; ui.refCursor = 0; ui.buttons.clear(); ui.switches.clear(); return renderToStaticMarkup(createElement(OpenCodeModelSyncSettings, { deviceId: 'computer-one', supported: true })); };
 const flush = async () => { for (let index = 0; index < 16; index++) await Promise.resolve(); };
 const open = async (value = settings): Promise<string> => { vi.mocked(baseApi.get).mockResolvedValueOnce({ data: value }); render(); ui.buttons.get('Модели OpenCode')!.click!(); await flush(); return render(); };
 beforeEach(() => { vi.clearAllMocks(); ui.states = []; ui.refs = []; ui.owner = 'admin-a'; ui.isMain = true; });
 
 describe('OpenCode computer consent settings', () => {
-    it('loads only after opening, defaults transfer off and explains safe explicit activation', async () => {
+    it('loads only after opening and exposes metadata sync without an export control', async () => {
         render(); expect(baseApi.get).not.toHaveBeenCalled();
-        const html = await open(); expect(ui.switches.get(enabledLabel)?.checked).toBe(true); expect(ui.switches.get(secretLabel)?.checked).toBe(false);
-        expect(html).toContain('зашифрованном виде'); expect(html).toContain('уже сохранённый ключ'); expect(html).toContain('примерно раз в минуту');
+        const html = await open(); expect(ui.switches.get(enabledLabel)?.checked).toBe(true); expect(ui.switches.has(secretLabel)).toBe(false);
+        expect(html).toContain('только описания моделей'); expect(html).toContain('«Мой доступ»'); expect(html).toContain('примерно раз в минуту');
     });
-    it('sends only boolean consent and its CAS revision; it never asks browser to read a local key', async () => {
-        await open(); vi.mocked(baseApi.put).mockResolvedValueOnce({ data: { ...settings, revision: 1, transferCredentials: true } });
-        ui.switches.get(secretLabel)!.change!(true); await flush(); render();
-        expect(baseApi.put).toHaveBeenCalledExactlyOnceWith('/api/devices/computer-one/opencode-model-sync', { expectedRevision: 0, enabled: true, transferCredentials: true });
-        expect(ui.switches.get(secretLabel)?.checked).toBe(true); expect(JSON.stringify(vi.mocked(baseApi.put).mock.calls)).not.toContain('apiKey');
+    it('saves only enabled and CAS revision while retaining the legacy preference as history', async () => {
+        const legacy = { ...settings, legacyTransferCredentials: true }; expect(await open(legacy)).toContain('Прежнее разрешение');
+        vi.mocked(baseApi.put).mockResolvedValueOnce({ data: { ...legacy, revision: 1, enabled: false } });
+        ui.switches.get(enabledLabel)!.change!(false); await flush(); const html = render();
+        expect(baseApi.put).toHaveBeenCalledExactlyOnceWith('/api/devices/computer-one/opencode-model-sync', { expectedRevision: 0, enabled: false });
+        expect(ui.switches.get(enabledLabel)?.checked).toBe(false); expect(ui.switches.has(secretLabel)).toBe(false); expect(html).toContain('Прежнее разрешение');
+        expect(JSON.stringify(vi.mocked(baseApi.put).mock.calls)).not.toMatch(/apiKey|transferCredentials/);
     });
-    it('disables key transfer without server encryption and retains the previous setting after failed save', async () => {
-        await open({ ...settings, canTransferCredentials: false }); expect(ui.switches.get(secretLabel)?.disabled).toBe(true);
+    it('retains enabled and historical information after a failed metadata save', async () => {
+        await open({ ...settings, legacyTransferCredentials: true }); expect(ui.switches.has(secretLabel)).toBe(false);
         vi.mocked(baseApi.put).mockRejectedValueOnce(new Error('Настройка изменилась')); ui.switches.get(enabledLabel)!.change!(false); await flush();
-        expect(render()).toContain('Настройка изменилась'); expect(ui.switches.get(enabledLabel)?.checked).toBe(true);
+        const html = render(); expect(html).toContain('Настройка изменилась'); expect(html).toContain('Прежнее разрешение'); expect(ui.switches.get(enabledLabel)?.checked).toBe(true);
     });
     it('late responses after owner switch cannot change the displayed settings', async () => {
         let resolve!: (value: unknown) => void; vi.mocked(baseApi.get).mockReturnValueOnce(new Promise(done => { resolve = done; }));
@@ -58,7 +60,7 @@ describe('OpenCode computer consent settings', () => {
     });
     it('opens an existing server connection from source metadata with per-model capacities', async () => {
         const html = await open({ ...settings, sources: [{ projectId: 'project-one', provider: 'team', configKey: 'alias', modelId: 'model-one', name: 'Team model', state: 'present', credentialStatus: 'pending', contextWindow: 128000, outputTokenLimit: 64000 }] } as typeof settings);
-        expect(html).toContain('Нужен ключ на сервере'); expect(html).toContain('Контекст:'); expect(html).toContain('Предел ответа:');
+        expect(html).toContain('Настройте «Мой доступ»'); expect(html).toContain('Контекст:'); expect(html).toContain('Предел ответа:');
         vi.mocked(modelCatalogApi.get).mockResolvedValueOnce({ id: 'model-one', revision: 1 } as never);
         ui.buttons.get('Подключение')!.click!(); await flush(); expect(render()).toContain('Connection: model-one');
         expect(modelCatalogApi.get).toHaveBeenCalledExactlyOnceWith('model-one');

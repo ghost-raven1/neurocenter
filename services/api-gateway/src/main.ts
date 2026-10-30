@@ -21,6 +21,7 @@ import {LiveService} from './live/live.service';
 import {allowBrowserOrigin,browserSecurity,panelOrigin} from './security/browser-security';
 import {sourceUploadConnection} from './proxy/source-upload-stream';
 import {setupApiDocumentation} from './docs/setup-api-documentation';
+import {deviceChannelJson} from './proxy/device-channel-json';
 
 /**
  * Точка входа api-gateway: HTTP (proxy /api) + socket.io real-time (/socket.io).
@@ -36,7 +37,7 @@ async function bootstrap(): Promise<void> {
     app.use(sourceUploadConnection);
     app.use(browserSecurity);
     // Скиллы и RAG-батчи должны проходить через gateway с тем же лимитом, что и в сервисах.
-    app.use('/api/device-channel',express.json({limit:'512kb'}));
+    app.use('/api/device-channel',deviceChannelJson);
     const jsonParser=express.json({limit:'50mb'});
     app.use((req: import('express').Request,res: import('express').Response,next: import('express').NextFunction)=>{
         if(ggufImportContentRoute(req.method,req.path)||discussionAttachmentUploadRoute(req.method,req.path)||sourceUploadContentRoute(req.method,req.path)||snapshotContentRoute(req.method,req.path)||assetSourceArchiveRoute(req.method,req.path)){next();return;}

@@ -1,3 +1,8 @@
+import {OPENCODE_CLI_INSTALL_JOB,normalizeOpenCodeInstallPayload} from '../../../shared/opencode-cli-install.cjs';
+import {ComputerSetupSupplyApproval} from './computer-setup-supply-approval';
+import {OPENCODE_GLOBAL_PROVIDERS_READ_JOB,OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB} from '../../../shared/opencode-local-providers.cjs';
+import {assertGlobalProvidersInput,assertGlobalProvidersJob,assertGlobalProvidersAdmission,assertGlobalProvidersAuthority,globalProvidersJobPayload} from './global-provider-jobs';
+const globalProviderKinds:readonly string[]=[OPENCODE_GLOBAL_PROVIDERS_READ_JOB,OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB];
 import type {PoolClient} from 'pg';
 import {AGENT_METHOD_WORKFLOW_JOB} from '../../../shared/agent-method-workflow.cjs';
 import {agentMethodJobPayload,assertAgentMethodJob} from '../agent-method-workflows/jobs';
@@ -86,7 +91,13 @@ export class DeviceJobs {
         private readonly plans: InstallPlans,
         private readonly embedding: ProjectEmbeddingService,
         @Optional()private readonly codex?:DeviceCodexService,
+        @Optional()private readonly computerSupply?:ComputerSetupSupplyApproval,
     ) {}
+    private async approveComputerSupply(kind:string,payload:unknown):Promise<void>{
+        if(kind!==OPENCODE_CLI_INSTALL_JOB)return;
+        if(!this.computerSupply)throw new ConflictException({code:'computer-setup-supply-unavailable',message:'Площадка пока не подтвердила комплект OpenCode. Обновите состояние моста.'});
+        await this.computerSupply.requireOpenCode(normalizeOpenCodeInstallPayload(payload).source);
+    }
     /** Повтор создаёт новое задание через обычные проверки, сохраняя исходную запись журнала. */
     async retry(actor:IAccessActor,id:string,requestKey:string){
         if(!/^[-a-f0-9]{36}$/.test(requestKey||'')){throw new BadRequestException('Нужен ключ запроса для повторного задания.');}
@@ -136,12 +147,15 @@ export class DeviceJobs {
         if((approved?.package.config?.extra?.hostedEmbedding as {reindexSchemaVersion?:unknown}|undefined)?.reindexSchemaVersion!==1)throw new ConflictException('Обновите выбранную установку OpenCodeRAG для переиндексации.');
     }
     async create(actor: IAccessActor, input: JobInput, admit?: (db:PoolClient)=>Promise<void>) {
-        if(input?.kind===OPENCODE_CLI_INSPECT_JOB)assertComputerSetupInput(input);
+        if(globalProviderKinds.includes(input?.kind))assertGlobalProvidersInput(input);
+        if(input?.kind===OPENCODE_CLI_INSPECT_JOB||input?.kind===OPENCODE_CLI_INSTALL_JOB)assertComputerSetupInput(input);
         if (
             !input ||
             ![
                 'choose-root',
                 OPENCODE_CLI_INSPECT_JOB,
+                OPENCODE_CLI_INSTALL_JOB,
+                ...globalProviderKinds,
                 RUNTIME_CACHE_POLICY_JOB,
                 MEMORY_SYNC_JOB,
                 LEARNING_QUIRKS_KIND,
@@ -183,7 +197,7 @@ export class DeviceJobs {
             input.kind === 'choose-root' ? undefined : input.projectId,
             jobMinimumLevel(input.kind),
         );
-        if (input.kind !== 'choose-root' && input.kind!==OPENCODE_CLI_INSPECT_JOB && input.kind!==RUNTIME_CACHE_POLICY_JOB && !(input.kind==='scan-opencode-models'&&input.scope==='global') && !input.projectId) {
+        if (input.kind !== 'choose-root' && input.kind!==OPENCODE_CLI_INSPECT_JOB && input.kind!==OPENCODE_CLI_INSTALL_JOB && !globalProviderKinds.includes(input.kind) && input.kind!==RUNTIME_CACHE_POLICY_JOB && !(input.kind==='scan-opencode-models'&&input.scope==='global') && !input.projectId) {
             throw new BadRequestException('Выберите серверный проект.');
         }
         const requestHash = deviceJobRequestHash(actor.activeRole,input);
@@ -198,7 +212,9 @@ export class DeviceJobs {
         }
         assertManagedBridge(device.report);
         if(input.kind===RUNTIME_CACHE_POLICY_JOB)payload={...runtimeCacheJobPayload(device,input,actor.activeRole)!};
-        if(input.kind===OPENCODE_CLI_INSPECT_JOB)payload=computerSetupJobPayload(device,input,actor.activeRole)!;
+        if(input.kind===OPENCODE_CLI_INSPECT_JOB||input.kind===OPENCODE_CLI_INSTALL_JOB)payload=computerSetupJobPayload(device,input,actor.activeRole)!;
+        if(globalProviderKinds.includes(input.kind))payload=globalProvidersJobPayload(device,input,actor.activeRole)!;
+        await this.approveComputerSupply(input.kind,payload);
         if (RAG_JOB_KINDS.includes(input.kind)) {
             payload = {bindingId:assertRagJobBinding(device.report,input.projectId,input.expectedBindingId),ragProtocol:RAG_GENERATION_PROTOCOL};
         }
@@ -283,7 +299,7 @@ export class DeviceJobs {
             id: randomUUID(), deviceId: device.id, email: actor.email, role: actor.activeRole,
             projectId: input.projectId, kind: input.kind, payload,
             requestKey: input.requestKey, requestHash,
-        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await assertAgentMethodJob(device,{kind:input.kind,payload,project_id:input.projectId??null},db);await assertComputerSetupAdmission(db,{kind:input.kind,payload,project_id:input.projectId??null,device_id:device.id,email:actor.email,role:actor.activeRole});await admit?.(db);return this.store.access.claims(actor.email);},
+        },async db=>{await requireFeaturesEnabled(requiredJobFeatures(input.kind,payload,true));await assertAgentMethodJob(device,{kind:input.kind,payload,project_id:input.projectId??null},db);await assertComputerSetupAdmission(db,{kind:input.kind,payload,project_id:input.projectId??null,device_id:device.id,email:actor.email,role:actor.activeRole});await assertGlobalProvidersAdmission(db,{kind:input.kind,payload,project_id:input.projectId??null,device_id:device.id,email:actor.email,role:actor.activeRole});await admit?.(db);return this.store.access.claims(actor.email);},
         origin?async(db,jobId)=>{await saveMethodChatOrigin(db,jobId,input.projectId!,actor,origin);}:undefined);
     }
     /** История и отмена используют свежие назначения; владение компьютером не заменяет доступ к проекту. */
@@ -300,7 +316,7 @@ export class DeviceJobs {
     async list(actor: IAccessActor) {
         const scope = await this.readScope(actor);
         await this.expire();
-        const access = "AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli')))";
+        const access = "AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers')))";
         return (
             await this.store.pool.query(
                 `SELECT ${view} FROM bridge_jobs WHERE email=$1 ${access} AND (state IN ('queued','running','reconciling')
@@ -320,7 +336,7 @@ export class DeviceJobs {
             "UPDATE bridge_jobs SET state='cancelled',message='Задание ожидало моста больше суток и отменено. Повторите действие, если оно ещё нужно.',updated_at=now() WHERE state='queued' AND created_at<now()-interval '24 hours' RETURNING *",
             [],{state:'CANCELLED',percent:0,message:'Срок ожидания моста истёк.'});
     }
-    async claim(device: Device) {
+    async claim(device: Device,requestToken?:string) {
         await this.expire();
         const client = await this.store.pool.connect();
         let job: Job | undefined;
@@ -365,6 +381,7 @@ export class DeviceJobs {
             await this.codex?.authorizeJob(device,job);
             assertRuntimeCacheJob(device,job);
             assertComputerSetupJob(device,job);
+            assertGlobalProvidersJob(device,job);
             await assertAgentConfigurationJob(this.store,device,job);
             await assertAgentMethodJob(device,job,this.store.pool);
             await assertMethodChatJob(this.store.pool,job);
@@ -396,7 +413,9 @@ export class DeviceJobs {
             await assertRagAutoInspection(this.store.pool,device,job);
             if(job.kind===RUNTIME_CACHE_POLICY_JOB)await this.permission(device,job.role,undefined);
             await assertRuntimeCacheAuthority(this.store.pool,device,job);
-            await assertComputerSetupAuthority(this.store.pool,device,job);
+            await this.approveComputerSupply(job.kind,job.payload);
+            await assertComputerSetupAuthority(this.store.pool,device,job,requestToken);
+            await assertGlobalProvidersAuthority(this.store.pool,device,job,requestToken);
             if (job.kind === 'install') {
                 await this.assertCatalogAsset(job.project_id, job.payload.assetKind, job.payload.assetId);
                 await this.assertJobPlan(job);
@@ -416,7 +435,7 @@ export class DeviceJobs {
         await notifyDeviceOperations();
         return { ...job, state: 'running' };
     }
-    async authorize(device: Device, id: string, lease: string,options?:{snapshotReceipt?:boolean}) {
+    async authorize(device: Device, id: string, lease: string,options?:{snapshotReceipt?:boolean;requestToken?:string}) {
         const { rows } = await this.store.pool.query(
             "SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3 AND state='running' AND lease_until>now()",
             [id, device.id, lease],
@@ -432,6 +451,7 @@ export class DeviceJobs {
         await this.codex?.authorizeJob(device,job);
         assertRuntimeCacheJob(device,job);
         assertComputerSetupJob(device,job);
+        assertGlobalProvidersJob(device,job);
         if(options?.snapshotReceipt&&job.kind!==SNAPSHOT_JOB_KIND)throw new BadRequestException('Подтверждение снимка не относится к этому заданию.');
         if(!options?.snapshotReceipt)await requireFeaturesEnabled(requiredJobFeatures(job.kind,job.payload,true));
         await assertRagAutoInspection(this.store.pool,device,job);
@@ -482,7 +502,9 @@ export class DeviceJobs {
         }
         if(job.kind===RUNTIME_CACHE_POLICY_JOB)await this.permission(device,job.role,undefined);
         await assertRuntimeCacheAuthority(this.store.pool,device,job);
-        await assertComputerSetupAuthority(this.store.pool,device,job);
+        await this.approveComputerSupply(job.kind,job.payload);
+        await assertComputerSetupAuthority(this.store.pool,device,job,options?.requestToken);
+        await assertGlobalProvidersAuthority(this.store.pool,device,job,options?.requestToken);
         return { ok: true, projectId: job.project_id, role: job.role,...(job.kind===SNAPSHOT_JOB_KIND?{snapshotId:job.payload.snapshotId,snapshotProtocol:job.payload.snapshotProtocol}: {}) };
     }
     async memorySyncContext(device:Device,input:unknown){
@@ -552,7 +574,7 @@ export class DeviceJobs {
         if(selected.rows[0]?.kind===DEVICE_CODEX_JOB&&(input.result!==undefined&&input.result!==null&&JSON.stringify(input.result)!=='{}'))throw new BadRequestException('Приватный результат Codex передаётся только в завершении задания.');
         if (Buffer.byteLength(JSON.stringify(input.result ?? null)) > 10000) { throw new BadRequestException('Промежуточный результат превышает допустимый размер.'); }
         let progressMessage = selected.rows[0]?.kind===DEVICE_CODEX_JOB?'Codex обрабатывает запрос на компьютере.':input.message;
-        if ([OPENCODE_CLI_INSPECT_JOB,PROJECT_CONFIGURATION_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
+        if ([OPENCODE_CLI_INSPECT_JOB,OPENCODE_CLI_INSTALL_JOB,...globalProviderKinds,PROJECT_CONFIGURATION_JOB,...CONFIGURATION_KINDS,...PROJECT_LOCAL_KINDS,'bind-project','prepare-bind-project','prepare-local-change','apply-local-change','open-local-change-report','open-local-recovery-folder','probe-runtime','open-rag-ui',HOSTED_RAG_KIND].includes(selected.rows[0]?.kind)) {
             if (input.result !== undefined && input.result !== null) { throw new BadRequestException('Результат привязки передаётся только после завершения.'); }
             progressMessage = 'Мост выполняет проверенное действие.';
         }
@@ -583,7 +605,7 @@ export class DeviceJobs {
     }
     async cancel(actor: IAccessActor, id: string) {
         const scope = await this.readScope(actor);
-        const access = "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli')))";
+        const access = "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers')))";
         const params = [id,scope.email,scope.main,scope.projects];
         const codex=(await this.store.pool.query<{kind:string;state:string}>(`SELECT kind,state FROM bridge_jobs WHERE id=$1 AND email=$2 ${access}`,params)).rows[0];
         if(codex?.kind===DEVICE_CODEX_JOB){
@@ -595,7 +617,7 @@ export class DeviceJobs {
         }
         // Learning jobs journal each boundary and can stop between steps; filesystem jobs keep their rollback contract.
         const { rowCount } = await transitionDeviceJobs(this.store.pool,
-            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks','run-agent-method-workflow','inspect-opencode-cli') AND state IN ('running','reconciling')) RETURNING *`,
+            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks','run-agent-method-workflow','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers') AND state IN ('running','reconciling')) RETURNING *`,
             params,
             {state:'CANCELLED',percent:0,message:'Отменено пользователем'},
         );

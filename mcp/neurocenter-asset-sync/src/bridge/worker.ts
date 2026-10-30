@@ -1,3 +1,4 @@
+import {OPENCODE_CLI_INSTALL_JOB} from '../features/computer-setup/install-contract.js';
 import {runProjectLearningQuirksJob} from '../features/project-learning-quirks/index.js';
 import {MEMORY_SYNC_JOB} from '../features/project-learning-memory-sync/contract.js';
 import {runLearningMemoryJob} from '../features/project-learning-memory-sync/worker.js';
@@ -81,6 +82,9 @@ import {runAgentMethodWorkflow,stopMethodWorkflows} from '../features/agent-meth
 import {recoverMethodCompletions} from '../features/agent-method-workflow/receipts.js';
 import {OPENCODE_CLI_INSPECT_JOB} from '../features/computer-setup/contract.js';
 import {runComputerSetupJob,stopComputerSetupJobs,recoverComputerSetupJobs} from '../features/computer-setup/executor.js';
+import {runGlobalProvidersJob,stopGlobalProvidersJobs,recoverGlobalProvidersJobs} from '../features/opencode-local-providers/index.js';
+import {contract as globalProvidersContract} from '../features/opencode-local-providers/contract.js';
+const globalProviderJobs:readonly string[]=[globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB,globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB];
 
 interface Job {
     id: string;
@@ -130,6 +134,7 @@ export async function runWorker(): Promise<void> {
     await writeState('worker-version', { pid: process.pid, version: BRIDGE_VERSION, buildId: await bridgeBuildId() });
     // Recover the previous local owner before either queue lane can obtain another execution permit.
     await recoverComputerSetupJobs();
+    await recoverGlobalProvidersJobs();
     let running = false;
     let stopped = false;
     const socket = io(apiHub(), {
@@ -200,6 +205,7 @@ export async function runWorker(): Promise<void> {
         running = true;
         try {
             await recoverComputerSetupJobs();
+            await recoverGlobalProvidersJobs();
             await roleMcpStopping;
             await recoverMemoryCompletions(saveCompletion);
             await recoverPendingWorkspaceIdentity();
@@ -250,8 +256,12 @@ export async function runWorker(): Promise<void> {
                     }).catch(() => undefined);
                 }, 30000);
                 try {
-                    if(current.kind===OPENCODE_CLI_INSPECT_JOB){
+                    if(current.kind===OPENCODE_CLI_INSPECT_JOB||current.kind===OPENCODE_CLI_INSTALL_JOB){
                         await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runComputerSetupJob(current,deviceId,authorize));
+                        clearInterval(renew);await deliverCompletions();await heartbeat();continue;
+                    }
+                    if(globalProviderJobs.includes(current.kind)){
+                        await jobContext.run({id:current.id,lease:current.lease,deviceId},()=>runGlobalProvidersJob(current,deviceId,authorize));
                         clearInterval(renew);await deliverCompletions();await heartbeat();continue;
                     }
                     if(current.kind===AGENT_METHOD_WORKFLOW_JOB){
@@ -429,10 +439,11 @@ export async function runWorker(): Promise<void> {
                         }
                     }
                     if(current.kind===DEVICE_CODEX_JOB)throw new Error('Результат Codex сохранён локально или требует восстановления; повторная отправка модели заблокирована.');
-                    if(current.kind===OPENCODE_CLI_INSPECT_JOB){
+                    if(current.kind===OPENCODE_CLI_INSPECT_JOB||current.kind===OPENCODE_CLI_INSTALL_JOB){
                         await stopRoleMcpPoller();
                         throw new Error('Проверка OpenCode сохранена для восстановления; новые задания ждут подтверждённой очистки.');
                     }
+                    if(globalProviderJobs.includes(current.kind)){await stopRoleMcpPoller();throw new Error('Настройка OpenCode сохранена для восстановления; новый локальный сеанс автоматически не открывается.');}
                     if(current.kind===AGENT_METHOD_WORKFLOW_JOB)throw new Error('Результат разработки сохранён локально или требует восстановления; повторный запуск автоматически не выполняется.');
                     if(current.kind===MEMORY_SYNC_JOB)throw new Error('План Memory сохранён для восстановления. Новые изменения автоматически не запускаются.');
                     if(current.kind==='connect-rag-model'&&current.payload.reindex){const root=await projectFolder(current.project_id||'');releaseRagReindex(root);await recoverRagRestore(root);}
@@ -495,7 +506,7 @@ export async function runWorker(): Promise<void> {
         cleanupController?.abort();
         clearInterval(timer);
         socket.disconnect();
-        const sessions = Promise.all([stopComputerSetupJobs(),Promise.allSettled([stopMethodWorkflows(),stopRoleMcpPoller(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()])]);
+        const sessions = Promise.all([stopComputerSetupJobs(),stopGlobalProvidersJobs(),Promise.allSettled([stopMethodWorkflows(),stopRoleMcpPoller(),closeConfigurationSessions(),closeProviderSessions(),closeRagUis(),stopHostedRagConnections()])]);
         // Read-only maintenance may cancel; admitted mutation and owned lock cleanup must finish.
         void Promise.all([heartbeatPublication,sessions]).then(()=>Promise.allSettled([cleanupPending])).then(()=>readBoundedUtf8(lock, 4096))
             .then((value) =>

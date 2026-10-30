@@ -156,6 +156,16 @@ test('Computer setup gates new jobs in their queue owner while retaining exact r
  }
 });
 
+test('Bridge-first software and provider writes remain gated while inventory and accepted receipts survive OFF',()=>{
+ assert.deepEqual(requiredJobFeatures('install-opencode-cli'),['computer_setup']);
+ assert.deepEqual(requiredJobFeatures('inspect-opencode-global-providers'),[]);
+ assert.deepEqual(requiredJobFeatures('open-opencode-global-providers'),['computer_setup','computer_connections']);
+ for(const kind of ['install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers']){
+  assert.deepEqual(requiredRouteFeatures('POST','/api/device-jobs',{kind}),[]);
+  for(const [method,path]of [['GET','/api/device-jobs'],['GET','/api/device-jobs/requests/existing'],['DELETE','/api/device-jobs/existing']])assert.deepEqual(requiredRouteFeatures(method,path,{kind}),[]);
+ }
+});
+
 test('System chat admission remains stateful so exact replay, history and cancellation survive flag changes',()=>{
  for(const [verb,path]of [['POST','/api/system-role-chats'],['POST','/api/system-role-chats/dialog/messages'],['POST','/api/system-role-chats/dialog/messages/turn/retry'],['POST','/api/system-role-chats/dialog/messages/turn/cancel'],['GET','/api/system-role-chats/dialog']])assert.deepEqual(requiredRouteFeatures(verb,path),[]);
  for(const flag of ['system_indexer','system_role_chat'])assert.equal(evaluateFeatureFlags({...defaultFeatureFlags(),agents:false}).flags[flag],false);

@@ -8,6 +8,8 @@
         "moduleResolution": "bundler",
         "paths": {
             "@neurocenter/computer-setup": ["../services/shared/computer-setup.d.cts"],
+            "@neurocenter/opencode-local-providers": ["../services/shared/opencode-local-providers.d.cts"],
+            "@neurocenter/opencode-cli-install": ["../services/shared/opencode-cli-install.d.cts"],
             "@neurocenter/project-text-knowledge": ["../services/shared/project-text-knowledge.d.cts"],
             "@neurocenter/runtime-limits": ["../services/shared/runtime-limits.d.cts"]
         },

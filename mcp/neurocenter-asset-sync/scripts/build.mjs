@@ -16,6 +16,8 @@ try {
     await fs.mkdir(path.join(stage, 'dist/shared'), { recursive: true });
     await fs.copyFile(path.join(root, '../../services/shared/agent-method-workflow.cjs'), path.join(stage, 'dist/shared/agent-method-workflow.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/computer-setup.cjs'), path.join(stage, 'dist/shared/computer-setup.cjs'));
+    await fs.copyFile(path.join(root, '../../services/shared/opencode-cli-install.cjs'), path.join(stage, 'dist/shared/opencode-cli-install.cjs'));
+    await fs.copyFile(path.join(root, '../../services/shared/opencode-local-providers.cjs'), path.join(stage, 'dist/shared/opencode-local-providers.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/device-codex-inference.cjs'), path.join(stage, 'dist/shared/device-codex-inference.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/runtime-cache-policy.cjs'), path.join(stage, 'dist/shared/runtime-cache-policy.cjs'));
     await fs.copyFile(path.join(root, '../../services/shared/bridge-update-cleanup.cjs'), path.join(stage, 'dist/shared/bridge-update-cleanup.cjs'));

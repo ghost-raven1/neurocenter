@@ -31,7 +31,7 @@ async function profile(f, api = f.origin, worker = false) {
     await fs.mkdir(path.dirname(config), { recursive: true }); await fs.writeFile(config, text, { mode: 0o640 });
     const credentials = path.join(environment.NEUROCENTER_BRIDGE_HOME, sha(f.origin).slice(0, 20), 'credentials.json');
     const bytes = Buffer.from(JSON.stringify({ token: 'owned-worker-token', deviceId: 'owned' }));
-    await fs.mkdir(path.dirname(credentials), { recursive: true }); await fs.writeFile(credentials, bytes, { mode: 0o600 }); f.state.token = 'owned-worker-token';
+    await fs.mkdir(path.dirname(credentials), { recursive: true, mode: 0o700 }); await fs.writeFile(credentials, bytes, { mode: 0o600 }); f.state.token = 'owned-worker-token';
     const started = worker ? await f.startWorker(environment) : undefined;
     return { config, text, credentials, bytes, started, environment };
 }
@@ -51,7 +51,7 @@ test('Local archive installs with implicit sidecar and no curl, system Node/npm,
     for (const name of ['curl', 'node', 'npm']) assert.notEqual(spawnSync('/bin/sh', ['-c', 'command -v ' + name], { env: { ...f.environment, PATH: tools } }).status, 0);
     const result = await run(f, ['--archive', archive], { PATH: tools }); assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(await fs.readFile(path.join(f.install, 'package.json'), 'utf8')).version, f.version);
-    assert.deepEqual(await events(f), ['--init']); assert.equal(f.state.requests.length, 0);
+    assert.deepEqual(await events(f), ['--init', '--cleanup-updates']); assert.equal(f.state.requests.length, 0);
     assert.equal(await fs.readFile(path.join(f.home, '.local/bin/neurocenter-bridge'), 'utf8'), 'owned caller launcher');
     assert.match(result.stdout, /локального архива/); assert.match(result.stdout, /подключ/i); assert.doesNotMatch(result.stdout, /установлен и подключ[её]н|Компьютер уже подключ[её]н/);
 }));
@@ -59,7 +59,7 @@ test('Local archive installs with implicit sidecar and no curl, system Node/npm,
 test('Local archive accepts a separate explicit SHA file with spaces', () => installerLifecycleFixture('local-explicit-sha', async f => {
     await fs.rm(f.install, { recursive: true }); const archive = await artifact(f), digest = path.join(f.root, 'explicit digest.sha256');
     await fs.rename(archive + '.sha256', digest); const result = await run(f, ['--sha256-file', digest, '--archive', archive]);
-    assert.equal(result.status, 0, result.stderr); assert.equal(f.state.requests.length, 0); assert.deepEqual(await events(f), ['--init']);
+    assert.equal(result.status, 0, result.stderr); assert.equal(f.state.requests.length, 0); assert.deepEqual(await events(f), ['--init', '--cleanup-updates']);
 }));
 
 test('Repeated local update keeps disabled JSONC, custom runtime HOME, credentials and other agents byte-for-byte', () => installerLifecycleFixture('local-repeat-profile', async f => {
@@ -70,7 +70,7 @@ test('Repeated local update keeps disabled JSONC, custom runtime HOME, credentia
         assert.equal(result.status, 0, result.stderr); await preserved(saved); assert.equal(f.state.paused, false);
         assert.throws(() => process.kill(worker.pid, 0), error => error.code === 'ESRCH');
     }
-    assert.deepEqual(await events(f), ['--worker', '--prepare-upgrade', '--finish-upgrade', '--worker', '--prepare-upgrade', '--finish-upgrade']);
+    assert.deepEqual(await events(f), ['--worker', '--prepare-upgrade', '--finish-upgrade', '--cleanup-updates', '--worker', '--prepare-upgrade', '--finish-upgrade', '--cleanup-updates']);
     assert.deepEqual(f.state.requests.map(row => [row.method, row.route]), Array.from({ length: 2 }, () => [
         ['POST', '/api/device-channel/worker/pause'], ['POST', '/api/device-channel/worker/resume'],
     ]).flat());

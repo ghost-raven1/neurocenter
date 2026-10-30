@@ -45,7 +45,7 @@ export function createOpenCodeModelSynchronizer(dependencies = { api, hub: apiHu
                     await assertBinding();
                     const credentials: Record<string, string> = {};
                     const scan = await dependencies.readOpenCodeModelMetadata(source.scope==='project'?await dependencies.projectFolder(source.projectId):os.homedir(), source, {
-                        authorize: assertBinding, ...(context.transferCredentials && secureOpenCodeCredentialTransport(dependencies.hub()) ? { credentialTarget: credentials } : {}),
+                        authorize: assertBinding, readAuth:false,
                     });
                     await assertBinding();
                     const key = JSON.stringify([identity.deviceId, source, context.revision]);

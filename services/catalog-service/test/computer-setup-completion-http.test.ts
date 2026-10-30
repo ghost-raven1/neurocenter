@@ -15,9 +15,9 @@ describe.sequential('CLI terminal ACK identity through the actual Nest controlle
     const query=vi.fn(),transaction=vi.fn(),identity=vi.fn(),release=vi.fn();
     const httpFetch=globalThis.fetch;
     let app:INestApplication,base:string;
-    const complete=(selectedToken=token,selectedId=jobId,selectedLease=lease)=>httpFetch(base+'/internal/device-channel/jobs/'+selectedId+'/complete',{
+    const complete=(selectedToken=token,selectedId=jobId,selectedLease=lease,selectedResult:Record<string,unknown>=result)=>httpFetch(base+'/internal/device-channel/jobs/'+selectedId+'/complete',{
         method:'POST',headers:{'content-type':'application/json','x-neurocenter-internal':'cli-completion-fixture',authorization:'Bearer '+selectedToken},
-        body:JSON.stringify({lease:selectedLease,state:'succeeded',message:'private',result})});
+        body:JSON.stringify({lease:selectedLease,state:'succeeded',message:'private',result:selectedResult})});
     beforeAll(async()=>{
         vi.stubEnv('NEUROCENTER_INTERNAL_TOKEN','cli-completion-fixture');
         const store={pool:{query,connect:async()=>({query:transaction,release})},identity} as unknown as DeviceStore;
@@ -31,7 +31,7 @@ describe.sequential('CLI terminal ACK identity through the actual Nest controlle
         job={id:jobId,device_id:deviceId,email:device.email,role:device.role,kind:'inspect-opencode-cli',project_id:null,state:'succeeded',
             payload:{schemaVersion:1,scope:'global',deviceId},lease,result,started_at:new Date()};
         query.mockImplementation(async(_sql:string,args:unknown[])=>({rows:credential===args[0]&&job.id===args[1]&&job.lease===args[2]
-            &&job.kind===args[3]&&job.email===device.email&&job.device_id===deviceId&&job.started_at&&['succeeded','failed','cancelled'].includes(String(job.state))?[device]:[]}));
+            &&Array.isArray(args[3])&&args[3].includes(job.kind)&&job.email===device.email&&job.device_id===deviceId&&job.started_at&&['succeeded','failed','cancelled'].includes(String(job.state))?[device]:[]}));
         identity.mockImplementation(async selectedToken=>{
             if(digest(selectedToken)!==credential||revoked||expired)throw new UnauthorizedException('Connection expired or revoked');
             if(!enabled||!roleAssigned)throw new ForbiddenException('Account or role revoked');return device;
@@ -51,6 +51,14 @@ describe.sequential('CLI terminal ACK identity through the actual Nest controlle
         job.state='cancelled';job.result=null;revoked=true;
         const response=await complete();expect(response.status).toBe(201);expect(await response.json()).toEqual({ok:true,repeated:true,cancelled:true});
         expect(transaction.mock.calls.some(([sql])=>String(sql).startsWith('UPDATE'))).toBe(false);
+    });
+    it('a terminal installation ACK uses the same exact identity after revocation without publishing again',async()=>{
+        const source={buildId:'c'.repeat(64),target:'linux-x64',version:'1.14.48',sha256:'d'.repeat(64)};
+        const installed={schemaVersion:1,scope:'global',deviceId,source,jobId,checkedAt:result.checkedAt,status:'installed',installedVersion:'1.14.48',commandVersion:null,commandReady:false,nextAction:'inspect-path'};
+        job.kind='install-opencode-cli';job.payload={schemaVersion:1,scope:'global',deviceId,source};job.result=installed;revoked=true;
+        const response=await complete(token,jobId,lease,installed);expect(response.status).toBe(201);expect(await response.json()).toEqual({ok:true,repeated:true});
+        expect(identity).not.toHaveBeenCalled();expect(transaction.mock.calls.some(([sql])=>String(sql).startsWith('UPDATE')||String(sql).includes('INSERT INTO operations'))).toBe(false);
+        expect(fetch).not.toHaveBeenCalled();
     });
     it.each(['running','reconciling'])('the fallback never authorizes the first %s completion after revocation',async state=>{
         job.state=state;job.result=null;revoked=true;

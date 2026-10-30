@@ -8,6 +8,7 @@ import { previousDeviceCompletions } from './completions.js';
 import { localRagStatus } from '../lib/lancedb.js';
 import { workspaceBindingReport } from './workspace-instance.js';
 import { recoverWorkspaceIdentity, withWorkspaceIdentityLock } from './workspace-identity-state.js';
+import {openCodeInstallSupply} from '../features/computer-setup/install-supply.js';
 export { safeTarget } from './workspace-paths.js';
 export { bindProject, projectFolder, projectBindingId, projectInstanceId, workspaceInstanceAt, prepareProjectBinding, commitProjectBinding, adoptLegacyProject } from './workspace-instance.js';
 export type { WorkspaceBindingInput, WorkspaceBindingMode, WorkspaceBindingPreparation, WorkspaceBindingResult, WorkspaceFileVerification, VerifyWorkspaceFiles } from './workspace-instance.js';
@@ -97,6 +98,7 @@ export async function bridgePresenceReport() {
     };
 }
 export async function workspaceReport() {
+    const cliSupply=await openCodeInstallSupply();
     const workspace = await readState<Workspace>('workspace');
     let folders:string[]=[];
     let rootError:string|undefined;
@@ -110,6 +112,7 @@ export async function workspaceReport() {
     return {
         ...await bridgePresenceReport(),
         capabilities: BRIDGE_CAPABILITIES,
+        ...(cliSupply?{openCodeInstallSupply:cliSupply}:{}),
         previousDeviceCompletions: await previousDeviceCompletions(),
         ...await localRagStatus(),
         root: workspace?.root || null,

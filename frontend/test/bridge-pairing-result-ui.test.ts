@@ -32,7 +32,8 @@ describe('Результат подключения компьютера', () =>
         const html = renderToStaticMarkup(createElement(BridgePairing, { onConnected: vi.fn() }));
         expect(html).toContain('Мой компьютер');
         expect(html).toContain('Подключение подтверждено');
-        expect(html).toContain('Теперь выберите общую папку проектов');
+        expect(html).toContain('Далее проверьте OpenCode');
+        expect(html).not.toContain('Теперь выберите общую папку проектов');
         expect(html).not.toContain('Компьютер на связи');
     });
     it('Ошибка ведёт в основной мастер, сохраняет контекст и не открывает просроченное подключение снова', () => {
@@ -40,7 +41,7 @@ describe('Результат подключения компьютера', () =>
         const onConnected = vi.fn(); renderToStaticMarkup(createElement(BridgePairing, {onConnected}));
         expect(io.replace).not.toHaveBeenCalled(); expect(io.next).toBeTypeOf('function'); io.next!();
         expect(io.replace).toHaveBeenCalledOnce(); const target = new URL(io.replace.mock.calls[0][0], 'https://panel.example.test');
-        expect(target.pathname).toBe('/start'); expect(target.searchParams.get('setup')).toBe('1'); expect(target.searchParams.get('step')).toBe('1');
+        expect(target.pathname).toBe('/start'); expect(target.searchParams.get('setup')).toBe('1'); expect(target.searchParams.get('step')).toBe('0');
         expect(target.searchParams.get('p')).toBe('prj 日本'); expect(target.searchParams.get('extension')).toBe('rag'); expect(target.searchParams.get('help')).toBe('bridge');
         expect(target.hash).toBe('#computer'); expect(target.searchParams.has('connect')).toBe(false);
         expect(onConnected).not.toHaveBeenCalled();

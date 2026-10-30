@@ -9,7 +9,7 @@ function fixture(transferCredentials = false, address = 'https://neurocenter.exa
     let identity = { token: 'qa-token', deviceId: randomUUID(), email: 'qa@example.test' };
     const context = { schemaVersion:2,global:{deviceId:identity.deviceId},revision: 1, enabled: true, transferCredentials, bindings: [] as typeof binding[] };
     const api = vi.fn(async (route: string) => route.endsWith('/context') ? context : { changed: true });
-    const read = vi.fn(async (_root: string, source: IOpenCodeModelSource, options: { authorize: () => Promise<void>; credentialTarget?: Record<string, string> }) => {
+    const read = vi.fn(async (_root: string, source: IOpenCodeModelSource, options: { authorize: () => Promise<void>; readAuth?: boolean; credentialTarget?: Record<string, string> }) => {
         await options.authorize(); const original=scan(); const value:IOpenCodeModelScan={schemaVersion:2,...source,scanId:original.scanId,checkedAt:original.checkedAt,expiresAt:original.expiresAt,warnings:[],candidates:original.candidates,digest:original.digest};
         if (options.credentialTarget) options.credentialTarget[value.candidates[0]!.candidateId] = 'qa-api-secret';
         return value;
@@ -20,7 +20,7 @@ function fixture(transferCredentials = false, address = 'https://neurocenter.exa
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-21T00:00:00Z')); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
-describe('Automatic OpenCode discovery has bounded traffic and explicit credential consent', () => {
+describe('Automatic OpenCode discovery has bounded traffic and exports metadata only', () => {
     it('discovers global models with no projects and never asks for a project folder',async()=>{
         const f=fixture(),folder=vi.spyOn(f.dependencies,'projectFolder'),bindingReader=vi.spyOn(f.dependencies,'projectBindingId');
         await f.sync();expect(f.read).toHaveBeenCalledOnce();expect(f.read.mock.calls[0]![1]).toEqual({scope:'global',deviceId:f.context.global.deviceId});
@@ -48,13 +48,22 @@ describe('Automatic OpenCode discovery has bounded traffic and explicit credenti
         vi.setSystemTime(Date.now() + 60000); await f.sync(); expect(f.read).toHaveBeenCalledTimes(2); expect(f.api.mock.calls.filter(([route]) => route.endsWith('/sync'))).toHaveLength(1);
         vi.setSystemTime(Date.now() + 600000); await f.sync(); expect(f.api.mock.calls.filter(([route]) => route.endsWith('/sync'))).toHaveLength(2);
     });
-    it('default discovery does not read or serialize credentials; opt-in sends them only on the device endpoint', async () => {
-        const disabled = fixture(); await disabled.sync(); expect(disabled.read.mock.calls[0]![2]).not.toHaveProperty('credentialTarget');
-        expect(JSON.stringify(disabled.api.mock.calls)).not.toContain('qa-api-secret');
-        const enabled = fixture(true); await enabled.sync(); expect(enabled.read.mock.calls[0]![2]).toHaveProperty('credentialTarget');
-        const calls = enabled.api.mock.calls as unknown as [string, { credentials?: Record<string, string> }, string][];
-        expect(Object.values(calls.find(([route]) => route.endsWith('/sync'))![1].credentials!)).toEqual(['qa-api-secret']);
+    it.each([false, true])('never reads auth or exports keys even with legacy transfer preference %s', async legacyTransfer => {
+        const f = fixture(legacyTransfer); f.context.bindings = [binding]; await f.sync();
+        expect(f.read).toHaveBeenCalledTimes(2);
+        for (const call of f.read.mock.calls) { expect(call[2].readAuth).toBe(false); expect(call[2]).not.toHaveProperty('credentialTarget'); }
+        const calls = f.api.mock.calls as unknown as [string, { credentials?: Record<string, string> }, string][];
+        expect(calls.filter(([route]) => route.endsWith('/sync')).map(([, value]) => value.credentials)).toEqual([{}, {}]);
+        expect(JSON.stringify(calls)).not.toContain('qa-api-secret');
         expect(calls.every(([route]) => route.startsWith('opencode-models/'))).toBe(true);
+    });
+    it('a new synchronizer after reload cannot restore credential export from an old context', async () => {
+        const f = fixture(true); await f.sync();
+        const reloaded = createOpenCodeModelSynchronizer(f.dependencies as unknown as Parameters<typeof createOpenCodeModelSynchronizer>[0]); await reloaded();
+        expect(f.read).toHaveBeenCalledTimes(2);
+        expect(f.read.mock.calls.every(call => call[2].readAuth === false && !('credentialTarget' in call[2]))).toBe(true);
+        const posts = (f.api.mock.calls as unknown as [string, { credentials?: Record<string, string> }][]).filter(([route]) => route.endsWith('/sync'));
+        expect(posts).toHaveLength(2); expect(posts.every(([, value]) => Object.keys(value.credentials!).length === 0)).toBe(true);
     });
     it('an insecure remote gateway still imports metadata but never opens the key source', async () => {
         const f = fixture(true, 'http://work.example.test'); await f.sync(); expect(f.read.mock.calls[0]![2]).not.toHaveProperty('credentialTarget');

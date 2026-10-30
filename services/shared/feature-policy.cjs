@@ -7,6 +7,9 @@ const unique=keys=>[...new Set(keys)];
 function requiredJobFeatures(kind,payload={},trustedPayload=false){
     const input=record(payload);
     if(kind==='inspect-opencode-cli')return ['computer_setup'];
+    if(kind==='install-opencode-cli')return ['computer_setup'];
+    if(kind==='inspect-opencode-global-providers')return [];
+    if(kind==='open-opencode-global-providers')return ['computer_setup','computer_connections'];
     if(kind==='runtime-cache-policy'){
         const policy=record(trustedPayload?input:input.runtimeCachePolicy);
         if(policy.action==='set-cleanup')return record(policy.cleanup).enabled===true?['bridge_storage_cleanup']:[];
@@ -88,7 +91,7 @@ function requiredRouteFeatures(method,path,body){
     if(/^\/internal\/research-mcp\/(list|call)$/.test(route))return ['research_tools','tool_catalog'];
     if(route==='/internal/asset-sources/skills/publish')return ['tool_catalog'];
     // The owning queue checks exact accepted receipts before new admission flags.
-    if(route==='/api/device-jobs'&&verb==='POST'&&input.kind==='inspect-opencode-cli')return [];
+    if(route==='/api/device-jobs'&&verb==='POST'&&['inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers'].includes(input.kind))return [];
     // Linked chat jobs check new admissions after exact replay lookup; history and accepted intent survive OFF.
     if(route==='/api/device-jobs'&&verb==='POST'&&input.kind==='run-agent-method-workflow'&&Object.hasOwn(record(input.workflow),'origin'))return [];
     if(route==='/api/device-jobs'&&verb==='POST')return requiredJobFeatures(input.kind,input);

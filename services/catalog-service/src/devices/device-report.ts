@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import {normalizeOpenCodeInstallSupply} from '../../../shared/opencode-cli-install.cjs';
 
 export interface BridgePresence {
     platform:string;arch:string;runtimeVersion:string;bridgeVersion:string;buildId:string;protocolVersion:number;
@@ -33,6 +34,7 @@ export function workspaceReport(value: unknown): Record<string, unknown> {
     }
     if (report.ragSupported !== undefined && typeof report.ragSupported !== 'boolean') { return fail(); }
     if (report.reportUnavailable !== undefined && typeof report.reportUnavailable !== 'boolean') { return fail(); }
+    if(report.openCodeInstallSupply!==undefined){try{normalizeOpenCodeInstallSupply(report.openCodeInstallSupply);}catch{return fail();}}
     if(report.runtimeArtifactTarget!==undefined&&!['darwin-arm64','darwin-x64','linux-arm64-glibc','linux-x64-glibc','linux-arm64-musl','linux-x64-musl','win32-arm64','win32-x64'].includes(String(report.runtimeArtifactTarget)))return fail();
     if (report.bindings !== undefined) {
         if (!Array.isArray(report.bindings) || report.bindings.length > 1000) { return fail(); }

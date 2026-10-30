@@ -13,6 +13,8 @@ const socket=vi.hoisted(()=>({auth:{},on:vi.fn(),disconnect:vi.fn(),connect:vi.f
 vi.mock('socket.io-client',()=>({io:vi.fn(()=>socket)}));
 vi.mock('../src/bridge/state.js',async original=>({...await original<typeof import('../src/bridge/state.js')>(),api:vi.fn()}));
 vi.mock('../src/features/computer-setup/executor.js',()=>({runComputerSetupJob:vi.fn(),recoverComputerSetupJobs:vi.fn(),stopComputerSetupJobs:vi.fn()}));
+// The global provider owner independently verifies nested compatibility recovery in its own causal suite.
+vi.mock('../src/features/opencode-local-providers/index.js',()=>({runGlobalProvidersJob:vi.fn(),recoverGlobalProvidersJobs:vi.fn(async()=>{}),stopGlobalProvidersJobs:vi.fn(async()=>{})}));
 vi.mock('../src/features/system-role-mcp/poller.js',()=>({startRoleMcpPoller:vi.fn(()=>({wake:vi.fn(),stop:vi.fn(async()=>{}),active:0}))}));
 vi.mock('../src/bridge/opencode-model-sync.js',()=>({synchronizeOpenCodeModels:async()=>{}}));
 vi.mock('../src/features/project-learning/observation-sync.js',()=>({synchronizeLearningObservations:async()=>{}}));

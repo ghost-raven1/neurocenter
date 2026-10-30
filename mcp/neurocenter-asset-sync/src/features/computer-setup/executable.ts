@@ -23,7 +23,7 @@ export function userOpenCodeDirectories(home:string,search:string):string[]{
 }
 
 /** Resolves a fixed command from the local environment; it never evaluates a shell or aliases. */
-export async function findUserOpenCode(directories:readonly string[],bridgeRoots:readonly string[],signal:AbortSignal):Promise<UserCliExecutable|undefined>{
+export async function findUserOpenCode(directories:readonly string[],bridgeRoots:readonly string[],signal:AbortSignal,stopAtBundled=false):Promise<UserCliExecutable|undefined>{
     const roots=await Promise.all(bridgeRoots.map(async root=>{
         try{return await fs.realpath(root);}catch(error){if(missing(error))return path.resolve(root);throw error;}
     }));
@@ -32,7 +32,7 @@ export async function findUserOpenCode(directories:readonly string[],bridgeRoots
         signal.throwIfAborted();
         try{
             const file=await fs.realpath(path.join(directory,'opencode'));
-            if(bundled(file,roots))continue;
+            if(bundled(file,roots)){if(stopAtBundled)return undefined;continue;}
             const stat=await fs.stat(file);
             if(!stat.isFile()){unavailable=true;continue;}
             await fs.access(file,constants.X_OK);signal.throwIfAborted();
@@ -49,7 +49,7 @@ export async function findUserOpenCode(directories:readonly string[],bridgeRoots
 }
 
 /** Re-resolve PATH priority and symlinks after each asynchronous authorization barrier. */
-export async function assertUserCliCurrent(executable:UserCliExecutable,directories:readonly string[],bridgeRoots:readonly string[],signal:AbortSignal):Promise<void>{
-    const current=await findUserOpenCode(directories,bridgeRoots,signal);
+export async function assertUserCliCurrent(executable:UserCliExecutable,directories:readonly string[],bridgeRoots:readonly string[],signal:AbortSignal,stopAtBundled=false):Promise<void>{
+    const current=await findUserOpenCode(directories,bridgeRoots,signal,stopAtBundled);
     if(!current||current.file!==executable.file||current.identity!==executable.identity)throw new Error('OpenCode изменился во время проверки.');
 }

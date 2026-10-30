@@ -1,16 +1,20 @@
 import { Button, Input, Space, Typography } from 'antd';
 import { useId, useState, type FC } from 'react';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
+import {startQueryUrl} from '../../modules/Start/startQuery';
 
 /** Возвращает к подтверждению установленного MCP, если ссылка из терминала была потеряна. */
 export const PairingCode: FC = () => {
     const [code, setCode] = useState('');
     const history = useHistory();
+    const location = useLocation();
     const id = useId();
     const valid = /^[A-F0-9]{16}$/.test(code);
     const review = (): void => {
         if (valid) {
-            history.push('/projects?connect=' + encodeURIComponent(code));
+            const params = new URLSearchParams(location.search);
+            params.set('connect', code);
+            history.push(startQueryUrl(params.toString(), {setup: true, step: 0}, location.hash));
         }
     };
     return <Space direction="vertical" style={{ width: '100%' }}>

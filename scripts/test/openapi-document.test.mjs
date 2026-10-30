@@ -110,8 +110,9 @@ test('PostgreSQL text knowledge exposes byte limits, exact receipt recovery and 
 test('Fixed computer OpenCode admission and observations reuse shared schemas without accepting generic command fields',async()=>{
     const {OPENCODE_CLI_SCHEMAS}=await import('../../services/shared/computer-setup.cjs');
     const create=actual.paths['/api/device-jobs'].post,schema=create.requestBody.content['application/json'].schema;
-    assert.equal(schema.oneOf[1].$ref,'#/components/schemas/OpenCodeCliRequest');
-    assert.deepEqual(schema.oneOf[0].allOf[1].properties.kind.not.enum,['inspect-opencode-cli']);
+    const inspect=schema.oneOf[0].allOf[0].oneOf[0].allOf[0];
+    assert.equal(inspect.oneOf[1].$ref,'#/components/schemas/OpenCodeCliRequest');
+    assert.deepEqual(inspect.oneOf[0].allOf[1].properties.kind.not.enum,['inspect-opencode-cli']);
     assert.deepEqual(actual.components.schemas.OpenCodeCliRequest,OPENCODE_CLI_SCHEMAS.request);
     assert.equal(actual.components.schemas.OpenCodeCliRequest.additionalProperties,false);
     assert.deepEqual(actual.components.schemas.OpenCodeCliRequest.required,['deviceId','kind','scope','requestKey']);
@@ -127,6 +128,21 @@ test('Fixed computer OpenCode admission and observations reuse shared schemas wi
     for(const status of ['400','403','409','429','503'])assert.ok(create.responses[status],status);
     assert.ok(create['x-neurocenter-job-kind-contracts']['inspect-opencode-cli'].errors['400'].includes('computer-setup-invalid-request'));
     assert.match(create.description,/exact accepted request/i);
+});
+
+test('Bridge-first installation and local provider setup expose strict shared contracts and a device-only permit',async()=>{
+    const {OPENCODE_CLI_INSTALL_SCHEMAS}=await import('../../services/shared/opencode-cli-install.cjs');
+    const {OPENCODE_GLOBAL_PROVIDERS_SCHEMAS}=await import('../../services/shared/opencode-local-providers.cjs');
+    const contracts=actual.paths['/api/device-jobs'].post['x-neurocenter-job-kind-contracts'];
+    for(const kind of ['inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers'])assert.ok(contracts[kind],kind);
+    assert.deepEqual(actual.components.schemas.OpenCodeCliInstallRequest,OPENCODE_CLI_INSTALL_SCHEMAS.request);
+    assert.deepEqual(actual.components.schemas.GlobalProvidersRequest,OPENCODE_GLOBAL_PROVIDERS_SCHEMAS.request);
+    assert.deepEqual(actual.components.schemas.GlobalProvidersResult,OPENCODE_GLOBAL_PROVIDERS_SCHEMAS.results);
+    const permit=actual.paths['/api/device-channel/opencode-global-providers/authorize'].post;
+    assert.deepEqual(permit.security,[{deviceBearer:[]}]);
+    assert.deepEqual(permit.requestBody.content['application/json'].schema.required,['jobId']);
+    assert.equal(permit.requestBody.content['application/json'].schema.additionalProperties,false);
+    assert.equal(actual.paths['/internal/bridge/opencode-cli-supply/{target}'],undefined);
 });
 
 test('Static Nest decorators, aliases, prefix arrays and gateway boundaries define public routes', () => {
@@ -199,8 +215,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 326);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 400);
+    assert.equal(Object.keys(actual.paths).length, 327);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 401);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for(const [pathname,methods] of Object.entries({'/api/models/{id}/token-quotas/{email}':['get','put'],'/api/models/{id}/token-quotas/{email}/requests/{requestKey}':['get']})) assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods,pathname);
     for(const [pathname,methods]of Object.entries({'/api/runtime-limits':['get'],'/api/runtime-limits/admin':['get','patch'],'/api/runtime-limits/admin/requests/{key}':['get'],'/api/models/gguf-imports':['post'],'/api/models/gguf-imports/limits':['get'],'/api/models/gguf-imports/requests/{key}':['get'],'/api/models/gguf-imports/{id}':['get','delete'],'/api/models/gguf-imports/{id}/accept':['post'],'/api/models/gguf-imports/{id}/content':['put']}))assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods.sort(),pathname);

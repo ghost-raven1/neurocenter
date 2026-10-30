@@ -12,7 +12,7 @@ async function call(route,body,device=false){const response=await fetch(base+rou
 if(mode==='create'){
     if(fixture){throw new Error('Сначала очистите временное подключение');}
     const fingerprint=randomBytes(32).toString('hex');fixture={fingerprint,pair:await call('/api/device-channel/pair/start',{name:'Проверка подключения · тестовый мост',fingerprint})};await save();
-    console.log(JSON.stringify({url:base+'/start?step=1&connect='+fixture.pair.userCode,name:'Проверка подключения · тестовый мост'}));
+    console.log(JSON.stringify({url:base+'/start?setup=1&setupFlow=bridge-first&step=0&connect='+fixture.pair.userCode,name:'Проверка подключения · тестовый мост'}));
 }else if(mode==='approve'){
     await call('/api/device-pairs/'+fixture.pair.userCode+'/approve');console.log('Временное подключение подтверждено отдельной тестовой сессией');
 }else if(mode==='connect'){

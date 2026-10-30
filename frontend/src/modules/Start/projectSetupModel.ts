@@ -4,14 +4,15 @@ import type {useBridge} from '../../features/McpBridge/useBridge';
 import {sha,uuid} from '../../features/McpBridge/operationHelpers';
 import {mergeProjectCatalog} from '../Store/projectCatalogSnapshots';
 
-/** Historical computer/folder and pairing links share the primary connection stage. */
+/** Versioned navigation keeps old recovery URLs in the corresponding bridge-first stage. */
 export function unifiedSetupStep(search:string):number {
     const params=new URLSearchParams(search);
-    if(params.get('setup')!=='1'&&(params.has('connect')||params.get('addComputer')==='1'))return 1;
-    if(!params.has('step')&&(params.has('connect')||params.get('addComputer')==='1'))return 1;
     const value=Number(params.get('step')??0);
-    if(params.get('setup')!=='1'&&value===2)return 1;
-    return Number.isInteger(value)&&value>=0&&value<=3?value:0;
+    if(params.get('setupFlow')==='bridge-first')return Number.isInteger(value)&&value>=0&&value<=5?value:0;
+    if(params.has('connect')||params.get('addComputer')==='1')return 0;
+    if(!Number.isInteger(value)||value<0||value>3)return 0;
+    if(params.get('setup')==='1')return [0,0,4,5][value]!;
+    return value===3?5:0;
 }
 
 /** Only one fresh, verified folder on the explicitly selected computer may receive project setup. */
