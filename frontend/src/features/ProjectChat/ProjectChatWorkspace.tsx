@@ -23,7 +23,7 @@ import {SystemRoleChat} from '../SystemRoleChat/SystemRoleChat';
 import {ProjectChatWorkflowDialog} from './ProjectChatWorkflowDialog';
 import './ProjectChat.less';
 
-interface Props {projectId: string; projectName?: string;}
+interface Props {projectId: string; projectName?: string; initialRoomId?: string; onRoomChange?: (roomId: string) => void;}
 interface RoomProps extends Props {
     roomId: string; selected?: ProjectChatRoomSummary; listOpen: boolean; menuRef: RefObject<HTMLButtonElement>;
     onOpenList: () => void; onManage: (room: ProjectChatRoomSummary) => void; onAccessLost: (id: string) => void;
@@ -71,7 +71,7 @@ function ProjectChatRoomScope({projectId, roomId, selected, listOpen, menuRef, o
 }
 
 function ProjectChatScope(props: Props): JSX.Element {
-    const {scope} = useAuthRequestOwner(), dialogs = useProjectChatRooms(props.projectId), flag = useFeatureAvailability('project_chat_dialogs');
+    const {scope} = useAuthRequestOwner(), dialogs = useProjectChatRooms(props.projectId, props.initialRoomId), flag = useFeatureAvailability('project_chat_dialogs');
     const [form, setForm] = useState<'new' | ProjectChatRoomSummary>(), [listOpen, setListOpen] = useState(false);
     const rail = useRef<HTMLElement>(null), menu = useRef<HTMLButtonElement>(null), wasOpen = useRef(false);
     useEffect(() => {
@@ -80,6 +80,7 @@ function ProjectChatScope(props: Props): JSX.Element {
         wasOpen.current = listOpen;
     }, [listOpen]);
     const selected = dialogs.data?.rooms.find(room => room.id === dialogs.roomId);
+    useEffect(() => {if (selected) props.onRoomChange?.(selected.id);}, [selected?.id, props.onRoomChange]);
     const select = (id: string): void => {if (dialogs.data?.rooms.some(room => room.id === id)) {dialogs.select(id); setListOpen(false);}};
     return <div className="project-chat-workspace">
         {dialogs.error && <Alert className="project-chat__notice" type="error" showIcon message={dialogs.error} action={<Button size="small" onClick={() => {void dialogs.refresh();}}>Обновить диалоги</Button>}/>}

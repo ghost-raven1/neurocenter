@@ -67,6 +67,14 @@
     &__send {flex-wrap: nowrap; margin-top: 1px; > .ant-typography {font-size: 12px;} > .ant-btn {flex-shrink: 0;}}
     &__settings {flex: none; max-height: 40vh; overflow-y: auto; padding: 12px; background: #f7f9fc; border: 1px solid #dbe4ec; border-radius: 8px; display: flex; flex-direction: column; gap: 10px;
         > label {display: flex; flex-direction: column; gap: 4px;}
+        .ant-alert {display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 8px; align-items: start;}
+        .ant-alert-icon {grid-column: 1; margin-right: 0;}
+        .ant-alert-content {grid-column: 2; min-width: 0; overflow-wrap: anywhere;}
+        .ant-alert-no-icon .ant-alert-content {grid-column: 1 / -1;}
+        .ant-alert-message, .ant-alert-description {font-size: 12px; line-height: 1.5;}
+        .ant-alert-action {grid-column: 2; margin: 0; min-width: 0;
+            .ant-btn {height: auto; min-height: 24px; padding: 2px 7px; white-space: normal; font-size: 12px;}
+        }
     }
     &__agent-options {display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px;
         > div {display: flex; flex-direction: column; gap: 2px;} .ant-typography {padding-left: 24px; font-size: 12px;}

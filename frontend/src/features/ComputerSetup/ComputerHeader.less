@@ -15,8 +15,26 @@
     &__status_online { color: #367c45; }
     &__divider { width: 1px; height: 24px; background: #dde5ec; flex-shrink: 0; }
     &__cli { max-width: 170px; font-size: 12px; }
-    &__details { width: 420px; display: grid; gap: 12px; outline: none;
-        .ant-descriptions-item-label { font-size: 12px; }
+    &__details { width: 420px; max-width: calc(100vw - 48px); display: grid; gap: 12px; padding: 4px; outline: none;
+        .ant-descriptions-item-container { align-items: flex-start; }
+        .ant-descriptions-item-label { min-width: 80px; flex-shrink: 0; font-size: 12px; }
+        .ant-descriptions-item-content { min-width: 0; }
+        .ant-descriptions-row > td { padding-bottom: 12px; }
+        .ant-descriptions-row:last-child > td { padding-bottom: 0; }
+        .setup-progress__computer { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; min-width: 0; line-height: 20px; }
+        .setup-progress__computer-name { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+        .ant-tag { margin-right: 0; max-width: 100%; white-space: normal; }
+        .cli-observation { display: grid; gap: 8px; min-width: 0; }
+        .cli-observation__summary > .ant-space-item { max-width: 100%; }
+        .cli-observation__actions .ant-btn-link, .cli-observation > .ant-btn-link {
+            height: auto; padding: 0; line-height: 20px; text-align: left; white-space: normal;
+        }
+        .cli-observation details > summary { cursor: pointer; }
+        .cli-observation details[open] > .ant-typography { display: block; margin-top: 6px; overflow-wrap: anywhere; }
         .ant-alert { max-width: 100%; }
+    }
+    &__actions { padding-top: 12px; border-top: 1px solid #e5ebf0;
+        > .ant-space-item { max-width: 100%; }
+        .ant-btn-sm { height: auto; min-height: 28px; padding: 3px 8px; line-height: 20px; white-space: normal; }
     }
 }
