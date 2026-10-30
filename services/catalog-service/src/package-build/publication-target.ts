@@ -51,6 +51,14 @@ async function readToolSnapshot(pool:Pool,kind:'mcp'|'plugin',id:string){
     }catch(error){try{await client.query('ROLLBACK');}catch{tainted=true;}throw error;}finally{if(tainted)client.release(true);else client.release();}
 }
 
+/** Automatic rebuild may replace only a head that still exactly matches its managed source receipt. */
+export async function managedRebuildPublication(pool:Pool,kind:'mcp'|'plugin',id:string,sourceId:string):Promise<{name:string;publication:BuildPublicationTarget}>{
+    const {card,pin}=await readToolSnapshot(pool,kind,id);
+    if(!pin.origins.some(origin=>origin.externalId===sourceId)||pin.origins.some(origin=>origin.nativeVersion!==card.version||origin.nativeHash!==pin.nativeHash))
+        throw new ConflictException('Управляемая карточка изменена вручную. Подтвердите новую версию в каталоге.');
+    return {name:card.name,publication:{catalogId:id,expectedVersion:pin.expectedVersion,expectedSourceHash:pin.expectedSourceHash}};
+}
+
 /** Preview is one repeatable SQL snapshot; refreshing it never approves a write. */
 export async function publicationTargetPreview(pool:Pool,kind:unknown,id:unknown):Promise<BuildPublicationTargetPreview>{
     if(!['mcp','plugin','skill'].includes(String(kind))||!validCatalogId(id))throw new BadRequestException('Выберите карточку общего каталога.');

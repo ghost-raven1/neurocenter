@@ -13,12 +13,15 @@ import {assertBridgeHead} from './bridge-source-head';
 export class AssetImportRepository {
     constructor(readonly pool: Pool) {}
 
-    async create(actor: string, requestKey: string, source: IAssetSourcePin, ids: string[], bridgeSourceRevision?:number,cacheOnly=false): Promise<IImportJob> {
+    async create(actor: string, requestKey: string, source: IAssetSourcePin, ids: string[], bridgeSourceRevision?:number,cacheOnly=false,
+        admission?:{authorize:(client:PoolClient)=>Promise<unknown>;beforeInsert:(client:PoolClient)=>Promise<void>}): Promise<IImportJob> {
         const fingerprint=(offline:boolean)=>publicationHash({source,ids:[...ids].sort(),...(bridgeSourceRevision!==undefined?{bridgeSourceRevision}:{}),...(offline?{cacheOnly:true}:{})});
         const client = await this.pool.connect();
         let discard=false;
         try {
             await client.query('BEGIN');
+            // A request may outlive a flag/source read; keep current rights locked through queue COMMIT.
+            await admission?.authorize(client);
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-import-request:'+actor+':'+requestKey]);
             const previous = await client.query<IImportJob>('SELECT * FROM asset_source_jobs WHERE actor=$1 AND request_key=$2',[actor,requestKey]);
             if (previous.rows[0]) {
@@ -34,6 +37,7 @@ export class AssetImportRepository {
             await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',['asset-import-queue']);
             const pending = await client.query<{count:number}>("SELECT count(*)::int AS count FROM asset_source_jobs WHERE state IN ('QUEUED','RUNNING')");
             if ((pending.rows[0]?.count??0) >= 10) { throw new ConflictException('В очереди уже 10 импортов. Дождитесь завершения текущих операций.'); }
+            await admission?.beforeInsert(client);
             const {rows} = await client.query<IImportJob>(`INSERT INTO asset_source_jobs(id,actor,request_key,request_hash,source,selected_ids,state,message,bridge_source_revision,cache_only)
                 VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'QUEUED','Проверяем выбранные ассеты и точные зависимости',$7,$8) RETURNING *`,
             [randomUUID(),actor,requestKey,fingerprint(cacheOnly),JSON.stringify(source),JSON.stringify(ids),bridgeSourceRevision??null,cacheOnly]);

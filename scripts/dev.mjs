@@ -14,7 +14,9 @@ import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
 import {prepareStartupAssets} from './assets/startup.mjs';
 import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs';
 import {privateSnapshotFile} from './snapshots/control.mjs';
-import {buildDevSnapshotImage,inspectDevSnapshotImage,prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
+import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
+import {prepareCurrentDevPackages,optionalDevSnapshotImage} from './workspace/dev-current-components.mjs';
+import {catalogRebuildRequestPath} from './workspace/catalog-rebuild-request.mjs';
 import {prepareDevChatStorage} from './workspace/dev-chat-storage.mjs';
 import {withBuildNetwork,withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
 import {launchDevService,currentDevLaunchId} from './workspace/dev-launch-provenance.mjs';
@@ -29,7 +31,7 @@ const managedServices=[...services,snapshotWorker];
 const watchService={name:'source-watch',label:'Пересборка исходников',dir:'.',entry:'scripts/workspace/dev-watch-guardian.mjs'};
 const trackedServices=[...managedServices,watchService];
 const packages = [ ...services, {dir: 'mcp/neurocenter-asset-sync', label: 'Мост OpenCode'} ];
-const defaultProfile = 'fast';
+const defaultProfile = 'standard';
 const output = createDevOutput({defaultProfile});
 let node;
 let logDir;
@@ -216,16 +218,18 @@ function reportHealth(results){
 async function start(profile,watchMode=false) {
     const extended=profile!=='fast',startHosting=profile==='full',selectedPackages=extended?packages:services;
     output.info('Профиль запуска', {fast:'fast — основные приложения; компоненты можно добавить архивом через «Ассеты»',standard:'standard — мост и инструменты, без весов моделей',full:'full — мост, инструменты и уже подготовленный хостинг; модели добавляются вручную'}[profile]);
-    const next = progress(selectedPackages.length + 8);
+    const next = progress(selectedPackages.length + (extended?10:8));
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
-    const snapshotImageId = extended?await inspectDevSnapshotImage(root,process.env):undefined;
     next('Выбор и подготовка ассетов');
     if (extended) { await withBuildNetwork(() => prepareStartupAssets({root,output,environment:process.env,withoutModels:true})); }
     else { output.info('Ассеты', 'Источник не запрашивается; компоненты можно добавить архивом на странице «Ассеты».'); }
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
     await forPackages('build', next, {repairDependencies:false,selection:selectedPackages});
+    if(extended)await prepareCurrentDevPackages({root,node,environment:process.env,output,next});
+    const snapshotImageId=extended?await optionalDevSnapshotImage({root,environment:process.env,output}):undefined;
+    const snapshotsEnabled=extended&&!!snapshotImageId;
     next('Запуск PostgreSQL');
     run('docker', [ 'compose', 'up', '-d', '--wait', '--wait-timeout', '45', 'postgres' ]);
     const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], {cwd:root,encoding:'utf8'});
@@ -235,11 +239,11 @@ async function start(profile,watchMode=false) {
     if (startHosting) { await startModelRuntime({root,output,environment:process.env,preparedOnly:true}); }
     else { output.info('Хостинг моделей', 'Запуск runtime пропущен выбранным профилем. Веса добавляются вручную из GGUF или архива.'); }
     next('Каталог инструментов');
-    output.info('Состав каталога', 'Выбирается главным администратором на странице «Ассеты». Запуск сохраняет текущие карточки.');
+    output.info('Состав каталога', extended?'Встроенные пакеты обновляются по проверенному запросу пересборки. Ручные карточки и закрепления проектов сохраняются.':'Обновление встроенных пакетов пропущено лёгким профилем.');
     const modelCredentials=await prepareDevModelCredentials(root,process.env);
-    output.info('Снимки LanceDB',extended?'Проверка ключа и изолированного SDK-исполнителя':'Сохранение настроек; исполнитель не запускается');
-    const snapshots=await prepareDevSnapshots(root,process.env,snapshotImageId,{executorEnabled:extended});
-    const activeServices=extended?managedServices:services;
+    output.info('Снимки LanceDB',snapshotsEnabled?'Проверка ключа и изолированного SDK-исполнителя':'Сохранение настроек; исполнитель не запускается');
+    const snapshots=await prepareDevSnapshots(root,process.env,snapshotImageId,{executorEnabled:snapshotsEnabled});
+    const activeServices=snapshotsEnabled?managedServices:services;
     output.info('Файлы чата', 'Подготовка приватного S3-хранилища');
     const chatStorage=await prepareDevChatStorage(root,process.env,{output});
     const runtimeEnvironment=modelRuntimeEnvironment(root,process.env);
@@ -287,8 +291,8 @@ async function start(profile,watchMode=false) {
     process.on('SIGTERM', terminate);
     try {
         next('Запуск сервисов');
-        const environmentFor=service=>({...service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage}:{}),
-            ...(service.name==='gateway'?{NODE_ENV:'development',...extended?{DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}}:{}), PORT:String(service.port)},
+        const environmentFor=service=>({...service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage,CATALOG_REBUILD_REQUEST_FILE:extended?catalogRebuildRequestPath(root):undefined}:{}),
+            ...(service.name==='gateway'?{NODE_ENV:'development',DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}), PORT:String(service.port)},
             NEUROCENTER_DEV_LAUNCH_PROVENANCE:process.env.NEUROCENTER_DEV_LAUNCH_PROVENANCE});
         if(watchMode){
             const {startDevWatch}=await import('./workspace/dev-watch-control.mjs');
@@ -308,7 +312,7 @@ async function start(profile,watchMode=false) {
         while (Date.now() < deadline) {
             cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
-            const results = await health(deadline, cancellation.signal, extended),required=results.filter(service=>!service.optional);
+            const results = await health(deadline, cancellation.signal, snapshotsEnabled),required=results.filter(service=>!service.optional);
             cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
             if (required.every(service => service.available)) {
@@ -403,27 +407,25 @@ async function main() {
     const extended=profile!=='fast',selectedPackages=extended?packages:services;
     if(command==='install'||command==='build')output.info('Профиль подготовки',profile);
     if (command === 'install') {
-        const next = progress(selectedPackages.length + (extended?4:2));
+        const next = progress(selectedPackages.length + (extended?5:2));
         next('Проверка и подготовка Docker Compose');
         await ensureCompose();
         next('Установка общего контракта ассетов');
         await prepareWorkspaceDependencies();
         await forPackages(command, next, {selection:selectedPackages});
         if(extended){
+            await prepareCurrentDevPackages({root,node,environment:process.env,output,next});
             next('Подготовка образа проверки снимков');
-            await buildDevSnapshotImage(root,process.env);
-            next('Подготовка dev-поставки моста');
-            const {prepareDevBridge} = await import('./workspace/dev-bridge-runtime.mjs');
-            await prepareDevBridge({root, node, environment: process.env, output});
+            await optionalDevSnapshotImage({root,environment:process.env,output,build:true});
         }
         output.success('Зависимости установлены');
-        output.info('Запустить проект', 'scripts/dev.sh up'+(extended?' --profile '+profile:''));
+        output.info('Запустить проект', 'scripts/dev.sh up --profile '+profile);
     }
     else if (command === 'build') {
-        const next = progress(selectedPackages.length + (extended?2:1));
+        const next = progress(selectedPackages.length + (extended?4:1));
         next('Установка общего контракта ассетов'); await prepareWorkspaceDependencies();
         await forPackages(command, next, {selection:selectedPackages});
-        if(extended){next('Подготовка образа проверки снимков');await buildDevSnapshotImage(root,process.env);}
+        if(extended){await prepareCurrentDevPackages({root,node,environment:process.env,output,next});next('Подготовка образа проверки снимков');await optionalDevSnapshotImage({root,environment:process.env,output,build:true});}
         output.success('Проект собран');
     }
     else if (command === 'up'||command==='watch') { await start(profile,watchMode); }

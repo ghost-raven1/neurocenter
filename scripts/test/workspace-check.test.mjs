@@ -131,15 +131,22 @@ test('Dev-команда соблюдает явный npm CLI и запуска
         const checkout = path.join(temporary, 'checkout'), bin = path.join(temporary, 'bin'), dockerConfig = path.join(temporary, 'docker');
         await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
         await fs.mkdir(bin); await fs.mkdir(dockerConfig);
-        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/docker-build-progress.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs',
+        for (const file of ['dev.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/docker-build-progress.mjs', 'workspace/compose.mjs', 'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-current-components.mjs', 'workspace/catalog-rebuild-request.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs',
             'workspace/dev-launch-provenance.mjs','workspace/dev-launch-ack.mjs','workspace/dev-launch-inspection.mjs','workspace/dev-launch-recovery.mjs','workspace/dev-watch-child.mjs','workspace/dev-watch-owned.mjs']) {
             await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
         }
         // This copied hook records the dev integration boundary without installing a real bridge.
         await fs.writeFile(path.join(checkout,'scripts/workspace/dev-bridge-runtime.mjs'),`export async function prepareDevBridge({root,node,environment}){
             const fs=await import('node:fs');fs.appendFileSync(${JSON.stringify(records)},JSON.stringify({kind:'bridge-pipeline',root,node,home:environment.HOME})+'\\n');
-            return {installed:{updated:true}};
+            return {prepared:true,installed:{updated:true}};
         }`);
+        await fs.writeFile(path.join(checkout,'scripts/workspace/catalog-rebuild-request.mjs'),`
+            export const catalogRebuildRequestPath=root=>root+'/.run/catalog-rebuild/current.json';
+            export async function writeCatalogRebuildRequest({root}) {
+                const fs=await import('node:fs/promises');await fs.mkdir(root+'/.run/catalog-rebuild',{recursive:true});
+                await fs.writeFile(catalogRebuildRequestPath(root),'{}\\n',{mode:0o600});return catalogRebuildRequestPath(root);
+            }
+        `);
         for(const directory of ['models','embedding','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
         await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
         await fs.mkdir(path.join(checkout,'scripts/assets'));

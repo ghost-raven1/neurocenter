@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IAiPlugin, IPage, IProjectAsset, ISkillListSummary } from '../src/core/api/interfaces';
 import Store from '../src/modules/Store/Store';
+import type {IBundledSourcePlan} from '../src/features/AssetSources/types';
 
 const h = vi.hoisted(() => {
     let cursor = 0; const slots: Array<{ value?: any; deps?: unknown[]; cleanup?: () => void }> = [], effects: Array<() => void> = [];
@@ -18,7 +19,7 @@ const h = vi.hoisted(() => {
 });
 const ui = vi.hoisted(() => ({ scope: 'admin', owners: new Map<string, () => () => boolean>(), plugins: vi.fn(), skills: vi.fn(),
     refresh: undefined as (() => void) | undefined, buttons: new Map<string, () => void>(), missing: [] as IProjectAsset[],
-    assets: [] as IProjectAsset[], cards: [] as string[], search: '?p=project-one',
+    assets: [] as IProjectAsset[], cards: [] as string[],sourcePlans:[] as IBundledSourcePlan[],pendingSources:[] as IBundledSourcePlan[],onlyUpdates:undefined as ((event:{target:{checked:boolean}})=>void)|undefined, search: '?p=project-one',
     user: { activeRole: 'Главный админ', userRoles: ['Главный админ'], email: 'one@example.test', projectRoles: [] as Array<{projectId:string;projectName:string;role:string}> },
 }));
 vi.mock('react', async original => ({ ...await original<typeof import('react')>(), useState: h.useState, useRef: h.useRef, useMemo: h.useMemo,
@@ -36,8 +37,9 @@ vi.mock('../src/modules/Store/useProjectCatalog', () => ({ useProjectCatalog: ()
 vi.mock('../src/core/socket/useSectionUpdates', () => ({ useSectionUpdates: (_: unknown, refresh: () => void) => { ui.refresh = refresh; } }));
 vi.mock('../src/features/McpBridge/useBridge', () => ({ useBridge: () => ({ jobs: [], installations: [], jobsReady: true, installationsReady: true }) }));
 vi.mock('../src/modules/Store/installPlans/useInstallPlan', () => ({ useInstallPlan: () => ({}) }));
+vi.mock('../src/features/AssetSources/useCatalogSourceStatus',()=>({useCatalogSourceStatus:()=>({data:{sourcePlans:ui.sourcePlans},error:'',refresh:async()=>{}})}));
 vi.mock('../src/modules/Store/CatalogTabs', () => ({ CatalogTabs: ({ tools }: { tools: ReactNode }) => tools }));
-vi.mock('../src/modules/Store/AppCard', () => ({ default: ({ app }: { app: { name: string } }) => { ui.cards.push(app.name); return createElement('article', null, app.name); } }));
+vi.mock('../src/modules/Store/AppCard', () => ({ default: ({ app,pendingSource }: { app: { name: string };pendingSource?:IBundledSourcePlan }) => { ui.cards.push(app.name);if(pendingSource)ui.pendingSources.push(pendingSource); return createElement('article', null, app.name); } }));
 vi.mock('../src/modules/Store/UnavailableProjectAssets', () => ({ default: ({ assets }: { assets: IProjectAsset[] }) => { ui.missing = assets; return null; } }));
 vi.mock('../src/features/FeatureFlags/FeatureAvailability', () => ({ FeatureButton: () => null }));
 vi.mock('../src/features/Discussions', () => ({ CatalogFeedback: () => null }));
@@ -59,7 +61,7 @@ vi.mock('antd', () => {
     return { Alert: ({ message, description, action }: { message: ReactNode; description?: ReactNode; action?: ReactNode }) => createElement('div', { role: 'alert' }, message, description, action),
         Button: ({ children, onClick, href }: { children: ReactNode; onClick: () => void; href?: string }) => { ui.buttons.set(Array.isArray(children) ? children.join('') : String(children), onClick); return createElement(href ? 'a' : 'button', {href}, children); },
         Typography: { Text: box, Paragraph: box }, Row: box, Col: box, Space: box, Radio: { Group: () => null },
-        Checkbox: () => null, Empty: ({ description }: { description: string }) => createElement('div', null, description), Input: { Search: () => null },
+        Checkbox: ({children,onChange}:{children?:ReactNode;onChange:(event:{target:{checked:boolean}})=>void}) => {if(children==='Только обновления')ui.onlyUpdates=onChange;return null;}, Empty: ({ description }: { description: string }) => createElement('div', null, description), Input: { Search: () => null },
         Modal: () => null, Select: () => null, Spin: () => createElement('span', null, 'Загрузка'), message: {} };
 });
 const plugin = (n: number): IAiPlugin => ({ id: 'mcp-' + n, name: 'MCP ' + n, kind: 'mcp', description: '', version: 1, tags: [], origin: '', files: [], createdAt: '', updatedAt: '' });
@@ -67,9 +69,9 @@ const page = (items: IAiPlugin[], number = 1, total = items.length, size = 100):
 const skill: ISkillListSummary = { path: 'common/helper', meta: { name: 'Помощник', slug: 'helper', version: 1 } };
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (reason: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 const flush = async () => { for (let n = 0; n < 25; n++) await Promise.resolve(); };
-function render(props: ComponentProps<typeof Store> = {}) { h.begin(); ui.cards = []; ui.missing = []; ui.buttons.clear(); const html = renderToStaticMarkup(createElement(Store, props)); h.commit(); return html; }
+function render(props: ComponentProps<typeof Store> = {}) { h.begin(); ui.cards = []; ui.pendingSources=[];ui.onlyUpdates=undefined;ui.missing = []; ui.buttons.clear(); const html = renderToStaticMarkup(createElement(Store, props)); h.commit(); return html; }
 async function settle(props: ComponentProps<typeof Store> = {}) { await flush(); return render(props); }
-beforeEach(() => { vi.resetAllMocks(); ui.scope = 'admin'; ui.owners.clear(); ui.assets = []; ui.search = '?p=project-one'; ui.user.activeRole = 'Главный админ'; ui.user.userRoles = ['Главный админ']; ui.user.projectRoles = []; ui.plugins.mockResolvedValue(page([plugin(1)])); ui.skills.mockResolvedValue([skill]); });
+beforeEach(() => { vi.resetAllMocks(); ui.scope = 'admin';ui.sourcePlans=[]; ui.owners.clear(); ui.assets = []; ui.search = '?p=project-one'; ui.user.activeRole = 'Главный админ'; ui.user.userRoles = ['Главный админ']; ui.user.projectRoles = []; ui.plugins.mockResolvedValue(page([plugin(1)])); ui.skills.mockResolvedValue([skill]); });
 afterEach(() => h.dispose());
 
 describe('Переход из каталога проекта в общий каталог', () => {
@@ -165,4 +167,14 @@ describe('Источники инструментов не блокируют д
         render(); await settle(); ui.skills.mockRejectedValueOnce({ isAxiosError: true, response: { status: 403 } }); ui.refresh!(); await settle();
         expect(ui.cards).toEqual(['MCP 1']);
     });
+});
+
+it('Фильтр обновлений сохраняет новый source2.12.2 при равных старых catalog/pin2.4.4',async()=>{
+    const old={...plugin(1),id:'native-rag',kind:'plugin' as const,name:'OpenCodeRAG',revision:'2.4.4-plugin.pack.11'};
+    ui.plugins.mockResolvedValue(page([old]));ui.assets=[{assetKind:'plugin',assetId:old.id,version:1,manifest:'a'.repeat(64),card:old,addedBy:'',addedAt:''}];
+    ui.sourcePlans=[{id:'opencode-rag-plugin',kind:'plugin',name:old.name,description:'',sourceRevision:'2.12.2',revision:'b'.repeat(64),delivery:'prepared',catalogReady:false,
+        imported:{id:old.id,name:old.name,version:1,originVersion:'2.4.4-plugin.pack.11',updateAvailable:false}}];
+    render();await settle();ui.onlyUpdates!({target:{checked:true}});await settle();expect(ui.cards).toEqual([old.name]);expect(ui.pendingSources[0].sourceRevision).toBe('2.12.2');
+    ui.user.activeRole='Разработчик';ui.user.userRoles=['Разработчик'];ui.user.projectRoles=[{projectId:'project-one',projectName:'Первый',role:'Разработчик'}];ui.scope='reader';render();await settle();
+    expect(ui.pendingSources).toEqual([]);
 });

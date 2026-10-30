@@ -21,10 +21,11 @@ const hooks=vi.hoisted(()=>{
         useEffect:(effect:()=>void|(()=>void),deps:unknown[])=>{const index=cursor++,previous=slots[index];if(previous&&same(previous.deps,deps))return;const slot=slots[index]={deps};effects.push(()=>{previous?.cleanup?.();slot.cleanup=effect()||undefined;});},
     };
 });
-const ui=vi.hoisted(()=>({owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',searches:new Map<string,{onChange:(event:{target:{value:string}})=>void}>(),archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>(),job:undefined as IAssetImport|undefined,retry:vi.fn(),retryButton:undefined as undefined|(()=>void)}));
+const ui=vi.hoisted(()=>({isMain:true,owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',searches:new Map<string,{onChange:(event:{target:{value:string}})=>void}>(),archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>(),job:undefined as IAssetImport|undefined,retry:vi.fn(),retryButton:undefined as undefined|(()=>void)}));
 const archiveUi=vi.hoisted(()=>({modal:undefined as ArchiveModalProps|undefined,buttons:[]as Array<{label:string;disabled?:boolean;onClick:()=>void}>,checkboxes:[]as Array<{'aria-label':string;disabled?:boolean;checked?:boolean;onChange:(event:{target:{checked:boolean}})=>void}>,blocked:false,start:vi.fn(),emptyDescription:''}));
 const bundledUi=vi.hoisted(()=>({props:undefined as {plans:unknown[];scope:string}|undefined}));
 vi.mock('../src/features/AssetSources/BundledCatalogSources',()=>({BundledCatalogSources:(props:{plans:unknown[];scope:string})=>{bundledUi.props=props;return null;}}));
+vi.mock('react-redux',()=>({useSelector:(select:(state:unknown)=>unknown)=>select({userBlock:{user:{activeRole:ui.isMain?'Главный админ':'Наблюдатель',userRoles:[ui.isMain?'Главный админ':'Наблюдатель']}}})}));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),...hooks}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner',()=>({useAuthRequestOwner:()=>{const scope=ui.owner;let captureOwner=ui.owners.get(scope);if(!captureOwner){captureOwner=()=>()=>scope===ui.owner;ui.owners.set(scope,captureOwner);}return{scope,captureOwner};}}));
 vi.mock('../src/core/api',()=>({baseApi:{get:vi.fn(),post:vi.fn(),put:vi.fn()},bffApi:{getSkill:vi.fn(),getAiPlugin:vi.fn()}}));
@@ -47,7 +48,7 @@ const source={source:{verified:true,commit:'a'.repeat(40)},assets:['a','b'].map(
 function render(){hooks.begin();ui.buttons=[];ui.archives=[];archiveUi.buttons=[];archiveUi.checkboxes=[];const html=renderToStaticMarkup(createElement(AssetSources));hooks.commit();return html;}
 async function settle(){for(let n=0;n<15;n++)await Promise.resolve();return render();}
 function deferred<T>(){let resolve!:(value:T)=>void,reject!:(cause:Error)=>void;const promise=new Promise<T>((done,fail)=>{resolve=done;reject=fail;});return{promise,resolve,reject};}
-beforeEach(()=>{vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.refreshButtons.clear();ui.searches.clear();ui.editor=undefined;ui.draft='';ui.editorId='';ui.job=undefined;ui.retryButton=undefined;archiveUi.modal=undefined;archiveUi.blocked=false;vi.mocked(baseApi.get).mockResolvedValue({data:source});});
+beforeEach(()=>{ui.isMain=true;vi.clearAllMocks();ui.owner='admin-a';ui.owners.clear();ui.refreshButtons.clear();ui.searches.clear();ui.editor=undefined;ui.draft='';ui.editorId='';ui.job=undefined;ui.retryButton=undefined;archiveUi.modal=undefined;archiveUi.blocked=false;vi.mocked(baseApi.get).mockResolvedValue({data:source});});
 afterEach(()=>hooks.dispose());
 
 it('Current source read failure keeps the scoped bundled build recovery mounted with no actionable recipes',async()=>{
@@ -228,4 +229,9 @@ it('Массовый выбор обновлений ограничен серв
     vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,assets}});render();await settle();
     archiveUi.buttons.find(button=>button.label==='Выбрать готовые обновления')!.onClick();const html=render();
     expect(archiveUi.checkboxes.filter(box=>box.checked)).toHaveLength(50);expect(html).toContain('первые 50');expect(html).toContain('Импортировать выбранные (50)');expect(archiveUi.start).not.toHaveBeenCalled();
+});
+
+it('Не читает Main-only источник и не оставляет его карточки после смены роли',async()=>{
+    render();await settle();expect(render()).toContain('Агент a');const count=vi.mocked(baseApi.get).mock.calls.length;
+    ui.isMain=false;ui.owner='reader';expect(render()).toBe('');await settle();expect(baseApi.get).toHaveBeenCalledTimes(count);
 });
