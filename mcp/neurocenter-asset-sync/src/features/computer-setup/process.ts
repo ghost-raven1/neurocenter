@@ -2,6 +2,7 @@ import {startRoleMcpProcess,RoleMcpCleanupError,type RoleMcpProcessJournal} from
 import {assertUserCliCurrent,findUserOpenCode} from './executable.js';
 import {normalizeOpenCodeCliResult,type OpenCodeCliResult} from './contract.js';
 import {CliCleanupError} from './receipts.js';
+import {observedOpenCodeVersion} from './version.js';
 
 export interface CliObservationContext {
     deviceId:string;jobId:string;home:string;environment:NodeJS.ProcessEnv;
@@ -62,7 +63,8 @@ export async function observeOpenCodeCli(context:CliObservationContext,authorize
         await close();signal.throwIfAborted();
         if(overflow||result.code!==0||result.signal!==null)return receipt('failed');
         await current();
-        return receipt('installed',Buffer.concat(chunks).toString('utf8').trim());
+        const version=observedOpenCodeVersion(Buffer.concat(chunks).toString('utf8'));
+        return version?receipt('installed',version):receipt('failed');
     }catch(error){
         if(error instanceof RoleMcpCleanupError)throw new CliCleanupError(error);
         if(error instanceof CliAuthorizationError||error instanceof CliCleanupError)throw error;
