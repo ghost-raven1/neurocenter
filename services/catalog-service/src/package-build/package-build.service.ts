@@ -19,10 +19,10 @@ import path from 'node:path';
 import type { ChildProcess } from 'node:child_process';
 import type { PoolClient } from 'pg';
 import { AccessDb } from '../access/access-db';
-import type { IAccessActor } from '../access/access.model';
+import {normalizeEmail,type IAccessActor} from '../access/access.model';
 import { createPool } from '../database/pool';
 import { notifyDeviceOperations } from '../devices/device-operations';
-import {assertBuildCreateName,lockBuildPublication,pinBuildPublication,publicationTargetPreview} from './publication-target';
+import {assertBuildCreateName,lockBuildPublication,pinBuildPublication,publicationTargetPreview,managedRebuildPublication} from './publication-target';
 import {publishBuiltTool} from './publish-built-tool';
 import {configureBuildPublicationTransaction,publicationDeadlineMessage} from './publication-deadline';
 import {withBuildSqlErrors} from './build-sql-errors';
@@ -51,6 +51,9 @@ import {isSourceEntrypoint} from '../../../shared/source-entrypoint.cjs';
 import {withToolImportDeadline} from './tool-import-deadline';
 import {importToolAsset} from './import-tool-asset';
 import {resolveBundledBuild,assertBundledPublication} from './bundled-source';
+import {readBundledCatalog} from '../../../shared/bundled-catalog.cjs';
+import {CatalogRebuildCoordinator} from './catalog-rebuild-coordinator';
+import {fenceRebuildInlineAdmission} from './catalog-rebuild-inline';
 
 interface PreparedTool {asset:ToolAsset;publication: IAiPluginCreate; artifacts: Array<{archivePath: string; descriptor: unknown}>;sourceSnapshotPath?:string}
 
@@ -72,12 +75,42 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private activeBuild?:{id:string;cancellation:BuildCancellation};
     private readonly stoppedWorkers=new Set<string>();
     private stopping = false;
+    private rebuild?:CatalogRebuildCoordinator;
+    private rebuildTimer?:ReturnType<typeof setInterval>;
 
     constructor(private readonly access: AccessDb, private readonly artifacts: RuntimeArtifacts, private readonly catalog: CatalogService,private readonly sources:AssetSourcesService,@Optional() private readonly uploads?:SourceUploadService,@Optional() private readonly agent?:PackageAgentService) {}
 
     async onModuleInit(): Promise<void> {
         await this.catalog.ensureSchema();
         await this.recoverOwnership();
+        const file=process.env.CATALOG_REBUILD_REQUEST_FILE;
+        if(file){
+            this.rebuild=new CatalogRebuildCoordinator({file,
+                actor:()=>({email:normalizeEmail(process.env.SSO_DISABLE==='true'?(process.env.DEV_USER_EMAIL||'dev@localhost'):(process.env.BOOTSTRAP_ADMIN_EMAIL||'')),activeRole:'Главный админ'}),
+                authorize:actor=>this.requireMain(actor),
+                bundle:async()=>{const bundle=await readBundledCatalog(),current=(bundle.manifest as typeof bundle.manifest&{current:Array<{id:string;kind:string;delivery:{type:string}}>}).current;
+                    return {revision:bundle.revision,commit:bundle.pin.commit,inlineIds:current.filter(row=>row.delivery.type==='inline'&&['agent','skill'].includes(row.kind)).map(row=>row.id)};},
+                plans:async()=>(await this.sources.view()).sourcePlans,
+                refresh:async()=>{await this.sources.refresh();},
+                target:async plan=>plan.imported?managedRebuildPublication(this.pool,plan.kind as 'mcp'|'plugin',plan.imported.id,plan.id):{name:plan.name},
+                build:{request:(actor,key)=>this.rebuildRequest(actor,key,'build'),create:(actor,input)=>this.create(actor,input)},
+                inline:{request:(actor,key)=>this.rebuildRequest(actor,key,'inline'),create:async(actor,input)=>{
+                    const lease=this.currentLease();await this.requireMain(actor);this.currentLease(lease);
+                    return this.sources.start(actor.email,input,client=>fenceRebuildInlineAdmission(client,actor.email,input.requestKey,()=>{this.currentLease(lease);}));
+                }},
+            });
+            if(this.lease)void this.rebuild.tick();this.rebuildTimer=setInterval(()=>{if(this.lease&&!this.stopping)void this.rebuild?.tick();},5000);this.rebuildTimer.unref();
+        }
+    }
+
+    /** Changing the configured administrator cannot turn the same accepted rebuild into another user's new request. */
+    private async rebuildRequest(actor:IAccessActor,key:string,kind:'build'|'inline'){
+        await this.requireMain(actor);
+        const sql=kind==='build'?'SELECT actor FROM tool_build_jobs WHERE request_key=$1 UNION ALL SELECT actor FROM tool_build_cancellations WHERE request_key=$1'
+            :'SELECT actor FROM asset_source_jobs WHERE request_key=$1';
+        const owners=(await this.pool.query<{actor:string}>(sql,[key])).rows;
+        if(owners.some(row=>normalizeEmail(row.actor)!==actor.email))throw new ConflictException('Владелец принятой пересборки изменился. Прочитайте прежние операции и начните новую пересборку.');
+        return kind==='build'?this.request(actor,key):this.sources.request(key,actor.email);
     }
 
     /** Standby не прерывает живого владельца; повтор ограничен backoff до 15 секунд. */
@@ -131,6 +164,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             if (this.stopping || released) {return;}
             this.lease = lease; this.releaseLease = release; this.retryDelay = 1000;
             this.startWorker(root);
+            void this.rebuild?.tick();
         } finally {
             if (this.lease !== lease) {
                 if (owned && !released) {await lease.query('SELECT pg_advisory_unlock(72465395)').catch(() => undefined);}
@@ -141,9 +175,11 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
 
     async onModuleDestroy(): Promise<void> {
         this.stopping = true;
+        if(this.rebuildTimer)clearInterval(this.rebuildTimer);
         this.activeBuild?.cancellation.stop(new Error('Сборщик останавливается. Повторите сборку новым запросом.'));
         if (this.retryTimer) {clearTimeout(this.retryTimer); this.retryTimer = undefined;}
         if (this.child) { stopBuildProcess(this.child); }
+        await this.rebuild?.stop();
         await this.recovering?.catch(() => undefined);
         await this.leaseUse;
         await this.worker?.catch(() => undefined);

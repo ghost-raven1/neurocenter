@@ -19,7 +19,7 @@ async function fixture(t) {
     await fs.mkdir(path.join(checkout, 'scripts/workspace'), {recursive: true});
     await fs.mkdir(path.join(caller, 'runtime'), {recursive: true});
     for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/docker-build-progress.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-current-components.mjs', 'workspace/catalog-rebuild-request.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
@@ -73,7 +73,7 @@ for (const action of ['--help', 'status']) {
         assert.equal(result.status, 0, result.stderr);
         assert.doesNotMatch(result.stderr, /uv_cwd|process\.cwd|REAL_NETWORK_FORBIDDEN/);
         assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
-        if (action === 'status') assert.equal(result.events.filter(event => event.kind === 'health').length, 12);
+        if (action === 'status') assert.equal(result.events.filter(event => event.kind === 'health').length, 11);
         else assert.match(result.stdout, /Использование: scripts\/dev\.sh/);
         await assert.rejects(fs.access(path.join(f.checkout, action==='status'?'.run/processes.json':'.run')), {code: 'ENOENT'});
     });
@@ -89,14 +89,14 @@ test('CLI восстанавливает корень проекта после 
 test('CLI сохраняет выбранный Node через относительный NODE_BIN из другого каталога', async t => {
     const f = await fixture(t), result = await f.run({args: ['status'], overrides: {NODE_BIN: './runtime/node'}});
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 12);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 11);
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 
 test('CLI находит Node в относительном PATH из другого каталога', async t => {
     const f = await fixture(t), result = await f.run({args: ['status'], overrides: {NODE_BIN: '', PATH: 'runtime:/usr/bin:/bin'}});
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.events.filter(event => event.kind === 'health').length, 12);
+    assert.equal(result.events.filter(event => event.kind === 'health').length, 11);
     assert.ok(result.events.filter(event => event.kind === 'startup').every(event => event.cwd === f.checkout));
 });
 

@@ -26,8 +26,8 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
             output.info('Использование', 'scripts/dev.sh <команда> [--profile fast|standard|full]');
             line('');
             for (const [command, description] of [
-                ['install', 'Подготовить Compose и зависимости основных приложений'],
-                ['build', 'Собрать основные сервисы и интерфейс'],
+                ['install', 'Подготовить зависимости, текущий мост и обновление встроенных пакетов'],
+                ['build', 'Собрать приложения, текущий мост и обновить встроенные пакеты'],
                 ['check', 'Выполнить проверки проекта'],
                 ['up', 'Собрать и запустить проект'],
                 ['watch', 'Запустить с последовательной пересборкой изменённых сервисов'],
@@ -38,7 +38,7 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
             line('\n  Пересборка при изменениях: scripts/dev.sh up --watch (или scripts/dev.sh watch).');
             line('  Статус — status; остановка watcher и его сервисов — down. npm ci на изменениях не выполняется.');
             line('\n  Профиль выбирается для install/build/up/watch:');
-            line('    up --profile fast      основные приложения, без ассетов, упаковки моста и проверщика снимков');
+            line('    up --profile fast      облегчённый запуск без новой упаковки и обновления каталога');
             line('    up --profile standard  мост и инструменты, без загрузки весов и запуска моделей');
             line('    up --profile full      инструменты и запуск уже подготовленного хостинга моделей');
             if(defaultProfile)output.info('Профиль без параметров',defaultProfile);
@@ -46,9 +46,10 @@ export function createDevOutput({stdout = process.stdout, stderr = process.stder
             line('  Full не скачивает и не собирает образ хостинга: нужен подготовленный локальный runtime.');
             line('  Fast одинаков в терминале и без TTY; компоненты добавляются архивом на странице «Ассеты».');
             line('  Npm и Docker могут обращаться к сети во всех профилях; доступ к хранилищу ассетов для fast не нужен.');
-            line('  Проверщик снимков и поставку моста готовит install --profile standard; запускает up --profile standard.');
+            line('  Install/build готовят текущий мост до необязательного проверщика снимков; up проверяет поставку перед запуском.');
             line('  Кэш и уже работающий хостинг моделей сохраняются при выборе лёгкого профиля.');
-            line('  Подготовка файлов не добавляет карточки: состав общего каталога выбирается в «Ассетах».');
+            line('  Standard/full сохраняют запрос обновления встроенных пакетов. Catalog выполняет его с проверкой прав и показывает результат в «Операциях».');
+            line('  Закрепления проектов, ручные карточки и локальные установки этим не заменяются.');
             line('');
             output.info('Требования', 'Node.js 24, npm, Git и Docker; Compose подготовит install');
             line('\n  Первый запуск:');

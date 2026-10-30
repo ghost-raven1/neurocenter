@@ -30,13 +30,18 @@ async function fixture(t, mode = 'ready') {
             process.exitCode=92;`, {mode: 0o700});
     }
     for (const file of ['dev.sh', 'dev.mjs', 'workspace/node-runtime.mjs', 'workspace/npm-build-environment.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/docker-build-ca.mjs', 'workspace/docker-build-progress.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/check-plan.mjs', 'workspace/node24-cli.mjs', 'dev-mcp/safe-file.mjs', 'dev-mcp/constants.mjs']) {
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-current-components.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-launch-provenance.mjs', 'workspace/dev-launch-ack.mjs', 'workspace/dev-launch-inspection.mjs', 'workspace/dev-launch-recovery.mjs', 'workspace/dev-watch-owned.mjs', 'workspace/dev-watch-child.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs', 'workspace/check-plan.mjs', 'workspace/node24-cli.mjs', 'dev-mcp/safe-file.mjs', 'dev-mcp/constants.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout,'scripts/assets'),{recursive:true});
     await fs.copyFile(path.join(root,'scripts/release-request.mjs'),path.join(checkout,'scripts/release-request.mjs'));
     await fs.copyFile(path.join(root,'scripts/assets/startup.mjs'),path.join(checkout,'scripts/assets/startup.mjs'));
     await fs.writeFile(path.join(checkout,'scripts/assets/selection.mjs'),'export async function selectStartupAssets(){return {}};');
+    await fs.writeFile(path.join(checkout,'scripts/workspace/catalog-rebuild-request.mjs'),`import fs from 'node:fs/promises'; import path from 'node:path';
+        export function catalogRebuildRequestPath(root){return path.join(root,'.run/catalog-rebuild/current.json');}
+        export async function writeCatalogRebuildRequest({root}){const file=catalogRebuildRequestPath(root);await fs.mkdir(path.dirname(file),{recursive:true});
+            await fs.writeFile(file,JSON.stringify({schemaVersion:1,requestId:'a'.repeat(36),sourceRevision:'a'.repeat(64),requestedAt:new Date().toISOString()}),{mode:0o600});
+            await fs.appendFile(process.env.DEV_CLI_RECORD,JSON.stringify({kind:'catalog-rebuild-request'})+String.fromCharCode(10));return file;}`);
     for(const directory of ['models','embedding','snapshots'])await fs.cp(path.join(root,'scripts',directory),path.join(checkout,'scripts',directory),{recursive:true});
     for (const packageDirectory of workspacePackages) await fs.mkdir(path.join(checkout, packageDirectory), {recursive: true});
     const npm = path.join(directory, 'npm-cli.js');
@@ -274,7 +279,7 @@ test('Пустые логи объясняются пользователю бе
 });
 
 for (const failed of [true, false]) {
-    test(`install ${failed ? 'сохраняет прежнюю поставку при отказе' : 'публикует мост после готовности'} проверщика снимков`, async t => {
+    test(`install prepares current bridge and catalog before ${failed ? 'unavailable' : 'ready'} optional snapshot verifier`, async t => {
         const f = await fixture(t), pointer = path.join(f.checkout, '.run/dev-bridge/runtime/current.json');
         await fs.mkdir(path.dirname(pointer), {recursive: true});
         await fs.writeFile(pointer, 'previous-release\n');
@@ -289,16 +294,26 @@ for (const failed of [true, false]) {
             export function inspectDevSnapshotImage(){throw Error('UNEXPECTED_START');} export function prepareDevSnapshots(){throw Error('UNEXPECTED_START');}`);
         await fs.writeFile(path.join(f.checkout, 'scripts/workspace/dev-bridge-runtime.mjs'), `${record}
             import {writeFileSync} from 'node:fs';
-            export async function prepareDevBridge(){record('bridge-publish');writeFileSync(${JSON.stringify(pointer)},'accepted-release\\n');}`);
+            export async function prepareDevBridge(){record('bridge-publish');writeFileSync(${JSON.stringify(pointer)},'accepted-release\\n');return {prepared:true};}`);
         const result = await f.run('install', '--profile', 'standard');
-        assert.equal(result.status, failed ? 1 : 0, result.stdout + result.stderr);
-        assert.deepEqual(result.events.filter(event => ['snapshot-build', 'bridge-publish'].includes(event.kind)).map(event => event.kind),
-            failed ? ['snapshot-build'] : ['snapshot-build', 'bridge-publish']);
-        assert.equal(await fs.readFile(pointer, 'utf8'), failed ? 'previous-release\n' : 'accepted-release\n');
-        if (failed) { assert.match(result.stderr, /FIXTURE_SNAPSHOT_BUILD_FAILED/); assert.doesNotMatch(result.stdout, /Зависимости установлены/); }
-        else { assert.match(result.stdout, /Зависимости установлены/); }
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        assert.deepEqual(result.events.filter(event => ['snapshot-build', 'bridge-publish','catalog-rebuild-request'].includes(event.kind)).map(event => event.kind),
+            ['bridge-publish','catalog-rebuild-request','snapshot-build']);
+        assert.equal(await fs.readFile(pointer, 'utf8'), 'accepted-release\n');
+        if (failed) { assert.match(result.stderr, /FIXTURE_SNAPSHOT_BUILD_FAILED/); assert.match(result.stderr, /снимк.*недоступ|недоступ.*снимк/iu); }
+        assert.match(result.stdout, /Зависимости установлены/);
     });
 }
+
+test('default build prepares current bridge and catalog even when optional snapshot image fails',async t=>{
+    const f=await fixture(t);await fs.writeFile(f.env.NPM_CLI_JS,(await fs.readFile(f.env.NPM_CLI_JS,'utf8')).replace('process.exitCode=7;','process.exitCode=0;'));
+    const record=`import {appendFileSync} from 'node:fs';const record=kind=>appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind})+String.fromCharCode(10));`;
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-snapshots.mjs'),`${record}export function buildDevSnapshotImage(){record('snapshot-build');throw Error('OPTIONAL_SNAPSHOT_UNAVAILABLE');}export function inspectDevSnapshotImage(){throw Error('UNEXPECTED_INSPECT');}export function prepareDevSnapshots(){throw Error('UNEXPECTED_START');}`);
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-bridge-runtime.mjs'),`${record}export async function prepareDevBridge(){record('bridge-publish');return {prepared:true};}`);
+    const result=await f.run('build');assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/Профиль подготовки: standard/);
+    assert.deepEqual(result.events.filter(event=>['snapshot-build','bridge-publish','catalog-rebuild-request'].includes(event.kind)).map(event=>event.kind),['bridge-publish','catalog-rebuild-request','snapshot-build']);
+    assert.match(result.stdout,/Проект собран/);assert.match(result.stderr,/OPTIONAL_SNAPSHOT_UNAVAILABLE/);
+});
 
 for (const command of ['install', 'build']) for (const tty of [false, true]) {
     test(`${command} fast preserves existing bridge and keys without Native or verifier preparation (${tty ? 'TTY' : 'headless'})`, async t => {
@@ -311,13 +326,14 @@ for (const command of ['install', 'build']) for (const tty of [false, true]) {
         await fs.writeFile(f.env.NPM_CLI_JS, (await fs.readFile(f.env.NPM_CLI_JS, 'utf8')).replace('process.exitCode=7;', 'process.exitCode=0;'));
         await fs.writeFile(path.join(f.checkout, 'scripts/workspace/compose.mjs'), 'export async function ensureCompose(){} export function checkCompose(){}');
         f.env.DEV_CLI_TTY = tty ? '1' : '0';
-        const result = await f.run(command);
+        const result = await f.run(command,'--profile','fast');
         assert.equal(result.status, 0, result.stdout + result.stderr);
         assert.equal(result.events.filter(event => event.kind === 'npm').length, 8);
         assert.equal(result.events.some(event => event.cwd?.includes('neurocenter-asset-sync')), false);
         assert.equal(await fs.readFile(pointer, 'utf8'), 'previous-supply\n');
         assert.equal(await fs.readFile(signing, 'utf8'), 'preserve-existing-identity\n');
         assert.match(result.stdout, /fast/);
+        if(command==='install')assert.match(result.stdout,/Запустить проект: scripts\/dev\.sh up --profile fast/);
     });
 }
 
@@ -350,11 +366,11 @@ async function coreStartupFixture(t,tty){
 }
 
 for(const command of ['up','watch'])for(const tty of [false,true])test(`${command} fast reaches core readiness without assets, Native or snapshot executor (${tty?'TTY':'headless'})`,async t=>{
-    const f=await coreStartupFixture(t,tty),result=await f.run(command);
+    const f=await coreStartupFixture(t,tty),result=await f.run(command,'--profile','fast');
     assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/Готов к работе/);assert.match(result.stdout,/новые публикации недоступны/);
     assert.deepEqual(result.events.filter(event=>event.kind==='service-launch').map(event=>event.name),devServices.map(service=>service.name));
     assert.equal(result.events.find(event=>event.kind==='service-launch'&&event.name==='catalog').snapshotExecutor,'0');
-    assert.equal(result.events.find(event=>event.kind==='service-launch'&&event.name==='gateway').devBridgeOverride,null);
+    assert.equal(result.events.find(event=>event.kind==='service-launch'&&event.name==='gateway').devBridgeOverride,path.join(f.checkout,'.run/dev-bridge/runtime'));
     assert.equal(result.events.some(event=>['asset-selection','bridge-apply'].includes(event.kind)),false);
     assert.equal(result.events.filter(event=>event.kind==='docker').length,2);assert.equal(result.events.filter(event=>event.kind==='npm').length,7);
     await assert.rejects(fs.stat(path.join(f.checkout,'.run/project-snapshots/secrets')),{code:'ENOENT'});
@@ -363,7 +379,7 @@ for(const command of ['up','watch'])for(const tty of [false,true])test(`${comman
 for(const command of ['up','watch'])for(const manual of [false,true])test(`${command} fast preserves ${manual?'the manual MCP path':'an unset MCP path'} without a Native checkout`,async t=>{
     const f=await coreStartupFixture(t,false),manualPath=path.join(f.checkout,'manual bridge','index.js');
     if(manual)f.env.ASSET_SYNC_MCP_BIN=manualPath;
-    const result=await f.run(command);assert.equal(result.status,0,result.stdout+result.stderr);
+    const result=await f.run(command,'--profile','fast');assert.equal(result.status,0,result.stdout+result.stderr);
     const launched=result.events.filter(event=>event.kind==='service-launch');assert.equal(launched.length,devServices.length);
     for(const service of launched)assert.equal(service.assetSyncMcpBin,manual?manualPath:null,service.name);
     await assert.rejects(fs.stat(path.join(f.checkout,'mcp')),{code:'ENOENT'});
@@ -389,11 +405,36 @@ test('full starts prepared hosting without requesting model installation or acti
     await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-snapshots.mjs'),"export function inspectDevSnapshotImage(){return 'sha256:'+'a'.repeat(64);} export function buildDevSnapshotImage(){} export function prepareDevSnapshots(){return {catalog:{SNAPSHOT_EXECUTOR_ENABLED:'1'},runner:{}};}");
     await fs.writeFile(path.join(f.checkout,'scripts/assets/startup.mjs'),`${record}export async function prepareStartupAssets(options){record('startup-assets',{withoutModels:options.withoutModels});return {ok:true};}`);
     await fs.writeFile(path.join(f.checkout,'scripts/models/startup.mjs'),`${record}export function modelRuntimeEnvironment(){return {};}export async function startModelRuntime(options){record('hosting-start',{preparedOnly:options.preparedOnly});return {ok:true};}`);
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-bridge-runtime.mjs'),`${record}export async function prepareDevBridge(){record('bridge-publish');return {prepared:true};}`);
     const health=path.join(f.checkout,'scripts/workspace/dev-service-health.mjs');await fs.writeFile(health,(await fs.readFile(health,'utf8')).replace("throw Error('UNEXPECTED_VERIFIER_PROBE');","return {ok:true};"));
     const result=await f.run('up','--profile','full');assert.equal(result.status,0,result.stdout+result.stderr);
     assert.deepEqual(result.events.filter(event=>event.kind==='startup-assets'),[{kind:'startup-assets',withoutModels:true}]);
     assert.deepEqual(result.events.filter(event=>event.kind==='hosting-start'),[{kind:'hosting-start',preparedOnly:true}]);
     for(const service of result.events.filter(event=>event.kind==='service-launch'&&event.name!=='snapshot-verifier'))assert.equal(service.assetSyncMcpBin,path.join(f.checkout,'mcp/neurocenter-asset-sync/dist/index.js'));
+});
+
+test('default up rebuilds current components and starts core services without an optional snapshot image',async t=>{
+    const f=await coreStartupFixture(t,false);await fs.mkdir(path.join(f.checkout,'mcp/neurocenter-asset-sync'),{recursive:true});
+    const record=`import {appendFileSync} from 'node:fs';const record=kind=>appendFileSync(process.env.DEV_CLI_RECORD,JSON.stringify({kind})+String.fromCharCode(10));`;
+    await fs.writeFile(path.join(f.checkout,'scripts/assets/startup.mjs'),`${record}export async function prepareStartupAssets(){record('startup-assets');}`);
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-bridge-runtime.mjs'),`${record}export async function prepareDevBridge(){record('bridge-publish');return {prepared:true};}`);
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-snapshots.mjs'),`${record}export function inspectDevSnapshotImage(){record('snapshot-inspect');throw Error('OPTIONAL_IMAGE_ABSENT');}export function buildDevSnapshotImage(){throw Error('UNEXPECTED_IMAGE_BUILD_ON_UP');}export function prepareDevSnapshots(root,env,image,options){if(options.executorEnabled!==false||image!==undefined)throw Error('FALSE_SNAPSHOT_READY');return {catalog:{SNAPSHOT_EXECUTOR_ENABLED:'0'}};}`);
+    const result=await f.run('up');assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/standard/);assert.match(result.stderr,/OPTIONAL_IMAGE_ABSENT/);
+    assert.deepEqual(result.events.filter(event=>['bridge-publish','catalog-rebuild-request','snapshot-inspect'].includes(event.kind)).map(event=>event.kind),['bridge-publish','catalog-rebuild-request','snapshot-inspect']);
+    const services=result.events.filter(event=>event.kind==='service-launch');assert.deepEqual(services.map(event=>event.name),devServices.map(service=>service.name));
+    assert.equal(services.find(service=>service.name==='catalog').snapshotExecutor,'0');
+    assert.equal(result.events.filter(event=>event.kind==='npm').length,8);assert.match(result.stdout,/новые публикации недоступны/);
+    await assert.rejects(fs.stat(path.join(f.checkout,'.run/project-snapshots/secrets')),{code:'ENOENT'});
+});
+
+test('a deferred current bridge prevents catalog intent and service replacement',async t=>{
+    const f=await coreStartupFixture(t,false);await fs.mkdir(path.join(f.checkout,'mcp/neurocenter-asset-sync'),{recursive:true});
+    await fs.writeFile(path.join(f.checkout,'scripts/assets/startup.mjs'),'export async function prepareStartupAssets(){}');
+    await fs.writeFile(path.join(f.checkout,'scripts/workspace/dev-bridge-runtime.mjs'),'export async function prepareDevBridge(){return {prepared:false,deferred:true,reason:"SDK_UNAVAILABLE"};}');
+    const result=await f.run('up');assert.equal(result.status,1);assert.match(result.stderr,/Текущая поставка моста не подготовлена/);
+    assert.equal(result.events.some(event=>['service-launch','catalog-rebuild-request','bridge-apply'].includes(event.kind)),false);
+    assert.equal(result.events.some(event=>event.kind==='docker'),false);
+    await assert.rejects(fs.stat(path.join(f.checkout,'.run/catalog-rebuild/current.json')),{code:'ENOENT'});
 });
 
 test('Ошибка сборки видна в stderr и не подменяется сообщением об успехе', async t => {

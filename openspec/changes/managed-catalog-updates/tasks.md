@@ -20,6 +20,8 @@
 
 ## 4. Интеграция
 
+- [x] 4.0 По уточнению 30.10 связать основную пересборку с текущим мостом и стабильным локальным запросом actual catalog build/import; проверить optional snapshot failure, lost ACK/restart, свежие права/флаги, manual-head CAS и отсутствие model-weight downloads. Показать ход и отказ отдельно от опубликованной версии. Локальные CLI/PostgreSQL/один настоящий producer и desktop-сценарии приняты; полный recipe → project → bridge и применение на main остаются в 3.3/4.1/4.2.
+
 - [ ] 4.1 Выполнить независимое review, affected TypeScript/сборки, strict OpenSpec validation и desktop proposals→explicit update→receipt; разделить unit/native/browser/CI/deployment свидетельства.
 - [ ] 4.2 Передать Root exact file manifest и результаты, обновить бэклог после реализации; только Root интегрирует готовые feature-коммиты и отдельно проверяет main/runtime/CI.
 

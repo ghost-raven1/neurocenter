@@ -56,6 +56,9 @@ import { catalogSection, catalogSectionUrl } from './catalogSection';
 import { selectStoreTarget, storeProjectAssetRequest, visibleStoreApps } from './storeCatalogView';
 import { projectCatalogUpdate, showProjectCatalogUpdate } from './projectCatalogUpdates';
 import { CatalogUpdateSummary } from './CatalogUpdateSummary';
+import {useCatalogSourceStatus} from '../../features/AssetSources/useCatalogSourceStatus';
+import {pendingCatalogSources} from '../../features/AssetSources/catalogSourceStatus';
+import {CatalogRebuildStatus} from '../../features/AssetSources/CatalogRebuildStatus';
 
 const { Text, Paragraph } = Typography;
 
@@ -97,6 +100,8 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const selectedTarget = selectStoreTarget(projectsReady ? projects : [], requestedTarget, user);
     const targetProject = selectedTarget.project;
     const target = targetProject?.name ?? null;
+    const sourceStatus=useCatalogSourceStatus(targetProject?.id??'common',projectsReady);
+    const pendingSourceMap=useMemo(()=>pendingCatalogSources(isMain?sourceStatus.data?.sourcePlans:undefined),[isMain,sourceStatus.data?.sourcePlans]);
     const projectLevel = projectsReady ? selectedTarget.level : 0;
     const canManage = projectLevel >= 3;
     const canInstall = projectLevel >= 2;
@@ -201,7 +206,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             ? commonCatalog.find(item => item.id === previous.id && item.kind === previous.kind) || previous : null);
     }, [commonCatalog]);
 
-    useSectionUpdates(['catalog'],()=>{void loadCatalog();void loadProject();});
+    useSectionUpdates(['catalog'],()=>{void loadCatalog();void loadProject();void sourceStatus.refresh();});
 
     const archived = (): void => {
         setViewApp(null); setEditApp(null); setPicker(null);
@@ -214,7 +219,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const shown = useMemo(() => visibleStoreApps(catalog, {
         projectOnly: !!embedded || !canBrowseCommon, projectSelected: !!target,
         kind: filter, query: search, inProject: isInProject, installedOnly,
-    }).filter(app => !onlyUpdates || showProjectCatalogUpdate(updates.get(app.kind + ':' + app.id))), [ catalog, target, embedded, canBrowseCommon, filter, search, isInProject, installedOnly, onlyUpdates, updates ]);
+    }).filter(app => !onlyUpdates || (showProjectCatalogUpdate(updates.get(app.kind + ':' + app.id))||pendingSourceMap.has(app.kind+':'+app.id))), [ catalog, target, embedded, canBrowseCommon, filter, search, isInProject, installedOnly, onlyUpdates, updates, pendingSourceMap ]);
 
     const switchTarget = useCallback((projectId: string | null): void => {
         try { if (projectId) { localStorage.setItem('neurocenter.install-project', projectId); } else { localStorage.removeItem('neurocenter.install-project'); } } catch { /* Хранилище браузера может быть недоступно. */ }
@@ -356,8 +361,9 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             {targetProject&&bridge.device&&<LocalInstallations key={bridge.device.id+':'+targetProject.id} bridge={bridge} projectId={targetProject.id} canInspect={projectLevel>=1} connectionNoticeVisible canManage={canInstall&&!bridgeInstallError} catalog={catalog} approved={new Set(catalog.filter(isInProject).map(asset=>asset.kind+':'+asset.id))}/>}
             {targetProject && <ProjectKnowledgeLink projectId={targetProject.id} />}
             <ToolCatalogStatus sources={catalogSources} refresh={loadCatalog} />
-            {targetProject && <CatalogUpdateSummary catalogCount={updateRows.filter(item => item?.catalogNewer).length} computerCount={updateRows.filter(item => item?.computerDiffers).length}
-                incomplete={catalogIncomplete || projectLoading || !projectCatalogUsable || !receiptsReady} onlyUpdates={onlyUpdates}
+            {isMain&&<CatalogRebuildStatus rebuild={sourceStatus.data?.rebuild} error={sourceStatus.error}/>}
+            {targetProject && <CatalogUpdateSummary sourceCount={catalog.filter(app=>pendingSourceMap.has(app.kind+':'+app.id)).length} catalogCount={updateRows.filter(item => item?.catalogNewer).length} computerCount={updateRows.filter(item => item?.computerDiffers).length}
+                incomplete={catalogIncomplete || projectLoading || !projectCatalogUsable || !receiptsReady || !!sourceStatus.error} onlyUpdates={onlyUpdates}
                 onChange={enabled => setUpdateFilter({scope: updateScope, enabled})} />}
             <Space style={{ marginBottom: 16 }} wrap>
                 <Radio.Group
@@ -399,7 +405,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                         <Row gutter={[12, 12]} align="stretch">
                             { shown.map(a => (
                                 <Col key={ a.id } xs={24} sm={12} xl={8} xxl={6}>
-                                    <AppCard app={ a } installed={ !!target && isInProject(a)} update={updates.get(a.kind + ':' + a.id)} action={ renderAction(a) } onView={() => setViewApp(a)} feedback={<CatalogFeedback catalogId={a.kind + ':' + a.id} title={a.name}/>} />
+                                    <AppCard app={ a } pendingSource={pendingSourceMap.get(a.kind+':'+a.id)} installed={ !!target && isInProject(a)} update={updates.get(a.kind + ':' + a.id)} action={ renderAction(a) } onView={() => setViewApp(a)} feedback={<CatalogFeedback catalogId={a.kind + ':' + a.id} title={a.name}/>} />
                                 </Col>
                             )) }
                         </Row>

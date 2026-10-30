@@ -9,6 +9,8 @@ import { FC, ReactNode } from 'react';
 import type { IStoreApp, TStoreKind } from '../../features/Catalog/types';
 import {storeCardPlatforms,storeCardRevision,storeCardSource} from './storeCardPresentation';
 import type { IProjectCatalogUpdate } from './projectCatalogUpdates';
+import type {IBundledSourcePlan} from '../../features/AssetSources/types';
+import {CatalogSourceUpdateHint} from '../../features/AssetSources/CatalogRebuildStatus';
 
 const { Text, Paragraph } = Typography;
 
@@ -61,6 +63,7 @@ interface IAppCardProps {
     action: ReactNode;
     feedback?: ReactNode;
     update?: IProjectCatalogUpdate;
+    pendingSource?:IBundledSourcePlan;
 }
 
 /**
@@ -71,7 +74,7 @@ interface IAppCardProps {
  * @param {IAppCardProps} props
  * @returns JSX-элемент карточки
  */
-const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback, update }) => {
+const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback, update, pendingSource }) => {
     const source=storeCardSource(app.origin),revision=storeCardRevision(app.revision),platforms=storeCardPlatforms(app.config);
     const description=app.description.trim(),tags=[...new Set(app.tags.map(tag=>tag.trim()).filter(Boolean))].slice(0,3);
     return (
@@ -90,6 +93,7 @@ const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, fee
                 <Text type="secondary" className="store-card__edition">Редакция {app.version}</Text>
             </div>
             {update && <ProjectToolVersions app={app} update={update} />}
+            {pendingSource&&<CatalogSourceUpdateHint plan={pendingSource}/>}
             {feedback}
             <div className="store-card__actions">{action}</div>
         </Card>

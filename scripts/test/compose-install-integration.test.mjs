@@ -19,7 +19,7 @@ async function fixture(t, mode = 'ready') {
     await fs.mkdir(path.join(checkout, 'scripts/dev-mcp'), {recursive: true});
     await fs.mkdir(bin); await fs.mkdir(dockerConfig);
     for (const file of ['dev.mjs', 'release-request.mjs', 'workspace/node-runtime.mjs', 'workspace/model-credentials.mjs', 'workspace/model-credential-store.mjs', 'workspace/dev-model-credentials.mjs', 'workspace/dev-snapshots.mjs', 'workspace/dev-chat-storage.mjs', 'workspace/npm-build-environment.mjs', 'workspace/docker-build-ca.mjs', 'workspace/docker-build-progress.mjs', 'workspace/compose.mjs',
-        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs',
+        'workspace/compose.lock.json', 'workspace/dev-output.mjs', 'workspace/dev-current-components.mjs', 'workspace/catalog-rebuild-request.mjs', 'workspace/dev-processes.mjs', 'workspace/dev-service-health.mjs', 'workspace/dev-listener-origin.mjs',
         'workspace/dev-launch-provenance.mjs','workspace/dev-launch-ack.mjs','workspace/dev-launch-inspection.mjs','workspace/dev-launch-recovery.mjs',
         'workspace/dev-watch-owned.mjs','workspace/dev-watch-child.mjs','workspace/check-plan.mjs','workspace/node24-cli.mjs','dev-mcp/safe-file.mjs','dev-mcp/constants.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
@@ -48,8 +48,17 @@ async function fixture(t, mode = 'ready') {
     await fs.writeFile(path.join(checkout, 'scripts/workspace/dev-bridge-runtime.mjs'), `export async function prepareDevBridge({root,node,environment}) {
         const fs=await import('node:fs');fs.appendFileSync(environment.COMPOSE_TEST_RECORD,JSON.stringify({kind:'bridge-pipeline',root,node,home:environment.HOME})+'\\n');
         if(environment.COMPOSE_TEST_MODE==='bridge-pipeline-failure')throw Error('OWN_BRIDGE_PIPELINE_FAILURE');
-        return {installed:{updated:true}};
+        return {prepared:true,installed:{updated:true}};
     }`);
+    await fs.writeFile(path.join(checkout, 'scripts/workspace/catalog-rebuild-request.mjs'), `
+        export const catalogRebuildRequestPath=root=>root+'/.run/catalog-rebuild/current.json';
+        export async function writeCatalogRebuildRequest({root}) {
+            const fs=await import('node:fs/promises');await fs.mkdir(root+'/.run/catalog-rebuild',{recursive:true});
+            await fs.writeFile(catalogRebuildRequestPath(root),'{}\\n',{mode:0o600});
+            (await import('node:fs')).appendFileSync(process.env.COMPOSE_TEST_RECORD,JSON.stringify({kind:'catalog-rebuild-request'})+'\\n');
+            return catalogRebuildRequestPath(root);
+        }
+    `);
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(npm, `${record}
         record({kind:'npm',node:process.versions.node,args:process.argv.slice(2),cwd:process.cwd(),home:process.env.HOME});
@@ -102,7 +111,7 @@ test('dev install проверяет готовый Compose до установ�
     assert.deepEqual(result.events.slice(0, 3).map(event => event.args), [
         ['--version'], ['compose', 'version', '--short'], ['compose', 'up', '--help'],
     ]);
-    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length+1).fill('npm'), 'bridge-pipeline','docker','docker']);
+    assert.deepEqual(result.events.map(event => event.kind), [...Array(3).fill('docker'), ...Array(workspacePackages.length+1).fill('npm'), 'bridge-pipeline','catalog-rebuild-request','docker','docker']);
     const npm = result.events.filter(event => event.kind === 'npm');
     assert.deepEqual(npm.map(event => path.relative(f.checkout, event.cwd)).sort(), ['',...workspacePackages].sort());
     for (const event of npm) {
@@ -113,7 +122,7 @@ test('dev install проверяет готовый Compose до установ�
         assert.match(path.basename(event.home),/^neurocenter-npm-build-/);
         await assert.rejects(fs.access(event.home),{code:'ENOENT'});
     }
-    assert.deepEqual(result.events.at(-3),{kind:'bridge-pipeline',root:f.checkout,node:process.execPath,home:f.directory});
+    assert.deepEqual(result.events.at(-4),{kind:'bridge-pipeline',root:f.checkout,node:process.execPath,home:f.directory});
     assert.equal(result.events.at(-2).args[0],'build');assert.deepEqual(result.events.at(-1).args,['image','inspect','neurocenter-snapshot-verifier:local','--format','{{.Id}}']);
     await assert.rejects(fs.access(path.join(f.checkout,'.run/project-snapshots')),{code:'ENOENT'});
     assert.match(result.stdout, /Compose 2\.40\.3 уже установлен/);
@@ -130,9 +139,10 @@ for(const command of ['install','build'])test('dev '+command+' builds the verifi
     await assert.rejects(fs.access(path.join(f.checkout,'.run/project-snapshots')),{code:'ENOENT'});
 });
 
-for(const command of ['install','build'])for(const [mode,reason]of [['verifier-build-exit',/код\S*\s+37/],['verifier-build-timeout',/ETIMEDOUT.*600|600.*ETIMEDOUT/]])test('dev '+command+' reports verifier failure after package preparation: '+mode,async t=>{
-    const f=await fixture(t,mode),result=await f.run(command);assert.equal(result.status,1,result.stdout+result.stderr);assert.match(result.stderr,reason);
-    assert.doesNotMatch(result.stdout,/Зависимости установлены|Проект собран/);
+for(const command of ['install','build'])for(const [mode,reason]of [['verifier-build-exit',/код\S*\s+37/],['verifier-build-timeout',/ETIMEDOUT.*600|600.*ETIMEDOUT/]])test('dev '+command+' keeps current packages available after optional verifier failure: '+mode,async t=>{
+    const f=await fixture(t,mode),result=await f.run(command);assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stderr,reason);assert.match(result.stderr,/Проверка снимков недоступна/);
+    assert.match(result.stdout,/Зависимости установлены|Проект собран/);
+    assert.equal(result.events.filter(event=>event.kind==='catalog-rebuild-request').length,1);
     assert.equal(result.events.filter(event=>event.kind==='npm').length,workspacePackages.length+1);
     assert.equal(result.events.filter(event=>event.kind==='docker'&&event.args[0]==='image').length,0);
     await assert.rejects(fs.access(path.join(f.checkout,'.run/project-snapshots')),{code:'ENOENT'});

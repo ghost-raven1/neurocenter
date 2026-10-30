@@ -2,6 +2,7 @@ import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { assetCatalogFeature } from '../FeatureFlags/types';
 import { Alert, Button, Card, Checkbox, Empty, Input, List, Modal, Space, Spin, Tag, Typography } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {useSelector} from 'react-redux';
 import { baseApi, bffApi } from '../../core/api';
 import { PageHeading } from '../../common/components/PageHeading';
 import { errorMessage } from '../../common/utils/errorMessage';
@@ -28,12 +29,16 @@ import {AssetArchiveStatus} from './AssetArchiveStatus';
 import {useAssetArchiveUpload} from './useAssetArchiveUpload';
 import {availableSourceAssetIds,sourceAssetReady} from './archiveUpload';
 import {BundledCatalogSources} from './BundledCatalogSources';
+import {CatalogRebuildStatus} from './CatalogRebuildStatus';
+import {canReadCatalogSources} from './catalogSourceStatus';
+import {useCatalogRebuildPolling} from './useCatalogRebuildPolling';
 import './AssetSources.less';
 
 const labels={mcp:'MCP',plugin:'Плагин',skill:'Скилл',model:'Модель',bridge:'Мост компьютера',agent:'Агент OpenCode'};
 const itemStates:Record<string,string>={PENDING:'Ожидает очереди',RUNNING:'Обрабатывается',SUCCEEDED:'Готово',FAILED:'Не удалось добавить'};
 /** Главный администратор явно выбирает состав общего каталога; обычное добавление занимает один клик. */
 export default function AssetSources():JSX.Element {
+ const isMain=useSelector(canReadCatalogSources);
  const {scope,captureOwner}=useAuthRequestOwner(),[data,setData]=useState<ISourceList>(),[error,setError]=useState(''),[loading,setLoading]=useState(false),[selected,setSelected]=useState<string[]>([]),[query,setQuery]=useState(''),[localQuery,setLocalQuery]=useState('');
  const [edit,setEdit]=useState<IStoreApp|null>(null),[model,setModel]=useState<ICatalogModel>(),[editing,setEditing]=useState(''),[resolving,setResolving]=useState(false);
  const [agent,setAgent]=useState<ICatalogAgent>();
@@ -41,17 +46,18 @@ export default function AssetSources():JSX.Element {
  const editRequest=useRef<object>(),catalogAction=useRef<object>();
  const loadRequest=useRef(0),archiveLock=useRef(false),refreshLock=useRef<object>();
  const load=useCallback(async(refresh=false):Promise<void>=>{
-  const owns=captureOwner();if(!owns()||archiveLock.current||refreshLock.current)return;const refreshing=refresh?{}:undefined;if(refreshing)refreshLock.current=refreshing;
+  const owns=captureOwner();if(!isMain||!owns()||archiveLock.current||refreshLock.current)return;const refreshing=refresh?{}:undefined;if(refreshing)refreshLock.current=refreshing;
   const request=++loadRequest.current,current=()=>owns()&&loadRequest.current===request;setLoading(true);setError('');
   try{const response=refresh?await baseApi.post<ISourceList>('/api/asset-sources/refresh'):await baseApi.get<ISourceList>('/api/asset-sources');if(current()){setData(response.data);setSelected(previous=>availableSourceAssetIds(response.data.assets,previous));}}
   catch(cause){if(current()){setError(errorMessage(cause,'Не удалось обновить список ассетов. Последний сохранённый список доступен.'));}}
   finally{if(refreshing&&refreshLock.current===refreshing)refreshLock.current=undefined;if(current()){setLoading(false);}}
- },[captureOwner]);
+ },[captureOwner,isMain]);
  const imports=useAssetImports(()=>void load());
  const archiveBlocked=imports.blocked||!!editing||!!edit||!!model||!!agent||resolving||!!refreshLock.current||!!catalogAction.current;
  const archive=useAssetArchiveUpload({blocked:()=>archiveBlocked||!!editRequest.current||!!refreshLock.current||!!catalogAction.current,onStart:()=>{archiveLock.current=true;loadRequest.current++;setLoading(false);setError('');},onFinish:()=>{archiveLock.current=false;},onSuccess:view=>{loadRequest.current++;setData(view);setSelected([]);setLoading(false);setArchiveOpen(false);}});
  useEffect(()=>{editRequest.current=undefined;catalogAction.current=undefined;archiveLock.current=false;refreshLock.current=undefined;setArchiveOpen(false);setEditing('');setResolving(false);setData(undefined);setSelected([]);setEdit(null);setModel(undefined);setAgent(undefined);setQuery('');setLocalQuery('');void load();return()=>{loadRequest.current++;};},[scope,load]);
  useSectionUpdates(['catalog','access'],()=>void load());
+ useCatalogRebuildPolling(data?.rebuild,scope,load,isMain);
  /** Single-flight prevents a late card lookup from replacing another editor's unsaved prompt. */
  const editAsset=async(asset:ISourceAsset):Promise<void>=>{
   if(!asset.imported||asset.kind==='bridge'||editRequest.current||archiveLock.current){return;}const owns=captureOwner();if(!owns()){return;}const request={};editRequest.current=request;setEditing(asset.id);setError('');
@@ -74,10 +80,12 @@ export default function AssetSources():JSX.Element {
  const importMessage=stopping?'Остановка запрошена. Уже добавленные карточки сохранятся.':cancelled
   ?'Импорт остановлен. '+(imports.job!.items.length?'Готово: '+imports.job!.items.filter(item=>item.state==='SUCCEEDED').length+' из '+imports.job!.items.length+'. Уже добавленные карточки сохранены.':'Новые карточки не добавлены.')
   :imports.job?.message;
+ if(!isMain)return <></>;
  return <section className="asset-sources"><PageHeading title="Ассеты" description="Выберите инструменты, модели и агентов для общего каталога."
   actions={<Space wrap><Button href="/settings#sources">Настройки источников</Button><FeatureButton features={['asset_sources']} disabled={archiveBlocked||archive.busy} onClick={()=>setArchiveOpen(true)}>Импортировать архив</FeatureButton><Button loading={loading} disabled={imports.blocked||archive.busy} onClick={()=>void load()}>Обновить список</Button><FeatureButton features={['asset_sources']} loading={loading} disabled={imports.blocked||archive.busy} onClick={()=>void load(true)}>{bundled||offline?'Перечитать поставку':fromArchive?'Проверить источник в GitHub':'Обновить источник'}</FeatureButton></Space>}/>
   <Space direction="vertical" size="middle" className="asset-sources__content">
    {error&&<Alert type="error" showIcon message={error}/>}
+   <CatalogRebuildStatus rebuild={data?.rebuild}/>
    <BundledCatalogSources plans={data?.sourcePlans??[]} scope={scope} blocked={archiveBlocked||archive.busy} onPublished={()=>void load()} onImportArchive={()=>{if(!archiveBlocked&&!archive.busy&&captureOwner()())setArchiveOpen(true);}}/>
    {bundled&&<Alert type="info" showIcon message="Каталог из исходников приложения" description="Текущие версии и закреплённые рецепты обновляются вместе с приложением через Git. Готовые пакеты подготавливаются явно; локальные настройки и история сохраняются."/>}
    <AssetImportRecovery imports={imports} onChangeSelection={ids=>{if(captureOwner()()){setSelected(data?availableSourceAssetIds(data.assets,ids):ids);setQuery('');}}}/>

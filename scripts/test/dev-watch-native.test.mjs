@@ -45,6 +45,6 @@ test('delivery/help defaults preserve manual settings and existing development T
     assert.equal(watchServiceEnvironment(root,{name:'gateway'},{NODE_TLS_REJECT_UNAUTHORIZED:'1'}).NODE_TLS_REJECT_UNAUTHORIZED,'1');
 });
 test('failed initial process registry persistence stops the newly spawned guardian',async t=>{
-    const f=await nativeWatchFixture(t),sources=new URL('../workspace/',import.meta.url);for(const name of ['dev-watch-guardian.mjs','dev-watch-owned.mjs','dev-processes.mjs','dev-watch-files.mjs','dev-watch-plan.mjs','isolated-build-source.mjs'])await fs.copyFile(new URL(name,sources),path.join(f.root,'scripts/workspace',name));
+    const f=await nativeWatchFixture(t),sources=new URL('../workspace/',import.meta.url);for(const name of ['dev-watch-guardian.mjs','dev-watch-owned.mjs','dev-launch-inspection.mjs','dev-processes.mjs','dev-watch-files.mjs','dev-watch-plan.mjs','isolated-build-source.mjs'])await fs.copyFile(new URL(name,sources),path.join(f.root,'scripts/workspace',name));
     await fs.mkdir(path.join(f.root,'.run/processes.json'));await assert.rejects(startDevWatch({root:f.root,node:process.execPath,logDir:path.join(f.root,'.run/logs'),services:[]}));await until(()=>discoverDevProcesses(f.root,[{name:'source-watch',dir:'.',entry:'scripts/workspace/dev-watch-guardian.mjs'}]).length===0);
 });

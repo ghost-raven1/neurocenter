@@ -76,6 +76,7 @@ vi.mock('../src/features/Discussions', () => ({CatalogFeedback: () => null}));
 vi.mock('../src/features/McpBridge/LocalInstallations', () => ({LocalInstallations: () => null}));
 vi.mock('../src/features/McpBridge/ProjectInstallationReadiness', () => ({ProjectInstallationReadiness: () => null}));
 vi.mock('../src/modules/Store/ProjectKnowledgeLink', () => ({ProjectKnowledgeLink: () => null}));
+vi.mock('../src/features/AssetSources/useCatalogSourceStatus',()=>({useCatalogSourceStatus:()=>({data:undefined,error:'',refresh:async()=>{}})}));
 vi.mock('../src/modules/Store/CatalogTabs', () => ({CatalogTabs: ({tools}: {tools: ReactNode}) => tools}));
 vi.mock('../src/modules/Store/UnavailableProjectAssets', () => ({default: () => null}));
 vi.mock('../src/modules/Store/StoreArchiveAction',()=>({StoreArchiveAction:()=>null}));

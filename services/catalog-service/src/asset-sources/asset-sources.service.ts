@@ -6,6 +6,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { Request } from 'express';
 import { assetDigest,serializeAsset,selectAssets, toBridgeRelease, type BridgeAsset, type ModelAsset } from '@neurocenter/asset-contract';
 import { AccessDb } from '../access/access-db';
+import {authorizeAccessWrite} from '../access/access-write-policy';
 import { CatalogService } from '../catalog/catalog.service';
 import { readModelActor } from '../models/model-access';
 import { createPool } from '../database/pool';
@@ -20,9 +21,11 @@ import {bridgeSupplyIdentity} from './bridge-source-head';
 import {validBridgeVersion} from './bridge-source-version';
 import {assetSourceMode} from './source-cache';
 import path from 'node:path';
+import type {PoolClient} from 'pg';
 import {AssetSourceArchiveUploads} from './source-archive-upload';
 import {sourceSupplyViews} from './source-supply-view';
 import {readBundledCatalog} from '../../../shared/bundled-catalog.cjs';
+import {readCatalogRebuildState} from '../package-build/catalog-rebuild-state';
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 /** Один серверный source pipeline: metadata → exact plan → проверенная supply → native publication. */
@@ -86,19 +89,23 @@ export class AssetSourcesService implements OnModuleInit,OnApplicationShutdown {
                 const owner=[...local,...history].find(receipt=>receipt.external_id===id&&receipt.asset_kind===kind);
                 return {id,kind,name,description,sourceRevision,revision,delivery:delivery.type,catalogReady:!!owner&&readyBuilds.some(build=>build.asset_id===id&&build.catalog_id===owner.native_id&&Number(build.version)===Number(owner.native_version)),...(owner?{imported:view(owner.descriptor,owner.descriptor_sha256,owner).imported}:{})};
             }),
-            localAssets:[...local,...history.filter(receipt=>!receipts.some(current=>current.repository===receipt.repository&&current.external_id===receipt.external_id))].map(receipt=>view(receipt.descriptor,receipt.descriptor_sha256,receipt))};
+            localAssets:[...local,...history.filter(receipt=>!receipts.some(current=>current.repository===receipt.repository&&current.external_id===receipt.external_id))].map(receipt=>view(receipt.descriptor,receipt.descriptor_sha256,receipt)),
+            rebuild:await readCatalogRebuildState(process.env.CATALOG_REBUILD_REQUEST_FILE)};
     }
     async refresh(){await requireFeaturesEnabled(['asset_sources']);await this.sources.refresh();return this.view();}
     async uploadArchive(req:Request,signal:AbortSignal){const actor=await this.actor(req);await requireFeaturesEnabled(['asset_sources']);await this.archives.receive(actor,req,req.headers['content-length'],signal);return this.view();}
     kickImports():void{this.worker.kick();}
-    async start(actor:string,body:unknown){
+    async start(actor:string,body:unknown,assertAdmission?:(client:PoolClient)=>Promise<void>){
         const input=body as {requestKey?:unknown;ids?:unknown;commit?:unknown};
         if(!input||!uuid(input.requestKey)||!Array.isArray(input.ids)||!input.ids.length||input.ids.length>50||input.ids.some(id=>typeof id!=='string')||new Set(input.ids).size!==input.ids.length
             ||typeof input.commit!=='string'||!/^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64})$/.test(input.commit)||Object.keys(input).some(key=>!['requestKey','ids','commit'].includes(key))){throw new BadRequestException('Передайте сохранённый ключ, commit и от 1 до 50 выбранных ассетов.');}
         await requireFeaturesEnabled(['asset_sources']);
         const snapshot=await this.sources.get(input.commit);let selected;try{selected=selectAssets(snapshot.assets,input.ids);}catch{throw new ConflictException('Выбранный граф не соответствует точной описи источника.');}
         if(!snapshot.archive_sha256&&selected.some(record=>record.asset.kind==='model'))throw new ConflictException('Веса модели добавляются только явно выбранным GGUF или локальным архивом.');
-        const job=await this.jobs.create(actor,input.requestKey,snapshot.pin,input.ids,undefined,snapshot.pin.schemaVersion===2||!!snapshot.archive_sha256||assetSourceMode()==='offline');this.worker.kick();return importView(job);
+        const job=await this.jobs.create(actor,input.requestKey,snapshot.pin,input.ids,undefined,snapshot.pin.schemaVersion===2||!!snapshot.archive_sha256||assetSourceMode()==='offline',{
+            authorize:async client=>{await authorizeAccessWrite(client,{email:actor,activeRole:'Главный админ'});await assertAdmission?.(client);},
+            beforeInsert:async client=>{await requireFeaturesEnabled(['asset_sources']);await assertAdmission?.(client);},
+        });this.worker.kick();return importView(job);
     }
     async job(id:string,actor:string){if(!uuid(id)){throw new BadRequestException('Некорректный импорт.');}return importView(await this.jobs.get(id,actor));}
     async request(key:string,actor:string){if(!uuid(key)){throw new BadRequestException('Некорректный запрос импорта.');}return importView(await this.jobs.byRequest(actor,key));}
