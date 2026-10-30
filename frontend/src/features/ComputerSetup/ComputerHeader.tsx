@@ -33,7 +33,7 @@ export function ComputerHeader({onSetup}: {onSetup: () => void}): JSX.Element {
         <SetupProgress bridge={bridge} cli={<CliObservationDetails control={cli}/>}/>
         {(bridge.errors.devices || device?.report.rootError) && <Alert type="warning" showIcon message={bridge.errors.devices || device?.report.rootError}/>}
         {update && <Alert type="info" showIcon message={`Доступен мост ${supply!.version}`} action={<Button size="small" onClick={setup}>Обновить мост</Button>}/>}
-        <Space wrap>
+        <Space className="computer-header__actions" size={[8, 8]} wrap>
             <Button size="small" loading={bridge.loading} onClick={() => {void bridge.reload();}}>Проверить подключение</Button>
             <Button size="small" onClick={setup}>{device ? 'Настройка компьютера' : 'Подключить компьютер'}</Button>
         </Space>

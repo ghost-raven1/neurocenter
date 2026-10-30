@@ -53,7 +53,7 @@ function ChatScope({projectId,projects,projectsLoading,initialGroup,onTeam,onRol
     };
     const controls=(change:(action:()=>void)=>void)=><div className="model-chat__workspace-controls">
         {modeControls('personal',()=>change(onTeam))}
-        <RoleChatNavigation onSelect={onRole}/>
+        <RoleChatNavigation onSelect={role=>change(()=>onRole(role))}/>
         <label>Проект<Select aria-label="Проект чата" value={projectId??''} placeholder="Выберите проект" showSearch optionFilterProp="label" loading={projectsLoading} disabled={opening}
             options={[{value:'',label:user?.activeRole==='Главный админ'?'Без проекта':'Выберите проект',disabled:user?.activeRole!=='Главный админ'},...projects.filter(value=>projectRoleLevel(user,value.id)>=2).map(value=>({value:value.id,label:value.name})),...(projectId&&!project?[{value:projectId,label:'Текущий проект'}]:[])]}
             onChange={value=>change(()=>{request.current?.abort();onProject(value||undefined);})}/></label>
@@ -79,6 +79,8 @@ export default function ChatOverlay({projectId:initialProject,group,team:initial
     const [projectId,setProjectId]=useState(initialProject);
     const [mode,setMode]=useState<ChatMode>(agentId??(initialTeam?'team':'personal'));
     const [teamConfiguration,setTeamConfiguration]=useState(!initialProject);
+    const teamRooms=useRef(new Map<string,string>()),roomScope=JSON.stringify([scope,projectId]);
+    const rememberTeamRoom=(roomId:string)=>{teamRooms.current.set(roomScope,roomId);};
     const user=useSelector((state:RootState)=>state.userBlock.user);
     const canonical=projects.projects.find(value=>value.id===projectId||value.name===projectId)?.id??projectId;
     useEffect(()=>{if(projects.ready&&canonical!==projectId)setProjectId(canonical);},[projects.ready,canonical,projectId]);
@@ -95,12 +97,15 @@ export default function ChatOverlay({projectId:initialProject,group,team:initial
     </Modal>;
     if(mode==='team')return <Modal open centered width={1280} className="model-chat model-chat_global model-chat_workspace project-chat-modal" title={<div className="model-chat__title">Чат<Typography.Text type="secondary">{projects.projects.find(project=>project.id===projectId)?.name ? `Проект «${projects.projects.find(project=>project.id===projectId)?.name}»` : 'Команда проекта'}</Typography.Text></div>} footer={null} onCancel={onClose} destroyOnClose>
         <div className={'model-chat__configuration'+(!teamConfiguration?' model-chat__configuration_collapsed':'')}>
-            <div className="model-chat__configuration-summary"><Button type="text" size="small" aria-label="Настройки командного чата: проект и режим" aria-expanded={teamConfiguration} aria-controls="project-chat-configuration" onClick={()=>setTeamConfiguration(!teamConfiguration)}>Настройки <span aria-hidden="true">{teamConfiguration?'▴':'▾'}</span></Button><Typography.Text type="secondary" className="model-chat__configuration-scope">Команда проекта</Typography.Text></div>
-            <div id="project-chat-configuration"><div className="model-chat__workspace-controls">{modeControls('team',setMode)}<label>Проект<Select aria-label="Проект командного чата" value={projectId} placeholder="Выберите проект" loading={projects.loading} showSearch optionFilterProp="label"
+            <nav className="model-chat__configuration-summary model-chat__navigation" aria-label="Режимы и сервисные роли чата">
+                {modeControls('team',setMode)}<RoleChatNavigation onSelect={setMode}/>
+                <Button type="text" size="small" aria-label="Настройки командного чата: проект" aria-expanded={teamConfiguration} aria-controls="project-chat-configuration" onClick={()=>setTeamConfiguration(!teamConfiguration)}>Настройки <span aria-hidden="true">{teamConfiguration?'▴':'▾'}</span></Button>
+            </nav>
+            <div id="project-chat-configuration" hidden={!teamConfiguration}><div className="model-chat__workspace-controls"><label>Проект<Select aria-label="Проект командного чата" value={projectId} placeholder="Выберите проект" loading={projects.loading} showSearch optionFilterProp="label"
                 options={projects.projects.filter(project=>projectRoleLevel(user,project.id)>=1).map(project=>({value:project.id,label:project.name}))} onChange={setProjectId}/></label></div></div>
-            <RoleChatNavigation onSelect={setMode}/>
         </div>
-        {projectId?<Suspense fallback={<Spin tip="Открываем команду…"/>}><ProjectChatWorkspace key={JSON.stringify([scope,projectId])} projectId={projectId} projectName={projects.projects.find(project=>project.id===projectId)?.name}/></Suspense>:<Empty description="Выберите проект для общей переписки с участниками и агентами."/>}
+        {projectId?<Suspense fallback={<Spin tip="Открываем команду…"/>}><ProjectChatWorkspace key={JSON.stringify([scope,projectId])} projectId={projectId} projectName={projects.projects.find(project=>project.id===projectId)?.name}
+            initialRoomId={teamRooms.current.get(roomScope)} onRoomChange={rememberTeamRoom}/></Suspense>:<Empty description="Выберите проект для общей переписки с участниками и агентами."/>}
     </Modal>;
     return <ChatScope key={JSON.stringify([scope,projectId])} projectId={projectId} projects={projects.projects} projectsLoading={projects.loading} initialGroup={group} onTeam={()=>setMode('team')} onRole={setMode} onProject={setProjectId} onClose={onClose}/>;
 }

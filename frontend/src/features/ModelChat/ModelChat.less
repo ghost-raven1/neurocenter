@@ -11,6 +11,13 @@
     &__configuration { flex-shrink: 0; border-bottom: 1px solid #e2e8f0; }
     &__configuration-summary { display: flex; align-items: center; gap: 8px; padding: 4px 12px; > .ant-btn { flex-shrink: 0; font-size: 12px; } }
     &__configuration-scope { min-width: 0; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    &__navigation { flex-wrap: wrap; gap: 8px 12px; padding: 8px 16px;
+        > .ant-radio-group { display: inline-flex; flex-shrink: 0; }
+        > label { display: flex; align-items: center; gap: 8px; flex: 0 1 260px; min-width: 0; font-size: 12px; color: #617387;
+            > .ant-select { flex: 1; min-width: 160px; }
+        }
+        > .ant-btn { margin-left: auto; }
+    }
     &__configuration &__workspace-controls { padding: 6px 16px 10px; border-bottom: 0; }
     // Preserve errors and progress while only secondary configuration controls are collapsed.
     &__configuration_collapsed &__workspace-controls { padding: 0 16px; gap: 0; > label, > .ant-radio-group, > .ant-btn { display: none; } }

@@ -61,12 +61,12 @@ export function ProjectChatParticipants({projectId, detail, saving, error, onClo
         <Typography.Paragraph type="secondary">{detail.room.visibility === 'PRIVATE' ? 'Доступ имеют только выбранные люди диалога.' : 'Люди проекта уже в чате.'} Выберите модель и агентов, если хотите спрашивать их здесь. Обычное сообщение коллегам не вызывает модель.</Typography.Paragraph>
         <label>Базовая модель<Select aria-label="Базовая модель агентов команды" value={modelId || undefined} placeholder="Выберите готовую модель проекта" showSearch optionFilterProp="label" loading={models.loading} disabled={saving || !flags.enabled || !detail.canConfigure} allowClear
             options={availableModels.map(value => ({value: value.id, label: value.name}))} onChange={value => {defaultChosen.current = true; setModelId(value ?? ''); setModelTouched(true); setLoadError('');}}/></label>
-        {models.error && <Alert type="error" showIcon message={models.error} action={<Button onClick={() => {void models.refresh();}}>Повторить проверку моделей</Button>}/>}
+        {models.error && <Alert type="error" showIcon message={models.error} action={<Button size="small" onClick={() => {void models.refresh();}}>Повторить проверку моделей</Button>}/>}
         {!modelTouched && model?.modelPin && model.modelPin !== detail.room.modelPin && <Alert type="info" showIcon message="В каталоге обновилась версия модели" description="Ранее отправленные вопросы сохраняют свою версию. Для следующих вопросов можно принять проверенную версию из каталога."
             action={<Button disabled={!flags.enabled || saving} onClick={() => setModelTouched(true)}>Принять новую версию</Button>}/>}
         {!models.loading && !availableModels.length && !models.error && <Alert type="info" message="Для ответов агентов подключите готовую чат-модель в каталоге проекта."/>}
         {loading && <Spin tip="Проверяем агентов проекта…"/>}
-        {loadError && <Alert type="error" showIcon message={loadError} action={<Button onClick={() => setAttempt(attempt + 1)}>Повторить проверку агентов</Button>}/>}
+        {loadError && <Alert type="error" showIcon message={loadError} action={<Button size="small" onClick={() => setAttempt(attempt + 1)}>Повторить проверку агентов</Button>}/>}
         <div className="project-chat__agent-options">{[...roster.values()].map(agent => {
             const checked = selected.includes(agent.agentId), unavailable = agent.status !== 'active';
             return <div key={agent.agentId}><Checkbox checked={checked} disabled={saving || !detail.canConfigure || !checked && (unavailable || selected.length >= 8 || !flags.enabled && !detail.room.agentIds.includes(agent.agentId))}

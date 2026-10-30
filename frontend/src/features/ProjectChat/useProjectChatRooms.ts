@@ -6,10 +6,10 @@ import {useSectionUpdates} from '../../core/socket/useSectionUpdates';
 import {projectChatApi} from './api';
 import {DEFAULT_PROJECT_CHAT_ROOM, type ProjectChatCreateRoom, type ProjectChatRooms, type ProjectChatRoomSummary, type ProjectChatUpdateRoom} from './types';
 
-/** Room selection and all late HTTP results belong to the current user and project. */
-export function useProjectChatRooms(projectId: string) {
+/** Initial selection is a hint; the current user's fresh authorized room list still decides access. */
+export function useProjectChatRooms(projectId: string, initialRoomId = DEFAULT_PROJECT_CHAT_ROOM) {
     const {captureOwner} = useAuthRequestOwner();
-    const [data, setData] = useState<ProjectChatRooms>(), [roomId, setRoomId] = useState(DEFAULT_PROJECT_CHAT_ROOM), [error, setError] = useState(''), [loading, setLoading] = useState(true);
+    const [data, setData] = useState<ProjectChatRooms>(), [roomId, setRoomId] = useState(initialRoomId), [error, setError] = useState(''), [loading, setLoading] = useState(true);
     const authorityEpoch = useRef(0), selected = useRef(roomId), active = useRef(true), sequence = useRef(0), reading = useRef<AbortController>(), mutations = useRef(new Set<AbortController>());
     selected.current = roomId;
     const invalidateAuthority = (): void => {authorityEpoch.current++; sequence.current++; reading.current?.abort(); mutations.current.forEach(controller => controller.abort());};
