@@ -22,7 +22,7 @@ async function profile(f,{install=f.install,legacyApi=false}={}){
     const text='// Keep existing OpenCode agents and comments\n'+JSON.stringify(document,null,2)+'\n// Keep trailing comment\n';
     await fs.mkdir(path.dirname(config),{recursive:true});await fs.writeFile(config,text);
     const credentials=path.join(bridgeHome,namespace(f.origin),'credentials.json'),bytes=Buffer.from(JSON.stringify({token:'owned-worker-token',deviceId:'owned'}));
-    await fs.mkdir(path.dirname(credentials),{recursive:true});await fs.writeFile(credentials,bytes,{mode:0o600});f.state.token='owned-worker-token';
+    await fs.mkdir(path.dirname(credentials),{recursive:true,mode:0o700});await fs.writeFile(credentials,bytes,{mode:0o600});f.state.token='owned-worker-token';
     return{config,text,document,home,bridgeHome,ca,credentials,bytes};
 }
 async function unchanged(saved){assert.equal(await fs.readFile(saved.config,'utf8'),saved.text);assert.deepEqual(await fs.readFile(saved.credentials),saved.bytes);}
@@ -65,12 +65,13 @@ test('A genuinely new current site migrates only its two origin fields and pairs
     assert.deepEqual(await fs.readFile(saved.credentials),saved.bytes);assert.equal(posts(f.state.requests).length,0);
     assert.deepEqual(posts(f.state.issuerRequests).map(row=>[row.route,row.authorization]),[['/api/device-channel/pair/start',false]]);noDelivery(f);
     const target=path.join(saved.bridgeHome,namespace(issuer));await assert.rejects(fs.stat(path.join(target,'credentials.json')),{code:'ENOENT'});
-    assert.equal(JSON.parse(await fs.readFile(path.join(target,'pair.json'),'utf8')).userCode,'OWN-ISSUER');assert.ok(result.stdout.includes(issuer+'/start?step=1&connect=OWN-ISSUER'));
+    assert.equal(JSON.parse(await fs.readFile(path.join(target,'pair.json'),'utf8')).userCode,'OWN-ISSUER');assert.ok(result.stdout.includes(issuer+'/start?setup=1&setupFlow=bridge-first&step=0&connect=OWN-ISSUER'));
     assert.doesNotMatch(result.stdout+result.stderr,/owned-worker-token/);assert.equal((await modes(f)).includes('--init'),false);
 }));
 
 test('A missing saved API falls back to its saved site during same-site transport migration and resumes that API',()=>installerLifecycleFixture('connect-legacy-api',async f=>{
     const saved=await profile(f,{legacyApi:true}),issuer=await f.startIssuer();f.state.issuerToken='owned-worker-token';
+    await f.startWorker(saved.document.mcp['neurocenter-asset-sync'].environment);
     const result=await f.runConnect({BASE_URL:issuer+'/api/bridge',SITE_URL:f.origin,INSTALLER_FIXTURE_REQUIRE_PROFILE:'1',INSTALLER_FIXTURE_NATIVE_UPGRADE:'1'});assert.equal(result.status,0,result.stderr);
     const rows=await contexts(f),upgrade=rows.filter(row=>['--prepare-upgrade','--finish-upgrade'].includes(row.mode));assert.equal(upgrade.length,2);
     for(const row of upgrade){assert.equal(row.site,f.origin);assert.equal(row.api,f.origin);assert.equal(row.home,saved.home);}

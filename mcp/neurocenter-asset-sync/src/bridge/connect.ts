@@ -36,7 +36,7 @@ function startPairWatch(): void {
 }
 async function pairLink(pair: Pair, openBrowser: boolean) {
     startPairWatch();
-    const url = `${hub()}/start?step=1&connect=${pair.userCode}`;
+    const url = `${hub()}/start?setup=1&setupFlow=bridge-first&step=0&connect=${encodeURIComponent(pair.userCode)}`;
     const browserOpened = openBrowser ? await openVerificationPage(url) : false;
     return { url, code: pair.userCode, fingerprint: pair.fingerprint,
         expiresIn: Math.max(0, Math.floor(((pair.expiresAt || Date.now() + 600000) - Date.now()) / 1000)),
@@ -47,7 +47,7 @@ async function connected(token: string, identity: Identity) {
     await fs.rm(path.join(stateDir(), 'pair.json'), { force: true });
     await ensureCurrentWorker();
     startWorker();
-    return { connected: true, deviceId: identity.id, note: 'Компьютер уже подключён. Повторная установка не создаёт дубликат; выберите папку проекта на сайте.' };
+    return { connected: true, deviceId: identity.id, note: 'Компьютер уже подключён. Продолжите настройку OpenCode на странице «Начало работы».' };
 }
 /** Клиент хранит будущий ключ до подтверждения; повтор poll не теряет секрет и сохраняет прежний ID устройства. */
 export async function connectBridge(openBrowser = false, reconnect = false) {

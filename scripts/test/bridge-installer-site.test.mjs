@@ -22,7 +22,7 @@ async function savedProfile(f,{legacyApi=false,worker=false}={}){
     const text='// Existing user profile\n'+JSON.stringify(document,null,2).replace('  "agent":','  // Preserve this agent comment\n  "agent":')+'\n// Preserve trailing comment\n';
     await fs.mkdir(path.dirname(config),{recursive:true});await fs.writeFile(config,text);
     const credentials=path.join(bridgeHome,namespace(f.origin),'credentials.json'),bytes=Buffer.from(JSON.stringify({token:'owned-worker-token',deviceId:'owned'}));
-    await fs.mkdir(path.dirname(credentials),{recursive:true});await fs.writeFile(credentials,bytes,{mode:0o600});f.state.token='owned-worker-token';
+    await fs.mkdir(path.dirname(credentials),{recursive:true,mode:0o700});await fs.writeFile(credentials,bytes,{mode:0o600});f.state.token='owned-worker-token';
     if(worker)await f.startWorker({...environment,NEUROCENTER_API_URL:f.origin});
     return{config,text,own,document,home,bridgeHome,credentials,bytes,legacyApi,site:f.origin,api:f.origin};
 }
@@ -53,7 +53,7 @@ async function phaseContexts(f,saved,site,api,{prepared=true,reconnect=false}={}
     await assert.rejects(fs.stat(path.join(saved.home,'.local/bin/neurocenter-bridge')),{code:'ENOENT'});
 }
 async function pendingTarget(f,saved,site,result){
-    assert.match(result.stdout,/Подключение жд[её]т подтверждения/);assert.ok(result.stdout.includes(site+'/start?step=1&connect='));
+    assert.match(result.stdout,/Подключение жд[её]т подтверждения/);assert.ok(result.stdout.includes(site+'/start?setup=1&setupFlow=bridge-first&step=0&connect='));
     assert.doesNotMatch(result.stdout+result.stderr,/owned-worker-token/);
     const directory=path.join(saved.bridgeHome,namespace(site));await assert.rejects(fs.stat(path.join(directory,'credentials.json')),{code:'ENOENT'});
     const pair=JSON.parse(await fs.readFile(path.join(directory,'pair.json'),'utf8'));assert.notEqual(pair.candidateToken,'owned-worker-token');assert.ok(pair.userCode);

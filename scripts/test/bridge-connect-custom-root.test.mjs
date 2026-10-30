@@ -29,7 +29,7 @@ export async function connectBridge(){
  try{token=JSON.parse(await fs.readFile(path.join(base,namespace,'credentials.json'),'utf8')).token;}catch(error){if(error.code!=='ENOENT')throw error;}
  const response=await fetch(api+'/api/device-channel/'+(token?'identity':'pair/start'),{method:'POST',body:'{}',headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},signal:AbortSignal.timeout(1500)});
  if(!response.ok)throw Error('Owned HTTP fixture refusal');const result=await response.json();
- return token?{connected:true}:{url:site+'/start?step=1&connect='+result.userCode,code:result.userCode,expiresIn:result.expiresIn,browserOpened:false};
+ return token?{connected:true}:{url:site+'/start?setup=1&setupFlow=bridge-first&step=0&connect='+result.userCode,code:result.userCode,expiresIn:result.expiresIn,browserOpened:false};
 }
 `);
     await fs.writeFile(path.join(f.install,'dist/bridge-cli.js'),"import{runBridgeCli}from'./bridge/cli.js';try{await runBridgeCli(process.argv.slice(2));}catch(error){console.error(error.message);process.exitCode=1;}\n");

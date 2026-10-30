@@ -39,34 +39,47 @@ async function token(){if(!process.env.INSTALLER_FIXTURE_REQUIRE_PROFILE)return 
 async function api(route){const credential=await token(),response=await fetch(process.env.NEUROCENTER_API_URL+'/api/device-channel/'+(['identity','pair/start'].includes(route)?route:'worker/'+route),{method:'POST',body:'{}',headers:{'content-type':'application/json',...(credential?{authorization:'Bearer '+credential}: {})},signal:AbortSignal.timeout(1500)});if(!response.ok)throw Error('Owned fixture API refusal');return response.json();}
 const namespace=createHash('sha256').update(process.env.NEUROCENTER_URL).digest('hex').slice(0,20),stateDir=path.join(process.env.NEUROCENTER_BRIDGE_HOME||path.join(os.homedir(),'.config/neurocenter/bridge'),namespace);
 if(mode==='--worker'){
- await fs.mkdir(stateDir,{recursive:true});const lock=path.join(stateDir,'worker.lock');await fs.writeFile(lock,String(process.pid),{flag:'wx'});const version=JSON.parse(await fs.readFile(new URL('../package.json',import.meta.url),'utf8')).version,buildId=JSON.parse(await fs.readFile(new URL('./build.json',import.meta.url),'utf8')).buildId;await fs.writeFile(path.join(stateDir,'worker-version.json'),JSON.stringify({pid:process.pid,version,buildId}));process.on('SIGTERM',async()=>{if(await fs.readFile(lock,'utf8').catch(()=>undefined)===String(process.pid))await fs.unlink(lock);process.exit(0);});setInterval(()=>{},1000);await new Promise(()=>{});
+ await fs.mkdir(stateDir,{recursive:true,mode:0o700});const lock=path.join(stateDir,'worker.lock');await fs.writeFile(lock,String(process.pid),{flag:'wx'});const version=JSON.parse(await fs.readFile(new URL('../package.json',import.meta.url),'utf8')).version,buildId=JSON.parse(await fs.readFile(new URL('./build.json',import.meta.url),'utf8')).buildId;await fs.writeFile(path.join(stateDir,'worker-version.json'),JSON.stringify({pid:process.pid,version,buildId}));process.on('SIGTERM',async()=>{if(await fs.readFile(lock,'utf8').catch(()=>undefined)===String(process.pid))await fs.unlink(lock);process.exit(0);});setInterval(()=>{},1000);await new Promise(()=>{});
 }else if(mode==='--prepare-upgrade'){
  if(process.env.INSTALLER_FIXTURE_PREPARE==='refused'){console.log('{"ok":false,"error":"Owned definitive refusal"}');process.exit(1);}
  let prepared={paused:true};if(process.env.INSTALLER_FIXTURE_NATIVE_UPGRADE){try{prepared=await (await import('./bridge/worker-upgrade.js')).prepareWorkerUpgrade(process.argv[3]);}catch(error){console.log(JSON.stringify({ok:false,error:error.message}));process.exit(1);}}else await api('pause');
  if(process.env.INSTALLER_FIXTURE_PREPARE==='lost')process.exit(17);
  console.log(process.env.INSTALLER_FIXTURE_PREPARE||JSON.stringify({ok:true,...prepared}));
 }else if(mode==='--finish-upgrade'){if(process.env.INSTALLER_FIXTURE_NATIVE_UPGRADE)await (await import('./bridge/worker-upgrade.js')).finishWorkerUpgrade();else await api('resume');console.log(JSON.stringify({ok:true}));}
+else if(mode==='--cleanup-updates'){console.log(JSON.stringify({ok:true}));}
 else if(mode==='--init'){if(process.env.INSTALLER_FIXTURE_INIT_FAIL){console.log('{"ok":false,"error":"Owned registration failure"}');process.exit(1);}const {file,text}=await config();const entry={type:'local',enabled:true,command:[path.resolve(import.meta.dirname,'../bin/node'),path.join(import.meta.dirname,'index.js')],environment:{NEUROCENTER_URL:process.env.NEUROCENTER_URL,NEUROCENTER_API_URL:process.env.NEUROCENTER_API_URL}};await fs.writeFile(file,jsonc.applyEdits(text,jsonc.modify(text,['mcp','neurocenter-asset-sync'],entry,{})));console.log(JSON.stringify({ok:true,configPath:file,created:false}));}
 else if(mode==='--connect-open'||mode==='--reconnect-open'){
  if(process.env.INSTALLER_FIXTURE_CONNECT_FAIL){console.log(JSON.stringify({ok:false,error:'Owned connect failure'}));process.exit(19);}
- if(process.env.INSTALLER_FIXTURE_REQUIRE_PROFILE&&(!await token()||mode==='--reconnect-open')){const pair=await api('pair/start');await fs.mkdir(stateDir,{recursive:true});await fs.writeFile(path.join(stateDir,'pair.json'),JSON.stringify({deviceCode:pair.deviceCode,userCode:pair.userCode,candidateToken:'own-new-pair-candidate'}),{mode:0o600});console.log(JSON.stringify({url:process.env.NEUROCENTER_URL+'/start?step=1&connect='+pair.userCode,code:pair.userCode,expiresIn:pair.expiresIn,browserOpened:false}));}
+ if(process.env.INSTALLER_FIXTURE_REQUIRE_PROFILE&&(!await token()||mode==='--reconnect-open')){const pair=await api('pair/start');await fs.mkdir(stateDir,{recursive:true,mode:0o700});await fs.writeFile(path.join(stateDir,'pair.json'),JSON.stringify({deviceCode:pair.deviceCode,userCode:pair.userCode,candidateToken:'own-new-pair-candidate'}),{mode:0o600});console.log(JSON.stringify({url:process.env.NEUROCENTER_URL+'/start?setup=1&setupFlow=bridge-first&step=0&connect='+pair.userCode,code:pair.userCode,expiresIn:pair.expiresIn,browserOpened:false}));}
  else{if(process.env.INSTALLER_FIXTURE_REQUIRE_PROFILE)await api('identity');console.log(JSON.stringify({connected:true}));}
 }
 else throw Error('Unexpected own fixture CLI mode');\n`;
         const ts=require(path.join(repository,'mcp/neurocenter-asset-sync/node_modules/typescript'));
-        await fs.mkdir(path.join(content,'dist/bridge'),{recursive:true});
-        for(const name of ['worker-upgrade','state','protocol','read-bounded','atomic-file']){
-            const source=await fs.readFile(path.join(repository,'mcp/neurocenter-asset-sync/src/bridge',name+'.ts'),'utf8');
-            await fs.writeFile(path.join(content,'dist/bridge',name+'.js'),ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
+        // Current worker-upgrade imports protocol and setup recovery; retain their real runtime closure.
+        const modules={
+            bridge:['atomic-file','completions','protocol','read-bounded','state','worker-upgrade'],
+            'features/agent-method-workflow':['contract','process','receipts'],
+            'features/computer-setup':['auth-owner','contract','executable','executor','install-contract','install-supply','install','process','receipts'],
+            'features/device-codex-inference':['contract','diagnostics','receipts','response'],
+            'features/local-configuration':['private-store'],
+            'features/opencode-local-providers':['contract'],
+            'features/opencode-providers':['contract'],
+            'features/project-learning-memory-sync':['contract','projection','receipts'],
+            'features/runtime-artifacts':['cache-policy','cache','capacity-error','model','policy-store','update-cleanup'],
+            'features/system-role-mcp':['contract','owned-process'],
+            lib:['global-config-lock'],
+        };
+        for(const [directory,names]of Object.entries(modules)){
+            await fs.mkdir(path.join(content,'dist',directory),{recursive:true});
+            for(const name of names){
+                const source=await fs.readFile(path.join(repository,'mcp/neurocenter-asset-sync/src',directory,name+'.ts'),'utf8');
+                await fs.writeFile(path.join(content,'dist',directory,name+'.js'),ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
+            }
         }
-        await fs.mkdir(path.join(content,'dist/features/opencode-providers'),{recursive:true});
-        await fs.writeFile(path.join(content,'dist/features/opencode-providers/contract.js'),ts.transpileModule(await fs.readFile(path.join(repository,'mcp/neurocenter-asset-sync/src/features/opencode-providers/contract.ts'),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
-        await fs.mkdir(path.join(content,'dist/shared'),{recursive:true});await fs.copyFile(path.join(repository,'services/shared/opencode-providers.cjs'),path.join(content,'dist/shared/opencode-providers.cjs'));
-        await fs.mkdir(path.join(content,'dist/features/device-codex-inference'),{recursive:true});
-        await fs.writeFile(path.join(content,'dist/features/device-codex-inference/contract.js'),ts.transpileModule(await fs.readFile(path.join(repository,'mcp/neurocenter-asset-sync/src/features/device-codex-inference/contract.ts'),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
-        await fs.copyFile(path.join(repository,'services/shared/device-codex-inference.cjs'),path.join(content,'dist/shared/device-codex-inference.cjs'));
-        await fs.mkdir(path.join(content,'dist/lib'),{recursive:true});
-        await fs.writeFile(path.join(content,'dist/lib/global-config-lock.js'),ts.transpileModule(await fs.readFile(path.join(repository,'mcp/neurocenter-asset-sync/src/lib/global-config-lock.ts'),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
+        await fs.mkdir(path.join(content,'dist/shared'),{recursive:true});
+        for(const name of ['agent-method-workflow','bridge-update-cleanup','bridge-update-lock','computer-setup','device-codex-inference','opencode-cli-install','opencode-local-providers','opencode-model-scan','opencode-providers','project-agents','project-learning-memory-sync','project-learning-quirks','project-learning','rag-core-contract','rag-ui-contract','runtime-artifacts','runtime-cache-policy','system-role-mcp']){
+            await fs.copyFile(path.join(repository,'services/shared',name+'.cjs'),path.join(content,'dist/shared',name+'.cjs'));
+        }
         await fs.writeFile(path.join(content,'dist/index.js'),entry);await fs.writeFile(path.join(content,'dist/bridge-cli.js'),"import fs from 'node:fs/promises';import path from 'node:path';await fs.appendFile(process.env.INSTALLER_FIXTURE_CONTEXTS,JSON.stringify({mode:'--install-command',site:process.env.NEUROCENTER_URL,api:process.env.NEUROCENTER_API_URL,home:process.env.HOME,xdg:process.env.XDG_CONFIG_HOME})+'\\n');if(process.env.INSTALLER_FIXTURE_INSTALL_COMMAND_FAIL){console.log(JSON.stringify({ok:false,error:'Owned optional launcher failure'}));process.exit(23);}const file=path.join(process.env.HOME,'.local/bin/neurocenter-bridge');await fs.mkdir(path.dirname(file),{recursive:true});await fs.writeFile(file,'owned caller launcher');console.log(file);\n");
         await fs.cp(path.join(content,'dist'),path.join(install,'dist'),{recursive:true});await fs.cp(path.join(content,'bin'),path.join(install,'bin'),{recursive:true});await fs.cp(path.join(content,'node_modules'),path.join(install,'node_modules'),{recursive:true});
         await fs.writeFile(path.join(install,'dist/build.json'),JSON.stringify({version:'0.9.17',buildId:'f'.repeat(64)}));
@@ -111,7 +124,7 @@ else throw Error('Unexpected own fixture CLI mode');\n`;
         };
         const startWorker=async(extra={})=>{
             const env={...environment,NEUROCENTER_URL:origin,NEUROCENTER_API_URL:origin,...extra},directory=stateDirectory(env);
-            state.workerDirectories.push(directory);await fs.mkdir(directory,{recursive:true});await fs.writeFile(path.join(directory,'credentials.json'),JSON.stringify({token:'owned-worker-token',deviceId:'owned'}));
+            state.workerDirectories.push(directory);await fs.mkdir(directory,{recursive:true,mode:0o700});await fs.writeFile(path.join(directory,'credentials.json'),JSON.stringify({token:'owned-worker-token',deviceId:'owned'}));
             const child=spawn(process.execPath,[path.join(install,'dist/index.js'),'--worker'],{env,stdio:'ignore'});state.workers.push({pid:child.pid,entry:path.join(install,'dist/index.js')});
             const deadline=Date.now()+3000;for(;;){const marker=await fs.readFile(path.join(directory,'worker-version.json'),'utf8').then(JSON.parse,()=>undefined);if(marker?.pid===child.pid){process.kill(child.pid,0);return{pid:child.pid,directory};}if(Date.now()>deadline)throw Error('Own worker did not become ready');await new Promise(r=>setTimeout(r,20));}
         };

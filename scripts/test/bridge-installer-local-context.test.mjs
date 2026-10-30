@@ -29,7 +29,7 @@ async function savedProfile(f) {
     const config = path.join(f.environment.XDG_CONFIG_HOME, 'opencode/opencode.jsonc'), credentials = path.join(bridgeHome, hash(f.origin).slice(0, 20), 'credentials.json');
     await fs.mkdir(path.dirname(config), { recursive: true }); await fs.writeFile(config, text, { mode: 0o640 });
     const bytes = Buffer.from(JSON.stringify({ token: 'owned-worker-token', deviceId: 'owned' }));
-    await fs.mkdir(path.dirname(credentials), { recursive: true }); await fs.writeFile(credentials, bytes, { mode: 0o600 }); f.state.token = 'owned-worker-token';
+    await fs.mkdir(path.dirname(credentials), { recursive: true, mode: 0o700 }); await fs.writeFile(credentials, bytes, { mode: 0o600 }); f.state.token = 'owned-worker-token';
     return { config, text, credentials, bytes, home, bridgeHome };
 }
 
