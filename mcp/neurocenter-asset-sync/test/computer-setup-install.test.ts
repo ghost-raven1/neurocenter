@@ -39,6 +39,17 @@ describe('bundled binary publication with harmless files and a fake fixed versio
         const f=await fixture();await fs.mkdir(path.dirname(f.destination),{recursive:true});await fs.writeFile(f.destination,'MANUAL_NEWER',{mode:0o700});f.context.pathDirectories=[path.dirname(f.destination)];f.context.probe.mockImplementation(async(_file,current)=>{await current();return'1.15.0';});
         expect(await installBundledOpenCode(f.context)).toMatchObject({status:'unchanged',installedVersion:'1.15.0',commandReady:true});expect(await fs.readFile(f.destination,'utf8')).toBe('MANUAL_NEWER');expect(f.context.beforePublish).not.toHaveBeenCalled();
     });
+    it.each([['1.14.48','2.2.2'],['2.2.2','1.14.48']])('preserves both existing CLI files and manual auth with first PATH %s, later %s',async(firstVersion,secondVersion)=>{
+        const f=await fixture(),first=path.join(f.root,'first'),second=path.join(f.root,'second');for(const dir of[first,second])await fs.mkdir(dir);
+        const binaries=[path.join(first,'opencode'),path.join(second,'opencode')],contents=['MANUAL_FIRST_'+firstVersion,'MANUAL_SECOND_'+secondVersion];
+        for(let i=0;i<binaries.length;i++)await fs.writeFile(binaries[i],contents[i],{mode:0o700});
+        const auth=path.join(f.home,'.local/share/opencode/auth.json'),config=path.join(f.home,'.config/opencode/opencode.jsonc');await fs.mkdir(path.dirname(auth),{recursive:true});await fs.mkdir(path.dirname(config),{recursive:true});
+        const authBytes='{"manual":{"type":"oauth","access":"synthetic-preserved"},"unknown":[1,2]}\n',configBytes='// manual default and plugin\n{"model":"manual/model","plugin":["manual-plugin"]}\n';await fs.writeFile(auth,authBytes);await fs.writeFile(config,configBytes);
+        f.context.directories=[first,second];f.context.pathDirectories=[first,second];f.context.probe.mockImplementation(async(file,current)=>{await current();const version=file===binaries[0]?firstVersion:secondVersion;return version==='2.2.2'?'opencode v2.2.2':version;});
+        expect(await installBundledOpenCode(f.context)).toMatchObject({status:'unchanged',installedVersion:firstVersion,commandVersion:firstVersion,commandReady:true,nextAction:'none'});
+        expect(await Promise.all(binaries.map(file=>fs.readFile(file,'utf8')))).toEqual(contents);expect(await fs.readFile(auth,'utf8')).toBe(authBytes);expect(await fs.readFile(config,'utf8')).toBe(configBytes);
+        expect(f.context.probe.mock.calls.map(([file])=>file)).toEqual([binaries[0],binaries[0]]);expect(f.context.beforePublish).not.toHaveBeenCalled();expect(f.context.published).not.toHaveBeenCalled();await expect(fs.lstat(f.destination)).rejects.toHaveProperty('code','ENOENT');
+    });
     it('rejects mismatched source SHA before any executable probe or publication',async()=>{
         const f=await fixture();f.context.payload.source.sha256='c'.repeat(64);await expect(installBundledOpenCode(f.context)).rejects.toHaveProperty('code','source-changed');expect(f.context.probe).not.toHaveBeenCalled();await expect(fs.lstat(f.destination)).rejects.toHaveProperty('code','ENOENT');
     });

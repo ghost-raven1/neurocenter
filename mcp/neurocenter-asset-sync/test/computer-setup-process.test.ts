@@ -44,6 +44,26 @@ describe('Fixed user CLI observation through actual owned native processes',()=>
         expect(JSON.parse(await fs.readFile(args,'utf8'))).toEqual({args:['--version'],cwd:fixture.home});
         expect(JSON.parse(await fs.readFile(fixture.receipt().process!.receipt,'utf8')).closed).toBe(true);
     },20000);
+    it('accepts an observed 2.2.2 CLI version without claiming integration or changing its bytes',async()=>{
+        const args=path.join(fixture.temporary,'v2-arguments.json');
+        await fixture.writeCli(`require('node:fs').writeFileSync(${JSON.stringify(args)},JSON.stringify(process.argv.slice(2)));console.log('2.2.2');`);
+        const before=await fs.readFile(fixture.executable),result=await observeOpenCodeCli(fixture.context,async()=>{},signal());
+        expect(result).toMatchObject({status:'installed',version:'2.2.2'});expect(Object.keys(result).sort()).toEqual(['checkedAt','deviceId','jobId','schemaVersion','scope','status','version']);
+        expect(JSON.parse(await fs.readFile(args,'utf8'))).toEqual(['--version']);expect(await fs.readFile(fixture.executable)).toEqual(before);
+    },20000);
+    it('canonicalizes the exact official OpenCode 2.2.2 version output',async()=>{
+        await fixture.writeCli(`console.log('opencode v2.2.2');`);
+        expect(await observeOpenCodeCli(fixture.context,async()=>{},signal())).toMatchObject({status:'installed',version:'2.2.2'});
+    },20000);
+    it.each([['1.14.48','2.2.2'],['2.2.2','1.14.48']])('with two user CLIs observes first PATH %s and never executes later %s',async(firstVersion,secondVersion)=>{
+        const second=path.join(fixture.temporary,'second'),marker=path.join(fixture.temporary,'selected-command');await fs.mkdir(second);
+        await fixture.writeCli(`require('node:fs').appendFileSync(${JSON.stringify(marker)},'first');console.log(${JSON.stringify(firstVersion)});`);
+        const secondFile=await fixture.writeCli(`require('node:fs').appendFileSync(${JSON.stringify(marker)},'second');console.log(${JSON.stringify(secondVersion)});`,path.join(second,'opencode'));
+        const before=[await fs.readFile(fixture.executable),await fs.readFile(secondFile)],search=[fixture.bin,second].join(path.delimiter);
+        fixture.context.directories=[fixture.bin,second];fixture.context.environment.PATH=search;vi.stubEnv('PATH',search);
+        expect(await observeOpenCodeCli(fixture.context,async()=>{},signal())).toMatchObject({status:'installed',version:firstVersion});
+        expect(await fs.readFile(marker,'utf8')).toBe('first');expect(await fs.readFile(fixture.executable)).toEqual(before[0]);expect(await fs.readFile(secondFile)).toEqual(before[1]);
+    },20000);
     it('ignores SDK and probe targets even when PATH opencode is a symlink',async()=>{
         const probe=await fixture.writeCli(`throw Error('a bundled probe must not execute');`,path.join(fixture.sdk,'opencode-probe'));
         await fs.symlink(probe,fixture.executable);
@@ -68,6 +88,9 @@ describe('Fixed user CLI observation through actual owned native processes',()=>
         [`console.error('PRIVATE_STDERR_SECRET');console.log('1.2.3');process.exitCode=7;`,'failed'],
         [`process.stderr.write('PRIVATE_STDERR_SECRET'.repeat(10000));console.log('1.2.3');setInterval(()=>{},1000);`,'failed'],
         [`console.log('PRIVATE_INVALID_VERSION_SECRET');`,'failed'],
+        [`console.log('unexpected opencode v2.2.2');`,'failed'],
+        [`console.log('opencode v2.2.2\\nPRIVATE_BANNER');`,'failed'],
+        [`console.log('\\u001b[32mopencode v2.2.2\\u001b[0m');`,'failed'],
         [`process.stdout.write('PRIVATE_OUTPUT_SECRET'.repeat(10000));setInterval(()=>{},1000);`,'failed'],
     ])('keeps stderr and unvalidated or overflowing output private: %s',async(code,status)=>{
         await fixture.writeCli(code);
