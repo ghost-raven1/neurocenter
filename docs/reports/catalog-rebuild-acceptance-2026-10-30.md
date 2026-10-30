@@ -67,3 +67,9 @@ Native 1/2 WIP, `bridge-first-local-setup` follow-up и `node_modules` искл�
 готового списка. Четыре обновлённых документа `managed-catalog-updates` включены.
 Точный список для узкого staging хранится в
 `.run/rebuild-delivery-20261030/ready-files.json`; Git-операции выполняет Root.
+
+Финальная изолированная сборка чистого feature-коммита
+`9b1f19425bc930d044eda2bbc5200897d1bf86bb`: все восемь пакетов PASS,
+входные файлы, dependency links и прежние live outputs неизменны. Native WIP
+в эту копию не включён. Квитанция в отдельном acceptance worktree:
+`.run/isolated-build/b8364186-556f-4b6a-82b3-3036a9db7f18/receipt.json`.
