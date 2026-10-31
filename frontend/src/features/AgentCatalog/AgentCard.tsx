@@ -17,6 +17,7 @@ interface IProps {
     readiness?: IAgentReadinessItem; trialDisabled?: boolean; trialChecking?: boolean; onTrial?: () => void;
     feedback?: ReactNode;
 }
+
 const colors: Record<IAgentStatus['key'], string | undefined> = { pending: 'blue', error: 'red', enabled: 'green', disabled: undefined, removed: undefined, unapplied: 'orange' };
 
 export function AgentCard({ agent, assignment, status, projectSelected, isMain, canManage, busy, unavailable, onView, onEdit, onArchived, onAssign, onConfigure, onToggle, onRemove, onUpdate, readiness, trialDisabled, trialChecking, onTrial, feedback }: IProps): JSX.Element {

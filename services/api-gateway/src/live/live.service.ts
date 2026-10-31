@@ -6,27 +6,33 @@ import { canonicalAccessRoute } from '../../../shared/access-route.cjs';
 @Injectable()
 export class LiveService implements OnModuleDestroy {
     private io?: Server;
+    
     /** Закрывает WebSocket и его таймеры до ожидания завершения HTTP-сервера. */
     async onModuleDestroy(): Promise<void> {
         if (this.io) {
             await new Promise<void>((resolve) => this.io!.close(() => resolve()));
         }
     }
+
     attach(io: Server): void {
         this.io = io;
     }
+
     sections(sections: string[]): void {
         this.io?.emit('section:changed', {
             sections,
             at: new Date().toISOString(),
         });
     }
+
     bridge(email: string, deviceId?: string, jobId?: string): void {
         this.io?.to(`user:${email}`).emit('bridge:changed', { deviceId, jobId });
     }
+
     wake(deviceId: string): void {
         this.io?.to(`device:${deviceId}`).emit('bridge:work');
     }
+
     mutation(path: string, email: string, data?: Record<string, unknown>, method?: string): void {
         // Presence and read metadata are fetched only by their authorized room audience.
         const route = canonicalAccessRoute(path);

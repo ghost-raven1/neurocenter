@@ -52,6 +52,7 @@ async function bootstrap(): Promise<void> {
         }
         jsonParser(req, res, next);
     });
+    
     const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
     const io = new IoServer(app.getHttpServer(), {

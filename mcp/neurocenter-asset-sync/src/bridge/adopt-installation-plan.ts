@@ -25,6 +25,7 @@ export interface FrozenAdoption {
     packages: Package[];
     manifest: string;
 }
+
 /** Снимок одобренного графа никогда не разрешает зависимости по текущему head. */
 export function frozenAdoption(pkg: Package, set: InstallSet | undefined): FrozenAdoption {
     pkg = structuredClone(pkg);

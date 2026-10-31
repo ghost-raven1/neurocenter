@@ -15,6 +15,7 @@ export const PROJECT_LOCAL_KINDS = [
     'apply-local-restore',
 ];
 export const PROJECT_LOCAL_APPLIES = ['apply-adopt-installation', 'apply-local-restore'];
+
 export interface ProjectLocalPayload {
     scope?: 'global' | 'project';
     deviceId?: string;

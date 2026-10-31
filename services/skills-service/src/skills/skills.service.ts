@@ -16,7 +16,7 @@ import {
     assertSkillDependencyReplacement,
 } from './skill-validation';
 import { randomUUID } from 'node:crypto';
-import { inspectLegacySkill, retireLegacySkill, type ILegacySkillExpected } from './legacy-retirement';
+import { inspectLegacySkill, retireLegacySkill } from './legacy-retirement';
 import { validateResources } from './skill-resources';
 import { syncProjectSkills } from './skill-sync';
 import {
@@ -26,8 +26,8 @@ import {
     importedSkillSnapshot,
     publishImportedSkill,
     skillCreateFromFile,
-    type ISkillImportExpected,
 } from './asset-import';
+import { ISkillImportExpected, ILegacySkillExpected } from './interfaces';
 import type {
     ISkillAuditReceipt,
     ISkillCreateRequest,
@@ -73,18 +73,21 @@ export class SkillsService implements OnApplicationBootstrap {
     }
 
     /**
-     * Список скиллов: по каталогу (`path`) либо по всему дереву, с фильтрами по поиску/mcp/plugin.
+     * Список скиллов: по каталогу (`path`) либо по всему дереву,
+     * с фильтрами по поиску/mcp/plugin.
      *
      * @param {ISkillsListQuery} query - параметры списка
      * @returns {Promise<ISkillListSummary[]>}
      */
     public async listSkills(query: ISkillsListQuery): Promise<ISkillListSummary[]> {
         const toSingleString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
         const pathArg = toSingleString(query.path);
         const projectKey = toSingleString(query.projectKey);
         const needle = (toSingleString(query.query) ?? '').trim().toLowerCase();
         const mcpFilter = toSingleString(query.mcp);
         const pluginFilter = toSingleString(query.plugin);
+
         const source: ISkillListSummary[] = projectKey
             ? await this.listInDir(`project-${sanitizeRelPath(projectKey)}`)
             : pathArg
@@ -96,11 +99,14 @@ export class SkillsService implements OnApplicationBootstrap {
                 if (file.meta.archivedAt) {
                     return false;
                 }
+
                 const matchesQuery =
                     needle === '' ||
                     file.meta.slug.toLowerCase().includes(needle) ||
                     file.meta.name.toLowerCase().includes(needle);
+
                 const matchesMcp = mcpFilter === undefined || file.meta.mcp.includes(mcpFilter);
+
                 const matchesPlugin = pluginFilter === undefined || file.meta.plugins.includes(pluginFilter);
 
                 return matchesQuery && matchesMcp && matchesPlugin;

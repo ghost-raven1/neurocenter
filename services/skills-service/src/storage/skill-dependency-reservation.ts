@@ -9,6 +9,7 @@ export interface ISkillDependencyReservation {
     dependencies: IDependencyPin[];
     purpose?: 'publish' | 'preserve';
 }
+
 export type TReserveSkillDependencies = (entries: ISkillDependencyReservation[]) => Promise<void>;
 
 /** Ключ относится ко всему неизменяемому тексту, включая тело и ресурсы скилла. */
@@ -18,10 +19,13 @@ export function dependencyReservation(
     purpose: 'publish' | 'preserve' = 'publish',
 ): ISkillDependencyReservation | undefined {
     const { meta } = parseSkillFile(raw);
+
     if (!meta) {
         throw new Error('Не удалось проверить зависимости: повреждён frontmatter скилла.');
     }
+
     const dependencies = normalizeDependencyPins(meta.dependencies);
+
     return dependencies.length
         ? {
               key: createHash('sha256').update(raw).digest('hex'),
@@ -54,13 +58,17 @@ export async function reserveSkillDependencies(entries: ISkillDependencyReservat
             ...(entry.purpose !== undefined ? { purpose: entry.purpose } : {}),
         };
     });
+
     const token = process.env.NEUROCENTER_INTERNAL_TOKEN;
+
     if (!token) {
         throw new ServiceUnavailableException(
             'Проверка зависимостей недоступна: не настроен внутренний доступ к каталогу.',
         );
     }
+
     let endpoint: URL;
+
     try {
         const base = new URL(process.env.CATALOG_SERVICE_URL || 'http://127.0.0.1:4100');
         if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) {
@@ -70,6 +78,7 @@ export async function reserveSkillDependencies(entries: ISkillDependencyReservat
     } catch {
         throw new ServiceUnavailableException('Некорректно настроен внутренний адрес каталога.');
     }
+
     for (let offset = 0; offset < normalized.length; offset += 200) {
         const chunk = normalized.slice(offset, offset + 200);
         await reserveChunk(endpoint, token, chunk);
@@ -78,6 +87,7 @@ export async function reserveSkillDependencies(entries: ISkillDependencyReservat
 
 async function reserveChunk(endpoint: URL, token: string, entries: ISkillDependencyReservation[]): Promise<void> {
     let response: Response;
+
     try {
         response = await fetch(endpoint, {
             method: 'POST',
@@ -91,7 +101,9 @@ async function reserveChunk(endpoint: URL, token: string, entries: ISkillDepende
             'Каталог недоступен. Зависимости скилла не проверены; публикация остановлена.',
         );
     }
+
     let result: unknown;
+
     try {
         result = await response.json();
     } catch {
@@ -100,7 +112,9 @@ async function reserveChunk(endpoint: URL, token: string, entries: ISkillDepende
         }
         throw new BadGatewayException('Каталог вернул некорректный ответ проверки зависимостей.');
     }
+
     const record = result && typeof result === 'object' ? (result as Record<string, unknown>) : {};
+
     if (response.status === 409) {
         throw new ConflictException(
             typeof record.message === 'string'
@@ -108,9 +122,11 @@ async function reserveChunk(endpoint: URL, token: string, entries: ISkillDepende
                 : 'Зависимость скилла недоступна или её версия изменилась.',
         );
     }
+
     if (!response.ok) {
         throw new ServiceUnavailableException('Каталог отклонил проверку зависимостей; публикация остановлена.');
     }
+
     if (record.ok !== true || record.reserved !== entries.length) {
         throw new BadGatewayException('Каталог не подтвердил резервирование зависимостей.');
     }

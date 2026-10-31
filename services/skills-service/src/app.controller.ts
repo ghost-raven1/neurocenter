@@ -11,6 +11,7 @@ import { checkReadiness } from '../../shared/readiness.cjs';
 @Controller()
 export class AppController {
     constructor(@Inject(SKILLS_STORAGE) private readonly storage: ISkillsStorage) {}
+
     /** Создание короткого временного файла проверяет и реальную возможность записи. */
     @Get('ready')
     async ready(): Promise<unknown> {
@@ -35,11 +36,13 @@ export class AppController {
                 }
             },
         });
+
         if (!state.ok) {
             throw new ServiceUnavailableException(state);
         }
         return state;
     }
+
     /**
      * Health-check.
      *

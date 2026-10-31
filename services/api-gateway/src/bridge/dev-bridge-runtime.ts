@@ -8,6 +8,7 @@ import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.types';
 
 const SHA = /^[a-f0-9]{64}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
+
 interface IDevPointer {
     version: string;
     buildId: string;
@@ -15,11 +16,13 @@ interface IDevPointer {
     directory: string;
     sourceCommit: string;
 }
+
 export interface IDevBridgeRuntime {
     supply: IBridgeSupply;
     artifact: IBridgeArtifact;
     archive: FileHandle;
 }
+
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 

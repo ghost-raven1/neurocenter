@@ -57,6 +57,7 @@ export class SkillsController {
         if (!body || typeof body !== 'object' || Array.isArray(body)) {
             throw new BadRequestException('Передайте путь папки скиллов.');
         }
+
         return this.skills.createDirectory(body.path ?? '', this.auditActor(req));
     }
 
@@ -98,24 +99,28 @@ export class SkillsController {
      * @param req - запрос (путь в req.params[0])
      * @returns {Promise<ISkillFile>}
      */
+
     /** Отдельный контракт пакета не позволяет старому сервису незаметно отбросить ресурсы. */
     @Get('_package/*skillPath')
     public getPackage(@Req() req: Request, @Query('version') version?: string): Promise<ISkillFile> {
         if (version === undefined) {
             throw new BadRequestException('Укажите точную версию установочного пакета.');
         }
+
         return this.getSkill(req, version);
     }
 
     @Get('*skillPath')
     public getSkill(@Req() req: Request, @Query('version') version?: string): Promise<ISkillFile> {
         const parsed = version === undefined ? undefined : Number(version);
+
         if (
             version !== undefined &&
             (typeof version !== 'string' || !/^[1-9][0-9]*$/.test(version) || !Number.isSafeInteger(parsed))
         ) {
             throw new BadRequestException('Версия должна быть положительным целым числом.');
         }
+
         return this.skills.getSkill(this.skillPathOf(req), parsed);
     }
 
@@ -151,12 +156,15 @@ export class SkillsController {
     /** Заголовок исполнителя добавляет только авторизованный шлюз; тело запроса его не подменяет. */
     private auditActor(req?: Request): string {
         const header = req?.headers['x-bridge-actor'];
+
         try {
             const actor =
                 typeof header === 'string'
                     ? (JSON.parse(decodeURIComponent(header)) as { email?: unknown })
                     : undefined;
+
             const email = typeof actor?.email === 'string' ? actor.email.toLowerCase() : '';
+
             return email.length <= 254 && /^[^\s@\u0000-\u001f\u007f]+@[^\s@\u0000-\u001f\u007f]+$/.test(email)
                 ? email
                 : 'skills-service';

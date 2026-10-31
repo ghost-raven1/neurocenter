@@ -9,6 +9,7 @@ interface IFlagFailure {
     feature?: FeatureFlagKey;
     blockedBy?: FeatureFlagKey[];
 }
+
 /** One bounded internal read is shared by admission and the public visual projection. */
 export async function readEvaluatedFeatureFlags(http: Pick<AxiosInstance, 'get'>, base: string) {
     const response = await http.get<unknown>(base + '/internal/feature-flags/evaluated', {

@@ -7,6 +7,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { readDevBridgeRuntime } from './dev-bridge-runtime';
 import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.types';
+
 const SHA = /^[a-f0-9]{64}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const TARGET = /^(darwin|linux|windows)-(x64|arm64)(-musl)?$/;

@@ -10,6 +10,7 @@ export class AppController {
     ready(): { ok: true; checks: { gateway: 'ready' } } {
         return { ok: true, checks: { gateway: 'ready' } };
     }
+    
     /** Dependency diagnostics do not decide whether unrelated routes may receive traffic. */
     @Get('ready/dependencies')
     async dependencies(): Promise<unknown> {
@@ -29,6 +30,7 @@ export class AppController {
         }
         return state;
     }
+    
     /**
      * Health-check.
      *

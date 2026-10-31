@@ -8,6 +8,7 @@ export function panelOrigin(): string {
     }
     return panel.origin;
 }
+
 /** Публичная раздача идёт через Gateway; внутренние proxy targets и заголовки клиента не используются. */
 export function publicApiOrigin(): string {
     const configured = process.env.API_PUBLIC_URL;
@@ -28,9 +29,11 @@ export function publicApiOrigin(): string {
     }
     return api.origin;
 }
+
 export function allowBrowserOrigin(origin: unknown): boolean {
     return origin === undefined || origin === panelOrigin();
 }
+
 /** Несессионные Bearer-клиенты сохраняют контракт; cookie-запрос требует нестандартный заголовок и доверенный Origin. */
 export function browserSecurity(req: Request, res: Response, next: NextFunction): void {
     res.setHeader('Cache-Control', 'no-store');

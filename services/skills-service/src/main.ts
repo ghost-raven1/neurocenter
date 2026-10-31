@@ -11,8 +11,11 @@ import { AppModule } from './app.module';
  */
 async function bootstrap(): Promise<void> {
     const app = await NestFactory.create(AppModule, { bodyParser: false });
+
     app.enableShutdownHooks();
+
     app.use(createObservability({ service: 'skills-service' }).middleware);
+
     app.use((req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
         if (
             req.path.startsWith('/api/') &&
@@ -24,10 +27,13 @@ async function bootstrap(): Promise<void> {
         }
         next();
     });
+
     app.use(express.json({ limit: '50mb' }));
+
     const port = process.env.PORT ? Number(process.env.PORT) : 4200;
 
     await app.listen(port, process.env.BIND_HOST || '127.0.0.1');
+
     console.log(`[skills-service] listening on :${port}`);
 }
 
