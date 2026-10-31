@@ -1,93 +1,93 @@
-import {RemoteProviderAccessController} from '../remote-providers/remote-provider.controller';
-import {RemoteProviderAccessService} from '../remote-providers/remote-provider.service';
-import {GgufRuntimeService} from '../models/gguf-runtime/gguf-runtime.service';
-import {ComputerSetupSupplyApproval} from '../devices/computer-setup-supply-approval';
-import {GatewayComputerSetupSupplyApproval} from '../devices/gateway-computer-setup-supply-approval';
-import {RuntimeLimitsService} from '../runtime-limits/runtime-limits.service';
-import {RuntimeLimitsController,InternalRuntimeLimitsController} from '../runtime-limits/runtime-limits.controller';
-import {GgufImportController} from '../models/gguf-import/gguf-import.controller';
-import {GgufImportService} from '../models/gguf-import/gguf-import.service';
-import {ProjectTextKnowledge} from '../project-text/project-text.service';
-import {ProjectTextController,ProjectTextAuthorizationController} from '../project-text/project-text.controller';
-import {AgentToolsService} from '../agent-tools/agent-tools.service';
-import {AgentToolsController} from '../agent-tools/agent-tools.controller';
-import {PluginAutoUpdateController} from '../plugin-auto-updates/auto-update.controller';
-import {PluginAutoUpdateService} from '../plugin-auto-updates/auto-update.service';
-import {ChatSystemRolesController} from '../chat-system-roles/chat-system-roles.controller';
-import {ChatSystemRolesService} from '../chat-system-roles/chat-system-roles.service';
-import {ChatSearchController} from '../chat-search/chat-search.controller';
-import {ChatSearchService} from '../chat-search/chat-search.service';
-import {BrowserAuthSessionController} from '../browser-auth-sessions/browser-auth-session.controller';
-import {BrowserAuthSessionRepository} from '../browser-auth-sessions/browser-auth-session.repository';
-import {LearningQuirksController} from '../learning-quirks/learning-quirks.controller';
-import {LearningQuirksService} from '../learning-quirks/learning-quirks.service';
-import {LearningMemorySyncController} from '../learning-memory-sync/controller';
-import {SystemRoleService} from '../system-roles/system-role.service';
-import {SystemRoleController} from '../system-roles/system-role.controller';
-import {ProjectChatController} from '../project-chat/project-chat.controller';
-import {ChatPresenceController} from '../chat-activity/chat-presence.controller';
-import {ChatPresenceService} from '../chat-activity/chat-presence.service';
-import {ProjectChatService} from '../project-chat/project-chat.service';
-import {ProjectChatInferenceService} from '../project-chat-inference/project-chat-inference.service';
-import {HelpController} from '../help/help.controller';
-import {HelpService} from '../help/help.service';
-import {DiscussionsController,CatalogReactionsController} from '../discussions/discussions.controller';
-import {DiscussionsRepository} from '../discussions/discussions.repository';
-import {SystemRoleChatController} from '../system-role-chat/system-role-chat.controller';
-import {SystemRoleChatService} from '../system-role-chat/system-role-chat.service';
-import {SystemRoleMcpController} from '../system-role-mcp/system-role-mcp.controller';
-import {SystemRoleMcpService} from '../system-role-mcp/system-role-mcp.service';
-import {DiscussionsPolicy} from '../discussions/discussions.policy';
-import {DiscussionsStorage} from '../discussions/discussions.storage';
-import {DiscussionsService} from '../discussions/discussions.service';
-import {DiscussionAttachments} from '../discussions/discussions.attachments';
-import {APP_GUARD} from '@nestjs/core';
-import {FeaturePolicyGuard} from '../features/feature-policy.guard';
-import {CatalogRequestsController} from '../catalog-requests/catalog-requests.controller';
-import {CatalogRequestsService} from '../catalog-requests/catalog-requests.service';
-import {AgentsController} from '../agents/agents.controller';
-import {LearningController} from '../learning/learning.controller';
-import {LearningService} from '../learning/learning.service';
-import {DeviceLearningController} from '../learning/device-learning.controller';
-import {DeviceLearningService} from '../learning/device-learning.service';
-import {LearningAnalysisController} from '../learning/learning-analysis.controller';
-import {LearningAnalysisService} from '../learning/learning-analysis.service';
-import {AgentsService} from '../agents/agents.service';
-import {AgentReadinessController} from '../agent-readiness/agent-readiness.controller';
-import {AgentReadinessService} from '../agent-readiness/agent-readiness.service';
-import {OperationActionsController} from '../operations/operation-actions.controller';
-import {OperationActionsService} from '../operations/operation-actions.service';
-import {OperationActionStore} from '../operations/operation-action-store';
-import {SnapshotVerifierController} from '../snapshots/snapshot-verifier.controller';
-import {LegacyRetirementController} from '../asset-sources/legacy-retirement.controller';
-import {LegacyRetirementService} from '../asset-sources/legacy-retirement.service';
-import {SnapshotService} from '../snapshots/snapshot.service';
-import {ProjectSnapshotsController} from '../snapshots/snapshot.controller';
-import {RestoreController,RestoreRunnerController} from '../restore/restore.controller';
-import {RestoreService} from '../restore/restore.service';
-import {SourceUploadController} from '../source-upload/source-upload.controller';
-import {RetiredRagController} from '../retired-rag/retired-rag.controller';
-import {RetiredRagService} from '../retired-rag/retired-rag.service';
-import {SourceUploadService} from '../source-upload/source-upload.service';
-import {HostedRagGrantService} from '../models/hosted-rag-grant.service';
+import { RemoteProviderAccessController } from '../remote-providers/remote-provider.controller';
+import { RemoteProviderAccessService } from '../remote-providers/remote-provider.service';
+import { GgufRuntimeService } from '../models/gguf-runtime/gguf-runtime.service';
+import { ComputerSetupSupplyApproval } from '../devices/computer-setup-supply-approval';
+import { GatewayComputerSetupSupplyApproval } from '../devices/gateway-computer-setup-supply-approval';
+import { RuntimeLimitsService } from '../runtime-limits/runtime-limits.service';
+import { RuntimeLimitsController, InternalRuntimeLimitsController } from '../runtime-limits/runtime-limits.controller';
+import { GgufImportController } from '../models/gguf-import/gguf-import.controller';
+import { GgufImportService } from '../models/gguf-import/gguf-import.service';
+import { ProjectTextKnowledge } from '../project-text/project-text.service';
+import { ProjectTextController, ProjectTextAuthorizationController } from '../project-text/project-text.controller';
+import { AgentToolsService } from '../agent-tools/agent-tools.service';
+import { AgentToolsController } from '../agent-tools/agent-tools.controller';
+import { PluginAutoUpdateController } from '../plugin-auto-updates/auto-update.controller';
+import { PluginAutoUpdateService } from '../plugin-auto-updates/auto-update.service';
+import { ChatSystemRolesController } from '../chat-system-roles/chat-system-roles.controller';
+import { ChatSystemRolesService } from '../chat-system-roles/chat-system-roles.service';
+import { ChatSearchController } from '../chat-search/chat-search.controller';
+import { ChatSearchService } from '../chat-search/chat-search.service';
+import { BrowserAuthSessionController } from '../browser-auth-sessions/browser-auth-session.controller';
+import { BrowserAuthSessionRepository } from '../browser-auth-sessions/browser-auth-session.repository';
+import { LearningQuirksController } from '../learning-quirks/learning-quirks.controller';
+import { LearningQuirksService } from '../learning-quirks/learning-quirks.service';
+import { LearningMemorySyncController } from '../learning-memory-sync/controller';
+import { SystemRoleService } from '../system-roles/system-role.service';
+import { SystemRoleController } from '../system-roles/system-role.controller';
+import { ProjectChatController } from '../project-chat/project-chat.controller';
+import { ChatPresenceController } from '../chat-activity/chat-presence.controller';
+import { ChatPresenceService } from '../chat-activity/chat-presence.service';
+import { ProjectChatService } from '../project-chat/project-chat.service';
+import { ProjectChatInferenceService } from '../project-chat-inference/project-chat-inference.service';
+import { HelpController } from '../help/help.controller';
+import { HelpService } from '../help/help.service';
+import { DiscussionsController, CatalogReactionsController } from '../discussions/discussions.controller';
+import { DiscussionsRepository } from '../discussions/discussions.repository';
+import { SystemRoleChatController } from '../system-role-chat/system-role-chat.controller';
+import { SystemRoleChatService } from '../system-role-chat/system-role-chat.service';
+import { SystemRoleMcpController } from '../system-role-mcp/system-role-mcp.controller';
+import { SystemRoleMcpService } from '../system-role-mcp/system-role-mcp.service';
+import { DiscussionsPolicy } from '../discussions/discussions.policy';
+import { DiscussionsStorage } from '../discussions/discussions.storage';
+import { DiscussionsService } from '../discussions/discussions.service';
+import { DiscussionAttachments } from '../discussions/discussions.attachments';
+import { APP_GUARD } from '@nestjs/core';
+import { FeaturePolicyGuard } from '../features/feature-policy.guard';
+import { CatalogRequestsController } from '../catalog-requests/catalog-requests.controller';
+import { CatalogRequestsService } from '../catalog-requests/catalog-requests.service';
+import { AgentsController } from '../agents/agents.controller';
+import { LearningController } from '../learning/learning.controller';
+import { LearningService } from '../learning/learning.service';
+import { DeviceLearningController } from '../learning/device-learning.controller';
+import { DeviceLearningService } from '../learning/device-learning.service';
+import { LearningAnalysisController } from '../learning/learning-analysis.controller';
+import { LearningAnalysisService } from '../learning/learning-analysis.service';
+import { AgentsService } from '../agents/agents.service';
+import { AgentReadinessController } from '../agent-readiness/agent-readiness.controller';
+import { AgentReadinessService } from '../agent-readiness/agent-readiness.service';
+import { OperationActionsController } from '../operations/operation-actions.controller';
+import { OperationActionsService } from '../operations/operation-actions.service';
+import { OperationActionStore } from '../operations/operation-action-store';
+import { SnapshotVerifierController } from '../snapshots/snapshot-verifier.controller';
+import { LegacyRetirementController } from '../asset-sources/legacy-retirement.controller';
+import { LegacyRetirementService } from '../asset-sources/legacy-retirement.service';
+import { SnapshotService } from '../snapshots/snapshot.service';
+import { ProjectSnapshotsController } from '../snapshots/snapshot.controller';
+import { RestoreController, RestoreRunnerController } from '../restore/restore.controller';
+import { RestoreService } from '../restore/restore.service';
+import { SourceUploadController } from '../source-upload/source-upload.controller';
+import { RetiredRagController } from '../retired-rag/retired-rag.controller';
+import { RetiredRagService } from '../retired-rag/retired-rag.service';
+import { SourceUploadService } from '../source-upload/source-upload.service';
+import { HostedRagGrantService } from '../models/hosted-rag-grant.service';
 import { ModelBundleRuntime } from '../models/model-bundle-runtime';
 import { OpenCodeModelImport } from '../models/opencode-model-import';
 import { OpenCodeModelSyncController } from '../models/opencode-model-sync.controller';
 import { OpenCodeModelSyncService } from '../models/opencode-model-sync.service';
 import { RemoteConnectionController } from '../models/remote-connection.controller';
 import { RemoteConnectionService } from '../models/remote-connection.service';
-import {DeviceCodexController} from '../models/device-codex.controller';
-import {DeviceCodexService} from '../models/device-codex.service';
+import { DeviceCodexController } from '../models/device-codex.controller';
+import { DeviceCodexService } from '../models/device-codex.service';
 import { ModelRuntime } from '../models/model-runtime';
 import { AssetManagementController } from '../asset-sources/asset-management.controller';
 import { AssetManagementService } from '../asset-sources/asset-management.service';
 import { AssetSourcesController, AssetSupplyController } from '../asset-sources/asset-sources.controller';
 import { AssetSourcesService } from '../asset-sources/asset-sources.service';
-import {BridgeSourceService} from '../asset-sources/bridge-source.service';
-import {BridgeSourceController} from '../asset-sources/bridge-source.controller';
-import {MaintenanceController} from '../maintenance/maintenance.controller';
-import {RagQuotaPolicyController} from '../maintenance/rag-quota-policy.controller';
-import {MaintenanceService} from '../maintenance/maintenance.service';
+import { BridgeSourceService } from '../asset-sources/bridge-source.service';
+import { BridgeSourceController } from '../asset-sources/bridge-source.controller';
+import { MaintenanceController } from '../maintenance/maintenance.controller';
+import { RagQuotaPolicyController } from '../maintenance/rag-quota-policy.controller';
+import { MaintenanceService } from '../maintenance/maintenance.service';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
 import { ProjectBackupController } from '../backups/project-backup.controller';
 import { ProjectBackupService } from '../backups/project-backup.service';
@@ -103,30 +103,30 @@ import { ModelTokenQuotasService } from '../model-token-quotas/model-token-quota
 import { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 import { AccessController } from '../access/access.controller';
 import { AccessDb } from '../access/access-db';
-import {DeviceStore} from '../devices/device-store';
-import {DeviceArtifacts} from '../devices/device-artifacts';
-import {DeviceJobs} from '../devices/device-jobs';
-import {DeviceController} from '../devices/device.controller';
-import {McpHostController} from '../devices/mcp-host.controller';
-import {DeviceInstallations} from '../devices/device-installations';
-import {InstallPlans} from '../devices/install-plans';
-import {InstallPlanController} from '../devices/install-plan.controller';
-import {PackageBuildController} from '../package-build/package-build.controller';
-import {PackageBuildService} from '../package-build/package-build.service';
-import {PackageAgentService} from '../package-build/package-agent.service';
+import { DeviceStore } from '../devices/device-store';
+import { DeviceArtifacts } from '../devices/device-artifacts';
+import { DeviceJobs } from '../devices/device-jobs';
+import { DeviceController } from '../devices/device.controller';
+import { McpHostController } from '../devices/mcp-host.controller';
+import { DeviceInstallations } from '../devices/device-installations';
+import { InstallPlans } from '../devices/install-plans';
+import { InstallPlanController } from '../devices/install-plan.controller';
+import { PackageBuildController } from '../package-build/package-build.controller';
+import { PackageBuildService } from '../package-build/package-build.service';
+import { PackageAgentService } from '../package-build/package-agent.service';
 import { ModelsController } from '../models/models.controller';
 import { ModelsService } from '../models/models.service';
 import { ModelHostingController } from '../models/hosting.controller';
 import { ModelHostingService } from '../models/hosting.service';
 import { ModelInferenceController } from '../models/inference.controller';
 import { OllamaClient } from '../models/ollama-client';
-import {ProjectEmbeddingService} from '../models/project-embedding.service';
-import {ProjectEmbeddingController} from '../models/project-embedding.controller';
-import {ProjectRagCoordinator} from '../models/project-rag-coordinator';
-import {ProjectRagSyncController,ProjectRagContextController} from '../models/project-rag.controller';
-import {ProjectReindexService} from '../models/project-reindex.service';
-import {ProjectReindexController,ProjectReindexInferenceController} from '../models/project-reindex.controller';
-import {DeviceEmbeddingService} from '../models/device-embedding.service';
+import { ProjectEmbeddingService } from '../models/project-embedding.service';
+import { ProjectEmbeddingController } from '../models/project-embedding.controller';
+import { ProjectRagCoordinator } from '../models/project-rag-coordinator';
+import { ProjectRagSyncController, ProjectRagContextController } from '../models/project-rag.controller';
+import { ProjectReindexService } from '../models/project-reindex.service';
+import { ProjectReindexController, ProjectReindexInferenceController } from '../models/project-reindex.controller';
+import { DeviceEmbeddingService } from '../models/device-embedding.service';
 
 import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
@@ -137,5 +137,167 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
 /**
  * PostgreSQL-backed каталог и его очереди; файловые скиллы обслуживает skills-service.
  */
-@Module({ controllers: [RemoteProviderAccessController,RuntimeLimitsController,InternalRuntimeLimitsController,GgufImportController,ProjectTextController,ProjectTextAuthorizationController,AgentToolsController,PluginAutoUpdateController,ChatSystemRolesController,ChatSearchController,BrowserAuthSessionController,SystemRoleMcpController,SystemRoleChatController,LearningQuirksController,LearningMemorySyncController,DeviceCodexController,SystemRoleController,ChatPresenceController,ProjectChatController,HelpController,DiscussionsController,CatalogReactionsController,AgentReadinessController,RagQuotaPolicyController,ModelUsageController,ModelRateLimitsController,ModelTokenQuotasController,OpenCodeModelSyncController,ModelChatController,LearningController,DeviceLearningController,LearningAnalysisController,BridgeSourceController,CatalogRequestsController,AgentsController,SnapshotVerifierController,LegacyRetirementController,ProjectSnapshotsController,RetiredRagController,RestoreController,RestoreRunnerController,OperationActionsController,SourceUploadController,ProjectRagSyncController,ProjectRagContextController,ProjectReindexController,ProjectReindexInferenceController,AssetManagementController,RemoteConnectionController,AssetSourcesController,AssetSupplyController,MaintenanceController,CatalogController, SnapshotCommandsController, SkillDependenciesController, SkillAuditController, AccessController, ProjectBackupController,DeviceController,McpHostController,InstallPlanController,PackageBuildController,ModelsController,ModelHostingController,ModelInferenceController,ProjectEmbeddingController], providers: [{provide:ComputerSetupSupplyApproval,useClass:GatewayComputerSetupSupplyApproval},RemoteProviderAccessService,GgufRuntimeService,RuntimeLimitsService,GgufImportService,ProjectTextKnowledge,AgentToolsService,PluginAutoUpdateService,ChatSystemRolesService,ChatSearchService,{provide:BrowserAuthSessionRepository,inject:[ModelsService],useFactory:(models:ModelsService)=>new BrowserAuthSessionRepository(models.pool)},SystemRoleMcpService,{provide:'SYSTEM_ROLE_MCP',useExisting:SystemRoleMcpService},SystemRoleChatService,LearningQuirksService,SystemRoleService,ChatPresenceService,ProjectChatService,ProjectChatInferenceService,HelpService,DiscussionsRepository,DiscussionsPolicy,DiscussionsStorage,DiscussionsService,DiscussionAttachments,{provide:APP_GUARD,useClass:FeaturePolicyGuard},AgentReadinessService,ModelUsageService,ModelRateLimitsService,ModelTokenQuotasService,ModelApiAdmission,OpenCodeModelSyncService,ModelChatService,LearningService,DeviceLearningService,LearningAnalysisService,BridgeSourceService,CatalogRequestsService,AgentsService,LegacyRetirementService,SnapshotService,RetiredRagService,RestoreService,{provide:OperationActionStore,inject:[ModelsService],useFactory:(models:ModelsService)=>new OperationActionStore(models.pool.options)},OperationActionsService,SourceUploadService,HostedRagGrantService,ProjectRagCoordinator,ProjectReindexService,ModelBundleRuntime,DeviceCodexService,OpenCodeModelImport,AssetManagementService,RemoteConnectionService,ModelRuntime,AssetSourcesService,MaintenanceService,RuntimeArtifacts,CatalogService, AccessDb, ProjectBackupService,DeviceStore,DeviceArtifacts,DeviceJobs,DeviceInstallations,InstallPlans,PackageBuildService,{provide:PackageAgentService,inject:[ModelsService,ModelRuntime],useFactory:(models:ModelsService,runtime:ModelRuntime)=>new PackageAgentService(models,runtime)},ModelsService,ModelHostingService,ProjectEmbeddingService,DeviceEmbeddingService,{provide:OllamaClient,inject:[ModelUsageService,ModelApiAdmission],useFactory:(usage:ModelUsageService,admission:ModelApiAdmission)=>new OllamaClient({usage,admission})}], exports:[CatalogService,SystemRoleService] })
+@Module({
+    controllers: [
+        RemoteProviderAccessController,
+        RuntimeLimitsController,
+        InternalRuntimeLimitsController,
+        GgufImportController,
+        ProjectTextController,
+        ProjectTextAuthorizationController,
+        AgentToolsController,
+        PluginAutoUpdateController,
+        ChatSystemRolesController,
+        ChatSearchController,
+        BrowserAuthSessionController,
+        SystemRoleMcpController,
+        SystemRoleChatController,
+        LearningQuirksController,
+        LearningMemorySyncController,
+        DeviceCodexController,
+        SystemRoleController,
+        ChatPresenceController,
+        ProjectChatController,
+        HelpController,
+        DiscussionsController,
+        CatalogReactionsController,
+        AgentReadinessController,
+        RagQuotaPolicyController,
+        ModelUsageController,
+        ModelRateLimitsController,
+        ModelTokenQuotasController,
+        OpenCodeModelSyncController,
+        ModelChatController,
+        LearningController,
+        DeviceLearningController,
+        LearningAnalysisController,
+        BridgeSourceController,
+        CatalogRequestsController,
+        AgentsController,
+        SnapshotVerifierController,
+        LegacyRetirementController,
+        ProjectSnapshotsController,
+        RetiredRagController,
+        RestoreController,
+        RestoreRunnerController,
+        OperationActionsController,
+        SourceUploadController,
+        ProjectRagSyncController,
+        ProjectRagContextController,
+        ProjectReindexController,
+        ProjectReindexInferenceController,
+        AssetManagementController,
+        RemoteConnectionController,
+        AssetSourcesController,
+        AssetSupplyController,
+        MaintenanceController,
+        CatalogController,
+        SnapshotCommandsController,
+        SkillDependenciesController,
+        SkillAuditController,
+        AccessController,
+        ProjectBackupController,
+        DeviceController,
+        McpHostController,
+        InstallPlanController,
+        PackageBuildController,
+        ModelsController,
+        ModelHostingController,
+        ModelInferenceController,
+        ProjectEmbeddingController,
+    ],
+    providers: [
+        { provide: ComputerSetupSupplyApproval, useClass: GatewayComputerSetupSupplyApproval },
+        RemoteProviderAccessService,
+        GgufRuntimeService,
+        RuntimeLimitsService,
+        GgufImportService,
+        ProjectTextKnowledge,
+        AgentToolsService,
+        PluginAutoUpdateService,
+        ChatSystemRolesService,
+        ChatSearchService,
+        {
+            provide: BrowserAuthSessionRepository,
+            inject: [ModelsService],
+            useFactory: (models: ModelsService) => new BrowserAuthSessionRepository(models.pool),
+        },
+        SystemRoleMcpService,
+        { provide: 'SYSTEM_ROLE_MCP', useExisting: SystemRoleMcpService },
+        SystemRoleChatService,
+        LearningQuirksService,
+        SystemRoleService,
+        ChatPresenceService,
+        ProjectChatService,
+        ProjectChatInferenceService,
+        HelpService,
+        DiscussionsRepository,
+        DiscussionsPolicy,
+        DiscussionsStorage,
+        DiscussionsService,
+        DiscussionAttachments,
+        { provide: APP_GUARD, useClass: FeaturePolicyGuard },
+        AgentReadinessService,
+        ModelUsageService,
+        ModelRateLimitsService,
+        ModelTokenQuotasService,
+        ModelApiAdmission,
+        OpenCodeModelSyncService,
+        ModelChatService,
+        LearningService,
+        DeviceLearningService,
+        LearningAnalysisService,
+        BridgeSourceService,
+        CatalogRequestsService,
+        AgentsService,
+        LegacyRetirementService,
+        SnapshotService,
+        RetiredRagService,
+        RestoreService,
+        {
+            provide: OperationActionStore,
+            inject: [ModelsService],
+            useFactory: (models: ModelsService) => new OperationActionStore(models.pool.options),
+        },
+        OperationActionsService,
+        SourceUploadService,
+        HostedRagGrantService,
+        ProjectRagCoordinator,
+        ProjectReindexService,
+        ModelBundleRuntime,
+        DeviceCodexService,
+        OpenCodeModelImport,
+        AssetManagementService,
+        RemoteConnectionService,
+        ModelRuntime,
+        AssetSourcesService,
+        MaintenanceService,
+        RuntimeArtifacts,
+        CatalogService,
+        AccessDb,
+        ProjectBackupService,
+        DeviceStore,
+        DeviceArtifacts,
+        DeviceJobs,
+        DeviceInstallations,
+        InstallPlans,
+        PackageBuildService,
+        {
+            provide: PackageAgentService,
+            inject: [ModelsService, ModelRuntime],
+            useFactory: (models: ModelsService, runtime: ModelRuntime) => new PackageAgentService(models, runtime),
+        },
+        ModelsService,
+        ModelHostingService,
+        ProjectEmbeddingService,
+        DeviceEmbeddingService,
+        {
+            provide: OllamaClient,
+            inject: [ModelUsageService, ModelApiAdmission],
+            useFactory: (usage: ModelUsageService, admission: ModelApiAdmission) =>
+                new OllamaClient({ usage, admission }),
+        },
+    ],
+    exports: [CatalogService, SystemRoleService],
+})
 export class CatalogModule {}

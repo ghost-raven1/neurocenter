@@ -14,5 +14,5 @@ IF missing IS NOT NULL THEN RAISE EXCEPTION 'Project chat schema is incomplete: 
 export async function assertProjectChatSchema(db: Pick<Pool, 'query'>): Promise<void> {
     if (!PROJECT_CHAT_SCHEMA_CONTRACT.length) throw new Error('Project chat schema contract has not been finalized.');
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема проектного чата не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема проектного чата не готова: ' + rows.map((row) => row.issue).join(', '));
 }

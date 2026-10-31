@@ -23,7 +23,7 @@ function parseLenient(text: string): Record<string, unknown> {
 
         if (/^\[.*\]$/.test(rawVal)) {
             const inner = rawVal.slice(1, -1).trim();
-            out[key] = inner === '' ? [] : inner.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+            out[key] = inner === '' ? [] : inner.split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, ''));
             continue;
         }
         if (rawVal.length >= 2 && /^['"]/.test(rawVal) && /['"]$/.test(rawVal)) {

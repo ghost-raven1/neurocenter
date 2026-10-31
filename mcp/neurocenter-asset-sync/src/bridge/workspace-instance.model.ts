@@ -1,4 +1,4 @@
-import type {MemoryOwnershipHandoff} from '../features/project-learning-memory-sync/workspace-handoff.js';
+import type { MemoryOwnershipHandoff } from '../features/project-learning-memory-sync/workspace-handoff.js';
 
 export type WorkspaceBindingMode = 'new' | 'new-copy' | 'adopt-legacy' | 'transfer' | 'resume';
 export interface WorkspaceBindingInput {
@@ -38,7 +38,7 @@ export interface WorkspaceFileVerification {
     assertUnchanged(): Promise<void>;
 }
 /** Возвращённый release удерживает внешние locks до окончания commit, включая ошибку. */
-export type WorkspaceVerificationRelease = (() => Promise<void>) & {memoryOwnership?: MemoryOwnershipHandoff[]};
+export type WorkspaceVerificationRelease = (() => Promise<void>) & { memoryOwnership?: MemoryOwnershipHandoff[] };
 export type VerifyWorkspaceFiles = (context: WorkspaceFileVerification) => Promise<void | WorkspaceVerificationRelease>;
 export interface WorkspaceMarker {
     version: 1 | 2;
@@ -65,5 +65,10 @@ export interface WorkspaceInstanceRegistry {
 }
 export type WorkspaceIdentityStatus = 'verified' | 'legacy' | 'copied' | 'changed' | 'unavailable';
 export class WorkspaceIdentityError extends Error {
-    constructor(public readonly identityStatus: WorkspaceIdentityStatus, message: string) { super(message); }
+    constructor(
+        public readonly identityStatus: WorkspaceIdentityStatus,
+        message: string,
+    ) {
+        super(message);
+    }
 }

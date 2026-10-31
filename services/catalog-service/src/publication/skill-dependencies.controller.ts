@@ -11,6 +11,6 @@ export class SkillDependenciesController {
     @Post('reserve')
     async reserve(@Headers('x-neurocenter-internal') token: string, @Body() input: unknown) {
         assertInternal(token);
-        return { ok: true, ...await this.catalog.reserveSkillDependencies(input) };
+        return { ok: true, ...(await this.catalog.reserveSkillDependencies(input)) };
     }
 }

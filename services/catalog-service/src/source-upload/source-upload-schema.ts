@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const SOURCE_UPLOAD_SCHEMA_SQL=`
+export const SOURCE_UPLOAD_SCHEMA_SQL = `
 ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS source_upload_auth_epoch uuid NOT NULL DEFAULT gen_random_uuid();
   CREATE OR REPLACE FUNCTION rotate_source_upload_auth_epoch() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN
    IF OLD.is_main_admin IS DISTINCT FROM NEW.is_main_admin OR OLD.enabled IS DISTINCT FROM NEW.enabled THEN NEW.source_upload_auth_epoch=gen_random_uuid(); END IF;

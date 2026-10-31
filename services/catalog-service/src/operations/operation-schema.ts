@@ -1,5 +1,5 @@
 /** The projection follows all baseline and historical bridge tables. */
-export const REINDEX_OPERATION_SCHEMA_SQL=`
+export const REINDEX_OPERATION_SCHEMA_SQL = `
 CREATE OR REPLACE FUNCTION project_reindex_operation() RETURNS trigger LANGUAGE plpgsql AS $$
     DECLARE job_state text; job_message text; job_percent integer; projected text;
     BEGIN

@@ -1,16 +1,43 @@
-import { BadRequestException, Injectable, Logger, OnModuleDestroy, OnModuleInit, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    Injectable,
+    Logger,
+    OnModuleDestroy,
+    OnModuleInit,
+    NotFoundException,
+} from '@nestjs/common';
 
 import { CatalogDb } from './catalog-db';
-import { IAccessDecisionList, IAiPlugin, IAiPluginCreate, IAiPluginFile, IAiPluginUpdate, IAiPluginVersion, IAccessUserRow, IAuditEvent, IBackupStatus, ILocalProjectsImportResult, IOperationDetail, IOperationPage, IPage, IProjectDetail, IProjectMember, IProjectAsset, IProjectSummary, IQuota, IStorageSummary } from './dto';
+import {
+    IAccessDecisionList,
+    IAiPlugin,
+    IAiPluginCreate,
+    IAiPluginFile,
+    IAiPluginUpdate,
+    IAiPluginVersion,
+    IAccessUserRow,
+    IAuditEvent,
+    IBackupStatus,
+    ILocalProjectsImportResult,
+    IOperationDetail,
+    IOperationPage,
+    IPage,
+    IProjectDetail,
+    IProjectMember,
+    IProjectAsset,
+    IProjectSummary,
+    IQuota,
+    IStorageSummary,
+} from './dto';
 import { measureProjectDataSize } from './fs-metrics';
 import { fetchProjectRetainedSize } from './project-retained-size';
 import { validateProjectSettings } from './project-validation';
 import { buildPackage, type IPackage } from './bundle-package';
 import { runAllBackups, stopBackups, IBackupRunResult } from './backup';
-import {backupPolicy} from '../backups/backup-policy';
+import { backupPolicy } from '../backups/backup-policy';
 import { scanLocalAssets } from './local-assets';
 import { isMainAdmin, roleLevel } from './rbac';
-import {assertProjectCatalogAsset} from '../devices/project-skill';
+import { assertProjectCatalogAsset } from '../devices/project-skill';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
 import type { IOperationReadScope } from '../operations/operation.types';
 import type { IAccessActor } from '../access/access.model';
@@ -33,9 +60,13 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         this.db = new CatalogDb(process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog');
     }
 
-    public ready():Promise<void>{return this.db.ready();}
+    public ready(): Promise<void> {
+        return this.db.ready();
+    }
     /** Зависимые очереди ждут ту же идемпотентную инициализацию, что lifecycle каталога. */
-    public ensureSchema(): Promise<void> {return this.db.setup();}
+    public ensureSchema(): Promise<void> {
+        return this.db.setup();
+    }
 
     /** Резервирование ссылок подтверждается до любой файловой публикации скилла. */
     public reserveSkillDependencies(raw: unknown): Promise<{ reserved: number }> {
@@ -89,7 +120,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      * @returns {Promise<IProjectSummary>}
      */
     private async applyLiveSizes(item: IProjectSummary): Promise<void> {
-        const [ usedBytes, retainedBytes ] = await Promise.all([
+        const [usedBytes, retainedBytes] = await Promise.all([
             measureProjectDataSize(item.fsRootPath),
             fetchProjectRetainedSize(this.ragBaseUrl, item.id, process.env.NEUROCENTER_INTERNAL_TOKEN || ''),
         ]);
@@ -186,7 +217,13 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      * @param body — payload создания.
      * @returns {Promise<IProjectDetail>}
      */
-    createProject(body: { name?: string; externalResourceId?: string; retention?: number; quotas?: unknown; fsRootPath?: string }): Promise<IProjectDetail> {
+    createProject(body: {
+        name?: string;
+        externalResourceId?: string;
+        retention?: number;
+        quotas?: unknown;
+        fsRootPath?: string;
+    }): Promise<IProjectDetail> {
         return this.db.createProject({
             name: body.name,
             externalResourceId: body.externalResourceId,
@@ -203,14 +240,22 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      * @param body — payload обновления.
      * @returns {Promise<IProjectDetail>}
      */
-    async updateProject(idOrName: string, body: { state?: string; retention?: number; quotas?: unknown; fsRootPath?: string }, actor?: string): Promise<IProjectDetail> {
+    async updateProject(
+        idOrName: string,
+        body: { state?: string; retention?: number; quotas?: unknown; fsRootPath?: string },
+        actor?: string,
+    ): Promise<IProjectDetail> {
         validateProjectSettings(body);
-        const updated = await this.db.updateProject(idOrName, {
-            state: body.state as IProjectDetail['state'],
-            retention: body.retention,
-            quotas: body.quotas as IProjectDetail['quota'] | undefined,
-            fsRootPath: body.fsRootPath,
-        }, actor);
+        const updated = await this.db.updateProject(
+            idOrName,
+            {
+                state: body.state as IProjectDetail['state'],
+                retention: body.retention,
+                quotas: body.quotas as IProjectDetail['quota'] | undefined,
+                fsRootPath: body.fsRootPath,
+            },
+            actor,
+        );
         if (!updated) {
             throw new NotFoundException(`project not found: ${idOrName}`);
         }
@@ -241,7 +286,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         if (!found) {
             throw new NotFoundException(`project not found: ${idOrName}`);
         }
-        const deleted = await this.db.deleteProject(found.id,actor);
+        const deleted = await this.db.deleteProject(found.id, actor);
 
         if (!deleted) {
             throw new NotFoundException(`project not found: ${idOrName}`);
@@ -261,16 +306,19 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      * Добавить глобальную ассету в проект (админ проекта).
      */
     async addProjectAsset(projectId: string, assetId: string, assetKind: string, actor: string): Promise<void> {
-        assertProjectCatalogAsset(assetKind,assetId,projectId);
-        if(assetKind==='skill'&&!assetId.includes('/'))throw new BadRequestException('Выберите скилл по полному пути каталога.');
+        assertProjectCatalogAsset(assetKind, assetId, projectId);
+        if (assetKind === 'skill' && !assetId.includes('/'))
+            throw new BadRequestException('Выберите скилл по полному пути каталога.');
         return this.db.addProjectAsset(projectId, assetId, assetKind, actor);
     }
 
-    projectCatalog(projectId:string) { return this.db.projectCatalog(projectId); }
+    projectCatalog(projectId: string) {
+        return this.db.projectCatalog(projectId);
+    }
 
-    pinProjectAsset(projectId:string,id:string,kind:string,actor:string,input:unknown) {
-        assertProjectCatalogAsset(kind,id,projectId);
-        return this.db.pinProjectAsset(projectId,id,kind,actor,input);
+    pinProjectAsset(projectId: string, id: string, kind: string, actor: string, input: unknown) {
+        assertProjectCatalogAsset(kind, id, projectId);
+        return this.db.pinProjectAsset(projectId, id, kind, actor, input);
     }
 
     removeProjectAsset(projectId: string, assetId: string, assetKind: string, actor: string): Promise<boolean> {
@@ -289,7 +337,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         if (!project) {
             return 0;
         }
-        const role = (await this.db.listProjectMembers(project.id)).find(m => m.principalName === principal)?.role;
+        const role = (await this.db.listProjectMembers(project.id)).find((m) => m.principalName === principal)?.role;
         return role ? roleLevel(role) : 0;
     }
 
@@ -331,19 +379,21 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
             labels.rag = ragUrl;
         }
 
-        const result = await runAllBackups(labels, process.env.BACKUP_DIR,{confirm:()=>this.db.recordBackup()});
+        const result = await runAllBackups(labels, process.env.BACKUP_DIR, { confirm: () => this.db.recordBackup() });
         const fileSummary = result.files.map((f) => `${f.label}: ${f.file} (${f.sizeBytes} Б, ${f.method})`).join('; ');
         const warnSummary = result.warnings?.length ? `; предупреждения: ${result.warnings.join('; ')}` : '';
 
         this.logger.log(`Бэкап: ${fileSummary}${warnSummary}`);
-        void this.db.createOperation({
-            type: 'CATALOG',
-            projectId: null,
-            resourceType: 'backup',
-            resourceId: 'lancedb',
-            state: 'SUCCEEDED',
-            message: `Бэкап: ${fileSummary}${warnSummary} → ${result.directory}`,
-        }).catch(() => undefined);
+        void this.db
+            .createOperation({
+                type: 'CATALOG',
+                projectId: null,
+                resourceType: 'backup',
+                resourceId: 'lancedb',
+                state: 'SUCCEEDED',
+                message: `Бэкап: ${fileSummary}${warnSummary} → ${result.directory}`,
+            })
+            .catch(() => undefined);
 
         return result;
     }
@@ -372,14 +422,25 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     /**
      * Изменить роль сотрудника в проекте (PG).
      */
-    updateProjectMemberRole(projectId: string, userId: string, role: string, expectedRole: string|undefined, actor: IAccessActor): Promise<IProjectMember | null> {
+    updateProjectMemberRole(
+        projectId: string,
+        userId: string,
+        role: string,
+        expectedRole: string | undefined,
+        actor: IAccessActor,
+    ): Promise<IProjectMember | null> {
         return this.db.updateProjectMemberRole(projectId, userId, role, expectedRole, actor);
     }
 
     /**
      * Удалить сотрудника из проекта (PG).
      */
-    removeProjectMember(projectId: string, userId: string, expectedRole: string|undefined, actor: IAccessActor): Promise<boolean> {
+    removeProjectMember(
+        projectId: string,
+        userId: string,
+        expectedRole: string | undefined,
+        actor: IAccessActor,
+    ): Promise<boolean> {
         return this.db.removeProjectMember(projectId, userId, expectedRole, actor);
     }
 
@@ -450,7 +511,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         }
         return buildPackage(
             { id: plugin.id, name: plugin.name, kind, version: version ?? plugin.version },
-            files.map(f => ({ path: f.path, content: f.content ?? '' })),
+            files.map((f) => ({ path: f.path, content: f.content ?? '' })),
             new Date().toISOString(),
             config,
         );
@@ -510,7 +571,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
             const v = await db.getAiPluginVersion(plugin.id, version);
             files = v === null ? [] : v.files;
         }
-        const file = files.find(f => f.path === filePath);
+        const file = files.find((f) => f.path === filePath);
         if (!file) {
             throw new NotFoundException(`file not found: ${filePath}`);
         }
@@ -558,13 +619,21 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      * @param state - фильтр по состоянию.
      * @returns {Promise<IPage<IOperation>>}
      */
-    async listOperations(page: number, size: number, project?: string, state?: string, scope?: IOperationReadScope): Promise<IOperationPage> {
+    async listOperations(
+        page: number,
+        size: number,
+        project?: string,
+        state?: string,
+        scope?: IOperationReadScope,
+    ): Promise<IOperationPage> {
         // Нормализуем фильтр: исторически project_id могло записываться и как id,
         // и как имя проекта — сопоставляем с обеими формами.
         let projectIds: string[] | undefined;
         if (project) {
             const found = await this.db.getProject(project);
-            projectIds = found ? Array.from(new Set([ found.id, ...(!found.name.startsWith('prj-') ? [found.name] : []) ])) : [ project ];
+            projectIds = found
+                ? Array.from(new Set([found.id, ...(!found.name.startsWith('prj-') ? [found.name] : [])]))
+                : [project];
         }
         return this.db.listOperations(page, size, projectIds, state, scope);
     }
@@ -584,5 +653,4 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
 
         return found;
     }
-
 }

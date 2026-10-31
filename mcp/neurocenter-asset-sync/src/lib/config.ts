@@ -44,20 +44,17 @@ export async function loadRagConfig(
     let parsed: IRawConfig;
     try {
         parsed = JSON.parse(raw.replace(/^\uFEFF/, '')) as IRawConfig;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { return null; }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return null;
+        }
     } catch {
         return null;
     }
 
-    const vspath =
-    typeof parsed.vectorStore?.path === 'string'
-        ? parsed.vectorStore.path
-        : null;
+    const vspath = typeof parsed.vectorStore?.path === 'string' ? parsed.vectorStore.path : null;
 
     // OpenCodeRAG разрешает относительный путь от корня проекта для всех трёх конфигов.
-    const resolvedVectorStorePath = vspath
-        ? path.resolve(projectRoot, vspath)
-        : null;
+    const resolvedVectorStorePath = vspath ? path.resolve(projectRoot, vspath) : null;
 
     const emb = parsed.embedding ?? {};
     const ret = parsed.retrieval ?? {};
@@ -72,18 +69,18 @@ export async function loadRagConfig(
             baseUrl: typeof emb.baseUrl === 'string' ? emb.baseUrl : null,
             vectorDimension: typeof emb.vectorDimension === 'number' ? emb.vectorDimension : undefined,
         },
-        embeddingInput: Object.fromEntries(['provider', 'model', 'baseUrl', 'vectorDimension'].filter(key => Object.hasOwn(emb, key)).map(key => [key, emb[key]])),
+        embeddingInput: Object.fromEntries(
+            ['provider', 'model', 'baseUrl', 'vectorDimension']
+                .filter((key) => Object.hasOwn(emb, key))
+                .map((key) => [key, emb[key]]),
+        ),
         retrieval: {
             topK: typeof ret.topK === 'number' ? ret.topK : 0,
             minScore: typeof ret.minScore === 'number' ? ret.minScore : 0,
         },
         indexing: {
-            includeExtensionsCount: Array.isArray(idx.includeExtensions)
-                ? idx.includeExtensions.length
-                : 0,
-            excludeDirsCount: Array.isArray(idx.excludeDirs)
-                ? idx.excludeDirs.length
-                : 0,
+            includeExtensionsCount: Array.isArray(idx.includeExtensions) ? idx.includeExtensions.length : 0,
+            excludeDirsCount: Array.isArray(idx.excludeDirs) ? idx.excludeDirs.length : 0,
         },
         mcpEnabled: parsed.mcp?.enabled === true,
     };

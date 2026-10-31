@@ -1,85 +1,176 @@
-import {REMOTE_PROVIDER_SCHEMA_CONTRACT,assertRemoteProviderSchema} from '../remote-providers/remote-provider.schema-verification';
-import {GGUF_RUNTIME_SCHEMA_CONTRACT,assertGgufRuntimeSchema} from '../models/gguf-runtime/gguf-runtime.schema-verification';
-import {GGUF_IMPORT_SCHEMA_CONTRACT,assertGgufImportSchema} from '../models/gguf-import/gguf-import.schema-verification';
-import {RUNTIME_LIMITS_SCHEMA_CONTRACT,assertRuntimeLimitsSchema,CURRENT_TEXT_CONTEXT_SCHEMA_CONTRACT as PROJECT_TEXT_CONTEXT_SCHEMA_CONTRACT,assertCurrentTextContextSchema as assertProjectTextContextSchema} from '../runtime-limits/runtime-limits.schema-verification';
-import {AGENT_TOOLS_SCHEMA_CONTRACT} from '../agent-tools/agent-tools.schema-contract';
-import {METHOD_CHAT_WORKFLOWS_SCHEMA_CONTRACT} from '../agent-method-workflows/chat-workflows.schema-contract';
-import {assertMethodChatWorkflowsSchema} from '../agent-method-workflows/chat-workflows.schema-verification';
-import {assertServiceRoleConversationsSchema} from '../system-role-chat/service-role-conversations.schema-verification';
-import {SERVICE_ROLE_CONVERSATIONS_SCHEMA_CONTRACT} from '../system-role-chat/service-role-conversations.schema-contract';
-import {assertChatSummaryPolicySchema,CHAT_SUMMARY_POLICY_SCHEMA_CONTRACT} from '../model-chat/chat-summary-policy.schema-verification';
-import {assertAgentToolsSchema} from '../agent-tools/agent-tools.schema-verification';
-import {PLUGIN_AUTO_UPDATE_SCHEMA_CONTRACT} from '../plugin-auto-updates/auto-update.schema-contract';
-import {assertPluginAutoUpdateSchema} from '../plugin-auto-updates/auto-update.schema-verification';
-import {CHAT_SYSTEM_ROLE_SCHEMA_CONTRACT} from '../chat-system-roles/chat-system-roles.schema-contract';
-import {assertChatSystemRoleSchema} from '../chat-system-roles/chat-system-roles.schema-verification';
-import {CHAT_SEARCH_SCHEMA_CONTRACT} from '../chat-search/chat-search.schema-contract';
-import {assertChatSearchSchema} from '../chat-search/chat-search.schema-verification';
-import {BROWSER_AUTH_SESSION_SCHEMA_CONTRACT,assertBrowserAuthSessionSchema} from '../browser-auth-sessions/browser-auth-session.schema-verification';
-import {PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT} from '../models/project-rag-authorization.schema-contract';
-import {SYSTEM_ROLE_CHAT_SCHEMA_CONTRACT} from '../system-role-chat/system-role-chat.schema-contract';
-import {assertSystemRoleChatSchema} from '../system-role-chat/system-role-chat.schema-verification';
-import {CURRENT_SYSTEM_ROLE_MCP_SCHEMA_CONTRACT,assertSystemRoleMcpSchema,CURRENT_MCP_SYSTEM_ROLE_SCHEMA_CONTRACT as SYSTEM_ROLE_SCHEMA_CONTRACT} from '../system-role-mcp/system-role-mcp.schema-verification';
-import {CHAT_DISCUSSION_SCHEMA_CONTRACT} from '../model-chat/chat-discussion.schema-contract';
-import {assertChatDiscussionSchema} from '../model-chat/chat-discussion.schema-verification';
-import {assertProjectRagAuthorizationSchema} from '../models/project-rag-authorization.schema-verification';
-import {DEVICE_CODEX_SCHEMA_CONTRACT} from '../models/device-codex.schema-contract';
-import {assertDeviceCodexSchema} from '../models/device-codex.schema-verification';
-import {assertSystemRoleSchema} from '../system-roles/system-role.schema-verification';
-import {CURRENT_PROJECT_CHAT_ISOLATION_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT} from '../project-chat/project-chat-isolation.schema-contract';
-import {assertProjectChatIsolationSchema as assertProjectChatSchema} from '../project-chat/project-chat-isolation.schema-verification';
-import {CHAT_ACTIVITY_SCHEMA_CONTRACT} from '../chat-activity/chat-activity.schema-contract';
-import {assertChatActivitySchema} from '../chat-activity/chat-activity.schema-verification';
-import {MODEL_RATE_LIMITS_SCHEMA_CONTRACT} from '../model-rate-limits/model-rate-limits.schema-contract';
-import {assertModelRateLimitsSchema} from '../model-rate-limits/model-rate-limits.schema-verification';
-import {MODEL_TOKEN_QUOTAS_SCHEMA_CONTRACT} from '../model-token-quotas/model-token-quotas.schema-contract';
-import {assertModelTokenQuotasSchema} from '../model-token-quotas/model-token-quotas.schema-verification';
-import {DISCUSSIONS_SCHEMA_CONTRACT} from '../discussions/discussions.schema-contract';
-import {assertDiscussionsSchema} from '../discussions/discussions.schema-verification';
-import {assertChatResearchSchema,CHAT_RESEARCH_CURRENT_SCHEMA_CONTRACT} from '../model-chat/chat-research.schema-verification';
-import {AGENT_READINESS_SCHEMA_CONTRACT} from '../agent-readiness/agent-readiness.schema-contract';
-import {assertAgentReadinessSchema} from '../agent-readiness/agent-readiness.schema-verification';
-import type {Pool} from 'pg';
-import {assertCurrentBuildCatalogSchema,CURRENT_BUILD_CATALOG_SCHEMA_CONTRACT} from '../package-build/package-build-cancellation.schema-verification';
-import {assertAgentSchema} from '../agents/agent-schema-verification';
-import {AGENT_SCHEMA_CONTRACT} from '../agents/agent-schema-contract';
-import {CATALOG_REQUEST_SCHEMA_CONTRACT} from '../catalog-requests/request.schema-contract';
-import {assertCatalogRequestSchema} from '../catalog-requests/request.schema-verification';
-import {BRIDGE_SOURCE_SCHEMA_CONTRACT} from '../asset-sources/bridge-source.schema-contract';
-import {assertBridgeSourceSchema} from '../asset-sources/bridge-source.schema-verification';
-import {LEARNING_SCHEMA_CONTRACT} from '../learning/learning-schema-contract';
-import {assertLearningSchema} from '../learning/learning-schema-verification';
-import {LEARNING_ANALYSIS_SCHEMA_CONTRACT} from '../learning/learning-analysis-schema-contract';
-import {assertLearningAnalysisSchema} from '../learning/learning-analysis-schema-verification';
-import {SOURCE_ARCHIVE_SCHEMA_CONTRACT} from '../asset-sources/source-archive.schema-contract';
-import {assertSourceArchiveSchema} from '../asset-sources/source-archive.schema-verification';
-import {REMOTE_OPTIONS_SCHEMA_CONTRACT} from '../models/remote-options.schema-contract';
-import {assertRemoteOptionsSchema} from '../models/remote-options.schema-verification';
-import {assertChatStorageSchema,CHAT_STORAGE_CURRENT_SCHEMA_CONTRACT} from '../model-chat/chat-storage.schema-verification';
-import {OPENCODE_MODEL_SYNC_SCHEMA_CONTRACT} from '../models/opencode-model-sync.schema-contract';
-import {assertOpenCodeModelSyncSchema} from '../models/opencode-model-sync.schema-verification';
-import {assertPackageAgentSchema,PACKAGE_AGENT_CURRENT_SCHEMA_CONTRACT} from '../package-build/package-agent.schema-verification';
-export const CURRENT_CATALOG_SCHEMA_CONTRACT=[...REMOTE_PROVIDER_SCHEMA_CONTRACT,...GGUF_RUNTIME_SCHEMA_CONTRACT,...RUNTIME_LIMITS_SCHEMA_CONTRACT,...GGUF_IMPORT_SCHEMA_CONTRACT,...PROJECT_TEXT_CONTEXT_SCHEMA_CONTRACT,...MODEL_TOKEN_QUOTAS_SCHEMA_CONTRACT,...METHOD_CHAT_WORKFLOWS_SCHEMA_CONTRACT,...SERVICE_ROLE_CONVERSATIONS_SCHEMA_CONTRACT,...CHAT_SUMMARY_POLICY_SCHEMA_CONTRACT,...AGENT_TOOLS_SCHEMA_CONTRACT,...PLUGIN_AUTO_UPDATE_SCHEMA_CONTRACT,...CHAT_SYSTEM_ROLE_SCHEMA_CONTRACT,...CHAT_SEARCH_SCHEMA_CONTRACT,...BROWSER_AUTH_SESSION_SCHEMA_CONTRACT,...CURRENT_SYSTEM_ROLE_MCP_SCHEMA_CONTRACT,...SYSTEM_ROLE_CHAT_SCHEMA_CONTRACT,...CHAT_DISCUSSION_SCHEMA_CONTRACT,...CURRENT_BUILD_CATALOG_SCHEMA_CONTRACT,...AGENT_SCHEMA_CONTRACT,...CATALOG_REQUEST_SCHEMA_CONTRACT,...BRIDGE_SOURCE_SCHEMA_CONTRACT,...LEARNING_SCHEMA_CONTRACT,...LEARNING_ANALYSIS_SCHEMA_CONTRACT,...SOURCE_ARCHIVE_SCHEMA_CONTRACT,...REMOTE_OPTIONS_SCHEMA_CONTRACT,...CHAT_STORAGE_CURRENT_SCHEMA_CONTRACT,...CHAT_RESEARCH_CURRENT_SCHEMA_CONTRACT,...OPENCODE_MODEL_SYNC_SCHEMA_CONTRACT,...AGENT_READINESS_SCHEMA_CONTRACT,...DISCUSSIONS_SCHEMA_CONTRACT,...PROJECT_CHAT_SCHEMA_CONTRACT,...MODEL_RATE_LIMITS_SCHEMA_CONTRACT,...CHAT_ACTIVITY_SCHEMA_CONTRACT,...PACKAGE_AGENT_CURRENT_SCHEMA_CONTRACT,...SYSTEM_ROLE_SCHEMA_CONTRACT,...DEVICE_CODEX_SCHEMA_CONTRACT,...PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT];
+import {
+    REMOTE_PROVIDER_SCHEMA_CONTRACT,
+    assertRemoteProviderSchema,
+} from '../remote-providers/remote-provider.schema-verification';
+import {
+    GGUF_RUNTIME_SCHEMA_CONTRACT,
+    assertGgufRuntimeSchema,
+} from '../models/gguf-runtime/gguf-runtime.schema-verification';
+import {
+    GGUF_IMPORT_SCHEMA_CONTRACT,
+    assertGgufImportSchema,
+} from '../models/gguf-import/gguf-import.schema-verification';
+import {
+    RUNTIME_LIMITS_SCHEMA_CONTRACT,
+    assertRuntimeLimitsSchema,
+    CURRENT_TEXT_CONTEXT_SCHEMA_CONTRACT as PROJECT_TEXT_CONTEXT_SCHEMA_CONTRACT,
+    assertCurrentTextContextSchema as assertProjectTextContextSchema,
+} from '../runtime-limits/runtime-limits.schema-verification';
+import { AGENT_TOOLS_SCHEMA_CONTRACT } from '../agent-tools/agent-tools.schema-contract';
+import { METHOD_CHAT_WORKFLOWS_SCHEMA_CONTRACT } from '../agent-method-workflows/chat-workflows.schema-contract';
+import { assertMethodChatWorkflowsSchema } from '../agent-method-workflows/chat-workflows.schema-verification';
+import { assertServiceRoleConversationsSchema } from '../system-role-chat/service-role-conversations.schema-verification';
+import { SERVICE_ROLE_CONVERSATIONS_SCHEMA_CONTRACT } from '../system-role-chat/service-role-conversations.schema-contract';
+import {
+    assertChatSummaryPolicySchema,
+    CHAT_SUMMARY_POLICY_SCHEMA_CONTRACT,
+} from '../model-chat/chat-summary-policy.schema-verification';
+import { assertAgentToolsSchema } from '../agent-tools/agent-tools.schema-verification';
+import { PLUGIN_AUTO_UPDATE_SCHEMA_CONTRACT } from '../plugin-auto-updates/auto-update.schema-contract';
+import { assertPluginAutoUpdateSchema } from '../plugin-auto-updates/auto-update.schema-verification';
+import { CHAT_SYSTEM_ROLE_SCHEMA_CONTRACT } from '../chat-system-roles/chat-system-roles.schema-contract';
+import { assertChatSystemRoleSchema } from '../chat-system-roles/chat-system-roles.schema-verification';
+import { CHAT_SEARCH_SCHEMA_CONTRACT } from '../chat-search/chat-search.schema-contract';
+import { assertChatSearchSchema } from '../chat-search/chat-search.schema-verification';
+import {
+    BROWSER_AUTH_SESSION_SCHEMA_CONTRACT,
+    assertBrowserAuthSessionSchema,
+} from '../browser-auth-sessions/browser-auth-session.schema-verification';
+import { PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT } from '../models/project-rag-authorization.schema-contract';
+import { SYSTEM_ROLE_CHAT_SCHEMA_CONTRACT } from '../system-role-chat/system-role-chat.schema-contract';
+import { assertSystemRoleChatSchema } from '../system-role-chat/system-role-chat.schema-verification';
+import {
+    CURRENT_SYSTEM_ROLE_MCP_SCHEMA_CONTRACT,
+    assertSystemRoleMcpSchema,
+    CURRENT_MCP_SYSTEM_ROLE_SCHEMA_CONTRACT as SYSTEM_ROLE_SCHEMA_CONTRACT,
+} from '../system-role-mcp/system-role-mcp.schema-verification';
+import { CHAT_DISCUSSION_SCHEMA_CONTRACT } from '../model-chat/chat-discussion.schema-contract';
+import { assertChatDiscussionSchema } from '../model-chat/chat-discussion.schema-verification';
+import { assertProjectRagAuthorizationSchema } from '../models/project-rag-authorization.schema-verification';
+import { DEVICE_CODEX_SCHEMA_CONTRACT } from '../models/device-codex.schema-contract';
+import { assertDeviceCodexSchema } from '../models/device-codex.schema-verification';
+import { assertSystemRoleSchema } from '../system-roles/system-role.schema-verification';
+import { CURRENT_PROJECT_CHAT_ISOLATION_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT } from '../project-chat/project-chat-isolation.schema-contract';
+import { assertProjectChatIsolationSchema as assertProjectChatSchema } from '../project-chat/project-chat-isolation.schema-verification';
+import { CHAT_ACTIVITY_SCHEMA_CONTRACT } from '../chat-activity/chat-activity.schema-contract';
+import { assertChatActivitySchema } from '../chat-activity/chat-activity.schema-verification';
+import { MODEL_RATE_LIMITS_SCHEMA_CONTRACT } from '../model-rate-limits/model-rate-limits.schema-contract';
+import { assertModelRateLimitsSchema } from '../model-rate-limits/model-rate-limits.schema-verification';
+import { MODEL_TOKEN_QUOTAS_SCHEMA_CONTRACT } from '../model-token-quotas/model-token-quotas.schema-contract';
+import { assertModelTokenQuotasSchema } from '../model-token-quotas/model-token-quotas.schema-verification';
+import { DISCUSSIONS_SCHEMA_CONTRACT } from '../discussions/discussions.schema-contract';
+import { assertDiscussionsSchema } from '../discussions/discussions.schema-verification';
+import {
+    assertChatResearchSchema,
+    CHAT_RESEARCH_CURRENT_SCHEMA_CONTRACT,
+} from '../model-chat/chat-research.schema-verification';
+import { AGENT_READINESS_SCHEMA_CONTRACT } from '../agent-readiness/agent-readiness.schema-contract';
+import { assertAgentReadinessSchema } from '../agent-readiness/agent-readiness.schema-verification';
+import type { Pool } from 'pg';
+import {
+    assertCurrentBuildCatalogSchema,
+    CURRENT_BUILD_CATALOG_SCHEMA_CONTRACT,
+} from '../package-build/package-build-cancellation.schema-verification';
+import { assertAgentSchema } from '../agents/agent-schema-verification';
+import { AGENT_SCHEMA_CONTRACT } from '../agents/agent-schema-contract';
+import { CATALOG_REQUEST_SCHEMA_CONTRACT } from '../catalog-requests/request.schema-contract';
+import { assertCatalogRequestSchema } from '../catalog-requests/request.schema-verification';
+import { BRIDGE_SOURCE_SCHEMA_CONTRACT } from '../asset-sources/bridge-source.schema-contract';
+import { assertBridgeSourceSchema } from '../asset-sources/bridge-source.schema-verification';
+import { LEARNING_SCHEMA_CONTRACT } from '../learning/learning-schema-contract';
+import { assertLearningSchema } from '../learning/learning-schema-verification';
+import { LEARNING_ANALYSIS_SCHEMA_CONTRACT } from '../learning/learning-analysis-schema-contract';
+import { assertLearningAnalysisSchema } from '../learning/learning-analysis-schema-verification';
+import { SOURCE_ARCHIVE_SCHEMA_CONTRACT } from '../asset-sources/source-archive.schema-contract';
+import { assertSourceArchiveSchema } from '../asset-sources/source-archive.schema-verification';
+import { REMOTE_OPTIONS_SCHEMA_CONTRACT } from '../models/remote-options.schema-contract';
+import { assertRemoteOptionsSchema } from '../models/remote-options.schema-verification';
+import {
+    assertChatStorageSchema,
+    CHAT_STORAGE_CURRENT_SCHEMA_CONTRACT,
+} from '../model-chat/chat-storage.schema-verification';
+import { OPENCODE_MODEL_SYNC_SCHEMA_CONTRACT } from '../models/opencode-model-sync.schema-contract';
+import { assertOpenCodeModelSyncSchema } from '../models/opencode-model-sync.schema-verification';
+import {
+    assertPackageAgentSchema,
+    PACKAGE_AGENT_CURRENT_SCHEMA_CONTRACT,
+} from '../package-build/package-agent.schema-verification';
+export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
+    ...REMOTE_PROVIDER_SCHEMA_CONTRACT,
+    ...GGUF_RUNTIME_SCHEMA_CONTRACT,
+    ...RUNTIME_LIMITS_SCHEMA_CONTRACT,
+    ...GGUF_IMPORT_SCHEMA_CONTRACT,
+    ...PROJECT_TEXT_CONTEXT_SCHEMA_CONTRACT,
+    ...MODEL_TOKEN_QUOTAS_SCHEMA_CONTRACT,
+    ...METHOD_CHAT_WORKFLOWS_SCHEMA_CONTRACT,
+    ...SERVICE_ROLE_CONVERSATIONS_SCHEMA_CONTRACT,
+    ...CHAT_SUMMARY_POLICY_SCHEMA_CONTRACT,
+    ...AGENT_TOOLS_SCHEMA_CONTRACT,
+    ...PLUGIN_AUTO_UPDATE_SCHEMA_CONTRACT,
+    ...CHAT_SYSTEM_ROLE_SCHEMA_CONTRACT,
+    ...CHAT_SEARCH_SCHEMA_CONTRACT,
+    ...BROWSER_AUTH_SESSION_SCHEMA_CONTRACT,
+    ...CURRENT_SYSTEM_ROLE_MCP_SCHEMA_CONTRACT,
+    ...SYSTEM_ROLE_CHAT_SCHEMA_CONTRACT,
+    ...CHAT_DISCUSSION_SCHEMA_CONTRACT,
+    ...CURRENT_BUILD_CATALOG_SCHEMA_CONTRACT,
+    ...AGENT_SCHEMA_CONTRACT,
+    ...CATALOG_REQUEST_SCHEMA_CONTRACT,
+    ...BRIDGE_SOURCE_SCHEMA_CONTRACT,
+    ...LEARNING_SCHEMA_CONTRACT,
+    ...LEARNING_ANALYSIS_SCHEMA_CONTRACT,
+    ...SOURCE_ARCHIVE_SCHEMA_CONTRACT,
+    ...REMOTE_OPTIONS_SCHEMA_CONTRACT,
+    ...CHAT_STORAGE_CURRENT_SCHEMA_CONTRACT,
+    ...CHAT_RESEARCH_CURRENT_SCHEMA_CONTRACT,
+    ...OPENCODE_MODEL_SYNC_SCHEMA_CONTRACT,
+    ...AGENT_READINESS_SCHEMA_CONTRACT,
+    ...DISCUSSIONS_SCHEMA_CONTRACT,
+    ...PROJECT_CHAT_SCHEMA_CONTRACT,
+    ...MODEL_RATE_LIMITS_SCHEMA_CONTRACT,
+    ...CHAT_ACTIVITY_SCHEMA_CONTRACT,
+    ...PACKAGE_AGENT_CURRENT_SCHEMA_CONTRACT,
+    ...SYSTEM_ROLE_SCHEMA_CONTRACT,
+    ...DEVICE_CODEX_SCHEMA_CONTRACT,
+    ...PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT,
+];
 /** Runtime readiness checks every managed generation; historical migration assertions stay frozen. */
-export async function assertCurrentCatalogSchema(db:Pick<Pool,'query'>):Promise<void>{
- await assertRemoteProviderSchema(db);
- await assertRuntimeLimitsSchema(db);
- await assertGgufRuntimeSchema(db);
- await assertGgufImportSchema(db);
- await assertProjectTextContextSchema(db);
- await assertModelTokenQuotasSchema(db);
- await assertMethodChatWorkflowsSchema(db);
- await assertServiceRoleConversationsSchema(db);
- await assertChatSummaryPolicySchema(db);
- await assertAgentToolsSchema(db);
- await assertPluginAutoUpdateSchema(db);
- await assertChatSystemRoleSchema(db);
- await assertChatSearchSchema(db);
- await assertBrowserAuthSessionSchema(db);
- await assertSystemRoleMcpSchema(db);
- await assertSystemRoleChatSchema(db);
- await assertChatDiscussionSchema(db);
- await assertProjectRagAuthorizationSchema(db);
- await assertDeviceCodexSchema(db);
- await assertCurrentBuildCatalogSchema(db);await assertAgentSchema(db);await assertCatalogRequestSchema(db);await assertBridgeSourceSchema(db);await assertLearningSchema(db);await assertLearningAnalysisSchema(db);await assertSourceArchiveSchema(db);await assertRemoteOptionsSchema(db);await assertChatStorageSchema(db);await assertOpenCodeModelSyncSchema(db);await assertChatResearchSchema(db);await assertAgentReadinessSchema(db);await assertDiscussionsSchema(db);await assertProjectChatSchema(db);await assertModelRateLimitsSchema(db);await assertChatActivitySchema(db);await assertPackageAgentSchema(db);await assertSystemRoleSchema(db);
+export async function assertCurrentCatalogSchema(db: Pick<Pool, 'query'>): Promise<void> {
+    await assertRemoteProviderSchema(db);
+    await assertRuntimeLimitsSchema(db);
+    await assertGgufRuntimeSchema(db);
+    await assertGgufImportSchema(db);
+    await assertProjectTextContextSchema(db);
+    await assertModelTokenQuotasSchema(db);
+    await assertMethodChatWorkflowsSchema(db);
+    await assertServiceRoleConversationsSchema(db);
+    await assertChatSummaryPolicySchema(db);
+    await assertAgentToolsSchema(db);
+    await assertPluginAutoUpdateSchema(db);
+    await assertChatSystemRoleSchema(db);
+    await assertChatSearchSchema(db);
+    await assertBrowserAuthSessionSchema(db);
+    await assertSystemRoleMcpSchema(db);
+    await assertSystemRoleChatSchema(db);
+    await assertChatDiscussionSchema(db);
+    await assertProjectRagAuthorizationSchema(db);
+    await assertDeviceCodexSchema(db);
+    await assertCurrentBuildCatalogSchema(db);
+    await assertAgentSchema(db);
+    await assertCatalogRequestSchema(db);
+    await assertBridgeSourceSchema(db);
+    await assertLearningSchema(db);
+    await assertLearningAnalysisSchema(db);
+    await assertSourceArchiveSchema(db);
+    await assertRemoteOptionsSchema(db);
+    await assertChatStorageSchema(db);
+    await assertOpenCodeModelSyncSchema(db);
+    await assertChatResearchSchema(db);
+    await assertAgentReadinessSchema(db);
+    await assertDiscussionsSchema(db);
+    await assertProjectChatSchema(db);
+    await assertModelRateLimitsSchema(db);
+    await assertChatActivitySchema(db);
+    await assertPackageAgentSchema(db);
+    await assertSystemRoleSchema(db);
 }

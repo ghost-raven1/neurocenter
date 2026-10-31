@@ -1,8 +1,7 @@
-
 import { z } from 'zod';
 
 /** Базовый URL catalog-service (dev: local :4100; prod — через gateway). */
-import {authorizedFetch} from '../bridge/state.js';
+import { authorizedFetch } from '../bridge/state.js';
 
 /** Файл бандла в каталоге (manifest + текст). */
 interface ICatFile {
@@ -58,7 +57,7 @@ export async function listBundleVersions(input: TBundleVersionsInput): Promise<s
         createdAt: string;
     }
     const versions = await catalogGet<IVersion[]>(`/ai-plugins/${encodeURIComponent(input.plugin)}/versions`);
-    const out = versions.map(v => ({
+    const out = versions.map((v) => ({
         version: v.version,
         files: v.files?.length ?? 0,
         author: v.author,

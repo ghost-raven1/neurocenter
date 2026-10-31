@@ -1,6 +1,6 @@
-import type {Pool} from 'pg';
-import {CATALOG_SCHEMA_FACTS_SQL} from '../database/schema-catalog';
-import {SERVICE_ROLE_CONVERSATIONS_SCHEMA_CONTRACT} from './service-role-conversations.schema-contract';
+import type { Pool } from 'pg';
+import { CATALOG_SCHEMA_FACTS_SQL } from '../database/schema-catalog';
+import { SERVICE_ROLE_CONVERSATIONS_SCHEMA_CONTRACT } from './service-role-conversations.schema-contract';
 
 const issues = `WITH expected AS(SELECT * FROM jsonb_to_recordset($role_conversations$${JSON.stringify(SERVICE_ROLE_CONVERSATIONS_SCHEMA_CONTRACT)}$role_conversations$::jsonb)
  AS objects(kind text,id text,definition jsonb)),actual AS(${CATALOG_SCHEMA_FACTS_SQL})

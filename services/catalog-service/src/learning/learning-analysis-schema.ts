@@ -1,5 +1,5 @@
 /** Analysis input is immutable; a lost worker cannot silently repeat a paid inference. */
-export const LEARNING_ANALYSIS_SCHEMA_SQL=`
+export const LEARNING_ANALYSIS_SCHEMA_SQL = `
 CREATE TABLE project_learning_analyses (
  id UUID PRIMARY KEY,project_id TEXT NOT NULL REFERENCES project_learning_state(project_id) ON DELETE CASCADE,
  actor_email TEXT NOT NULL,actor_role TEXT NOT NULL,request_key UUID NOT NULL,mutation_key UUID NOT NULL UNIQUE,

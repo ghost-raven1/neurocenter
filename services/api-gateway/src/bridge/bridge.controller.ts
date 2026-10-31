@@ -2,7 +2,7 @@ import { Controller, Get, Header, Req, Res, NotFoundException, HttpException } f
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Request, Response } from 'express';
-import {panelOrigin,publicApiOrigin} from '../security/browser-security';
+import { panelOrigin, publicApiOrigin } from '../security/browser-security';
 import { BridgeSupplyService, bridgeRequest } from './bridge-supply.service';
 import type { IBridgeConfiguration } from './bridge-supply.types';
 import { FeatureFlagError, requireFeaturesEnabled } from '../../../shared/feature-client.cjs';
@@ -15,26 +15,26 @@ export class BridgeController {
     private readonly dir: string;
 
     constructor(private readonly supply: BridgeSupplyService) {
-        this.dir = process.env.BRIDGE_TEMPLATES_DIR || path.resolve(
-            __dirname,
-            '..',
-            '..',
-            '..',
-            '..',
-            'bridge-dist',
-        );
+        this.dir = process.env.BRIDGE_TEMPLATES_DIR || path.resolve(__dirname, '..', '..', '..', '..', 'bridge-dist');
     }
 
     /** Runtime-настройка для готового frontend: внешний адрес раздачи не зависит от адреса UI. */
     @Get('config')
-    @Header('Cache-Control','no-store')
+    @Header('Cache-Control', 'no-store')
     public async configuration(@Req() req: Request, @Res() res: Response): Promise<void> {
-        await bridgeRequest(req, res, async signal => {
-            const origin = publicApiOrigin(), local = await this.supply.developmentSupply(signal);
-            if (signal.aborted) { return; }
+        await bridgeRequest(req, res, async (signal) => {
+            const origin = publicApiOrigin(),
+                local = await this.supply.developmentSupply(signal);
+            if (signal.aborted) {
+                return;
+            }
             const configuration: IBridgeConfiguration = { origin };
             if (local) {
-                configuration.devSupply = { version: local.version, buildId: local.buildId, targets: local.artifacts.map(artifact => artifact.target) };
+                configuration.devSupply = {
+                    version: local.version,
+                    buildId: local.buildId,
+                    targets: local.artifacts.map((artifact) => artifact.target),
+                };
             }
             res.setHeader('cache-control', 'no-store');
             res.json(configuration);
@@ -78,7 +78,9 @@ export class BridgeController {
 
     /** Первичная регистрация локального MCP в Windows. */
     @Get('install.ps1')
-    public async installWindowsBridge(@Req() req:Request,@Res() res:Response):Promise<void>{await this.script('install.ps1',req,res,true);}
+    public async installWindowsBridge(@Req() req: Request, @Res() res: Response): Promise<void> {
+        await this.script('install.ps1', req, res, true);
+    }
 
     /** Отдаёт установщик для PowerShell без зависимости от Bash. */
     @Get('install_opencode.ps1')
@@ -102,7 +104,11 @@ export class BridgeController {
     @Get('opencode/:file')
     public async openCodeArtifact(@Req() req: Request, @Res() res: Response): Promise<void> {
         const file = req.params.file;
-        if (!/^opencode-(darwin|linux|windows)-(x64|arm64)(-baseline)?(-musl)?-\d+\.\d+\.\d+\.tgz(\.sha256)?$/.test(file)) {
+        if (
+            !/^opencode-(darwin|linux|windows)-(x64|arm64)(-baseline)?(-musl)?-\d+\.\d+\.\d+\.tgz(\.sha256)?$/.test(
+                file,
+            )
+        ) {
             throw new NotFoundException('Пакет для этой платформы не найден');
         }
         res.setHeader('content-type', file.endsWith('.sha256') ? 'text/plain' : 'application/gzip');
@@ -112,8 +118,11 @@ export class BridgeController {
     /** Проверенная imported версия либо явная локальная host-сборка в development. */
     @Get('runtime/:file')
     public async runtime(@Req() req: Request, @Res() res: Response): Promise<void> {
-        await bridgeRequest(req, res, signal => req.query.download === '1'
-            ? this.supply.runtime(req.params.file, signal, res, true) : this.supply.runtime(req.params.file, signal, res));
+        await bridgeRequest(req, res, (signal) =>
+            req.query.download === '1'
+                ? this.supply.runtime(req.params.file, signal, res, true)
+                : this.supply.runtime(req.params.file, signal, res),
+        );
     }
 
     private async read(file: string): Promise<Buffer> {
@@ -126,15 +135,25 @@ export class BridgeController {
 
     /** Разделяет адрес скачивания и идентичность площадки, сохраняя существующее подключение моста. */
     private async script(file: string, req: Request, res: Response, bridge = false): Promise<void> {
-        await bridgeRequest(req, res, async signal => {
+        await bridgeRequest(req, res, async (signal) => {
             // Public controllers do not pass through ProxyService's feature admission.
             if (file === 'install_workspace.sh' || file === 'install_workspace.ps1') {
-                try { await requireFeaturesEnabled(['unified_project_setup'], process.env, globalThis.fetch, signal); }
-                catch (error) {
-                    if (signal.aborted) { return; }
+                try {
+                    await requireFeaturesEnabled(['unified_project_setup'], process.env, globalThis.fetch, signal);
+                } catch (error) {
+                    if (signal.aborted) {
+                        return;
+                    }
                     if (error instanceof FeatureFlagError) {
-                        throw new HttpException({statusCode:error.status,code:error.code,message:error.message,
-                            ...(error.feature ? {feature:error.feature,blockedBy:error.blockedBy} : {})}, error.status);
+                        throw new HttpException(
+                            {
+                                statusCode: error.status,
+                                code: error.code,
+                                message: error.message,
+                                ...(error.feature ? { feature: error.feature, blockedBy: error.blockedBy } : {}),
+                            },
+                            error.status,
+                        );
                     }
                     throw error;
                 }
@@ -144,33 +163,59 @@ export class BridgeController {
                 throw new NotFoundException('Версия установщика моста не найдена.');
             }
             // An archive carried to another computer keeps its matching installer after the head changes.
-            const version = bridge ? (await (selected === undefined ? this.supply.supply(signal) : this.supply.supply(signal, selected))).version : undefined;
-            if (signal.aborted || res.destroyed) { return; }
+            const version = bridge
+                ? (await (selected === undefined ? this.supply.supply(signal) : this.supply.supply(signal, selected)))
+                      .version
+                : undefined;
+            if (signal.aborted || res.destroyed) {
+                return;
+            }
             let script = (await this.read(file)).toString('utf8');
-            if (signal.aborted || res.destroyed) { return; }
+            if (signal.aborted || res.destroyed) {
+                return;
+            }
             const connection = file === 'connect.sh' || file === 'connect.ps1';
-            for (const [token, helper] of [['__BRIDGE_CONTEXT__', 'context.cjs'], ['__BRIDGE_CONNECT__', 'connect.cjs']]) {
+            for (const [token, helper] of [
+                ['__BRIDGE_CONTEXT__', 'context.cjs'],
+                ['__BRIDGE_CONNECT__', 'connect.cjs'],
+            ]) {
                 const count = script.split(token).length - 1;
-                if ((connection || count > 0) && count !== 1) { throw new NotFoundException('Шаблон подключения моста недоступен.'); }
+                if ((connection || count > 0) && count !== 1) {
+                    throw new NotFoundException('Шаблон подключения моста недоступен.');
+                }
                 if (count) {
                     const text = (await this.read(helper)).toString('utf8');
-                    if (signal.aborted || res.destroyed) { return; }
+                    if (signal.aborted || res.destroyed) {
+                        return;
+                    }
                     script = script.replace(token, () => text);
                 }
             }
             if (bridge) {
-                if (script.split('__BRIDGE_VERSION__').length !== 2) { throw new NotFoundException('Шаблон установщика моста недоступен.'); }
+                if (script.split('__BRIDGE_VERSION__').length !== 2) {
+                    throw new NotFoundException('Шаблон установщика моста недоступен.');
+                }
                 script = script.replace('__BRIDGE_VERSION__', version!);
             }
-            if (signal.aborted || res.destroyed) { return; }
-            const quote = (value:string):string => value.replace(/'/g,file.endsWith('.sh')?"'\"'\"'":"''");
-            script = script.replace(/__BASE_URL__/g, () => quote(`${publicApiOrigin()}/api/bridge`))
+            if (signal.aborted || res.destroyed) {
+                return;
+            }
+            const quote = (value: string): string => value.replace(/'/g, file.endsWith('.sh') ? "'\"'\"'" : "''");
+            script = script
+                .replace(/__BASE_URL__/g, () => quote(`${publicApiOrigin()}/api/bridge`))
                 .replace(/__SITE_URL__/g, () => quote(panelOrigin()))
                 .replace(/__RECONNECT__/g, req.query.reconnect === '1' ? '1' : '0');
-            if (/__(?:BRIDGE_[A-Z_]+|BASE_URL|SITE_URL|RECONNECT)__/.test(script)) { throw new NotFoundException('Шаблон подключения моста недоступен.'); }
+            if (/__(?:BRIDGE_[A-Z_]+|BASE_URL|SITE_URL|RECONNECT)__/.test(script)) {
+                throw new NotFoundException('Шаблон подключения моста недоступен.');
+            }
             res.setHeader('cache-control', 'no-store');
-            res.setHeader('content-type', file.endsWith('.sh') ? 'text/x-shellscript; charset=utf-8' : 'text/plain; charset=utf-8');
-            if (req.query.download === '1') { res.setHeader('content-disposition', `attachment; filename="${file}"`); }
+            res.setHeader(
+                'content-type',
+                file.endsWith('.sh') ? 'text/x-shellscript; charset=utf-8' : 'text/plain; charset=utf-8',
+            );
+            if (req.query.download === '1') {
+                res.setHeader('content-disposition', `attachment; filename="${file}"`);
+            }
             res.send(script);
         });
     }

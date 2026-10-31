@@ -16,5 +16,6 @@ END $verify_remote_options$;`;
 /** Readiness detects drift without changing connection settings or encrypted credentials. */
 export async function assertRemoteOptionsSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема параметров удалённых моделей не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length)
+        throw new Error('Схема параметров удалённых моделей не готова: ' + rows.map((row) => row.issue).join(', '));
 }

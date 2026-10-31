@@ -1,5 +1,5 @@
 /** Additive migration49; previous accepted text-context SQL and checksums remain immutable. */
-export const RUNTIME_LIMITS_SCHEMA_SQL=`
+export const RUNTIME_LIMITS_SCHEMA_SQL = `
 CREATE TABLE runtime_limit_settings(
  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
  revision integer NOT NULL CHECK(revision>0),

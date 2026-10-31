@@ -8,5 +8,5 @@ export const DISCUSSIONS_SCHEMA_ASSERT_SQL = `DO $verify_discussion$ DECLARE mis
 export async function assertDiscussionsSchema(db: Pick<Pool, 'query'>): Promise<void> {
     if (!DISCUSSIONS_SCHEMA_CONTRACT.length) throw new Error('Discussion schema contract has not been finalized.');
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема обсуждений не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема обсуждений не готова: ' + rows.map((row) => row.issue).join(', '));
 }

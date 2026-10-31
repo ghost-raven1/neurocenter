@@ -23,7 +23,7 @@ async function fixture(t, args, {withPackages = true, packageFolders = workspace
     if (withPackages) for (const folder of packageFolders) {
         await fs.mkdir(path.join(checkout, folder), {recursive: true});
         await fs.writeFile(path.join(checkout, folder, 'package.json'), JSON.stringify({scripts: {
-            typecheck: 'fixture', build: 'fixture', ...(['frontend', 'bridge'].includes(packageId(folder)) ? {test: 'vitest run'} : {}),
+            lint: 'fixture', ...(packageId(folder) === 'frontend' ? {} : {'format:check': 'fixture'}), typecheck: 'fixture', build: 'fixture', ...(['frontend', 'bridge'].includes(packageId(folder)) ? {test: 'vitest run'} : {}),
         }}));
     }
     for (const folder of ['scripts/test', 'scripts/catalog-plugins/test', 'scripts/catalog-plugins/recipes/test', 'scripts/agent-kit/test']) {
@@ -118,10 +118,10 @@ test('step-only selection covers the eight packages without contracts or Compose
 test('package-only selection retains normal phase order and excludes every other package', async t => {
     const value = await fixture(t, ['--package', 'frontend']);
     assert.equal(value.status, 0, value.stderr);
-    assert.deepEqual(value.report.steps.map(step => step.name), ['frontend: typecheck', 'frontend: build', 'frontend: test']);
+    assert.deepEqual(value.report.steps.map(step => step.name), ['frontend: lint', 'frontend: typecheck', 'frontend: build', 'frontend: test']);
     const commands=value.calls.filter(call=>call.args[0]!=='-p');
-    assert.deepEqual(commands.map(call=>call.tls),['1','0','1']);
-    assert.deepEqual(commands.map(call=>call.strict),['true','false','true']);
+    assert.deepEqual(commands.map(call=>call.tls),['1','1','0','1']);
+    assert.deepEqual(commands.map(call=>call.strict),['true','true','false','true']);
 });
 
 test('multiple package and step selectors retain workspace phase order without implicit builds', async t => {
@@ -143,8 +143,28 @@ test('full check starts with the generation gate then preserves package phases a
     assert.equal(value.status, 0, value.stderr); assert.equal(value.report.success, true);
     assert.equal(value.report.steps[0].name, 'Agent kit: актуальность генерации');
     assert.deepEqual(value.calls.find(call => call.args[0] === 'scripts/agent-kit/generate.mjs').args, ['scripts/agent-kit/generate.mjs', '--check']);
-    assert.deepEqual(value.report.steps.slice(1, 9).map(step => step.name), workspacePackages.map(folder => folder+': typecheck'));
-    assert.deepEqual(value.report.steps.slice(9, 17).map(step => step.name), workspacePackages.map(folder => folder+': build'));
+    assert.deepEqual(value.report.steps.slice(1, 9).map(step => step.name), workspacePackages.map(folder => folder+': lint'));
+    assert.deepEqual(value.report.steps.slice(9, 16).map(step => step.name), workspacePackages.filter(folder => packageId(folder) !== 'frontend').map(folder => folder+': format:check'));
+    assert.deepEqual(value.report.steps.slice(16, 24).map(step => step.name), workspacePackages.map(folder => folder+': typecheck'));
+    assert.deepEqual(value.report.steps.slice(24, 32).map(step => step.name), workspacePackages.map(folder => folder+': build'));
     assert.deepEqual(value.report.plannedSteps, value.report.steps.map(step => step.name));
     assert.deepEqual(value.report.steps.slice(-3).map(step => step.name), ['Общие контракты, production и упаковка', 'Compose: dev', 'Compose: локальные эмбеддинги']);
+});
+
+test('lint-only selection runs every package lint without implicit builds or warning escalation', async t => {
+    const value = await fixture(t, ['--step', 'lint']);
+    assert.equal(value.status, 0, value.stderr);
+    assert.deepEqual(value.report.steps.map(step => step.name), workspacePackages.map(folder => folder+': lint'));
+    const commands=value.calls.filter(call=>call.args[0]!=='-p');
+    assert.equal(commands.length,8);
+    assert.ok(commands.every(call=>call.args.slice(1).join(' ')==='run lint'));
+});
+
+test('format:check runs configured services and skips frontend without writing format', async t => {
+    const value = await fixture(t, ['--step', 'format:check']);
+    assert.equal(value.status, 0, value.stderr);
+    assert.deepEqual(value.report.steps.map(step => step.name), workspacePackages.filter(folder => packageId(folder) !== 'frontend').map(folder => folder+': format:check'));
+    const commands=value.calls.filter(call=>call.args[0]!=='-p');
+    assert.equal(commands.length,7);
+    assert.ok(commands.every(call=>call.args.slice(1).join(' ')==='run format:check'));
 });

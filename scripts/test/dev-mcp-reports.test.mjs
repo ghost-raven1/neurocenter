@@ -241,3 +241,21 @@ test('v3 forged provenance, process cleanup, unknown states and private failure 
         r=>{r.steps[0].cleanup.signals=['SIGKILL'];},r=>{r.steps[0].cleanup.zombieCount=-1;},r=>{r.failure={code:'PRIVATE_TOKEN'};},r=>{r.cancellation={signal:'SIGINT'};}];
     for(const change of changes){const report=v3Report();change(report);await f.save(checkPath,report);await assert.rejects(f.read(),error=>error.code==='MALFORMED_REPORT'&&!error.message.includes('PRIVATE_TOKEN'));}
 });
+
+test('retained lint reports remain readable without inventing test counters',async t=>{
+    const f=await fixture(t),report=checkReport();
+    report.selection.steps=['lint'];report.plannedSteps=['frontend: lint'];
+    report.steps=[{name:'frontend: lint',ok:true,exitCode:0,signal:null,durationMs:1}];
+    await f.save(checkPath,report);const value=await f.read();
+    assert.equal(value.complete,true);assert.deepEqual(value.requested.steps,['lint']);
+    assert.equal(value.testCounters.passed,0);
+});
+
+test('retained format:check reports remain readable without inventing test counters',async t=>{
+    const f=await fixture(t),report=checkReport();
+    report.selection.steps=['format:check'];report.plannedSteps=['frontend: format:check'];
+    report.steps=[{name:'frontend: format:check',ok:true,exitCode:0,signal:null,durationMs:1}];
+    await f.save(checkPath,report);const value=await f.read();
+    assert.equal(value.complete,true);assert.deepEqual(value.requested.steps,['format:check']);
+    assert.equal(value.testCounters.passed,0);
+});

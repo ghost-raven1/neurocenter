@@ -11,13 +11,13 @@ const digest={type:'string',pattern:'^[a-f0-9]{64}$'};
 const head={type:'string',pattern:'^(?:[a-f0-9]{40}|[a-f0-9]{64})$'};
 const date=nullable({type:'string',pattern:'^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d{1,3})?Z$'});
 const packageName=choices(packages.map(([name])=>name));
-const checkStep=choices(['typecheck','build','test']);
+const checkStep=choices(['lint','format:check','typecheck','build','test']);
 const evidence=text(1000);
 const metric=object({total:integer(),covered:integer(),skipped:nullable(integer()),pct:nullable({type:'number',minimum:0,maximum:100})},['total','covered','pct']);
 const metrics=object(Object.fromEntries(['lines','statements','functions','branches'].map(name=>[name,metric])));
 const counters=object({passed:nullable(integer()),failed:nullable(integer()),skipped:nullable(integer()),todo:nullable(integer()),cancelled:nullable(integer())},['passed','failed','skipped','todo']);
 const testCounters=object({passed:integer(),failed:integer(),skipped:integer(),todo:integer(),cancelled:integer()},['passed','failed','skipped','todo']);
-const selection=object({packages:array(packageName,8),steps:array(checkStep,3)});
+const selection=object({packages:array(packageName,8),steps:array(checkStep,5)});
 const workingTree=choices(['clean','dirty','unknown']);
 const processFields={ok:boolean,exitCode:nullable(integer(255)),signal:nullable({type:'string',pattern:'^SIG[A-Z0-9]{1,12}$'}),durationMs:integer()};
 const cleanup=object({noLiveDescendants:boolean,signals:array(choices(['SIGTERM','SIGKILL']),4),zombieCount:integer()},['noLiveDescendants']);
@@ -92,13 +92,13 @@ const gaps=object({report:text(180),reportSha256:digest,gapsSha256:digest,packag
     targets:array(object({file:text(512),summary:metrics,uncoveredBranches:integer(),uncoveredFunctionCount:integer(),
         uncoveredFunctions:array(object({name:text(120),line:{type:'integer',minimum:1}}),20),uncoveredStatementLines:array({type:'integer',minimum:1},40),detailsTruncated:boolean}),20),
     unrepresentedFileCount:integer(),unrepresentedFiles:array(text(512),20),excludedSuiteCount:integer(),excludedSuites:array(text(512),20),exclusionScope:text(500),truncated:boolean,scope:text(1000),evidence});
-const plan=object({mode:{const:'plan'},selection,steps:array(object({package:packageName,step:checkStep,directory:choices(packages.map(([,folder])=>folder)),command:text(100)}),24),
-    skipped:array(object({package:packageName,step:{const:'test'},reason:text(300)}),8),command:text(1000),scope:text(1000),effects:text(1000),evidence});
+const plan=object({mode:{const:'plan'},selection,steps:array(object({package:packageName,step:checkStep,directory:choices(packages.map(([,folder])=>folder)),command:text(100)}),40),
+    skipped:array(object({package:packageName,step:choices(['test','format:check']),reason:text(300)}),16),command:text(1000),scope:text(1000),effects:text(1000),evidence});
 
 const evidenceFamily=choices(['check','coverage','isolated-build']);
 const rejectionReason=choices(['MALFORMED_REPORT','UNSAFE_REPORT','REPORT_CHANGED','REPORT_UNAVAILABLE','REPORT_TOO_LARGE']);
 const catalogEntry={anyOf:[object({family:evidenceFamily,report:text(180),state:{const:'available'},reportSha256:digest,status:text(80),complete:boolean,
-    countScope:object({kind:choices(['check','coverage','build']),packages:array(packageName,8),steps:array(checkStep,3),tooling:nullable(boolean),profile:nullable(text(120)),reportedOnly:{const:true}}),
+    countScope:object({kind:choices(['check','coverage','build']),packages:array(packageName,8),steps:array(checkStep,5),tooling:nullable(boolean),profile:nullable(text(120)),reportedOnly:{const:true}}),
     startedAt:date,finishedAt:date}),object({family:evidenceFamily,report:text(180),state:{const:'rejected'},reason:rejectionReason})]};
 const evidenceCatalog=object({evidence:{const:'recorded-local-evidence'},observedAt:logTime,entries:array(catalogEntry,20),
     scan:object({entryLimit:{type:'integer',minimum:1,maximum:20},scanLimit:{const:128},scannedDirectories:integer(128),scannedEntries:integer(128),
@@ -121,7 +121,7 @@ const impactPlan=object({schemaVersion:{const:1},baseRevision:head,
         'PACKAGE_OWNER','CATALOG_BUILDER','UNKNOWN_PATH','VERIFIED_CONSUMER']),package:packageName,count:{type:'integer',minimum:1}},['rule','count']),128),
     plannedChecks:object({selection:object({packages:array(packageName,8),steps:array(checkStep,0)}),
         checks:array(object({kind:choices(['npm','node','compose']),package:nullable(packageName),
-            check:choices(['typecheck','build','test','common-contracts','agent-kit','compose-embeddings','compose-dev'])}),64),
+            check:choices(['lint','format:check','typecheck','build','test','common-contracts','agent-kit','compose-embeddings','compose-dev'])}),64),
         inputsCount:integer(20000),inputsSha256:digest,checksSha256:digest}),
     additionalAcceptance:array(object({kind:choices(['database-migrations','native-runtime','rag-integration','package-tests-unavailable']),package:packageName,
         count:{type:'integer',minimum:1},reason:choices(['OUTSIDE_DEFAULT_CHECK','NO_PACKAGE_TEST_SCRIPT'])},['kind','count','reason']),64),

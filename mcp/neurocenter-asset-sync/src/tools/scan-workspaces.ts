@@ -10,10 +10,7 @@ export const scanWorkspacesInputSchema = z
             .string()
             .optional()
             .describe('Базовый каталог с проектами (деф. ~/projects). Каждый подкаталог считается проектом.'),
-        query: z
-            .string()
-            .optional()
-            .describe('Фильтр по названию проекта (поиск подстроки, без учёта регистра).'),
+        query: z.string().optional().describe('Фильтр по названию проекта (поиск подстроки, без учёта регистра).'),
         maxProjects: z.number().int().positive().optional().describe('Максимум проектов в отчёте (деф. 100).'),
     })
     .strict();
@@ -73,7 +70,7 @@ function readJson(p: string): Promise<{ mcp?: Record<string, unknown> } | null> 
 export async function scanWorkspaces(input: TScanWorkspacesInput): Promise<IWorkspacesScan> {
     const root = input.root ? path.resolve(os.homedir(), input.root) : path.join(os.homedir(), 'projects');
     const maxProjects = input.maxProjects ?? 100;
-    let names: string[] = [];
+    let names: string[];
     try {
         names = await fs.readdir(root);
     } catch {
@@ -133,7 +130,7 @@ export async function scanWorkspaces(input: TScanWorkspacesInput): Promise<IWork
     }
 
     const q = input.query ? input.query.trim().toLowerCase() : null;
-    const filtered = q ? projects.filter(pr => pr.project.toLowerCase().includes(q)) : projects;
+    const filtered = q ? projects.filter((pr) => pr.project.toLowerCase().includes(q)) : projects;
 
     return {
         root,

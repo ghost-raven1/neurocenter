@@ -3,11 +3,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 
-import {
-    tableInfo,
-    enumerateFingerprints,
-    type IChunkFingerprint,
-} from '../lib/lancedb.js';
+import { tableInfo, enumerateFingerprints, type IChunkFingerprint } from '../lib/lancedb.js';
 import { errMsg } from '../lib/stdio.js';
 import { locateStore } from '../lib/store.js';
 
@@ -19,13 +15,7 @@ export const ragDbDiffInputSchema = z
             .string()
             .optional()
             .describe('Ключ проекта (авторитетно — из каталога) для привязки дельты к серверной коллекции.'),
-        limit: z
-            .number()
-            .int()
-            .min(1)
-            .max(1000)
-            .default(50)
-            .describe('Превью: сколько строк (sample) выдать.'),
+        limit: z.number().int().min(1).max(1000).default(50).describe('Превью: сколько строк (sample) выдать.'),
         scanLimit: z
             .number()
             .int()
@@ -69,10 +59,7 @@ export interface IRagDbDiffError {
  * @param input - параметры.
  * @param cwd - базовый каталог.
  */
-export async function ragDbDiff(
-    input: TRagDbDiffInput,
-    cwd: string,
-): Promise<IRagDbDiff | IRagDbDiffError> {
+export async function ragDbDiff(input: TRagDbDiffInput, cwd: string): Promise<IRagDbDiff | IRagDbDiffError> {
     const notes: string[] = [];
     if (!input.dbPath && !input.root) {
         notes.push('задайте dbPath или root');
@@ -81,14 +68,12 @@ export async function ragDbDiff(
     if (!located.storePath) {
         return {
             error: 'не удалось локализовать rag_db',
-            notes: [
-                'задайте dbPath/root и/или убедитесь, что рядом .opencode/rag_db или задан vectorStore.path',
-            ],
+            notes: ['задайте dbPath/root и/или убедитесь, что рядом .opencode/rag_db или задан vectorStore.path'],
         };
     }
     const { storePath } = located;
 
-    let info: { dimension: number | null; rowCount: number | null } = {
+    const info: { dimension: number | null; rowCount: number | null } = {
         dimension: null,
         rowCount: null,
     };
@@ -111,7 +96,7 @@ export async function ragDbDiff(
         } catch (e) {
             return {
                 error: 'не удалось прочитать baselinePath',
-                notes: [ errMsg(e) ],
+                notes: [errMsg(e)],
             };
         }
     }
@@ -121,10 +106,7 @@ export async function ragDbDiff(
     const sample: IChunkFingerprint[] = [];
     let scanned = 0;
 
-    for await (const fp of enumerateFingerprints(
-        storePath,
-        input.scanLimit > 0 ? input.scanLimit : undefined,
-    )) {
+    for await (const fp of enumerateFingerprints(storePath, input.scanLimit > 0 ? input.scanLimit : undefined)) {
         local.set(fp.id, { hash: fp.hash, filePath: fp.filePath });
         byFile.set(fp.filePath, (byFile.get(fp.filePath) ?? 0) + 1);
         if (sample.length < input.limit) {
@@ -137,7 +119,7 @@ export async function ragDbDiff(
     let changedCount = 0;
     let removedCount = 0;
     if (baseline) {
-        for (const [ id, v ] of local) {
+        for (const [id, v] of local) {
             if (!baseline.has(id)) {
                 addedCount += 1;
             } else if (baseline.get(id) !== v.hash) {
@@ -157,10 +139,10 @@ export async function ragDbDiff(
         notes.push(`частичное сканирование (scanLimit=${input.scanLimit}); для полной дельты scanLimit=0`);
     }
 
-    const byFileTop = [ ...byFile.entries() ]
+    const byFileTop = [...byFile.entries()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, 20)
-        .map(([ filePath, count ]) => ({ filePath, count }));
+        .map(([filePath, count]) => ({ filePath, count }));
 
     return {
         status: baseline ? 'local+baseline' : 'local',

@@ -1,7 +1,8 @@
-const local=(value:string)=>`replace(replace(${value},quote_ident(current_schema())||'.',''),current_schema()||'.','')`;
+const local = (value: string) =>
+    `replace(replace(${value},quote_ident(current_schema())||'.',''),current_schema()||'.','')`;
 
 /** Read-only facts are independent of role names, database names and the current schema name. */
-export const CATALOG_SCHEMA_FACTS_SQL=`
+export const CATALOG_SCHEMA_FACTS_SQL = `
 WITH relations AS (
  SELECT c.* FROM pg_class c WHERE c.relnamespace=to_regnamespace(current_schema()) AND c.relkind IN ('r','p','v','m','f')
 )

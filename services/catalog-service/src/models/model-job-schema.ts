@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const MODEL_JOB_SCHEMA_SQL=`
+export const MODEL_JOB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS project_embedding_settings (
             project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
             revision BIGINT NOT NULL CHECK(revision>0),model_id TEXT,model_pin TEXT,dimension INTEGER,

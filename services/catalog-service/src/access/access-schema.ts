@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const ACCESS_SCHEMA_SQL=`
+export const ACCESS_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS security_events (
         event_id UUID PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL,
         resource_id TEXT NOT NULL, before_state JSONB, after_state JSONB,

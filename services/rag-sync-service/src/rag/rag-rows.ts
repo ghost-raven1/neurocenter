@@ -12,9 +12,8 @@ export interface IUpsertRow {
     tags: string | null;
     contentHash: string;
     embedding: number[] | null;
-    syncHash?:string|null;
+    syncHash?: string | null;
 }
-
 
 /**
  * Преобразует эмбеддинг из postgres в плоский массив чисел. pg отдаёт
@@ -54,7 +53,7 @@ function vectorLiteral(v: number[] | null): string | null {
  */
 export function buildUpsert(
     projectKey: string,
-    generation:string,
+    generation: string,
     rows: IUpsertRow[],
 ): { sql: string; params: unknown[] } {
     const params: unknown[] = [];
@@ -68,7 +67,7 @@ export function buildUpsert(
             `(${push(r.id)},${push(projectKey)},${push(generation)},${push(r.filePath)},${push(r.content)},` +
             `${push(r.description)},${push(r.startLine)},${push(r.endLine)},${push(r.language)},` +
             `${push(r.kind)},${push(r.role)},${push(r.quirkType)},${push(r.tags)},` +
-            `${push(r.contentHash)},(${push(emb)})::vector,${push(r.syncHash??null)})`
+            `${push(r.contentHash)},(${push(emb)})::vector,${push(r.syncHash ?? null)})`
         );
     });
     const sql =

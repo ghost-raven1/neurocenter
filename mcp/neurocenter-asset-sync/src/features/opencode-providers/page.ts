@@ -1,5 +1,5 @@
 /** Self-contained local wizard: no remote resources, telemetry, secret prefill or server-bound credentials. */
-export const providerPage=`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Модель OpenCode</title>
+export const providerPage = `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Модель OpenCode</title>
 <style>
 :root{color-scheme:light;font:16px/1.5 system-ui,sans-serif;color:#192f46;background:#f3f6fa}
 *{box-sizing:border-box}body{margin:0;padding:32px 16px}main{max-width:600px;margin:auto;background:white;border:1px solid #dce5ee;border-radius:16px;padding:28px;box-shadow:0 8px 32px #192f4608}

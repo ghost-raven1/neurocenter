@@ -8,7 +8,10 @@ import { AppController } from './app.controller';
  * Корневой модуль oauth2-bridge (SSO/Blitz login).
  */
 @Module({
-    imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile:process.env.NODE_ENV==='production' }), AuthModule],
+    imports: [
+        ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: process.env.NODE_ENV === 'production' }),
+        AuthModule,
+    ],
     controllers: [AppController],
 })
 export class AppModule {}

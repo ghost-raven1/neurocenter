@@ -15,8 +15,8 @@ export async function readCheckPlan(root,{packages:selected,steps=checkSteps}={}
         try{value=JSON.parse((await readOwnedFile(root,directory+'/package.json',{limit:32768})).text);}
         catch(error){if(error instanceof SyntaxError)throw new DiagnosticError('MALFORMED_PACKAGE','A selected package manifest is not valid JSON.');throw error;}
         if(!value||typeof value!=='object'||Array.isArray(value)||!value.scripts||typeof value.scripts!=='object'||Array.isArray(value.scripts)
-            ||['typecheck','build'].some(step=>steps.includes(step)&&(typeof value.scripts[step]!=='string'||!value.scripts[step].trim()))
-            ||value.scripts.test!==undefined&&typeof value.scripts.test!=='string')throw new DiagnosticError('MALFORMED_PACKAGE','A selected package is missing a valid requested check script.');
+            ||['lint','typecheck','build'].some(step=>steps.includes(step)&&(typeof value.scripts[step]!=='string'||!value.scripts[step].trim()))
+            ||['test','format:check'].some(step=>value.scripts[step]!==undefined&&typeof value.scripts[step]!=='string'))throw new DiagnosticError('MALFORMED_PACKAGE','A selected package is missing a valid requested check script.');
         manifests.set(directory,value);
     }
     let plan;
@@ -25,6 +25,8 @@ export async function readCheckPlan(root,{packages:selected,steps=checkSteps}={}
     const skipped=[];
     for(const [name,directory]of packages.filter(([name])=>selected.includes(name)))if(steps.includes('test')&&!manifests.get(directory).scripts.test)
         skipped.push({package:name,step:'test',reason:'No npm test script; use the separately configured coverage or integration profile.'});
+    for(const [name,directory]of packages.filter(([name])=>selected.includes(name)))if(steps.includes('format:check')&&!manifests.get(directory).scripts['format:check'])
+        skipped.push({package:name,step:'format:check',reason:'No npm format:check script configured.'});
     return {mode:'plan',selection:{packages:selected,steps},steps:plan.map(step=>({package:packages.find(([,directory])=>directory===step.directory)[0],
         step:step.args[1],directory:step.directory,command:'npm run '+step.args[1]})),skipped,
         command:'npm run check -- '+selected.map(name=>'--package '+name).join(' ')+' '+steps.map(step=>'--step '+step).join(' '),

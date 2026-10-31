@@ -55,26 +55,30 @@ export function parseSkillFile(raw: string): IParsedSkillFile {
  * @returns {string} готовое содержимое файла
  */
 export function serializeSkillFile(meta: ISkillMeta, body: string, resources?: ISkillResource[]): string {
-    const yamlSegment = yaml.dump({ ...meta, ...(resources?.length ? { resources } : {}) }, { lineWidth: Number.MAX_SAFE_INTEGER, noRefs: true });
+    const yamlSegment = yaml.dump(
+        { ...meta, ...(resources?.length ? { resources } : {}) },
+        { lineWidth: Number.MAX_SAFE_INTEGER, noRefs: true },
+    );
 
     return `${FRONTMATTER_DELIMITER}\n${yamlSegment}${FRONTMATTER_DELIMITER}\n${body}`;
 }
 
-const asString = (value: unknown): string | undefined => (typeof value === 'string' && value.length > 0 ? value : undefined);
-const asList = (value: unknown): string[] => (Array.isArray(value) ? value.map(item => String(item)) : []);
+const asString = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.length > 0 ? value : undefined;
+const asList = (value: unknown): string[] => (Array.isArray(value) ? value.map((item) => String(item)) : []);
 const asHistory = (value: unknown): IHistoryEntry[] =>
-    (Array.isArray(value)
-        ? value.map(entry => {
-            const item = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
+    Array.isArray(value)
+        ? value.map((entry) => {
+              const item = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
 
-            return {
-                version: typeof item.version === 'number' ? item.version : 1,
-                at: typeof item.at === 'string' ? item.at : new Date(0).toISOString(),
-                author: typeof item.author === 'string' ? item.author : 'unknown',
-                note: asString(item.note),
-            };
-        })
-        : []);
+              return {
+                  version: typeof item.version === 'number' ? item.version : 1,
+                  at: typeof item.at === 'string' ? item.at : new Date(0).toISOString(),
+                  author: typeof item.author === 'string' ? item.author : 'unknown',
+                  note: asString(item.note),
+              };
+          })
+        : [];
 
 /**
  * Нормализация распарсенного frontmatter в строгую модель, с дефолтами для отсутствующих полей.
@@ -86,19 +90,31 @@ const asHistory = (value: unknown): IHistoryEntry[] =>
 export function normalizeMeta(raw: Record<string, unknown>, slug: string): ISkillMeta {
     const scope: TScope = raw.scope === 'project' ? 'project' : 'common';
     const history = asHistory(raw.history);
-    const version = typeof raw.version === 'number' ? raw.version : Math.max(1, ...(history.map(entry => entry.version)));
+    const version =
+        typeof raw.version === 'number' ? raw.version : Math.max(1, ...history.map((entry) => entry.version));
     const dependencies = normalizeDependencyPins(raw.dependencies);
 
     return {
         ...(asString(raw.generation) ? { generation: asString(raw.generation) } : {}),
-        ...(asString(raw.archivedAt) ? {archivedAt:asString(raw.archivedAt)} : {}),
-        ...(raw.assetArchive && typeof raw.assetArchive==='object' && typeof (raw.assetArchive as Record<string,unknown>).requestKey==='string'
-            && typeof (raw.assetArchive as Record<string,unknown>).previousHash==='string' && typeof (raw.assetArchive as Record<string,unknown>).payloadHash==='string' && Number.isSafeInteger((raw.assetArchive as Record<string,unknown>).version)
-            && typeof (raw.assetArchive as Record<string,unknown>).restore==='boolean' ? {assetArchive:raw.assetArchive as ISkillMeta['assetArchive']} : {}),
-        ...(raw.assetImport && typeof raw.assetImport==='object' && !Array.isArray(raw.assetImport)
-            && typeof (raw.assetImport as Record<string,unknown>).requestKey==='string' && typeof (raw.assetImport as Record<string,unknown>).payloadHash==='string'
-            && Number.isSafeInteger((raw.assetImport as Record<string,unknown>).version) && Number((raw.assetImport as Record<string,unknown>).version)>0
-            ? {assetImport:raw.assetImport as ISkillMeta['assetImport']} : {}),
+        ...(asString(raw.archivedAt) ? { archivedAt: asString(raw.archivedAt) } : {}),
+        ...(raw.assetArchive &&
+        typeof raw.assetArchive === 'object' &&
+        typeof (raw.assetArchive as Record<string, unknown>).requestKey === 'string' &&
+        typeof (raw.assetArchive as Record<string, unknown>).previousHash === 'string' &&
+        typeof (raw.assetArchive as Record<string, unknown>).payloadHash === 'string' &&
+        Number.isSafeInteger((raw.assetArchive as Record<string, unknown>).version) &&
+        typeof (raw.assetArchive as Record<string, unknown>).restore === 'boolean'
+            ? { assetArchive: raw.assetArchive as ISkillMeta['assetArchive'] }
+            : {}),
+        ...(raw.assetImport &&
+        typeof raw.assetImport === 'object' &&
+        !Array.isArray(raw.assetImport) &&
+        typeof (raw.assetImport as Record<string, unknown>).requestKey === 'string' &&
+        typeof (raw.assetImport as Record<string, unknown>).payloadHash === 'string' &&
+        Number.isSafeInteger((raw.assetImport as Record<string, unknown>).version) &&
+        Number((raw.assetImport as Record<string, unknown>).version) > 0
+            ? { assetImport: raw.assetImport as ISkillMeta['assetImport'] }
+            : {}),
         name: asString(raw.name) ?? slug,
         slug,
         scope,

@@ -5,8 +5,8 @@ import type { IOperationRow } from './operation.types';
 export function toOperation(row: IOperationRow): IOperation {
     const retryPolicy = row.bridge_job_kind ? deviceJobRetryPolicy(row.bridge_job_kind) : undefined;
     // Удаление проекта сохраняет историю, но исключает невыполнимый повтор из неё.
-    const retryTargetExists = row.bridge_job_project_exists === true
-        || (row.project_id === null && row.bridge_job_kind === 'choose-root');
+    const retryTargetExists =
+        row.bridge_job_project_exists === true || (row.project_id === null && row.bridge_job_kind === 'choose-root');
     return {
         operationId: row.operation_id,
         type: row.type as IOperation['type'],
@@ -21,8 +21,29 @@ export function toOperation(row: IOperationRow): IOperation {
         startedAt: row.started_at,
         finishedAt: row.finished_at,
         error: row.error,
-        ...(['agent-ai-admin', 'agent-autoconfigurator', 'agent-indexer', 'agent-packager', 'agent-coordinator'].includes(row.system_role_agent_id ?? '') ? {systemRole: {agentId: row.system_role_agent_id as 'agent-ai-admin'|'agent-autoconfigurator'|'agent-indexer'|'agent-packager'|'agent-coordinator', runId: row.resource_id, phase: row.system_role_phase ?? ''}} : {}),
-        ...(retryPolicy ? { bridgeJob: { ...retryPolicy, retrySupported: retryPolicy.retrySupported && retryTargetExists } } : {}),
+        ...([
+            'agent-ai-admin',
+            'agent-autoconfigurator',
+            'agent-indexer',
+            'agent-packager',
+            'agent-coordinator',
+        ].includes(row.system_role_agent_id ?? '')
+            ? {
+                  systemRole: {
+                      agentId: row.system_role_agent_id as
+                          | 'agent-ai-admin'
+                          | 'agent-autoconfigurator'
+                          | 'agent-indexer'
+                          | 'agent-packager'
+                          | 'agent-coordinator',
+                      runId: row.resource_id,
+                      phase: row.system_role_phase ?? '',
+                  },
+              }
+            : {}),
+        ...(retryPolicy
+            ? { bridgeJob: { ...retryPolicy, retrySupported: retryPolicy.retrySupported && retryTargetExists } }
+            : {}),
     };
 }
 

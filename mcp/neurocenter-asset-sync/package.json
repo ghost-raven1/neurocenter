@@ -14,10 +14,13 @@
     "test": "vitest run",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint \"src/**/*.ts\"",
+    "lint": "eslint src --max-warnings=0",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint:fix": "npm run lint -- --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\""
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.29.0",
@@ -30,18 +33,15 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.10.0",
-    "@typescript-eslint/eslint-plugin": "^5.41.0",
-    "@typescript-eslint/parser": "^5.41.0",
     "@vitest/coverage-v8": "4.1.12",
-    "eslint": "^7.32.0",
-    "eslint-config-airbnb": "^19.0.4",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-config-airbnb-typescript": "^16.1.0",
-    "eslint-plugin-import": "^2.25.3",
+    "eslint": "10.13.0",
     "tsx": "^4.19.0",
     "typescript": "5.9.3",
-    "vitest": "4.1.12"
+    "typescript-eslint": "8.72.0",
+    "vitest": "4.1.12",
+    "prettier": "3.9.10"
   }
 }

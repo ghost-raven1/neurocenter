@@ -42,24 +42,19 @@ function slugFromPackage(name: string): string {
  * @param root - корень воркспейса (абсолютный).
  * @param projectKey - авторитетный ключ (опционально, от каталога/клиента).
  */
-export async function detectProject(
-    root: string,
-    projectKey?: string,
-): Promise<IProjectInfo> {
+export async function detectProject(root: string, projectKey?: string): Promise<IProjectInfo> {
     const sources: string[] = [];
     let gitRemote: string | null = null;
     let gitBranch: string | null = null;
     let packageName: string | null = null;
     let hasAgentsMd = false;
 
-    let git = await runGit(root, 'remote', '-v').catch(() => '');
+    const git = await runGit(root, 'remote', '-v').catch(() => '');
     if (git) {
         gitRemote = pickCloneUrl(git);
         sources.push('git-remote');
     }
-    let branch = await runGit(root, 'rev-parse', '--abbrev-ref', 'HEAD').catch(
-        () => '',
-    );
+    const branch = await runGit(root, 'rev-parse', '--abbrev-ref', 'HEAD').catch(() => '');
     if (branch) {
         gitBranch = branch;
         sources.push('git-branch');
@@ -73,7 +68,7 @@ export async function detectProject(
             sources.push('package.json');
         }
     } catch {
-    // нет package.json в корне — ок.
+        // нет package.json в корне — ок.
     }
 
     try {
@@ -81,14 +76,11 @@ export async function detectProject(
         hasAgentsMd = true;
         sources.push('AGENTS.md');
     } catch {
-    // не критично.
+        // не критично.
     }
 
     const slug =
-    (packageName && slugFromPackage(packageName)) ||
-    slugFromRemote(gitRemote ?? '') ||
-    path.basename(root) ||
-    null;
+        (packageName && slugFromPackage(packageName)) || slugFromRemote(gitRemote ?? '') || path.basename(root) || null;
 
     let confidence: IProjectInfo['confidence'];
     if (projectKey) {
@@ -103,7 +95,8 @@ export async function detectProject(
     if (projectKey) {
         note = 'projectKey задан явно (authoritative).';
     } else if (confidence === 'low') {
-        note = 'git/package.json отсуствуют — projectKey не определился; передайте projectKey явно для точной привязки.';
+        note =
+            'git/package.json отсуствуют — projectKey не определился; передайте projectKey явно для точной привязки.';
     } else {
         note = 'определено по git/package.json; projectKey уточнить явно для привязки к серверу.';
     }
@@ -127,17 +120,12 @@ export async function detectProject(
  */
 async function runGit(cwd: string, ...args: string[]): Promise<string> {
     return new Promise<string>((resolve) => {
-        execFile(
-            'git',
-            [ '-C', cwd, ...args ],
-            { encoding: 'utf8' },
-            (err, stdout) => {
-                if (err) {
-                    resolve('');
-                    return;
-                }
-                resolve((stdout ?? '').trim());
-            },
-        );
+        execFile('git', ['-C', cwd, ...args], { encoding: 'utf8' }, (err, stdout) => {
+            if (err) {
+                resolve('');
+                return;
+            }
+            resolve((stdout ?? '').trim());
+        });
     });
 }

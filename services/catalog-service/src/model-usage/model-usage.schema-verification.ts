@@ -12,5 +12,6 @@ END $verify_model_usage$;`;
 /** Readiness verifies ledger structure; provider availability never affects application startup. */
 export async function assertModelUsageSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема использования моделей не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length)
+        throw new Error('Схема использования моделей не готова: ' + rows.map((row) => row.issue).join(', '));
 }

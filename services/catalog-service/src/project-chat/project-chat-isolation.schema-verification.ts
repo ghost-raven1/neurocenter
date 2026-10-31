@@ -11,5 +11,6 @@ IF missing IS NOT NULL THEN RAISE EXCEPTION 'Project chat room isolation schema 
 /** Readiness fences room-exclusive execution together with the unchanged answer/learning attribution contract. */
 export async function assertProjectChatIsolationSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема независимого исполнения комнат не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length)
+        throw new Error('Схема независимого исполнения комнат не готова: ' + rows.map((row) => row.issue).join(', '));
 }

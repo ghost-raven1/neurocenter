@@ -7,5 +7,7 @@ import type { ModelUsageQuery, ModelUsageResult } from './model-usage.types';
 @Controller('api/model-usage')
 export class ModelUsageController {
     constructor(private readonly usage: ModelUsageService) {}
-    @Get() report(@Req() req: Request, @Query() query: ModelUsageQuery): Promise<ModelUsageResult> { return this.usage.report(req, query); }
+    @Get() report(@Req() req: Request, @Query() query: ModelUsageQuery): Promise<ModelUsageResult> {
+        return this.usage.report(req, query);
+    }
 }

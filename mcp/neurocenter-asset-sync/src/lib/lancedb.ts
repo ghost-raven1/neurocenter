@@ -1,19 +1,30 @@
 import { createHash } from 'node:crypto';
 
-import {chunkSchema} from './chunk-schema.js';
+import { chunkSchema } from './chunk-schema.js';
 
 let native: Promise<typeof import('@lancedb/lancedb')> | undefined;
-const loadNative = () => native ||= import('@lancedb/lancedb');
+const loadNative = () => (native ||= import('@lancedb/lancedb'));
 
 /** Отсутствие нативного модуля RAG не останавливает подключение и установку инструментов. */
 export async function localRagStatus(): Promise<{ ragSupported: boolean; ragError?: string }> {
-    try { await loadNative(); return { ragSupported: true }; }
-    catch { return { ragSupported: false, ragError: 'Локальная LanceDB недоступна для этой ОС или архитектуры. Установка скиллов, MCP и плагинов остаётся доступной.' }; }
+    try {
+        await loadNative();
+        return { ragSupported: true };
+    } catch {
+        return {
+            ragSupported: false,
+            ragError:
+                'Локальная LanceDB недоступна для этой ОС или архитектуры. Установка скиллов, MCP и плагинов остаётся доступной.',
+        };
+    }
 }
 export async function connectStore(storePath: string) {
     let module: typeof import('@lancedb/lancedb');
-    try { module = await loadNative(); }
-    catch { throw new Error('Нативная LanceDB недоступна. Проверьте поддержку ОС и архитектуры в автономном пакете MCP.'); }
+    try {
+        module = await loadNative();
+    } catch {
+        throw new Error('Нативная LanceDB недоступна. Проверьте поддержку ОС и архитектуры в автономном пакете MCP.');
+    }
     return module.connect(storePath);
 }
 
@@ -77,7 +88,10 @@ export async function tableInfo(storePath: string): Promise<ITableInfo> {
         });
         const rowCount = await table.countRows();
         return { dimension, rowCount, fields };
-    } finally { table.close(); db.close(); }
+    } finally {
+        table.close();
+        db.close();
+    }
 }
 
 /**
@@ -87,21 +101,13 @@ export async function tableInfo(storePath: string): Promise<ITableInfo> {
  * @param storePath - путь к store (LanceDB dir).
  * @param limit - 0/undefined = весь индекс.
  */
-export async function* enumerateFingerprints(
-    storePath: string,
-    limit?: number,
-): AsyncGenerator<IChunkFingerprint> {
+export async function* enumerateFingerprints(storePath: string, limit?: number): AsyncGenerator<IChunkFingerprint> {
     const db = await connectStore(storePath);
     const table = await db.openTable(TABLE);
     const cap = limit && limit > 0 ? limit : Infinity;
     let offset = 0;
     for (;;) {
-        const at = await table
-            .query()
-            .select([ 'id', 'content', 'filePath' ])
-            .limit(BATCH)
-            .offset(offset)
-            .toArrow();
+        const at = await table.query().select(['id', 'content', 'filePath']).limit(BATCH).offset(offset).toArrow();
         const rows = at.toArray() as { id: string; content: string; filePath: string }[];
         if (rows.length === 0) {
             return;
@@ -171,7 +177,7 @@ function toVectorArray(v: unknown): number[] | null {
             return parsed as number[];
         }
     } catch {
-    // не сериализуется → null.
+        // не сериализуется → null.
     }
     return null;
 }
@@ -183,21 +189,13 @@ function toVectorArray(v: unknown): number[] | null {
  * @param storePath - путь к store (LanceDB dir).
  * @param limit - 0/undefined = весь индекс.
  */
-export async function* enumerateRows(
-    storePath: string,
-    limit?: number,
-): AsyncGenerator<IChunkRow> {
+export async function* enumerateRows(storePath: string, limit?: number): AsyncGenerator<IChunkRow> {
     const db = await connectStore(storePath);
     const table = await db.openTable(TABLE);
     const cap = limit && limit > 0 ? limit : Infinity;
     let offset = 0;
     for (;;) {
-        const at = await table
-            .query()
-            .select(ROW_COLUMNS)
-            .limit(BATCH)
-            .offset(offset)
-            .toArrow();
+        const at = await table.query().select(ROW_COLUMNS).limit(BATCH).offset(offset).toArrow();
         const rows = at.toArray() as Record<string, unknown>[];
         if (rows.length === 0) {
             return;
@@ -256,7 +254,7 @@ export async function writeRows(
     storePath: string,
     rows: Record<string, unknown>[],
     deleteNotMatched = true,
-    dimension?:number,
+    dimension?: number,
 ): Promise<IWriteResult> {
     const db = await connectStore(storePath);
     let opened: import('@lancedb/lancedb').Table | undefined;
@@ -266,19 +264,21 @@ export async function writeRows(
         }
 
         if (!(await db.tableNames()).includes(TABLE)) {
-            const vector=rows.find(row=>Array.isArray(row.embedding)&&row.embedding.length)?.embedding as number[]|undefined;
-            opened = await db.createTable(TABLE, rows,{schema:chunkSchema(dimension||vector?.length||0)});
+            const vector = rows.find((row) => Array.isArray(row.embedding) && row.embedding.length)?.embedding as
+                number[] | undefined;
+            opened = await db.createTable(TABLE, rows, { schema: chunkSchema(dimension || vector?.length || 0) });
             return { written: rows.length, deleted: 0, created: true };
         }
 
         const table = await db.openTable(TABLE);
         opened = table;
-        const actualDimension = ((await table.schema()).fields.find(field => field.name === 'embedding')?.type as IArrowTypeLike)?.listSize;
-        if (dimension && actualDimension !== dimension) { throw new Error('Размерность записываемого индекса отличается от локальной таблицы.'); }
-        let builder = table
-            .mergeInsert('id')
-            .whenMatchedUpdateAll()
-            .whenNotMatchedInsertAll();
+        const actualDimension = (
+            (await table.schema()).fields.find((field) => field.name === 'embedding')?.type as IArrowTypeLike
+        )?.listSize;
+        if (dimension && actualDimension !== dimension) {
+            throw new Error('Размерность записываемого индекса отличается от локальной таблицы.');
+        }
+        let builder = table.mergeInsert('id').whenMatchedUpdateAll().whenNotMatchedInsertAll();
         if (deleteNotMatched) {
             builder = builder.whenNotMatchedBySourceDelete();
         }
@@ -288,7 +288,10 @@ export async function writeRows(
         const u = res?.numUpdatedRows ?? 0;
         const d = res?.numDeletedRows ?? 0;
         return { written: n + u, deleted: d, created: false };
-    } finally { opened?.close(); db.close(); }
+    } finally {
+        opened?.close();
+        db.close();
+    }
 }
 
 /**
@@ -297,27 +300,26 @@ export async function writeRows(
  *
  * @param storePath - путь к store.
  */
-export async function* enumerateIds(
-    storePath: string,
-): AsyncGenerator<string> {
+export async function* enumerateIds(storePath: string): AsyncGenerator<string> {
     const db = await connectStore(storePath);
-    if (!(await db.tableNames()).includes(TABLE)) {return;}
+    if (!(await db.tableNames()).includes(TABLE)) {
+        return;
+    }
     const table = await db.openTable(TABLE);
     let offset = 0;
     for (;;) {
-        const at = await table
-            .query()
-            .select([ 'id' ])
-            .limit(BATCH)
-            .offset(offset)
-            .toArrow();
+        const at = await table.query().select(['id']).limit(BATCH).offset(offset).toArrow();
         const rows = at.toArray() as { id: string }[];
-        if (rows.length === 0) {return;}
+        if (rows.length === 0) {
+            return;
+        }
         for (const r of rows) {
             yield String(r.id);
             offset += 1;
         }
-        if (rows.length < BATCH) {return;}
+        if (rows.length < BATCH) {
+            return;
+        }
     }
 }
 
@@ -328,18 +330,19 @@ export async function* enumerateIds(
  * @param ids - id для удаления.
  * @returns количество удалённых (размер списка; LanceDB delete не возвращает счёт).
  */
-export async function deleteIds(
-    storePath: string,
-    ids: string[],
-): Promise<number> {
-    if (ids.length === 0) {return 0;}
+export async function deleteIds(storePath: string, ids: string[]): Promise<number> {
+    if (ids.length === 0) {
+        return 0;
+    }
     const db = await connectStore(storePath);
-    if (!(await db.tableNames()).includes(TABLE)) {return 0;}
+    if (!(await db.tableNames()).includes(TABLE)) {
+        return 0;
+    }
     const table = await db.openTable(TABLE);
     const idBatch = 500;
     for (let i = 0; i < ids.length; i += idBatch) {
         const chunk = ids.slice(i, i + idBatch);
-        const clause = chunk.map(id => `'${String(id).replace(/'/g, '\'\'')}'`).join(', ');
+        const clause = chunk.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(', ');
         await table.delete(`id IN (${clause})`);
     }
     return ids.length;
@@ -353,10 +356,7 @@ export async function deleteIds(
  * @param storePath - путь к store.
  * @param ids - список id для выборки (батчится по 200).
  */
-export async function* readRowsByIds(
-    storePath: string,
-    ids: string[],
-): AsyncGenerator<IChunkRow> {
+export async function* readRowsByIds(storePath: string, ids: string[]): AsyncGenerator<IChunkRow> {
     if (ids.length === 0) {
         return;
     }
@@ -366,15 +366,13 @@ export async function* readRowsByIds(
     let usedFilter = false;
     for (let i = 0; i < ids.length; i += idBatch) {
         const chunk = ids.slice(i, i + idBatch);
-        const clause = chunk.map(id => `'${String(id).replace(/'/g, '\'\'')}'`).join(', ');
+        const clause = chunk.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(', ');
         try {
-            const at = await table
-                .query()
-                .select(ROW_COLUMNS)
-                .filter(`id IN (${clause})`)
-                .toArrow();
+            const at = await table.query().select(ROW_COLUMNS).filter(`id IN (${clause})`).toArrow();
             const rows = at.toArray() as Record<string, unknown>[];
-            for (const r of rows) {yield mapRow(r);}
+            for (const r of rows) {
+                yield mapRow(r);
+            }
             usedFilter = true;
         } catch {
             if (usedFilter) {
@@ -384,26 +382,35 @@ export async function* readRowsByIds(
             const wanted = new Set(chunk);
             let offset = 0;
             for (;;) {
-                const at = await table
-                    .query()
-                    .select(ROW_COLUMNS)
-                    .limit(BATCH)
-                    .offset(offset)
-                    .toArrow();
+                const at = await table.query().select(ROW_COLUMNS).limit(BATCH).offset(offset).toArrow();
                 const rows = at.toArray() as Record<string, unknown>[];
-                if (rows.length === 0) {return;}
-                for (const r of rows) {if (wanted.has(String(r.id))) {yield mapRow(r);}}
+                if (rows.length === 0) {
+                    return;
+                }
+                for (const r of rows) {
+                    if (wanted.has(String(r.id))) {
+                        yield mapRow(r);
+                    }
+                }
                 offset += rows.length;
-                if (rows.length < BATCH) {return;}
+                if (rows.length < BATCH) {
+                    return;
+                }
             }
-            return;
         }
     }
 }
 
 /** Пустой успешный rebuild сохраняет схему целевой размерности без фиктивного фрагмента. */
-export async function createEmptyIndex(storePath:string,dimension:number):Promise<void>{
-    if(!Number.isSafeInteger(dimension)||dimension<1||dimension>16000)throw new Error('Некорректная размерность пустого индекса.');
-    const db=await connectStore(storePath);let table:import('@lancedb/lancedb').Table|undefined;
-    try{if(!(await db.tableNames()).includes(TABLE))table=await db.createEmptyTable(TABLE,chunkSchema(dimension));}finally{table?.close();db.close();}
+export async function createEmptyIndex(storePath: string, dimension: number): Promise<void> {
+    if (!Number.isSafeInteger(dimension) || dimension < 1 || dimension > 16000)
+        throw new Error('Некорректная размерность пустого индекса.');
+    const db = await connectStore(storePath);
+    let table: import('@lancedb/lancedb').Table | undefined;
+    try {
+        if (!(await db.tableNames()).includes(TABLE)) table = await db.createEmptyTable(TABLE, chunkSchema(dimension));
+    } finally {
+        table?.close();
+        db.close();
+    }
 }

@@ -1,5 +1,5 @@
 /** Migration 9: source selection and verified metadata are independent of the installed bridge head. */
-export const BRIDGE_SOURCE_SCHEMA_SQL=`
+export const BRIDGE_SOURCE_SCHEMA_SQL = `
 CREATE TABLE bridge_source_settings (
  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),url text NOT NULL,revision integer NOT NULL DEFAULT 1 CHECK(revision>0),
  checked_at timestamptz,attempted_at timestamptz,check_token uuid,check_commit text,error text,

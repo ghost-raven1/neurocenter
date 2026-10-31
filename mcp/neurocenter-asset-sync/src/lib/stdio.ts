@@ -9,7 +9,9 @@ export type TToolResult = CallToolResult;
  * Успешный ответ: готовый текст сохраняется, объект сериализуется в JSON.
  */
 export function ok(payload: unknown): CallToolResult {
-    return { content: [ { type: 'text', text: typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2) } ] };
+    return {
+        content: [{ type: 'text', text: typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2) }],
+    };
 }
 
 /**

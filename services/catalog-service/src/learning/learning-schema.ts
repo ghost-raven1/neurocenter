@@ -1,5 +1,5 @@
 /** Migration 10 adds project-scoped evidence and reversible, explicitly approved context. */
-export const LEARNING_SCHEMA_SQL=`
+export const LEARNING_SCHEMA_SQL = `
 CREATE TABLE project_learning_state (
  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
  revision BIGINT NOT NULL DEFAULT 0 CHECK(revision>=0),updated_at TIMESTAMPTZ NOT NULL DEFAULT now());

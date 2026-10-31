@@ -1,36 +1,167 @@
 /** Frozen physical inference ledger facts for migration 18. */
 export const MODEL_USAGE_SCHEMA_CONTRACT = [
-    {"kind":"column","id":"model_usage_calls.actor_email","definition":{"type":"text","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.agent_id","definition":{"type":"text","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.endpoint","definition":{"type":"text","default":null,"notNull":true}},
-    {"kind":"column","id":"model_usage_calls.finished_at","definition":{"type":"timestamp with time zone","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.id","definition":{"type":"uuid","default":null,"notNull":true}},
-    {"kind":"column","id":"model_usage_calls.input_tokens","definition":{"type":"bigint","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.latency_ms","definition":{"type":"integer","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.lease_until","definition":{"type":"timestamp with time zone","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.model_id","definition":{"type":"text","default":null,"notNull":true}},
-    {"kind":"column","id":"model_usage_calls.model_name","definition":{"type":"text","default":null,"notNull":true}},
-    {"kind":"column","id":"model_usage_calls.operation_id","definition":{"type":"uuid","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.output_tokens","definition":{"type":"bigint","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.project_id","definition":{"type":"text","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.provider","definition":{"type":"text","default":null,"notNull":true}},
-    {"kind":"column","id":"model_usage_calls.purpose","definition":{"type":"text","default":null,"notNull":true}},
-    {"kind":"column","id":"model_usage_calls.started_at","definition":{"type":"timestamp with time zone","default":"now()","notNull":true}},
-    {"kind":"column","id":"model_usage_calls.status","definition":{"type":"text","default":"'pending'::text","notNull":true}},
-    {"kind":"column","id":"model_usage_calls.turn_id","definition":{"type":"uuid","default":null,"notNull":false}},
-    {"kind":"column","id":"model_usage_calls.worker_id","definition":{"type":"uuid","default":null,"notNull":true}},
-    {"kind":"constraint","id":"model_usage_calls.model_usage_calls_check","definition":{"type":"c","validated":true,"definition":"CHECK (status = 'pending'::text AND finished_at IS NULL AND lease_until IS NOT NULL OR status <> 'pending'::text AND finished_at IS NOT NULL AND lease_until IS NULL)"}},
-    {"kind":"constraint","id":"model_usage_calls.model_usage_calls_endpoint_check","definition":{"type":"c","validated":true,"definition":"CHECK (endpoint = ANY (ARRAY['chat'::text, 'embed'::text]))"}},
-    {"kind":"constraint","id":"model_usage_calls.model_usage_calls_input_tokens_check","definition":{"type":"c","validated":true,"definition":"CHECK (input_tokens >= 0)"}},
-    {"kind":"constraint","id":"model_usage_calls.model_usage_calls_latency_ms_check","definition":{"type":"c","validated":true,"definition":"CHECK (latency_ms >= 0)"}},
-    {"kind":"constraint","id":"model_usage_calls.model_usage_calls_output_tokens_check","definition":{"type":"c","validated":true,"definition":"CHECK (output_tokens >= 0)"}},
-    {"kind":"constraint","id":"model_usage_calls.model_usage_calls_pkey","definition":{"type":"p","validated":true,"definition":"PRIMARY KEY (id)"}},
-    {"kind":"constraint","id":"model_usage_calls.model_usage_calls_purpose_check","definition":{"type":"c","validated":true,"definition":"CHECK (purpose = ANY (ARRAY['chat'::text, 'agent'::text, 'compaction'::text, 'project-search'::text, 'device-embedding'::text, 'reindex'::text, 'learning'::text, 'direct'::text, 'verification'::text]))"}},
-    {"kind":"constraint","id":"model_usage_calls.model_usage_calls_status_check","definition":{"type":"c","validated":true,"definition":"CHECK (status = ANY (ARRAY['pending'::text, 'success'::text, 'error'::text, 'cancelled'::text, 'interrupted'::text]))"}},
-    {"kind":"index","id":"model_usage_calls_actor","definition":{"ready":true,"valid":true,"definition":"CREATE INDEX model_usage_calls_actor ON model_usage_calls USING btree (actor_email, started_at DESC, id DESC)"}},
-    {"kind":"index","id":"model_usage_calls_pending","definition":{"ready":true,"valid":true,"definition":"CREATE INDEX model_usage_calls_pending ON model_usage_calls USING btree (worker_id, lease_until) WHERE (status = 'pending'::text)"}},
-    {"kind":"index","id":"model_usage_calls_pkey","definition":{"ready":true,"valid":true,"definition":"CREATE UNIQUE INDEX model_usage_calls_pkey ON model_usage_calls USING btree (id)"}},
-    {"kind":"index","id":"model_usage_calls_project","definition":{"ready":true,"valid":true,"definition":"CREATE INDEX model_usage_calls_project ON model_usage_calls USING btree (project_id, started_at DESC, id DESC)"}},
-    {"kind":"index","id":"model_usage_calls_time","definition":{"ready":true,"valid":true,"definition":"CREATE INDEX model_usage_calls_time ON model_usage_calls USING btree (started_at DESC, id DESC)"}},
-    {"kind":"table","id":"model_usage_calls","definition":{"kind":"r","persistence":"p"}},
+    {
+        kind: 'column',
+        id: 'model_usage_calls.actor_email',
+        definition: { type: 'text', default: null, notNull: false },
+    },
+    { kind: 'column', id: 'model_usage_calls.agent_id', definition: { type: 'text', default: null, notNull: false } },
+    { kind: 'column', id: 'model_usage_calls.endpoint', definition: { type: 'text', default: null, notNull: true } },
+    {
+        kind: 'column',
+        id: 'model_usage_calls.finished_at',
+        definition: { type: 'timestamp with time zone', default: null, notNull: false },
+    },
+    { kind: 'column', id: 'model_usage_calls.id', definition: { type: 'uuid', default: null, notNull: true } },
+    {
+        kind: 'column',
+        id: 'model_usage_calls.input_tokens',
+        definition: { type: 'bigint', default: null, notNull: false },
+    },
+    {
+        kind: 'column',
+        id: 'model_usage_calls.latency_ms',
+        definition: { type: 'integer', default: null, notNull: false },
+    },
+    {
+        kind: 'column',
+        id: 'model_usage_calls.lease_until',
+        definition: { type: 'timestamp with time zone', default: null, notNull: false },
+    },
+    { kind: 'column', id: 'model_usage_calls.model_id', definition: { type: 'text', default: null, notNull: true } },
+    { kind: 'column', id: 'model_usage_calls.model_name', definition: { type: 'text', default: null, notNull: true } },
+    {
+        kind: 'column',
+        id: 'model_usage_calls.operation_id',
+        definition: { type: 'uuid', default: null, notNull: false },
+    },
+    {
+        kind: 'column',
+        id: 'model_usage_calls.output_tokens',
+        definition: { type: 'bigint', default: null, notNull: false },
+    },
+    { kind: 'column', id: 'model_usage_calls.project_id', definition: { type: 'text', default: null, notNull: false } },
+    { kind: 'column', id: 'model_usage_calls.provider', definition: { type: 'text', default: null, notNull: true } },
+    { kind: 'column', id: 'model_usage_calls.purpose', definition: { type: 'text', default: null, notNull: true } },
+    {
+        kind: 'column',
+        id: 'model_usage_calls.started_at',
+        definition: { type: 'timestamp with time zone', default: 'now()', notNull: true },
+    },
+    {
+        kind: 'column',
+        id: 'model_usage_calls.status',
+        definition: { type: 'text', default: "'pending'::text", notNull: true },
+    },
+    { kind: 'column', id: 'model_usage_calls.turn_id', definition: { type: 'uuid', default: null, notNull: false } },
+    { kind: 'column', id: 'model_usage_calls.worker_id', definition: { type: 'uuid', default: null, notNull: true } },
+    {
+        kind: 'constraint',
+        id: 'model_usage_calls.model_usage_calls_check',
+        definition: {
+            type: 'c',
+            validated: true,
+            definition:
+                "CHECK (status = 'pending'::text AND finished_at IS NULL AND lease_until IS NOT NULL OR status <> 'pending'::text AND finished_at IS NOT NULL AND lease_until IS NULL)",
+        },
+    },
+    {
+        kind: 'constraint',
+        id: 'model_usage_calls.model_usage_calls_endpoint_check',
+        definition: {
+            type: 'c',
+            validated: true,
+            definition: "CHECK (endpoint = ANY (ARRAY['chat'::text, 'embed'::text]))",
+        },
+    },
+    {
+        kind: 'constraint',
+        id: 'model_usage_calls.model_usage_calls_input_tokens_check',
+        definition: { type: 'c', validated: true, definition: 'CHECK (input_tokens >= 0)' },
+    },
+    {
+        kind: 'constraint',
+        id: 'model_usage_calls.model_usage_calls_latency_ms_check',
+        definition: { type: 'c', validated: true, definition: 'CHECK (latency_ms >= 0)' },
+    },
+    {
+        kind: 'constraint',
+        id: 'model_usage_calls.model_usage_calls_output_tokens_check',
+        definition: { type: 'c', validated: true, definition: 'CHECK (output_tokens >= 0)' },
+    },
+    {
+        kind: 'constraint',
+        id: 'model_usage_calls.model_usage_calls_pkey',
+        definition: { type: 'p', validated: true, definition: 'PRIMARY KEY (id)' },
+    },
+    {
+        kind: 'constraint',
+        id: 'model_usage_calls.model_usage_calls_purpose_check',
+        definition: {
+            type: 'c',
+            validated: true,
+            definition:
+                "CHECK (purpose = ANY (ARRAY['chat'::text, 'agent'::text, 'compaction'::text, 'project-search'::text, 'device-embedding'::text, 'reindex'::text, 'learning'::text, 'direct'::text, 'verification'::text]))",
+        },
+    },
+    {
+        kind: 'constraint',
+        id: 'model_usage_calls.model_usage_calls_status_check',
+        definition: {
+            type: 'c',
+            validated: true,
+            definition:
+                "CHECK (status = ANY (ARRAY['pending'::text, 'success'::text, 'error'::text, 'cancelled'::text, 'interrupted'::text]))",
+        },
+    },
+    {
+        kind: 'index',
+        id: 'model_usage_calls_actor',
+        definition: {
+            ready: true,
+            valid: true,
+            definition:
+                'CREATE INDEX model_usage_calls_actor ON model_usage_calls USING btree (actor_email, started_at DESC, id DESC)',
+        },
+    },
+    {
+        kind: 'index',
+        id: 'model_usage_calls_pending',
+        definition: {
+            ready: true,
+            valid: true,
+            definition:
+                "CREATE INDEX model_usage_calls_pending ON model_usage_calls USING btree (worker_id, lease_until) WHERE (status = 'pending'::text)",
+        },
+    },
+    {
+        kind: 'index',
+        id: 'model_usage_calls_pkey',
+        definition: {
+            ready: true,
+            valid: true,
+            definition: 'CREATE UNIQUE INDEX model_usage_calls_pkey ON model_usage_calls USING btree (id)',
+        },
+    },
+    {
+        kind: 'index',
+        id: 'model_usage_calls_project',
+        definition: {
+            ready: true,
+            valid: true,
+            definition:
+                'CREATE INDEX model_usage_calls_project ON model_usage_calls USING btree (project_id, started_at DESC, id DESC)',
+        },
+    },
+    {
+        kind: 'index',
+        id: 'model_usage_calls_time',
+        definition: {
+            ready: true,
+            valid: true,
+            definition:
+                'CREATE INDEX model_usage_calls_time ON model_usage_calls USING btree (started_at DESC, id DESC)',
+        },
+    },
+    { kind: 'table', id: 'model_usage_calls', definition: { kind: 'r', persistence: 'p' } },
 ];

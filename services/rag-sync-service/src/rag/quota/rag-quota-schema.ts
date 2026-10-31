@@ -1,11 +1,23 @@
 /** Версия SQL неизменяема после выпуска; следующие изменения получают отдельную миграцию. */
-export const RAG_QUOTA_MIGRATION='001-rag-storage-budget';
-export const RAG_WRITE_LOCK=72465385;
+export const RAG_QUOTA_MIGRATION = '001-rag-storage-budget';
+export const RAG_WRITE_LOCK = 72465385;
 
-const texts=['id','project_key','file_path','content','description','language','kind','role','quirk_type','tags','content_hash'];
-const textBytes=texts.map(field=>`COALESCE(octet_length((value).${field}),0)::bigint`).join(' + ');
+const texts = [
+    'id',
+    'project_key',
+    'file_path',
+    'content',
+    'description',
+    'language',
+    'kind',
+    'role',
+    'quirk_type',
+    'tags',
+    'content_hash',
+];
+const textBytes = texts.map((field) => `COALESCE(octet_length((value).${field}),0)::bigint`).join(' + ');
 
-export const RAG_QUOTA_SCHEMA=`
+export const RAG_QUOTA_SCHEMA = `
 CREATE TABLE public.rag_storage_settings (
     singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
     default_bytes bigint NOT NULL CHECK(default_bytes>0),

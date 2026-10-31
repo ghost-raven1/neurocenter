@@ -1,5 +1,5 @@
 /** Migration30 preserves old intents explicitly as receipt-only; no author is inferred from project history. */
-export const PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL=`
+export const PROJECT_RAG_AUTHORIZATION_SCHEMA_SQL = `
 ALTER TABLE project_rag_sync_intents ADD COLUMN author_email TEXT;
 ALTER TABLE project_rag_sync_intents ADD COLUMN author_role TEXT;
 ALTER TABLE project_rag_sync_intents ADD COLUMN write_policy TEXT NOT NULL DEFAULT 'legacy-receipt-only-v1';

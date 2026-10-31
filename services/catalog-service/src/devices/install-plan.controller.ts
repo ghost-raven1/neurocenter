@@ -12,12 +12,24 @@ export class InstallPlanController {
         assertInternal(req.headers['x-neurocenter-internal']);
         return JSON.parse(decodeURIComponent(String(req.headers['x-bridge-actor'] || 'null'))) as IAccessActor;
     }
-    @Post() prepare(@Req() req: Request, @Body() input: InstallPlanInput) { return this.plans.prepare(this.actor(req), input); }
-    @Get(':id') view(@Req() req: Request, @Param('id') id: string) { return this.plans.view(this.actor(req), id); }
-    @Post(':id/approve') approve(@Req() req: Request, @Param('id') id: string, @Body() input: { expectedManifest: string; expectedRevision: number }) {
+    @Post() prepare(@Req() req: Request, @Body() input: InstallPlanInput) {
+        return this.plans.prepare(this.actor(req), input);
+    }
+    @Get(':id') view(@Req() req: Request, @Param('id') id: string) {
+        return this.plans.view(this.actor(req), id);
+    }
+    @Post(':id/approve') approve(
+        @Req() req: Request,
+        @Param('id') id: string,
+        @Body() input: { expectedManifest: string; expectedRevision: number },
+    ) {
         return this.plans.decide(this.actor(req), id, input, 'approved');
     }
-    @Post(':id/revoke') revoke(@Req() req: Request, @Param('id') id: string, @Body() input: { expectedManifest: string; expectedRevision: number }) {
+    @Post(':id/revoke') revoke(
+        @Req() req: Request,
+        @Param('id') id: string,
+        @Body() input: { expectedManifest: string; expectedRevision: number },
+    ) {
         return this.plans.decide(this.actor(req), id, input, 'revoked');
     }
 }

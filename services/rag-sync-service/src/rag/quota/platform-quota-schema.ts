@@ -1,5 +1,5 @@
 /** Platform defaults are independent of existing project budgets and survive process restarts. */
-export const PLATFORM_QUOTA_SCHEMA=`
+export const PLATFORM_QUOTA_SCHEMA = `
 CREATE TABLE public.rag_platform_quota_policy (
     singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
     default_bytes bigint NOT NULL CHECK(default_bytes>0 AND default_bytes<=9007199254740991),
@@ -15,7 +15,7 @@ CREATE TABLE public.rag_platform_quota_events (
 `;
 
 /** A separate table keeps frozen quota-001 objects intact while fencing stale policy deliveries. */
-export const PLATFORM_QUOTA_CACHE_SCHEMA=`
+export const PLATFORM_QUOTA_CACHE_SCHEMA = `
 CREATE TABLE public.rag_platform_quota_applied (
     singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
     revision bigint NOT NULL CHECK(revision>=0),

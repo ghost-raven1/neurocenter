@@ -15,4 +15,7 @@ async function bootstrap(): Promise<void> {
     console.log('[feature-flags-service] listening');
 }
 
-void bootstrap().catch(() => { console.error('Не удалось запустить сервис переключателей функций. Проверьте настройки и доступность БД.'); process.exitCode = 1; });
+void bootstrap().catch(() => {
+    console.error('Не удалось запустить сервис переключателей функций. Проверьте настройки и доступность БД.');
+    process.exitCode = 1;
+});

@@ -1,5 +1,5 @@
 /** Additive migration42: explicit grants and a separate one-dispatch ledger; historical research bytes stay immutable. */
-export const AGENT_TOOLS_SCHEMA_SQL=`
+export const AGENT_TOOLS_SCHEMA_SQL = `
 CREATE FUNCTION agent_tool_grant_valid(v jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE AS $valid$
  SELECT CASE WHEN jsonb_typeof(v)='object' THEN COALESCE(
   octet_length(v::text)<=16384 AND v-ARRAY['protocol','rag','publicChats','systemRoles']='{}'::jsonb AND v->>'protocol'='json-actions-v1'

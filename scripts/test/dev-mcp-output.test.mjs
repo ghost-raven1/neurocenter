@@ -15,7 +15,7 @@ async function fixture(t){
     await writeFile(path.join(root,'package.json'),JSON.stringify({name:'neurocenter-workspace'}));
     for(const [,folder]of packages){
         await mkdir(path.join(root,folder),{recursive:true});
-        await writeFile(path.join(root,folder,'package.json'),JSON.stringify({version:'0.1.0',scripts:{typecheck:'fixture',build:'fixture',test:'vitest run'}}));
+        await writeFile(path.join(root,folder,'package.json'),JSON.stringify({version:'0.1.0',scripts:{lint:'fixture','format:check':'fixture',typecheck:'fixture',build:'fixture',test:'vitest run'}}));
     }
     return {root,diagnostics:await createDiagnostics(root)};
 }
@@ -65,4 +65,20 @@ test('output-schema flag only changes the advertised contract and preserves evid
     for(const name of ['NEUROCENTER_DEV_MCP_OUTPUT_SCHEMAS','NEUROCENTER_DEV_MCP_SERVICE_DETAILS','NEUROCENTER_DEV_MCP_EVIDENCE','NEUROCENTER_IMPACT_PLAN'])
         assert.throws(()=>toolFlags({[name]:'yes'}),error=>error.code==='INVALID_CONFIGURATION');
     assert.equal(toolFlags({NEUROCENTER_DEV_MCP_SERVICE_DETAILS:'0'}).serviceDetailsEnabled,false);
+});
+
+test('all eight package plans support five phases including lint in the published output contract',async t=>{
+    const {diagnostics}=await fixture(t),plan=await diagnostics.checkPlan({packages:packages.map(([name])=>name)});
+    assert.equal(plan.steps.length,40);
+    assert.deepEqual(plan.selection.steps,['lint','format:check','typecheck','build','test']);
+    assert.equal(validateOutput('check_plan',plan),plan);
+});
+
+test('format check skip is represented in the published output contract',async t=>{
+    const {root,diagnostics}=await fixture(t);
+    await writeFile(path.join(root,'frontend/package.json'),JSON.stringify({scripts:{lint:'fixture',typecheck:'fixture',build:'fixture'}}));
+    const plan=await diagnostics.checkPlan({packages:['frontend','bridge'],steps:['format:check']});
+    assert.deepEqual(plan.steps.map(step=>step.package),['bridge']);
+    assert.equal(plan.skipped[0].step,'format:check');
+    assert.equal(validateOutput('check_plan',plan),plan);
 });

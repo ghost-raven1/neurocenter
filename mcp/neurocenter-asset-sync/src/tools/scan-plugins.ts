@@ -46,7 +46,7 @@ interface IOpencodeJson {
 
 async function readJson(p: string): Promise<IOpencodeJson | null> {
     try {
-    // .jsonc: грубо уберем комментарии (best-effort, не для всех случаев).
+        // .jsonc: грубо уберем комментарии (best-effort, не для всех случаев).
         const raw = await fs.readFile(p, 'utf8');
         return JSON.parse(raw) as IOpencodeJson;
     } catch {
@@ -61,10 +61,7 @@ async function readJson(p: string): Promise<IOpencodeJson | null> {
  * @param configPathHint - явный путь к конфигy (опционально).
  * @param cwd - базовый каталог.
  */
-export async function scanPlugins(
-    configPathHint: string | undefined,
-    cwd: string,
-): Promise<IPluginScan> {
+export async function scanPlugins(configPathHint: string | undefined, cwd: string): Promise<IPluginScan> {
     const candidates = [
         configPathHint ? path.resolve(cwd, configPathHint) : undefined,
         path.join(cwd, '.opencode', 'opencode.json'),
@@ -87,14 +84,12 @@ export async function scanPlugins(
 
     const mcpServers: IMcpServerEntry[] = [];
     if (cfg?.mcp) {
-        for (const [ name, v ] of Object.entries(cfg.mcp)) {
+        for (const [name, v] of Object.entries(cfg.mcp)) {
             mcpServers.push({
                 name,
                 type: typeof v.type === 'string' ? v.type : 'unknown',
                 enabled: v.enabled === true,
-                command: Array.isArray(v.command)
-                    ? v.command.filter((x): x is string => typeof x === 'string')
-                    : [],
+                command: Array.isArray(v.command) ? v.command.filter((x): x is string => typeof x === 'string') : [],
             });
         }
     }
@@ -113,7 +108,6 @@ export async function scanPlugins(
         }
     }
 
-    const total =
-    mcpServers.length + pluginDirs.reduce((n, p) => n + p.entries.length, 0);
+    const total = mcpServers.length + pluginDirs.reduce((n, p) => n + p.entries.length, 0);
     return { mcpConfigPath: cfgPath, mcpServers, pluginDirs, total };
 }

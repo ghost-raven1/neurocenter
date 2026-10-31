@@ -6,7 +6,7 @@ const ids=new Set(packages.map(([id])=>id)),folders=new Map(packages.map(([id,fo
 const toolingGate='Инструменты разработки: локальные контракты';
 const toolingSteps=['Agent kit: актуальность генерации',toolingGate];
 const specialSteps=new Set(['Agent kit: актуальность генерации','Общие контракты, production и упаковка','Compose: dev','Compose: локальные эмбеддинги',toolingGate]);
-const stepTypes=new Set(['typecheck','build','test']);
+const stepTypes=new Set(['lint','format:check','typecheck','build','test']);
 const signals=new Set(['SIGABRT','SIGALRM','SIGBUS','SIGCHLD','SIGCONT','SIGFPE','SIGHUP','SIGILL','SIGINT','SIGIO','SIGIOT','SIGKILL',
     'SIGPIPE','SIGPOLL','SIGPROF','SIGPWR','SIGQUIT','SIGSEGV','SIGSTKFLT','SIGSTOP','SIGSYS','SIGTERM','SIGTRAP','SIGTSTP','SIGTTIN',
     'SIGTTOU','SIGUNUSED','SIGURG','SIGUSR1','SIGUSR2','SIGVTALRM','SIGWINCH','SIGXCPU','SIGXFSZ','SIGBREAK','SIGLOST','SIGINFO']);
@@ -33,7 +33,7 @@ function uniqueStrings(value,allowed,{empty=true,max=maxSteps}={}){
 function stepIdentity(name){
     if(specialSteps.has(name))return {name,package:null,step:null};
     if(typeof name!=='string')throw malformed();
-    const match=/^([^:]+): (typecheck|build|test)$/.exec(name);
+    const match=/^([^:]+): (lint|format:check|typecheck|build|test)$/.exec(name);
     if(!match||!folders.has(match[1]))throw malformed();
     return {name:match[0],package:folders.get(match[1]),step:match[2]};
 }
@@ -88,7 +88,7 @@ function checkSummary(value,currentGit){
     if(!object(value)||typeof value.success!=='boolean'||!Array.isArray(value.steps)||value.steps.length>maxSteps)throw malformed();
     const selectionKnown=own(value,'selection');
     if(!selectionKnown&&value.schemaVersion!==undefined||selectionKnown&&!object(value.selection))throw malformed();
-    const requested=selectionKnown?{packages:uniqueStrings(value.selection.packages,ids,{max:8}),steps:uniqueStrings(value.selection.steps,stepTypes,{max:3})}:null;
+    const requested=selectionKnown?{packages:uniqueStrings(value.selection.packages,ids,{max:8}),steps:uniqueStrings(value.selection.steps,stepTypes,{max:5})}:null;
     if(selectionKnown&&own(value.selection,'tooling')){
         if(value.selection.tooling!==true||requested.packages.length||requested.steps.length||value.schemaVersion!==3)throw malformed();
         requested.tooling=true;

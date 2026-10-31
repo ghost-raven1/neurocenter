@@ -256,3 +256,15 @@ test('Catalog cancellation inside the first summary stops before another report 
         assert.equal(summaries, 1); assert.equal(readsAfterAbort, 0);
     } finally { fs.open = originalOpen; syncBuiltinESMExports(); }
 });
+
+test('Catalog accepts the five-phase scope and lint receipt without changing historical report semantics',async t=>{
+    const f=await fixture(t),{value}=await f.check();
+    value.selection.steps=['lint','format:check','typecheck','build','test'];
+    value.plannedSteps=value.selection.steps.map(step=>'frontend: '+step);
+    const process=value.steps[0];
+    value.steps=value.plannedSteps.map(name=>({...process,name,...(name.endsWith(': test')?{tests:{passed:1,failed:0,skipped:0,todo:0}}:{})}));
+    await f.save(checkPath,value);
+    const result=await listEvidence(f.root,{families:['check']},{readSummary:f.readSummary});
+    assert.equal(result.entries[0].state,'available');
+    assert.deepEqual(result.entries[0].countScope.steps,value.selection.steps);
+});

@@ -38,10 +38,7 @@ export async function locateStore(
     cwd: string,
     allowMissing = false,
 ): Promise<IStoreLocateResult> {
-    const entry =
-    typeof hint === 'string' && hint.trim() !== ''
-        ? path.resolve(cwd, hint)
-        : cwd;
+    const entry = typeof hint === 'string' && hint.trim() !== '' ? path.resolve(cwd, hint) : cwd;
 
     let baseDir = entry;
     const entryStat = await statSafe(entry);
@@ -54,10 +51,15 @@ export async function locateStore(
     let configPath: string | null = null;
     for (const relative of RAG_CONFIG_PATHS) {
         const candidate = path.join(baseDir, relative);
-        if ((await statSafe(candidate))?.file) { configPath = await safeTarget(baseDir, relative); break; }
+        if ((await statSafe(candidate))?.file) {
+            configPath = await safeTarget(baseDir, relative);
+            break;
+        }
     }
     const config = configPath ? await loadRagConfig(configPath, baseDir) : null;
-    if (configPath && !config) { throw new Error('Конфигурация OpenCodeRAG повреждена. Исправьте её перед передачей индекса.'); }
+    if (configPath && !config) {
+        throw new Error('Конфигурация OpenCodeRAG повреждена. Исправьте её перед передачей индекса.');
+    }
 
     // Store: сначала из конфига, затем дефолтный .opencode/rag_db в корне,
     // либо сама точка входа (если указали каталог store напрямую).
@@ -67,11 +69,7 @@ export async function locateStore(
         const defaultStat = await statSafe(defaultCandidate);
         if (defaultStat?.dir || allowMissing) {
             storePath = defaultCandidate;
-        } else if (
-            entryStat?.dir &&
-      baseDir === entry &&
-      path.basename(baseDir) === 'rag_db'
-        ) {
+        } else if (entryStat?.dir && baseDir === entry && path.basename(baseDir) === 'rag_db') {
             storePath = baseDir;
         }
     }

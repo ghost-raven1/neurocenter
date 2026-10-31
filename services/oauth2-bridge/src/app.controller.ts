@@ -1,5 +1,5 @@
-import { Controller, Get,ServiceUnavailableException } from '@nestjs/common';
-import {checkReadiness,httpReady} from '../../shared/readiness.cjs';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { checkReadiness, httpReady } from '../../shared/readiness.cjs';
 
 /**
  * Health-эндпоинт для docker-compose healthcheck.
@@ -7,7 +7,15 @@ import {checkReadiness,httpReady} from '../../shared/readiness.cjs';
 @Controller()
 export class AppController {
     @Get('ready')
-    async ready():Promise<unknown>{const state=await checkReadiness({catalog:()=>httpReady(process.env.CATALOG_SERVICE_URL||'http://localhost:4100')});if(!state.ok){throw new ServiceUnavailableException(state);}return state;}
+    async ready(): Promise<unknown> {
+        const state = await checkReadiness({
+            catalog: () => httpReady(process.env.CATALOG_SERVICE_URL || 'http://localhost:4100'),
+        });
+        if (!state.ok) {
+            throw new ServiceUnavailableException(state);
+        }
+        return state;
+    }
     /**
      * Health-check.
      *

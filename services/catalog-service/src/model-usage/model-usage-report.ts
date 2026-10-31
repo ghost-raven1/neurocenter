@@ -10,19 +10,42 @@ sum(rate_wait_ms)::text AS "rateWaitMs",avg(provider_latency_ms)::float AS "aver
 
 /** Facets and every aggregate share one authorized period; user filters only narrow that relation. */
 export function modelUsageReportQuery(scope: UsageScope, filter: UsageFilter): { sql: string; values: unknown[] } {
-    const values: unknown[] = [filter.days, scope.all, scope.actor, scope.projectIds, scope.viewerEmail], where: string[] = [];
-    const bind = (value: unknown): string => { values.push(value); return '$' + values.length; };
-    for (const [column, value] of [['project_id', filter.projectId], ['model_id', filter.modelId], ['agent_id', filter.agentId], ['purpose', filter.purpose], ['status', filter.status], ['endpoint', filter.endpoint], ['provider', filter.provider]])
+    const values: unknown[] = [filter.days, scope.all, scope.actor, scope.projectIds, scope.viewerEmail],
+        where: string[] = [];
+    const bind = (value: unknown): string => {
+        values.push(value);
+        return '$' + values.length;
+    };
+    for (const [column, value] of [
+        ['project_id', filter.projectId],
+        ['model_id', filter.modelId],
+        ['agent_id', filter.agentId],
+        ['purpose', filter.purpose],
+        ['status', filter.status],
+        ['endpoint', filter.endpoint],
+        ['provider', filter.provider],
+    ])
         if (value !== undefined) where.push(column + '=' + bind(value));
-    if (filter.actorEmail !== undefined) where.push(filter.actorEmail === null ? 'actor_email IS NULL' : 'actor_email=' + bind(filter.actorEmail));
+    if (filter.actorEmail !== undefined)
+        where.push(filter.actorEmail === null ? 'actor_email IS NULL' : 'actor_email=' + bind(filter.actorEmail));
     let cursor = '';
-    if (filter.cursor) cursor = `WHERE (started_at,id)<(${bind(filter.cursor.startedAt)}::timestamptz,${bind(filter.cursor.id)}::uuid)`;
-    const limit = bind(filter.limit + 1), bucket = filter.days === 1 ? 'hour' : 'day';
+    if (filter.cursor)
+        cursor = `WHERE (started_at,id)<(${bind(filter.cursor.startedAt)}::timestamptz,${bind(filter.cursor.id)}::uuid)`;
+    const limit = bind(filter.limit + 1),
+        bucket = filter.days === 1 ? 'hour' : 'day';
     const array = (query: string): string => `(SELECT coalesce(jsonb_agg(to_jsonb(x)),'[]'::jsonb) FROM (${query}) x)`;
-    const facetUsers = array(`SELECT actor_email AS email,coalesce(max(actor_name),actor_email,'Серверные задания') AS "displayName" FROM scoped GROUP BY actor_email ORDER BY lower(coalesce(max(actor_name),actor_email,'')),actor_email NULLS LAST`);
-    const facetProjects = array(`SELECT project_id AS id,coalesce(max(project_name),'Удалённый проект') AS name FROM scoped WHERE project_id IS NOT NULL GROUP BY project_id ORDER BY name,id`);
-    const facetModels = array(`SELECT model_id AS id,max(model_name) AS name FROM scoped GROUP BY model_id ORDER BY name,id`);
-    const facetAgents = array(`SELECT agent_id AS id,coalesce(max(agent_name),'Агент проекта') AS name FROM scoped WHERE agent_id IS NOT NULL GROUP BY agent_id ORDER BY name,id`);
+    const facetUsers = array(
+        `SELECT actor_email AS email,coalesce(max(actor_name),actor_email,'Серверные задания') AS "displayName" FROM scoped GROUP BY actor_email ORDER BY lower(coalesce(max(actor_name),actor_email,'')),actor_email NULLS LAST`,
+    );
+    const facetProjects = array(
+        `SELECT project_id AS id,coalesce(max(project_name),'Удалённый проект') AS name FROM scoped WHERE project_id IS NOT NULL GROUP BY project_id ORDER BY name,id`,
+    );
+    const facetModels = array(
+        `SELECT model_id AS id,max(model_name) AS name FROM scoped GROUP BY model_id ORDER BY name,id`,
+    );
+    const facetAgents = array(
+        `SELECT agent_id AS id,coalesce(max(agent_name),'Агент проекта') AS name FROM scoped WHERE agent_id IS NOT NULL GROUP BY agent_id ORDER BY name,id`,
+    );
     const sql = `WITH scoped AS MATERIALIZED (
         SELECT u.*,NULLIF(p.display_name,'') AS actor_name,j.name AS project_name,a.name AS agent_name,
             coalesce(u.private_project_chat_room_id,private_room.id) AS protected_room_id
@@ -53,17 +76,33 @@ export function modelUsageReportQuery(scope: UsageScope, filter: UsageFilter): {
     return { sql, values };
 }
 
-type ReportRow = Pick<ModelUsageResult, 'summary' | 'byModel' | 'byPurpose' | 'facets' | 'byActor' | 'byProject' | 'byEndpoint' | 'byAgent' | 'series'> & {
-    windowTo: Date; items: Array<ModelUsageItem & { cursorAt: string }>; privateRooms: UsagePrivateRoom[];
+type ReportRow = Pick<
+    ModelUsageResult,
+    'summary' | 'byModel' | 'byPurpose' | 'facets' | 'byActor' | 'byProject' | 'byEndpoint' | 'byAgent' | 'series'
+> & {
+    windowTo: Date;
+    items: Array<ModelUsageItem & { cursorAt: string }>;
+    privateRooms: UsagePrivateRoom[];
 };
 const iso = (value: unknown): string => new Date(value as string | Date).toISOString();
 
 /** One SQL snapshot produces both user detail and totals; history tokens retain PostgreSQL microseconds. */
 export async function readModelUsageReport(db: Pick<PoolClient, 'query'>, scope: UsageScope, filter: UsageFilter) {
-    const query = modelUsageReportQuery(scope, filter), row = (await db.query<ReportRow>(query.sql, query.values)).rows[0];
+    const query = modelUsageReportQuery(scope, filter),
+        row = (await db.query<ReportRow>(query.sql, query.values)).rows[0];
     const { items: raw, windowTo, ...report } = row;
-    const items = raw.slice(0, filter.limit).map(({ cursorAt: _cursorAt, ...item }) => ({ ...item, startedAt: iso(item.startedAt),
-        finishedAt: item.finishedAt ? iso(item.finishedAt) : null, dispatchedAt: item.dispatchedAt ? iso(item.dispatchedAt) : null }));
+    const items = raw.slice(0, filter.limit).map(({ cursorAt: _cursorAt, ...item }) => ({
+        ...item,
+        startedAt: iso(item.startedAt),
+        finishedAt: item.finishedAt ? iso(item.finishedAt) : null,
+        dispatchedAt: item.dispatchedAt ? iso(item.dispatchedAt) : null,
+    }));
     const last = raw[Math.min(raw.length, filter.limit) - 1];
-    return { ...report, items, windowTo: iso(windowTo), hasMore: raw.length > filter.limit, cursor: last ? { startedAt: last.cursorAt, id: last.id } : null };
+    return {
+        ...report,
+        items,
+        windowTo: iso(windowTo),
+        hasMore: raw.length > filter.limit,
+        cursor: last ? { startedAt: last.cursorAt, id: last.id } : null,
+    };
 }

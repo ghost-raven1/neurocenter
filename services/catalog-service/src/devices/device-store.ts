@@ -1,5 +1,5 @@
-import {ensureCatalogSchema} from '../database/catalog-schema';
-import {createPool} from '../database/pool';
+import { ensureCatalogSchema } from '../database/catalog-schema';
+import { createPool } from '../database/pool';
 import {
     BadRequestException,
     ConflictException,
@@ -10,14 +10,13 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import type {PoolClient} from 'pg';
+import type { PoolClient } from 'pg';
 import { AccessDb } from '../access/access-db';
 import type { IAccessActor } from '../access/access.model';
-import {recordDeviceOperation,notifyDeviceOperations} from './device-operations';
-import { workspaceReport,bridgePresence } from './device-report';
+import { recordDeviceOperation, notifyDeviceOperations } from './device-operations';
+import { workspaceReport, bridgePresence } from './device-report';
 
-export const digest = (value: string): string =>
-    createHash('sha256').update(value).digest('hex');
+export const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
 export interface Device {
     id: string;
     email: string;
@@ -28,21 +27,34 @@ export interface Device {
     report: Record<string, unknown>;
     revoked: boolean;
 }
-interface IRevokedJob {id:string;kind:string;project_id:string|null;email:string;state:'cancelled'|'failed'|'reconciling';percent:number|null;message:string;}
+interface IRevokedJob {
+    id: string;
+    kind: string;
+    project_id: string | null;
+    email: string;
+    state: 'cancelled' | 'failed' | 'reconciling';
+    percent: number | null;
+    message: string;
+}
 
 /** Личная привязка MCP: в базе хранятся хэши секретов, в интерфейс они не возвращаются. */
 @Injectable()
 export class DeviceStore implements OnModuleInit, OnModuleDestroy {
-    readonly pool = createPool({
-        connectionString:
-            process.env.CATALOG_PG_URL ||
-            'postgresql://rag:rag@localhost:5432/catalog',
-        max: 4,
-    },'devices');
+    readonly pool = createPool(
+        {
+            connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
+            max: 4,
+        },
+        'devices',
+    );
     constructor(readonly access: AccessDb) {}
-    private initialization?:Promise<void>;
-    ready():Promise<void>{return this.initialization??=this.initialize();}
-    async onModuleInit(): Promise<void> {await this.ready();}
+    private initialization?: Promise<void>;
+    ready(): Promise<void> {
+        return (this.initialization ??= this.initialize());
+    }
+    async onModuleInit(): Promise<void> {
+        await this.ready();
+    }
     private async initialize(): Promise<void> {
         await ensureCatalogSchema(this.pool);
     }
@@ -56,37 +68,43 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             !input.name.trim() ||
             input.name.length > 100 ||
             typeof input.fingerprint !== 'string' ||
-            !/^[a-f0-9]{32,64}$/.test(input.fingerprint)
-            || (input.credentialHash !== undefined && (typeof input.credentialHash !== 'string' || !/^[a-f0-9]{64}$/.test(input.credentialHash)))
+            !/^[a-f0-9]{32,64}$/.test(input.fingerprint) ||
+            (input.credentialHash !== undefined &&
+                (typeof input.credentialHash !== 'string' || !/^[a-f0-9]{64}$/.test(input.credentialHash)))
         ) {
-            throw new BadRequestException(
-                'Некорректное имя или отпечаток MCP.',
-            );
+            throw new BadRequestException('Некорректное имя или отпечаток MCP.');
         }
         const code = randomBytes(32).toString('hex');
         const userCode = randomBytes(8).toString('hex').toUpperCase();
         // Просроченный ключ доказывает прежнюю привязку, но её продление всё равно требует входа владельца.
-        const resume = input.credentialHash && /^[a-f0-9]{64}$/.test(previousToken || '')
-            ? await this.pool.query('SELECT id FROM bridge_devices WHERE token_hash=$1 AND NOT revoked', [digest(previousToken!)])
-            : { rows: [] };
-        await this.pool.query(
-            'DELETE FROM bridge_pairs WHERE expires_at<now()',
-        );
+        const resume =
+            input.credentialHash && /^[a-f0-9]{64}$/.test(previousToken || '')
+                ? await this.pool.query('SELECT id FROM bridge_devices WHERE token_hash=$1 AND NOT revoked', [
+                      digest(previousToken!),
+                  ])
+                : { rows: [] };
+        await this.pool.query('DELETE FROM bridge_pairs WHERE expires_at<now()');
         await this.pool.query(
             'INSERT INTO bridge_pairs(code_hash,user_code,name,fingerprint,proposed_token_hash,resume_device_id,resume_token_hash) VALUES($1,$2,$3,$4,$5,$6,$7)',
-            [digest(code), userCode, input.name.trim(), input.fingerprint, input.credentialHash || null, resume.rows[0]?.id || null, resume.rows[0] ? digest(previousToken!) : null],
+            [
+                digest(code),
+                userCode,
+                input.name.trim(),
+                input.fingerprint,
+                input.credentialHash || null,
+                resume.rows[0]?.id || null,
+                resume.rows[0] ? digest(previousToken!) : null,
+            ],
         );
         return { deviceCode: code, userCode, expiresIn: 600 };
     }
     async pairInfo(userCode: string, actor: IAccessActor) {
         const { rows } = await this.pool.query(
             'SELECT user_code AS "userCode",name,fingerprint,expires_at AS "expiresAt",email IS NOT NULL AS approved FROM bridge_pairs WHERE user_code=$1 AND expires_at>now() AND (email IS NULL OR email=$2)',
-            [userCode,actor.email],
+            [userCode, actor.email],
         );
         if (!rows[0]) {
-            throw new ConflictException(
-                'Код подключения истёк или уже использован. Начните подключение в MCP заново.',
-            );
+            throw new ConflictException('Код подключения истёк или уже использован. Начните подключение в MCP заново.');
         }
         return rows[0];
     }
@@ -101,9 +119,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             [userCode, actor.email, actor.activeRole],
         );
         if (!rowCount) {
-            throw new ConflictException(
-                'Код истёк или подключение уже подтверждено.',
-            );
+            throw new ConflictException('Код истёк или подключение уже подтверждено.');
         }
         return { ok: true };
     }
@@ -120,15 +136,22 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             );
             const pair = rows[0];
             if (!pair) {
-                throw new ConflictException(
-                    'Подключение истекло или уже завершено.',
-                );
+                throw new ConflictException('Подключение истекло или уже завершено.');
             }
             if (pair.issued) {
-                if (!pair.proposed_token_hash || !pair.issued_device_id) { throw new ConflictException('Подключение уже завершено.'); }
-                const issued = await client.query('SELECT id,email,role FROM bridge_devices WHERE id=$1 AND token_hash=$2 AND NOT revoked AND expires_at>now()', [pair.issued_device_id, pair.proposed_token_hash]);
-                if (!issued.rows[0]) { throw new ConflictException('Это подключение уже заменено или отозвано.'); }
-                if (!(await this.access.claims(issued.rows[0].email)).userRoles.includes(issued.rows[0].role)) { throw new ForbiddenException('Право подключения отозвано.'); }
+                if (!pair.proposed_token_hash || !pair.issued_device_id) {
+                    throw new ConflictException('Подключение уже завершено.');
+                }
+                const issued = await client.query(
+                    'SELECT id,email,role FROM bridge_devices WHERE id=$1 AND token_hash=$2 AND NOT revoked AND expires_at>now()',
+                    [pair.issued_device_id, pair.proposed_token_hash],
+                );
+                if (!issued.rows[0]) {
+                    throw new ConflictException('Это подключение уже заменено или отозвано.');
+                }
+                if (!(await this.access.claims(issued.rows[0].email)).userRoles.includes(issued.rows[0].role)) {
+                    throw new ForbiddenException('Право подключения отозвано.');
+                }
                 await client.query('COMMIT');
                 return { state: 'connected', deviceId: issued.rows[0].id, email: issued.rows[0].email };
             }
@@ -144,27 +167,35 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             const id = pair.resume_device_id || randomUUID();
             const tokenHash = pair.proposed_token_hash || digest(token);
             if (pair.resume_device_id) {
-                const retained = await client.query('SELECT id FROM bridge_devices WHERE id=$1 AND email=$2 AND token_hash=$3 AND NOT revoked FOR UPDATE', [id, pair.email, pair.resume_token_hash]);
-                if (!retained.rows.length) { throw new ConflictException('Прежнее подключение уже отозвано. Начните подключение заново.'); }
-                if (await this.activeLocalWork(client, id)) throw new ConflictException('Компьютер ещё завершает задания. Дождитесь подтверждения остановки и повторите подключение.');
-                const renewed = await client.query(`UPDATE bridge_devices SET token_hash=$2,role=$3,name=$4,fingerprint=$5,expires_at=now()+interval '30 days',last_seen=NULL
-                    WHERE id=$1 AND email=$6 AND token_hash=$7 AND NOT revoked RETURNING id`, [id, tokenHash, pair.role, pair.name, pair.fingerprint, pair.email, pair.resume_token_hash]);
-                if (!renewed.rows.length) { throw new ConflictException('Прежнее подключение уже отозвано. Начните подключение заново.'); }
-            } else { await client.query(
-                'INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash) VALUES($1,$2,$3,$4,$5,$6)',
-                [
-                    id,
-                    pair.email,
-                    pair.role,
-                    pair.name,
-                    pair.fingerprint,
-                    tokenHash,
-                ],
-            ); }
-            await client.query(
-                'UPDATE bridge_pairs SET issued=true,issued_device_id=$2 WHERE code_hash=$1',
-                [digest(code), id],
-            );
+                const retained = await client.query(
+                    'SELECT id FROM bridge_devices WHERE id=$1 AND email=$2 AND token_hash=$3 AND NOT revoked FOR UPDATE',
+                    [id, pair.email, pair.resume_token_hash],
+                );
+                if (!retained.rows.length) {
+                    throw new ConflictException('Прежнее подключение уже отозвано. Начните подключение заново.');
+                }
+                if (await this.activeLocalWork(client, id))
+                    throw new ConflictException(
+                        'Компьютер ещё завершает задания. Дождитесь подтверждения остановки и повторите подключение.',
+                    );
+                const renewed = await client.query(
+                    `UPDATE bridge_devices SET token_hash=$2,role=$3,name=$4,fingerprint=$5,expires_at=now()+interval '30 days',last_seen=NULL
+                    WHERE id=$1 AND email=$6 AND token_hash=$7 AND NOT revoked RETURNING id`,
+                    [id, tokenHash, pair.role, pair.name, pair.fingerprint, pair.email, pair.resume_token_hash],
+                );
+                if (!renewed.rows.length) {
+                    throw new ConflictException('Прежнее подключение уже отозвано. Начните подключение заново.');
+                }
+            } else {
+                await client.query(
+                    'INSERT INTO bridge_devices(id,email,role,name,fingerprint,token_hash) VALUES($1,$2,$3,$4,$5,$6)',
+                    [id, pair.email, pair.role, pair.name, pair.fingerprint, tokenHash],
+                );
+            }
+            await client.query('UPDATE bridge_pairs SET issued=true,issued_device_id=$2 WHERE code_hash=$1', [
+                digest(code),
+                id,
+            ]);
             await client.query('COMMIT');
             return {
                 state: 'connected',
@@ -193,21 +224,22 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         }
         const claims = await this.access.claims(device.email);
         if (!claims.userRoles.includes(device.role)) {
-            throw new ForbiddenException(
-                'Роль MCP отозвана. Подключите MCP с доступной ролью.',
-            );
+            throw new ForbiddenException('Роль MCP отозвана. Подключите MCP с доступной ролью.');
         }
         return device;
     }
-    async owned(actor: IAccessActor, id: string, allowExpired = false, db:Pick<PoolClient,'query'>=this.pool): Promise<Device> {
+    async owned(
+        actor: IAccessActor,
+        id: string,
+        allowExpired = false,
+        db: Pick<PoolClient, 'query'> = this.pool,
+    ): Promise<Device> {
         const { rows } = await db.query(
             'SELECT id,email,role,name,fingerprint,last_seen,report,revoked FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND ($3::boolean OR expires_at>now())',
             [id, actor.email, allowExpired],
         );
         if (!rows[0]) {
-            throw new ForbiddenException(
-                'Этот MCP не подключён к вашему профилю.',
-            );
+            throw new ForbiddenException('Этот MCP не подключён к вашему профилю.');
         }
         return rows[0] as Device;
     }
@@ -219,72 +251,109 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             expires_at>now() AND last_seen>now()-interval '40 seconds' AS online FROM bridge_devices WHERE email=$1 AND NOT revoked ORDER BY last_seen DESC NULLS LAST`,
                 [actor.email],
             )
-        ).rows.map(row => {
-            try { return { ...row, report: workspaceReport(row.report) }; }
-            catch { return { ...row, report: { rootError: 'Отчёт компьютера повреждён. Обновите локальный MCP.' } }; }
+        ).rows.map((row) => {
+            try {
+                return { ...row, report: workspaceReport(row.report) };
+            } catch {
+                return { ...row, report: { rootError: 'Отчёт компьютера повреждён. Обновите локальный MCP.' } };
+            }
         });
     }
     async revoke(actor: IAccessActor, id: string) {
         await this.owned(actor, id, true);
-        const client=await this.pool.connect();
-        try{
+        const client = await this.pool.connect();
+        try {
             await client.query('BEGIN');
-            await client.query('UPDATE bridge_devices SET revoked=true WHERE id=$1',[id]);
-            const {rows}=await client.query<IRevokedJob>(`UPDATE bridge_jobs SET state=CASE WHEN state='queued' THEN 'cancelled' WHEN kind IN ('install','uninstall','apply-local-change','apply-adopt-installation','apply-local-restore','bind-project') THEN 'reconciling' ELSE 'failed' END,
+            await client.query('UPDATE bridge_devices SET revoked=true WHERE id=$1', [id]);
+            const { rows } = await client.query<IRevokedJob>(
+                `UPDATE bridge_jobs SET state=CASE WHEN state='queued' THEN 'cancelled' WHEN kind IN ('install','uninstall','apply-local-change','apply-adopt-installation','apply-local-restore','bind-project') THEN 'reconciling' ELSE 'failed' END,
                 message=CASE WHEN state='queued' THEN 'Подключение моста отключено. Задание отменено.' ELSE 'Мост отключён во время выполнения. Проверьте локальные файлы перед повтором.' END,
-                updated_at=now() WHERE device_id=$1 AND state IN ('queued','running','reconciling') RETURNING *`,[id]);
-            for(const job of rows){await recordDeviceOperation(client,job,job.state==='reconciling'?'RUNNING':String(job.state).toUpperCase(),job.percent??0,job.message);}
+                updated_at=now() WHERE device_id=$1 AND state IN ('queued','running','reconciling') RETURNING *`,
+                [id],
+            );
+            for (const job of rows) {
+                await recordDeviceOperation(
+                    client,
+                    job,
+                    job.state === 'reconciling' ? 'RUNNING' : String(job.state).toUpperCase(),
+                    job.percent ?? 0,
+                    job.message,
+                );
+            }
             await client.query('COMMIT');
-        }catch(error){await client.query('ROLLBACK').catch(()=>undefined);throw error;}finally{client.release();}
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+        } finally {
+            client.release();
+        }
         await notifyDeviceOperations();
         return { ok: true };
     }
     async heartbeat(device: Device, report: unknown) {
         const checked = workspaceReport(report);
+        await this.pool.query('UPDATE bridge_devices SET last_seen=now(),report=$2 WHERE id=$1', [device.id, checked]);
+        return { ok: true };
+    }
+    /** Preserve authoritative project data when only the worker's runtime identity is available. */
+    async presence(device: Device, report: unknown) {
+        const checked = bridgePresence(report);
         await this.pool.query(
-            'UPDATE bridge_devices SET last_seen=now(),report=$2 WHERE id=$1',
+            `UPDATE bridge_devices SET last_seen=now(),report=CASE WHEN jsonb_typeof(report)='object' THEN report || $2::jsonb ELSE report END WHERE id=$1`,
             [device.id, checked],
         );
         return { ok: true };
     }
-    /** Preserve authoritative project data when only the worker's runtime identity is available. */
-    async presence(device:Device,report:unknown){
-        const checked=bridgePresence(report);
-        await this.pool.query(`UPDATE bridge_devices SET last_seen=now(),report=CASE WHEN jsonb_typeof(report)='object' THEN report || $2::jsonb ELSE report END WHERE id=$1`,[device.id,checked]);
-        return {ok:true};
-    }
     /** Старый ключ разрешает только паузу своей очереди; renewal ждёт завершения этой транзакции. */
-    private async maintenance<T>(token:unknown,action:(client:PoolClient,id:string)=>Promise<T>):Promise<T> {
-        if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(token))throw new UnauthorizedException('MCP не подключён.');
+    private async maintenance<T>(token: unknown, action: (client: PoolClient, id: string) => Promise<T>): Promise<T> {
+        if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token))
+            throw new UnauthorizedException('MCP не подключён.');
         const client = await this.pool.connect();
-        let discard=false;
+        let discard = false;
         try {
             await client.query('BEGIN');
-            const selected=await client.query<{id:string}>('SELECT id FROM bridge_devices WHERE token_hash=$1 FOR UPDATE',[digest(token)]);
-            if(!selected.rows[0])throw new UnauthorizedException('Ключ MCP отсутствует или уже заменён. Подключите компьютер заново.');
-            const result=await action(client,selected.rows[0].id);
+            const selected = await client.query<{ id: string }>(
+                'SELECT id FROM bridge_devices WHERE token_hash=$1 FOR UPDATE',
+                [digest(token)],
+            );
+            if (!selected.rows[0])
+                throw new UnauthorizedException('Ключ MCP отсутствует или уже заменён. Подключите компьютер заново.');
+            const result = await action(client, selected.rows[0].id);
             await client.query('COMMIT');
             return result;
-        } catch (error) { await client.query('ROLLBACK').catch(() => {discard=true;}); throw error; }
-        finally { if(discard)client.release(true);else client.release(); }
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {
+                discard = true;
+            });
+            throw error;
+        } finally {
+            if (discard) client.release(true);
+            else client.release();
+        }
     }
     /** Пауза сериализована с claim и учитывает неподтверждённые локальные задания после отзыва. */
-    async pause(token:unknown) {
-        return this.maintenance(token,async(client,id)=>{
+    async pause(token: unknown) {
+        return this.maintenance(token, async (client, id) => {
             await client.query("UPDATE bridge_devices SET paused_until=now()+interval '1 minute' WHERE id=$1", [id]);
             return { activeJobs: await this.activeLocalWork(client, id) };
         });
     }
     /** Called only while the device row is locked, so neither queue can claim across pause or credential replacement. */
-    private async activeLocalWork(client:PoolClient,id:string):Promise<number> {
-        const active = await client.query<{ count: string }>(`SELECT count(*) FROM bridge_jobs WHERE device_id=$1 AND (state IN ('running','reconciling')
-            OR (state='failed' AND message='Мост отключён во время выполнения. Проверьте локальные файлы перед повтором.'))`, [id]);
-        const mcp = await client.query<{ count: string }>(`SELECT count(*) FROM system_role_mcp_sessions
-            WHERE target->>'runtime'='device' AND target->>'deviceId'=$1 AND claimed_at IS NOT NULL AND worker_closed_at IS NULL`, [id]);
+    private async activeLocalWork(client: PoolClient, id: string): Promise<number> {
+        const active = await client.query<{ count: string }>(
+            `SELECT count(*) FROM bridge_jobs WHERE device_id=$1 AND (state IN ('running','reconciling')
+            OR (state='failed' AND message='Мост отключён во время выполнения. Проверьте локальные файлы перед повтором.'))`,
+            [id],
+        );
+        const mcp = await client.query<{ count: string }>(
+            `SELECT count(*) FROM system_role_mcp_sessions
+            WHERE target->>'runtime'='device' AND target->>'deviceId'=$1 AND claimed_at IS NOT NULL AND worker_closed_at IS NULL`,
+            [id],
+        );
         return Number(active.rows[0]?.count || 0) + Number(mcp.rows[0]?.count || 0);
     }
-    async resume(token:unknown) {
-        return this.maintenance(token,async(client,id)=>{
+    async resume(token: unknown) {
+        return this.maintenance(token, async (client, id) => {
             await client.query('UPDATE bridge_devices SET paused_until=NULL WHERE id=$1', [id]);
             return { ok: true };
         });

@@ -21,34 +21,21 @@
 export type TRoleName = 'Наблюдатель' | 'Разработчик' | 'Админ проекта' | 'Главный админ';
 
 export type TAction =
-    | 'read'
-    | 'content'
-    | 'ops'
-    | 'install'
-    | 'member'
-    | 'role'
-    | 'quota'
-    | 'delete'
-    | 'assign_admin'
-    | 'maintenance';
+    'read' | 'content' | 'ops' | 'install' | 'member' | 'role' | 'quota' | 'delete' | 'assign_admin' | 'maintenance';
 
 interface IRoleInfo {
     level: number;
 }
 
 const ROLE_LEVELS: Record<TRoleName, IRoleInfo> = {
-    'Наблюдатель': { level: 1 },
-    'Разработчик': { level: 2 },
+    Наблюдатель: { level: 1 },
+    Разработчик: { level: 2 },
     'Админ проекта': { level: 3 },
     'Главный админ': { level: 4 },
 };
 
 /** Допустимые роли участника проекта (без системной «Главный админ»). */
-export const MEMBER_ROLE_OPTIONS: TRoleName[] = [
-    'Админ проекта',
-    'Разработчик',
-    'Наблюдатель',
-];
+export const MEMBER_ROLE_OPTIONS: TRoleName[] = ['Админ проекта', 'Разработчик', 'Наблюдатель'];
 
 /** Дефолтная роль при добавлении участника. */
 export const T_DEFAULT_MEMBER_ROLE: TRoleName = 'Разработчик';
@@ -100,7 +87,10 @@ export function roleLevel(role: string): number {
 export function getMainAdmins(): string[] {
     const raw = process.env.ADMIN_USERS || 'dev-user,dev@localhost';
 
-    return raw.split(',').map(v => v.trim()).filter(v => v.length > 0);
+    return raw
+        .split(',')
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
 }
 
 /**

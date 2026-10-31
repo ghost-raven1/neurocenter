@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const MODEL_SCHEMA_SQL=`
+export const MODEL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS model_catalog (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, descriptor JSONB NOT NULL CHECK(jsonb_typeof(descriptor)='object'),
             revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

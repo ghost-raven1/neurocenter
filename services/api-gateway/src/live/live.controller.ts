@@ -1,10 +1,4 @@
-import {
-    Body,
-    Controller,
-    ForbiddenException,
-    Headers,
-    Post,
-} from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Headers, Post } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import { LiveService } from './live.service';
 
@@ -12,10 +6,7 @@ import { LiveService } from './live.service';
 @Controller('internal/events')
 export class LiveController {
     constructor(private readonly live: LiveService) {}
-    @Post() publish(
-        @Headers('x-neurocenter-internal') token: string,
-        @Body() body: { sections?: string[] },
-    ) {
+    @Post() publish(@Headers('x-neurocenter-internal') token: string, @Body() body: { sections?: string[] }) {
         const expected = process.env.NEUROCENTER_INTERNAL_TOKEN || '';
         if (
             !expected ||
@@ -25,20 +16,8 @@ export class LiveController {
         ) {
             throw new ForbiddenException();
         }
-        const allowed = [
-            'projects',
-            'catalog',
-            'knowledge',
-            'access',
-            'maintenance',
-            'audit',
-            'operations',
-        ];
-        this.live.sections(
-            (body.sections || []).filter((section) =>
-                allowed.includes(section),
-            ),
-        );
+        const allowed = ['projects', 'catalog', 'knowledge', 'access', 'maintenance', 'audit', 'operations'];
+        this.live.sections((body.sections || []).filter((section) => allowed.includes(section)));
         return { ok: true };
     }
 }

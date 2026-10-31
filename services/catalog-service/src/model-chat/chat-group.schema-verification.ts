@@ -12,5 +12,5 @@ END $verify_chat_group$;`;
 /** Verify pinned participants and response history without changing private conversations. */
 export async function assertChatGroupSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема групповых диалогов не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема групповых диалогов не готова: ' + rows.map((row) => row.issue).join(', '));
 }

@@ -8,11 +8,22 @@ import type { IRemoteConnectionInput } from './remote-model.types';
 /** Приватная настройка доступна только главному администратору; ключ write-only. */
 @Controller('api/models')
 export class RemoteConnectionController {
-    constructor(private readonly models: ModelsService, private readonly remote: RemoteConnectionService, private readonly opencode: OpenCodeModelImport) {}
+    constructor(
+        private readonly models: ModelsService,
+        private readonly remote: RemoteConnectionService,
+        private readonly opencode: OpenCodeModelImport,
+    ) {}
     @Post('import-opencode')
-    import(@Req() request: Request, @Body() body: unknown) { return this.opencode.import(request, body); }
+    import(@Req() request: Request, @Body() body: unknown) {
+        return this.opencode.import(request, body);
+    }
     @Get(':id/connection')
-    async read(@Param('id') id: string, @Req() request: Request) { await this.models.requireMain(request); const result = await this.remote.read(id); await this.models.requireMain(request); return result; }
+    async read(@Param('id') id: string, @Req() request: Request) {
+        await this.models.requireMain(request);
+        const result = await this.remote.read(id);
+        await this.models.requireMain(request);
+        return result;
+    }
     @Put(':id/connection')
     async save(@Param('id') id: string, @Body() body: IRemoteConnectionInput, @Req() request: Request) {
         const actor = await this.models.requireMain(request);

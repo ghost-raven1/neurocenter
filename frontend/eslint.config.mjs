@@ -16,7 +16,7 @@ export default defineConfig({
         'no-control-regex': 'off',
         // Public errors deliberately replace sensitive transport failures; the frontend targets ES2020.
         'preserve-caught-error': 'off',
-        '@typescript-eslint/no-unused-vars': ['error', {ignoreRestSiblings: true}],
+        '@typescript-eslint/no-unused-vars': ['error', {ignoreRestSiblings: true, argsIgnorePattern: '^_'}],
         'react-hooks/rules-of-hooks': 'error',
         'react-hooks/exhaustive-deps': 'warn',
     },

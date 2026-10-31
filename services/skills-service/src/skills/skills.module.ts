@@ -23,8 +23,11 @@ const storagePath = process.env.SKILLS_STORAGE_PATH
     providers: [
         SkillsService,
         // Рабочее хранилище публикует pins только после подтверждения каталога.
-        { provide: SKILLS_STORAGE, useValue: new FsSkillsStorage(storagePath, reserveSkillDependencies, deliverSkillAudit) },
+        {
+            provide: SKILLS_STORAGE,
+            useValue: new FsSkillsStorage(storagePath, reserveSkillDependencies, deliverSkillAudit),
+        },
     ],
-    exports:[SKILLS_STORAGE],
+    exports: [SKILLS_STORAGE],
 })
 export class SkillsModule {}

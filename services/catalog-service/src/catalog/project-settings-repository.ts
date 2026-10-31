@@ -4,7 +4,7 @@ import { securityEvent } from '../access/security-events';
 import type { IQuota, TProjectState } from './dto';
 import type { IProjectRow } from './project-row';
 import { validateProjectSettings } from './project-validation';
-import {normalizeProjectQuota} from './project-quota';
+import { normalizeProjectQuota } from './project-quota';
 
 export interface IProjectSettingsPatch {
     state?: TProjectState;
@@ -14,7 +14,13 @@ export interface IProjectSettingsPatch {
 }
 
 function settings(row: IProjectRow) {
-    return { projectId: row.id, state: row.state, retention: row.retention, quotas: row.quota, fsRootPath: row.fs_root_path };
+    return {
+        projectId: row.id,
+        state: row.state,
+        retention: row.retention,
+        quotas: row.quota,
+        fsRootPath: row.fs_root_path,
+    };
 }
 
 /** Настройки и аудит сохраняются вместе; блокировка строки сериализует одинаковые повторы. */
@@ -31,9 +37,14 @@ export class ProjectSettingsRepository {
                     WHERE (o.project_id=projects.id OR (o.project_id=projects.name AND projects.name NOT LIKE 'prj-%'))
                     AND o.state IN ('QUEUED','RUNNING')) AS active_operations
                  FROM projects WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'prj-%')
-                 ORDER BY (id=$1) DESC LIMIT 1 FOR UPDATE OF projects`, [idOrName]);
+                 ORDER BY (id=$1) DESC LIMIT 1 FOR UPDATE OF projects`,
+                [idOrName],
+            );
             const before = result.rows[0];
-            if (!before) { await client.query('COMMIT'); return null; }
+            if (!before) {
+                await client.query('COMMIT');
+                return null;
+            }
             const after = { ...before };
             if (body.state !== undefined) after.state = body.state;
             if (body.retention !== undefined) after.retention = body.retention;
@@ -42,14 +53,31 @@ export class ProjectSettingsRepository {
                 after.quota = { ...normalizeProjectQuota(before.quota), ...body.quotas };
             }
             if (!isDeepStrictEqual(settings(before), settings(after))) {
-                await client.query('UPDATE projects SET state=$2,retention=$3,quota=$4::jsonb,fs_root_path=$5,updated_at=now() WHERE id=$1',
-                    [before.id, after.state, after.retention, after.quota === null ? null : JSON.stringify(after.quota), after.fs_root_path]);
-                await securityEvent(client, { actor, action: 'project.settings.update', resourceId: before.id,
-                    before: settings(before), after: settings(after) });
+                await client.query(
+                    'UPDATE projects SET state=$2,retention=$3,quota=$4::jsonb,fs_root_path=$5,updated_at=now() WHERE id=$1',
+                    [
+                        before.id,
+                        after.state,
+                        after.retention,
+                        after.quota === null ? null : JSON.stringify(after.quota),
+                        after.fs_root_path,
+                    ],
+                );
+                await securityEvent(client, {
+                    actor,
+                    action: 'project.settings.update',
+                    resourceId: before.id,
+                    before: settings(before),
+                    after: settings(after),
+                });
             }
             await client.query('COMMIT');
             return after;
-        } catch (error) { await client.query('ROLLBACK'); throw error; }
-        finally { client.release(); }
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 }

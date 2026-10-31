@@ -36,7 +36,7 @@ export interface IRemoteModelConnection {
 }
 
 export interface IRemoteConnectionView {
-    authMode?:'none'|'optional'|'required';
+    authMode?: 'none' | 'optional' | 'required';
     modelId: string;
     modelRevision: number;
     revision: number;
@@ -53,7 +53,7 @@ export interface IRemoteConnectionView {
 }
 
 export interface IRemoteConnectionInput {
-    authMode?:'none'|'optional'|'required';
+    authMode?: 'none' | 'optional' | 'required';
     expectedRevision: number;
     expectedModelRevision: number;
     baseUrl: string;
@@ -68,4 +68,5 @@ export interface IRemoteConnectionInput {
 }
 
 export type RemoteModel = IModel & { runtime: 'remote-openai' | 'remote-ollama'; modelVersion: string };
-export const isRemoteModel = (model: Pick<IModel, 'runtime'>): boolean => model.runtime === 'remote-openai' || model.runtime === 'remote-ollama';
+export const isRemoteModel = (model: Pick<IModel, 'runtime'>): boolean =>
+    model.runtime === 'remote-openai' || model.runtime === 'remote-ollama';

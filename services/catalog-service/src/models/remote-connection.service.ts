@@ -12,120 +12,219 @@ import { ModelUsageService } from '../model-usage/model-usage.service';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
 import { ModelApiAdmission } from '../model-api-admission/model-api-admission';
-import {isModelProviderUnavailable,markModelProviderUnavailable} from './model-provider-availability';
-import {RemoteProviderAccessService} from '../remote-providers/remote-provider.service';
-import {remoteModelOptions,remoteModelTimeout} from './remote-model-options';
-import type {IRemoteConnectionRow} from './remote-connection.repository';
+import { isModelProviderUnavailable, markModelProviderUnavailable } from './model-provider-availability';
+import { RemoteProviderAccessService } from '../remote-providers/remote-provider.service';
+import { remoteModelOptions, remoteModelTimeout } from './remote-model-options';
+import type { IRemoteConnectionRow } from './remote-connection.repository';
 
 /** Все запросы провайдеру выполняются сервером; bridge получает только Gateway API и project pin. */
 @Injectable()
 export class RemoteConnectionService {
     readonly repository: RemoteConnectionRepository;
     private readonly client: RemoteModelClient;
-    constructor(private readonly models: ModelsService, private readonly usage?: ModelUsageService, admission?: ModelApiAdmission,private readonly personal?:RemoteProviderAccessService) {
-        this.repository = new RemoteConnectionRepository(models.pool); this.client = new RemoteModelClient({ admission });
+    constructor(
+        private readonly models: ModelsService,
+        private readonly usage?: ModelUsageService,
+        admission?: ModelApiAdmission,
+        private readonly personal?: RemoteProviderAccessService,
+    ) {
+        this.repository = new RemoteConnectionRepository(models.pool);
+        this.client = new RemoteModelClient({ admission });
     }
     private async remote(id: string): Promise<IModel> {
         const model = await this.models.get(id);
         if (!isRemoteModel(model)) throw new BadRequestException('Выберите модель удалённого API.');
         return model;
     }
-    async read(id: string) { const model = await this.remote(id); return this.repository.view(id, await this.repository.head(id), model.revision); }
+    async read(id: string) {
+        const model = await this.remote(id);
+        return this.repository.view(id, await this.repository.head(id), model.revision);
+    }
     async save(id: string, value: unknown, actor: string, authorize: () => Promise<unknown>) {
         await requireFeaturesEnabled(['personal_remote_provider_credentials']);
         await this.remote(id);
         const saved = await this.repository.save(id, remoteConnectionInput(value), actor, authorize);
-        await notifyModelCatalogChange(); return saved;
+        await notifyModelCatalogChange();
+        return saved;
     }
     async revoke(id: string, value: unknown, actor: string, authorize: () => Promise<unknown>): Promise<{ ok: true }> {
         await this.remote(id);
-        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadRequestException('Передайте ревизии подключения и модели.');
+        if (!value || typeof value !== 'object' || Array.isArray(value))
+            throw new BadRequestException('Передайте ревизии подключения и модели.');
         const body = value as Record<string, unknown>;
-        if (Object.keys(body).some(key => !['expectedRevision', 'expectedModelRevision'].includes(key))
-            || !Number.isSafeInteger(body.expectedRevision) || Number(body.expectedRevision) < 1
-            || !Number.isSafeInteger(body.expectedModelRevision) || Number(body.expectedModelRevision) < 1) throw new BadRequestException('Передайте актуальные ревизии подключения и модели.');
-        await this.repository.revoke(id, Number(body.expectedModelRevision), Number(body.expectedRevision), actor, authorize);
-        await notifyModelCatalogChange(); return { ok: true };
+        if (
+            Object.keys(body).some((key) => !['expectedRevision', 'expectedModelRevision'].includes(key)) ||
+            !Number.isSafeInteger(body.expectedRevision) ||
+            Number(body.expectedRevision) < 1 ||
+            !Number.isSafeInteger(body.expectedModelRevision) ||
+            Number(body.expectedModelRevision) < 1
+        )
+            throw new BadRequestException('Передайте актуальные ревизии подключения и модели.');
+        await this.repository.revoke(
+            id,
+            Number(body.expectedModelRevision),
+            Number(body.expectedRevision),
+            actor,
+            authorize,
+        );
+        await notifyModelCatalogChange();
+        return { ok: true };
     }
     async status(model: IModel): Promise<IModelHosting> {
         const row = await this.repository.head(model.id);
-        if (!row || row.revoked_at) return { state: 'unavailable', message: 'Настройте подключение удалённого API.', checkedAt: null };
+        if (!row || row.revoked_at)
+            return { state: 'unavailable', message: 'Настройте подключение удалённого API.', checkedAt: null };
         const view = this.repository.view(model.id, row, model.revision);
-        if (!row.semantic_sha || row.semantic_sha !== model.verificationSha256) return { state: 'stopped', message: 'Подключение сохранено. Выполните проверку модели перед использованием.', checkedAt: null };
-        return { state: 'ready', message: 'Провайдер проверен. Личный доступ настраивается отдельно; текущая доступность подтверждается запросом.', checkedAt: view.checkedAt };
+        if (!row.semantic_sha || row.semantic_sha !== model.verificationSha256)
+            return {
+                state: 'stopped',
+                message: 'Подключение сохранено. Выполните проверку модели перед использованием.',
+                checkedAt: null,
+            };
+        return {
+            state: 'ready',
+            message:
+                'Провайдер проверен. Личный доступ настраивается отдельно; текущая доступность подтверждается запросом.',
+            checkedAt: view.checkedAt,
+        };
     }
     /** Probe закрепляет фактическую размерность и конфигурацию только после повторной проверки прав и CAS. */
     async check(model: IModel, actor: string, authorize: () => Promise<unknown>, signal?: AbortSignal): Promise<void> {
         const row = await this.repository.head(model.id);
         if (!row || row.revoked_at) throw new ConflictException('Сначала настройте подключение удалённого API.');
         const connection = this.connectionMetadata(row);
-        if(!this.personal)throw new ServiceUnavailableException('Сервис личного доступа не настроен. Общий ключ не используется.');
-        const providerWire=this.personal.wire(model,row);
-        try {
-            const infer = async (signal?: AbortSignal) => {
-                // The usage reservation can wait; admit this new paid probe after that wait.
-                signal?.throwIfAborted(); await authorize(); signal?.throwIfAborted();
-                await requireFeaturesEnabled(['model_hosting'], process.env, globalThis.fetch, signal); signal?.throwIfAborted();
-                return model.capability === 'embedding'
-                    ? await this.client.infer(model, connection, 'embed', { input: ['Проверка поиска по проекту.', 'Project knowledge search.'] }, signal)
-                    : await this.client.infer(model, connection, 'chat', { messages: [{ role: 'user', content: model.capability === 'vision'
-                        ? 'Read the digits at the top and the color of the square. Return only JSON with string fields number and color in lowercase English.' : 'Reply with the word OK.',
-                        ...(model.capability === 'vision' ? { images: [visionFixture().toString('base64')] } : {}) }],
-                        options: { num_predict: connection.options?.apiFormat === 'responses' || connection.options?.tokenLimitParameter === 'max_completion_tokens'
-                            ? connection.options.maxOutputTokens ?? 64 : Math.min(connection.options?.maxOutputTokens ?? 64, 64) } }, signal);
-            };
-            await requireFeaturesEnabled(['model_hosting']); signal?.throwIfAborted();
-            const beforeInference = async () => {
-                signal?.throwIfAborted(); await authorize();
-                const current = await this.repository.head(model.id);
-                if (!current || current.revoked_at || Number(current.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось. Повторите проверку.');
-                signal?.throwIfAborted();
-            };
-            const result = await withModelUsage({ purpose: 'verification', actorEmail: actor, beforeInference,providerWire }, () => this.usage ? this.usage.observe(model, model.capability === 'embedding' ? 'embed' : 'chat', infer, signal) : infer(signal));
-            if (model.capability === 'vision') {
-                let observed: Record<string, unknown>;
-                try { observed = JSON.parse((result.message as { content: string }).content); } catch { throw new RemoteModelError('response', 'Модель не распознала тестовое изображение.'); }
-                if (!observed || observed.number !== '42' || observed.color !== 'red') throw new RemoteModelError('response', 'Модель неверно распознала тестовое изображение.');
-            }
+        if (!this.personal)
+            throw new ServiceUnavailableException('Сервис личного доступа не настроен. Общий ключ не используется.');
+        const providerWire = this.personal.wire(model, row);
+        // Personal failures propagate without changing global provider health.
+        const infer = async (signal?: AbortSignal) => {
+            // The usage reservation can wait; admit this new paid probe after that wait.
             signal?.throwIfAborted();
-            if (model.capability !== 'embedding' && result.done_reason !== 'stop') throw new RemoteModelError('response', 'Модель не завершила проверочный ответ.');
-            const dimension = model.capability === 'embedding' ? (result.embeddings as number[][])[0].length : null;
-            const digest = remoteVerificationDigest(model, connection, dimension);
-            await this.repository.verify(model, connection.revision, digest, dimension, actor, async () => { signal?.throwIfAborted(); await authorize(); signal?.throwIfAborted(); });
-            await notifyModelCatalogChange();
-        } catch (cause) {
-            // A personal key, allowance or provider response never changes global health for other users.
-            throw cause;
+            await authorize();
+            signal?.throwIfAborted();
+            await requireFeaturesEnabled(['model_hosting'], process.env, globalThis.fetch, signal);
+            signal?.throwIfAborted();
+            return model.capability === 'embedding'
+                ? await this.client.infer(
+                      model,
+                      connection,
+                      'embed',
+                      { input: ['Проверка поиска по проекту.', 'Project knowledge search.'] },
+                      signal,
+                  )
+                : await this.client.infer(
+                      model,
+                      connection,
+                      'chat',
+                      {
+                          messages: [
+                              {
+                                  role: 'user',
+                                  content:
+                                      model.capability === 'vision'
+                                          ? 'Read the digits at the top and the color of the square. Return only JSON with string fields number and color in lowercase English.'
+                                          : 'Reply with the word OK.',
+                                  ...(model.capability === 'vision'
+                                      ? { images: [visionFixture().toString('base64')] }
+                                      : {}),
+                              },
+                          ],
+                          options: {
+                              num_predict:
+                                  connection.options?.apiFormat === 'responses' ||
+                                  connection.options?.tokenLimitParameter === 'max_completion_tokens'
+                                      ? (connection.options.maxOutputTokens ?? 64)
+                                      : Math.min(connection.options?.maxOutputTokens ?? 64, 64),
+                          },
+                      },
+                      signal,
+                  );
+        };
+        await requireFeaturesEnabled(['model_hosting']);
+        signal?.throwIfAborted();
+        const beforeInference = async () => {
+            signal?.throwIfAborted();
+            await authorize();
+            const current = await this.repository.head(model.id);
+            if (!current || current.revoked_at || Number(current.revision) !== Number(row.revision))
+                throw new ConflictException('Подключение модели изменилось. Повторите проверку.');
+            signal?.throwIfAborted();
+        };
+        const result = await withModelUsage(
+            { purpose: 'verification', actorEmail: actor, beforeInference, providerWire },
+            () =>
+                this.usage
+                    ? this.usage.observe(model, model.capability === 'embedding' ? 'embed' : 'chat', infer, signal)
+                    : infer(signal),
+        );
+        if (model.capability === 'vision') {
+            let observed: Record<string, unknown>;
+            try {
+                observed = JSON.parse((result.message as { content: string }).content);
+            } catch {
+                throw new RemoteModelError('response', 'Модель не распознала тестовое изображение.');
+            }
+            if (!observed || observed.number !== '42' || observed.color !== 'red')
+                throw new RemoteModelError('response', 'Модель неверно распознала тестовое изображение.');
         }
+        signal?.throwIfAborted();
+        if (model.capability !== 'embedding' && result.done_reason !== 'stop')
+            throw new RemoteModelError('response', 'Модель не завершила проверочный ответ.');
+        const dimension = model.capability === 'embedding' ? (result.embeddings as number[][])[0].length : null;
+        const digest = remoteVerificationDigest(model, connection, dimension);
+        await this.repository.verify(model, connection.revision, digest, dimension, actor, async () => {
+            signal?.throwIfAborted();
+            await authorize();
+            signal?.throwIfAborted();
+        });
+        await notifyModelCatalogChange();
     }
-    async infer(model: IModel, endpoint: 'embed' | 'chat', body: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    async infer(
+        model: IModel,
+        endpoint: 'embed' | 'chat',
+        body: Record<string, unknown>,
+        signal?: AbortSignal,
+    ): Promise<Record<string, unknown>> {
         const row = await this.repository.pinned(model);
-        if(!this.personal)throw new ServiceUnavailableException('Сервис личного доступа не настроен. Общий ключ не используется.');
-        const providerWire=this.personal.wire(model,row);
+        if (!this.personal)
+            throw new ServiceUnavailableException('Сервис личного доступа не настроен. Общий ключ не используется.');
+        const providerWire = this.personal.wire(model, row);
         try {
-            const context = currentModelUsage(), inherited = context.beforeInference;
+            const context = currentModelUsage(),
+                inherited = context.beforeInference;
             const beforeInference = async () => {
-                await inherited?.(); signal?.throwIfAborted();
+                await inherited?.();
+                signal?.throwIfAborted();
                 const fresh = await this.repository.pinned(model);
-                if (Number(fresh.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось. Повторите действие.');
+                if (Number(fresh.revision) !== Number(row.revision))
+                    throw new ConflictException('Подключение модели изменилось. Повторите действие.');
                 signal?.throwIfAborted();
             };
-            const result = await withModelUsage({ purpose: context.purpose, beforeInference,providerWire }, () => this.client.infer(model, this.connectionMetadata(row), endpoint, body, signal));
+            const result = await withModelUsage({ purpose: context.purpose, beforeInference, providerWire }, () =>
+                this.client.infer(model, this.connectionMetadata(row), endpoint, body, signal),
+            );
             signal?.throwIfAborted();
             const current = await this.repository.pinned(model);
-            if (Number(current.revision) !== Number(row.revision)) throw new ConflictException('Подключение модели изменилось во время запроса. Повторите действие.');
+            if (Number(current.revision) !== Number(row.revision))
+                throw new ConflictException('Подключение модели изменилось во время запроса. Повторите действие.');
             return result;
         } catch (cause) {
             signal?.throwIfAborted();
             if (cause instanceof RemoteModelError) {
-                const error=new ServiceUnavailableException(cause.message);
-                throw isModelProviderUnavailable(cause)?markModelProviderUnavailable(error):error;
+                const error = new ServiceUnavailableException(cause.message);
+                throw isModelProviderUnavailable(cause) ? markModelProviderUnavailable(error) : error;
             }
             throw cause;
         }
     }
-    private connectionMetadata(row:IRemoteConnectionRow){
-        return {modelId:row.model_id,revision:Number(row.revision),baseUrl:row.base_url,requestDimensions:row.request_dimensions,
-            options:remoteModelOptions(row.options),timeoutMs:remoteModelTimeout(row.timeout_ms)};
+    private connectionMetadata(row: IRemoteConnectionRow) {
+        return {
+            modelId: row.model_id,
+            revision: Number(row.revision),
+            baseUrl: row.base_url,
+            requestDimensions: row.request_dimensions,
+            options: remoteModelOptions(row.options),
+            timeoutMs: remoteModelTimeout(row.timeout_ms),
+        };
     }
 }

@@ -1,5 +1,5 @@
 /** Only the migration runner creates tables and revocation triggers. */
-export const HOSTED_RAG_GRANT_SCHEMA_SQL=`
+export const HOSTED_RAG_GRANT_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS bridge_hosted_rag_grants(
         id UUID PRIMARY KEY,authorization_order BIGSERIAL NOT NULL,device_id TEXT NOT NULL REFERENCES bridge_devices(id),project_id TEXT NOT NULL,email TEXT NOT NULL,role TEXT NOT NULL,
         binding_id TEXT NOT NULL,instance_id TEXT NOT NULL,asset_kind TEXT NOT NULL CHECK(asset_kind IN ('mcp','plugin')),asset_id TEXT NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS bridge_hosted_rag_grants(
         CREATE INDEX IF NOT EXISTS bridge_hosted_grant_scope ON bridge_hosted_rag_grants(device_id,project_id,binding_id,instance_id) WHERE revoked_at IS NULL;
         CREATE TABLE IF NOT EXISTS bridge_hosted_grant_migrations(name TEXT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now());
 `;
-export const HOSTED_RAG_REVOCATION_SQL=`
+export const HOSTED_RAG_REVOCATION_SQL = `
 CREATE OR REPLACE FUNCTION revoke_hosted_rag_grants() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
             IF TG_TABLE_NAME='project_models' THEN

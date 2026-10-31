@@ -89,7 +89,7 @@ function scopeSummary(summary, family) {
     else if (family === 'coverage') { selected = summary.packages?.map(item => item.name) ?? []; steps = ['test']; }
     else { selected = summary.requestedPackages ?? []; steps = ['build']; }
     if (!Array.isArray(selected) || selected.some(id => !packageIds.has(id)) || selected.length > 32
-        || !Array.isArray(steps) || steps.length > 3 || steps.some(step => !['typecheck', 'build', 'test'].includes(step))) throw malformed();
+        || !Array.isArray(steps) || steps.length > 5 || steps.some(step => !['lint', 'format:check', 'typecheck', 'build', 'test'].includes(step))) throw malformed();
     const profile = family === 'coverage' ? summary.profile : null;
     if (profile !== null && (typeof profile !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9+._-]{0,119}$/.test(profile))) throw malformed();
     return {kind: family === 'isolated-build' ? 'build' : family, packages: [...new Set(selected)], steps: [...new Set(steps)],

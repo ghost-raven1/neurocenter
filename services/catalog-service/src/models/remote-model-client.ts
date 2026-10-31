@@ -1,4 +1,4 @@
-import {estimateModelTokens} from '../model-token-quotas/quota-estimate';
+import { estimateModelTokens } from '../model-token-quotas/quota-estimate';
 import type { IModel } from './model.types';
 import type { IRemoteModelConnection } from './remote-model.types';
 import { isRemoteModel } from './remote-model.types';
@@ -9,170 +9,388 @@ import type { ModelApiAdmission } from '../model-api-admission/model-api-admissi
 import { RemoteModelError } from './remote-model-error';
 import { openaiResponsesBody, openaiResponsesResult } from './remote-openai-responses';
 import { ADAPTER_PARAMETER_DEFINITIONS, applyAdapterParameters } from '../../../shared/adapter-parameters.cjs';
-import {markModelProviderUnavailable} from './model-provider-availability';
-import {currentModelUsage} from '../model-usage/model-usage.context';
+import { markModelProviderUnavailable } from './model-provider-availability';
+import { currentModelUsage } from '../model-usage/model-usage.context';
 export { RemoteModelError } from './remote-model-error';
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
-const validVector = (vector: unknown, dimension: number | null): vector is number[] => Array.isArray(vector) && vector.length > 0 && vector.length <= 16384
-    && (dimension === null || vector.length === dimension) && vector.every(value => typeof value === 'number' && Number.isFinite(Math.fround(value)))
-    && vector.some(value => Math.fround(value) !== 0);
+const validVector = (vector: unknown, dimension: number | null): vector is number[] =>
+    Array.isArray(vector) &&
+    vector.length > 0 &&
+    vector.length <= 16384 &&
+    (dimension === null || vector.length === dimension) &&
+    vector.every((value) => typeof value === 'number' && Number.isFinite(Math.fround(value))) &&
+    vector.some((value) => Math.fround(value) !== 0);
 
 /** Клиент делает только inference зарегистрированной модели и никогда не следует редиректам. */
 export class RemoteModelClient {
-    constructor(private readonly options: { fetch?: typeof fetch; timeoutMs?: number; maximumBytes?: number; admission?: Pick<ModelApiAdmission, 'run'> } = {}) {}
+    constructor(
+        private readonly options: {
+            fetch?: typeof fetch;
+            timeoutMs?: number;
+            maximumBytes?: number;
+            admission?: Pick<ModelApiAdmission, 'run'>;
+        } = {},
+    ) {}
 
-    async infer(model: IModel, connection: IRemoteModelConnection, endpoint: 'embed' | 'chat', body: Json, signal?: AbortSignal): Promise<Json> {
-        if (!isRemoteModel(model) || !model.modelVersion || connection.modelId !== model.id
-            || endpoint === 'embed' && model.capability !== 'embedding' || endpoint === 'chat' && model.capability === 'embedding') {
+    async infer(
+        model: IModel,
+        connection: IRemoteModelConnection,
+        endpoint: 'embed' | 'chat',
+        body: Json,
+        signal?: AbortSignal,
+    ): Promise<Json> {
+        if (
+            !isRemoteModel(model) ||
+            !model.modelVersion ||
+            connection.modelId !== model.id ||
+            (endpoint === 'embed' && model.capability !== 'embedding') ||
+            (endpoint === 'chat' && model.capability === 'embedding')
+        ) {
             throw new RemoteModelError('response', 'Запрос не соответствует удалённой модели.');
         }
         assertRemoteModelOptions(model, remoteModelOptions(connection.options));
         const openai = model.runtime === 'remote-openai';
         const texts = endpoint === 'embed' ? (Array.isArray(body.input) ? body.input : [body.input]) : [];
-        if (endpoint === 'embed' && (!texts.length || texts.length > 64 || texts.some(text => typeof text !== 'string' || !text.trim()) || Buffer.byteLength(JSON.stringify(texts)) > 1024 * 1024)) {
+        if (
+            endpoint === 'embed' &&
+            (!texts.length ||
+                texts.length > 64 ||
+                texts.some((text) => typeof text !== 'string' || !text.trim()) ||
+                Buffer.byteLength(JSON.stringify(texts)) > 1024 * 1024)
+        ) {
             throw new RemoteModelError('response', 'Передайте от 1 до 64 непустых текстов.');
         }
         const dimension = connection.requestDimensions && model.dimension ? { dimensions: model.dimension } : {};
-        let payload = endpoint === 'embed' ? { model: model.model, input: texts, ...dimension, ...(openai ? { encoding_format: 'float' } : { truncate: false }) }
-            : this.chatBody(model, body, openai, connection.options);
+        let payload =
+            endpoint === 'embed'
+                ? {
+                      model: model.model,
+                      input: texts,
+                      ...dimension,
+                      ...(openai ? { encoding_format: 'float' } : { truncate: false }),
+                  }
+                : this.chatBody(model, body, openai, connection.options);
         const responses = openai && endpoint === 'chat' && connection.options?.apiFormat === 'responses';
         if (connection.options?.providerParameters !== undefined) {
-            try { payload = applyAdapterParameters(payload, connection.options.providerParameters, ADAPTER_PARAMETER_DEFINITIONS[openai ? responses ? 'openai-responses' : 'openai-chat-completions' : 'ollama']); }
-            catch (cause) { throw new RemoteModelError('response', (cause as Error).message); }
+            try {
+                payload = applyAdapterParameters(
+                    payload,
+                    connection.options.providerParameters,
+                    ADAPTER_PARAMETER_DEFINITIONS[
+                        openai ? (responses ? 'openai-responses' : 'openai-chat-completions') : 'ollama'
+                    ],
+                );
+            } catch (cause) {
+                throw new RemoteModelError('response', (cause as Error).message);
+            }
         }
-        const route = openai ? endpoint === 'embed' ? '/embeddings' : responses ? '/responses' : '/chat/completions' : '/api/' + endpoint;
-        const url=remoteModelBaseUrl(connection.baseUrl);
-        if(connection.apiKey&&(connection.apiKey.length>8192||/[\x00-\x20\x7f]/.test(connection.apiKey)))
-            throw new RemoteModelError('authorization','Сохранённый ключ удалённого API некорректен.');
+        const route = openai
+            ? endpoint === 'embed'
+                ? '/embeddings'
+                : responses
+                  ? '/responses'
+                  : '/chat/completions'
+            : '/api/' + endpoint;
+        const url = remoteModelBaseUrl(connection.baseUrl);
+        if (connection.apiKey && (connection.apiKey.length > 8192 || /[\x00-\x20\x7f]/.test(connection.apiKey)))
+            throw new RemoteModelError('authorization', 'Сохранённый ключ удалённого API некорректен.');
         const request = () => this.request(url + route, payload, connection.apiKey, signal, connection.timeoutMs);
-        const value = await (this.options.admission ? this.options.admission.run(model, signal, request, () => estimateModelTokens(model,endpoint,payload)) : request());
+        const value = await (this.options.admission
+            ? this.options.admission.run(model, signal, request, () => estimateModelTokens(model, endpoint, payload))
+            : request());
         const responseModel = connection.options?.responseModel ?? model.model;
-        if (value.model !== responseModel) { throw new RemoteModelError('response', 'Удалённый API вернул ответ другой модели.'
-            + (openai ? ' Укажите точный идентификатор ответа в параметрах подключения, если провайдер использует алиас.' : '')); }
+        if (value.model !== responseModel) {
+            throw new RemoteModelError(
+                'response',
+                'Удалённый API вернул ответ другой модели.' +
+                    (openai
+                        ? ' Укажите точный идентификатор ответа в параметрах подключения, если провайдер использует алиас.'
+                        : ''),
+            );
+        }
         if (endpoint === 'embed') {
             const vectors = openai ? this.openaiVectors(value, texts.length) : value.embeddings;
-            if (!Array.isArray(vectors) || vectors.length !== texts.length || !vectors.every(vector => validVector(vector, model.dimension))
-                || vectors.some(vector => vector.length !== vectors[0].length)) { throw new RemoteModelError('response', 'Удалённая модель вернула неполные или несовместимые векторы.'); }
+            if (
+                !Array.isArray(vectors) ||
+                vectors.length !== texts.length ||
+                !vectors.every((vector) => validVector(vector, model.dimension)) ||
+                vectors.some((vector) => vector.length !== vectors[0].length)
+            ) {
+                throw new RemoteModelError('response', 'Удалённая модель вернула неполные или несовместимые векторы.');
+            }
             const usage = openai && object(value.usage) ? value.usage.prompt_tokens : value.prompt_eval_count;
             const inputTokens = this.tokens(usage);
-            return { model: model.model, embeddings: vectors, prompt_eval_count: inputTokens, usage_reported: inputTokens !== null };
+            return {
+                model: model.model,
+                embeddings: vectors,
+                prompt_eval_count: inputTokens,
+                usage_reported: inputTokens !== null,
+            };
         }
         if (openai) {
             if (responses) {
-                const result = openaiResponsesResult(value), inputTokens = this.tokens(result.inputTokens), outputTokens = this.tokens(result.outputTokens);
-                return { model: model.model, done: true, done_reason: result.reason, message: { role: 'assistant', content: result.content },
-                    prompt_eval_count: inputTokens, eval_count: outputTokens, usage_reported: inputTokens !== null || outputTokens !== null };
+                const result = openaiResponsesResult(value),
+                    inputTokens = this.tokens(result.inputTokens),
+                    outputTokens = this.tokens(result.outputTokens);
+                return {
+                    model: model.model,
+                    done: true,
+                    done_reason: result.reason,
+                    message: { role: 'assistant', content: result.content },
+                    prompt_eval_count: inputTokens,
+                    eval_count: outputTokens,
+                    usage_reported: inputTokens !== null || outputTokens !== null,
+                };
             }
             const choice = Array.isArray(value.choices) && value.choices.length === 1 ? value.choices[0] : undefined;
-            if (!object(choice) || choice.index !== 0 || typeof choice.finish_reason !== 'string' || !['stop', 'length'].includes(choice.finish_reason) || !object(choice.message)
-                || typeof choice.message.content !== 'string' || !choice.message.content.trim()) { throw new RemoteModelError('response', 'Удалённая модель не завершила ответ.'); }
+            if (
+                !object(choice) ||
+                choice.index !== 0 ||
+                typeof choice.finish_reason !== 'string' ||
+                !['stop', 'length'].includes(choice.finish_reason) ||
+                !object(choice.message) ||
+                typeof choice.message.content !== 'string' ||
+                !choice.message.content.trim()
+            ) {
+                throw new RemoteModelError('response', 'Удалённая модель не завершила ответ.');
+            }
             const usage = object(value.usage) ? value.usage : {};
-            const inputTokens = this.tokens(usage.prompt_tokens), outputTokens = this.tokens(usage.completion_tokens);
-            return { model: model.model, done: true, done_reason: choice.finish_reason, message: { role: 'assistant', content: choice.message.content },
-                prompt_eval_count: inputTokens, eval_count: outputTokens, usage_reported: inputTokens !== null || outputTokens !== null };
+            const inputTokens = this.tokens(usage.prompt_tokens),
+                outputTokens = this.tokens(usage.completion_tokens);
+            return {
+                model: model.model,
+                done: true,
+                done_reason: choice.finish_reason,
+                message: { role: 'assistant', content: choice.message.content },
+                prompt_eval_count: inputTokens,
+                eval_count: outputTokens,
+                usage_reported: inputTokens !== null || outputTokens !== null,
+            };
         }
-        if (value.done !== true || !['stop', 'length'].includes(String(value.done_reason)) || !object(value.message)
-            || typeof value.message.content !== 'string' || !value.message.content.trim()) { throw new RemoteModelError('response', 'Удалённая модель не завершила ответ.'); }
-        return { ...value, usage_reported: this.tokens(value.prompt_eval_count) !== null || this.tokens(value.eval_count) !== null };
+        if (
+            value.done !== true ||
+            !['stop', 'length'].includes(String(value.done_reason)) ||
+            !object(value.message) ||
+            typeof value.message.content !== 'string' ||
+            !value.message.content.trim()
+        ) {
+            throw new RemoteModelError('response', 'Удалённая модель не завершила ответ.');
+        }
+        return {
+            ...value,
+            usage_reported: this.tokens(value.prompt_eval_count) !== null || this.tokens(value.eval_count) !== null,
+        };
     }
 
-    private tokens(value: unknown): number | null { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null; }
+    private tokens(value: unknown): number | null {
+        return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+    }
     private openaiVectors(value: Json, count: number): unknown {
-        if (value.object !== 'list' || !Array.isArray(value.data) || value.data.length !== count) { return undefined; }
+        if (value.object !== 'list' || !Array.isArray(value.data) || value.data.length !== count) {
+            return undefined;
+        }
         const result: unknown[] = [];
         for (const entry of value.data) {
-            if (!object(entry) || entry.object !== 'embedding' || !Number.isSafeInteger(entry.index) || Number(entry.index) < 0 || Number(entry.index) >= count
-                || Object.prototype.hasOwnProperty.call(result, Number(entry.index))) { return undefined; }
+            if (
+                !object(entry) ||
+                entry.object !== 'embedding' ||
+                !Number.isSafeInteger(entry.index) ||
+                Number(entry.index) < 0 ||
+                Number(entry.index) >= count ||
+                Object.prototype.hasOwnProperty.call(result, Number(entry.index))
+            ) {
+                return undefined;
+            }
             result[Number(entry.index)] = entry.embedding;
         }
         return result;
     }
 
     private chatBody(model: IModel, body: Json, openai: boolean, defaults?: IRemoteModelOptions): Json {
-        if (!Array.isArray(body.messages) || !body.messages.length) { throw new RemoteModelError('response', 'Передайте сообщения для модели.'); }
+        if (!Array.isArray(body.messages) || !body.messages.length) {
+            throw new RemoteModelError('response', 'Передайте сообщения для модели.');
+        }
         const supplied = object(body.options) ? body.options : {};
-        const options = remoteModelOptions({ ...defaults,
+        const options = remoteModelOptions({
+            ...defaults,
             ...(supplied.temperature === undefined ? {} : { temperature: supplied.temperature }),
             ...(supplied.top_p === undefined ? {} : { topP: supplied.top_p }),
             ...(supplied.num_predict === undefined ? {} : { maxOutputTokens: supplied.num_predict }),
-            ...(supplied.num_ctx === undefined ? {} : { contextWindow: supplied.num_ctx }) });
+            ...(supplied.num_ctx === undefined ? {} : { contextWindow: supplied.num_ctx }),
+        });
         assertRemoteModelOptions(model, options);
-        if (!openai) { return { model: model.model, messages: body.messages, stream: false, think: false, options: {
-            ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
-            ...(options.topP === undefined ? {} : { top_p: options.topP }),
-            ...(options.maxOutputTokens === undefined ? {} : { num_predict: options.maxOutputTokens }),
-            ...(options.contextWindow === undefined ? {} : { num_ctx: options.contextWindow }) } }; }
-        const messages = body.messages.map(message => {
-            if (!object(message) || typeof message.content !== 'string' || typeof message.role !== 'string' || !['system', 'user', 'assistant'].includes(message.role)) { throw new RemoteModelError('response', 'Некорректные сообщения модели.'); }
-            if (!Array.isArray(message.images) || !message.images.length) { return { role: message.role, content: message.content }; }
-            if (model.capability !== 'vision') { throw new RemoteModelError('response', 'Эта модель не принимает изображения.'); }
-            return { role: message.role, content: [{ type: 'text', text: message.content }, ...message.images.map(image => {
-                if (typeof image !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(image)) { throw new RemoteModelError('response', 'Некорректное изображение модели.'); }
-                const mime = Buffer.from(image, 'base64').subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) ? 'png' : 'jpeg';
-                return { type: 'image_url', image_url: { url: 'data:image/' + mime + ';base64,' + image } };
-            })] };
+        if (!openai) {
+            return {
+                model: model.model,
+                messages: body.messages,
+                stream: false,
+                think: false,
+                options: {
+                    ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+                    ...(options.topP === undefined ? {} : { top_p: options.topP }),
+                    ...(options.maxOutputTokens === undefined ? {} : { num_predict: options.maxOutputTokens }),
+                    ...(options.contextWindow === undefined ? {} : { num_ctx: options.contextWindow }),
+                },
+            };
+        }
+        const messages = body.messages.map((message) => {
+            if (
+                !object(message) ||
+                typeof message.content !== 'string' ||
+                typeof message.role !== 'string' ||
+                !['system', 'user', 'assistant'].includes(message.role)
+            ) {
+                throw new RemoteModelError('response', 'Некорректные сообщения модели.');
+            }
+            if (!Array.isArray(message.images) || !message.images.length) {
+                return { role: message.role, content: message.content };
+            }
+            if (model.capability !== 'vision') {
+                throw new RemoteModelError('response', 'Эта модель не принимает изображения.');
+            }
+            return {
+                role: message.role,
+                content: [
+                    { type: 'text', text: message.content },
+                    ...message.images.map((image) => {
+                        if (typeof image !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(image)) {
+                            throw new RemoteModelError('response', 'Некорректное изображение модели.');
+                        }
+                        const mime = Buffer.from(image, 'base64')
+                            .subarray(0, 8)
+                            .equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+                            ? 'png'
+                            : 'jpeg';
+                        return { type: 'image_url', image_url: { url: 'data:image/' + mime + ';base64,' + image } };
+                    }),
+                ],
+            };
         });
         if (options.apiFormat === 'responses') return openaiResponsesBody(model.model, messages, options);
-        return { model: model.model, messages, stream: false,
+        return {
+            model: model.model,
+            messages,
+            stream: false,
             ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
             ...(options.topP === undefined ? {} : { top_p: options.topP }),
-            ...(options.maxOutputTokens === undefined ? {} : { [options.tokenLimitParameter ?? 'max_tokens']: options.maxOutputTokens }) };
+            ...(options.maxOutputTokens === undefined
+                ? {}
+                : { [options.tokenLimitParameter ?? 'max_tokens']: options.maxOutputTokens }),
+        };
     }
 
-    private async request(url: string, body: Json, apiKey?: string, signal?: AbortSignal, timeoutMs?: number): Promise<Json> {
+    private async request(
+        url: string,
+        body: Json,
+        apiKey?: string,
+        signal?: AbortSignal,
+        timeoutMs?: number,
+    ): Promise<Json> {
         signal?.throwIfAborted();
-        const wire=currentModelUsage().providerWire;
-        const lease=wire?(wire.current??await wire.acquire(signal)):undefined;
-        if(wire&&lease)wire.current=lease;
-        const currentKey=lease?lease.apiKey:apiKey;
-        let release:Promise<void>|undefined;
-        const deadline = AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs ?? timeoutMs ?? 90000), ...(signal ? [signal] : [])]);
+        const wire = currentModelUsage().providerWire;
+        const lease = wire ? (wire.current ?? (await wire.acquire(signal))) : undefined;
+        if (wire && lease) wire.current = lease;
+        const currentKey = lease ? lease.apiKey : apiKey;
+        let release: Promise<void> | undefined;
+        const deadline = AbortSignal.any([
+            AbortSignal.timeout(this.options.timeoutMs ?? timeoutMs ?? 90000),
+            ...(signal ? [signal] : []),
+        ]);
         try {
             signal?.throwIfAborted();
             lease?.assertCurrent?.();
-            const request:RequestInit={ method: 'POST', redirect: 'error', signal: deadline,
-                headers: { 'content-type': 'application/json', ...(currentKey ? { authorization: 'Bearer ' + currentKey } : {}) }, body: JSON.stringify(body) };
-            let response:Response;
+            const request: RequestInit = {
+                method: 'POST',
+                redirect: 'error',
+                signal: deadline,
+                headers: {
+                    'content-type': 'application/json',
+                    ...(currentKey ? { authorization: 'Bearer ' + currentKey } : {}),
+                },
+                body: JSON.stringify(body),
+            };
+            let response: Response;
             try {
-                let accepted:Promise<Response>;
-                try {accepted=(this.options.fetch ?? fetch)(url,request);}
-                finally {
+                let accepted: Promise<Response>;
+                try {
+                    accepted = (this.options.fetch ?? fetch)(url, request);
+                } finally {
                     // The exact physical invocation, not a generic async admission action, consumes the lock.
-                    if(wire&&lease){wire.current=undefined;release=lease.release().catch(()=>undefined);}
+                    if (wire && lease) {
+                        wire.current = undefined;
+                        release = lease.release().catch(() => undefined);
+                    }
                 }
                 response = await accepted;
             } catch {
                 signal?.throwIfAborted();
-                throw markModelProviderUnavailable(new RemoteModelError('unavailable', deadline.aborted ? 'Удалённая модель не ответила вовремя.' : 'Не удалось соединиться с удалённым API модели.'));
+                throw markModelProviderUnavailable(
+                    new RemoteModelError(
+                        'unavailable',
+                        deadline.aborted
+                            ? 'Удалённая модель не ответила вовремя.'
+                            : 'Не удалось соединиться с удалённым API модели.',
+                    ),
+                );
             }
             if (!response.ok) {
                 await response.body?.cancel();
-                if (response.status === 401 || response.status === 403) { throw new RemoteModelError('authorization', 'Удалённый API отклонил ключ или доступ к модели.'); }
-                if (response.status === 429) { throw new RemoteModelError('rate-limit', 'Удалённый API ограничил запросы. Повторите позже.'); }
-                const error=new RemoteModelError('unavailable', `Удалённый API недоступен (HTTP ${response.status}).`);
-                throw [502,503,504].includes(response.status)?markModelProviderUnavailable(error):error;
+                if (response.status === 401 || response.status === 403) {
+                    throw new RemoteModelError('authorization', 'Удалённый API отклонил ключ или доступ к модели.');
+                }
+                if (response.status === 429) {
+                    throw new RemoteModelError('rate-limit', 'Удалённый API ограничил запросы. Повторите позже.');
+                }
+                const error = new RemoteModelError(
+                    'unavailable',
+                    `Удалённый API недоступен (HTTP ${response.status}).`,
+                );
+                throw [502, 503, 504].includes(response.status) ? markModelProviderUnavailable(error) : error;
             }
-            if (!response.body || !/^application\/(?:[a-z0-9.+-]+\+)?json(?:;|$)/i.test(response.headers.get('content-type') ?? '')) {
-                await response.body?.cancel(); throw new RemoteModelError('response', 'Удалённый API вернул неподдерживаемый формат ответа.');
+            if (
+                !response.body ||
+                !/^application\/(?:[a-z0-9.+-]+\+)?json(?:;|$)/i.test(response.headers.get('content-type') ?? '')
+            ) {
+                await response.body?.cancel();
+                throw new RemoteModelError('response', 'Удалённый API вернул неподдерживаемый формат ответа.');
             }
-            let size = 0; const chunks: Uint8Array[] = [];
+            let size = 0;
+            const chunks: Uint8Array[] = [];
             for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
                 size += chunk.length;
-                if (size > (this.options.maximumBytes ?? 16 * 1024 * 1024)) { throw new RemoteModelError('response', 'Ответ удалённой модели превышает допустимый размер.'); }
+                if (size > (this.options.maximumBytes ?? 16 * 1024 * 1024)) {
+                    throw new RemoteModelError('response', 'Ответ удалённой модели превышает допустимый размер.');
+                }
                 chunks.push(chunk);
             }
             let value: unknown;
-            try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new RemoteModelError('response', 'Удалённый API вернул некорректный JSON.'); }
-            if (!object(value) || value.error) { throw new RemoteModelError('response', 'Удалённый API не выполнил запрос.'); }
+            try {
+                value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+            } catch {
+                throw new RemoteModelError('response', 'Удалённый API вернул некорректный JSON.');
+            }
+            if (!object(value) || value.error) {
+                throw new RemoteModelError('response', 'Удалённый API не выполнил запрос.');
+            }
             return value;
         } catch (cause) {
             signal?.throwIfAborted();
-            if (cause instanceof RemoteModelError) { throw cause; }
-            throw new RemoteModelError('unavailable', deadline.aborted ? 'Удалённая модель не ответила вовремя.' : 'Не удалось соединиться с удалённым API модели.');
+            if (cause instanceof RemoteModelError) {
+                throw cause;
+            }
+            throw new RemoteModelError(
+                'unavailable',
+                deadline.aborted
+                    ? 'Удалённая модель не ответила вовремя.'
+                    : 'Не удалось соединиться с удалённым API модели.',
+            );
         } finally {
-            if(wire&&wire.current===lease){wire.current=undefined;release=lease?.release().catch(()=>undefined);}
+            if (wire && wire.current === lease) {
+                wire.current = undefined;
+                release = lease?.release().catch(() => undefined);
+            }
             await release;
         }
     }

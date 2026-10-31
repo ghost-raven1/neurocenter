@@ -38,10 +38,7 @@ export interface IProjectDetection {
  * @param input - параметры (root/dbPath/projectKey).
  * @param cwd - базовый каталог.
  */
-export async function detectProjectTool(
-    input: TDetectProjectInput,
-    cwd: string,
-): Promise<IProjectDetection> {
+export async function detectProjectTool(input: TDetectProjectInput, cwd: string): Promise<IProjectDetection> {
     const { root, dbPath, projectKey } = input;
     const located = await locateStore(dbPath ?? root, cwd);
     const project = await detectProject(located.root, projectKey);
@@ -52,9 +49,7 @@ export async function detectProjectTool(
             'opencode-rag.json не найден рядом с root/dbPath — привязка rag_db не подтверждена. Задайте root каталога с opencode-rag.json.',
         );
     } else if (!located.storePath) {
-        notes.push(
-            'vectorStore.path не задан в opencode-rag.json и .opencode/rag_db рядом не найден.',
-        );
+        notes.push('vectorStore.path не задан в opencode-rag.json и .opencode/rag_db рядом не найден.');
     } else {
         notes.push(`rag_db ↔ opencode-rag.json связаны: ${located.storePath}`);
     }

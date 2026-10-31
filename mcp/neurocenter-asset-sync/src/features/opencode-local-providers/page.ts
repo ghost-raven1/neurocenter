@@ -1,5 +1,5 @@
 /** No remote resources or browser persistence: credentials are submitted only to this loopback session. */
-export const globalProvidersPage=`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Локальные провайдеры OpenCode</title>
+export const globalProvidersPage = `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Локальные провайдеры OpenCode</title>
 <style>body{font:16px system-ui;max-width:850px;margin:24px auto;padding:0 16px}label{display:block;margin:12px 0}input,select,textarea{display:block;width:100%;box-sizing:border-box;padding:8px}button{margin:6px 8px 6px 0;padding:8px}#message{white-space:pre-wrap}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid #ddd}.error{color:#a21}details{margin:12px 0}</style>
 <h1>Провайдеры на этом компьютере</h1><p>Этот мастер не отправляет ключи на сервер. Сайт получает только состояние настройки. OAuth и другие провайдеры сохраняются. Запрос модели не выполняется.</p>
 <p id="message" role="status"></p><table><thead><tr><th>Провайдер</th><th>Авторизация</th><th>Модели из конфигурации</th></tr></thead><tbody id="providers"></tbody></table><button id="refresh">Перечитать состояние</button>

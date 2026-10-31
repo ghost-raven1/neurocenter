@@ -19,7 +19,7 @@ async function fixture(t){
     t.after(()=>fs.rm(root,{recursive:true,force:true}));
     const put=async(name,value)=>{await fs.mkdir(path.dirname(path.join(root,name)),{recursive:true});await fs.writeFile(path.join(root,name),value);};
     for(const folder of workspacePackages){
-        await put(folder+'/package.json',JSON.stringify({name:packageId(folder),scripts:{typecheck:'fixture',build:'fixture',test:'fixture'}}));
+        await put(folder+'/package.json',JSON.stringify({name:packageId(folder),scripts:{lint:'fixture','format:check':'fixture',typecheck:'fixture',build:'fixture',test:'fixture'}}));
         await put(folder+'/src/main.ts','export const original = true;\n');
     }
     for(const folder of ['scripts/test','scripts/catalog-plugins/test','scripts/catalog-plugins/recipes/test','scripts/agent-kit/test'])
@@ -38,7 +38,7 @@ test('a frontend source change plans every package check without creating .run o
     assert.equal(result.sourceFingerprint.status,'known');assert.equal(result.changedPathsCount,1);
     assert.match(result.changedPathsDigest,/^[a-f0-9]{64}$/);
     assert.deepEqual(result.plannedChecks.selection,{packages:['frontend'],steps:[]});
-    assert.deepEqual(result.plannedChecks.checks.map(item=>item.check),['typecheck','build','test']);
+    assert.deepEqual(result.plannedChecks.checks.map(item=>item.check),['lint','format:check','typecheck','build','test']);
     assert.equal(JSON.stringify(result).includes('frontend/src/main.ts'),false);
     assert.equal((await verifyImpactCurrent(f.root,result)).current,true);
     await assert.rejects(fs.stat(path.join(f.root,'.run')),{code:'ENOENT'});

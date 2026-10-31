@@ -1,5 +1,5 @@
 /** Lifecycle control tables belong only to the base database; this SQL is immutable after publication. */
-export const DATABASE_LIFECYCLE_SCHEMA=`
+export const DATABASE_LIFECYCLE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS neurocenter_project_databases(
     project_id TEXT PRIMARY KEY,database_name TEXT NOT NULL UNIQUE,migration_offset BIGINT NOT NULL DEFAULT 0,
     migrated BOOLEAN NOT NULL DEFAULT false,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS neurocenter_database_purge_receipts(
 `;
 
 /** The marker value is bound by the lifecycle operation; migrations create only its project-local table. */
-export const PROJECT_IDENTITY_SCHEMA=`
+export const PROJECT_IDENTITY_SCHEMA = `
 CREATE TABLE IF NOT EXISTS neurocenter_database_identity(
     singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK(singleton),id UUID NOT NULL,project_id TEXT NOT NULL);
 `;

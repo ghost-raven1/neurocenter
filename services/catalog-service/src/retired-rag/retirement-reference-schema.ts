@@ -1,5 +1,5 @@
 /** Late references cannot bypass durable project retirement. */
-export const RETIREMENT_REFERENCE_SCHEMA_SQL=`
+export const RETIREMENT_REFERENCE_SCHEMA_SQL = `
 CREATE OR REPLACE FUNCTION neurocenter_retired_reference_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
         IF NEW.project_id IS NOT NULL THEN
             PERFORM pg_advisory_xact_lock(hashtextextended('neurocenter:project-lifecycle:'||NEW.project_id,0));

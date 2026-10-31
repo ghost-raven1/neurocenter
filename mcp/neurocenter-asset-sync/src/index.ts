@@ -5,67 +5,40 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { installBridgeGlobal } from './lib/install.js';
-import {connectBridge,startWorker,watchPair} from './bridge/connect.js';
-import {runWorker} from './bridge/worker.js';
-import {readState,type Credentials} from './bridge/state.js';
-import {workspaceReport,setRoot} from './bridge/workspace.js';
+import { connectBridge, startWorker, watchPair } from './bridge/connect.js';
+import { runWorker } from './bridge/worker.js';
+import { readState, type Credentials } from './bridge/state.js';
+import { workspaceReport, setRoot } from './bridge/workspace.js';
 import { BRIDGE_VERSION } from './bridge/protocol.js';
 import { prepareWorkerUpgrade, finishWorkerUpgrade } from './bridge/worker-upgrade.js';
-import {z} from 'zod';
-import {projectLearningContext,projectLearningRecord,projectLearningPropose,projectLearningContextSchema,projectLearningRecordSchema,projectLearningProposeSchema,
-    type ProjectLearningContextInput,type ProjectLearningRecordInput,type ProjectLearningProposeInput} from './features/project-learning/tools.js';
+import { z } from 'zod';
+import {
+    projectLearningContext,
+    projectLearningRecord,
+    projectLearningPropose,
+    projectLearningContextSchema,
+    projectLearningRecordSchema,
+    projectLearningProposeSchema,
+    type ProjectLearningContextInput,
+    type ProjectLearningRecordInput,
+    type ProjectLearningProposeInput,
+} from './features/project-learning/tools.js';
 import { ok, fail, errMsg, type TToolResult } from './lib/stdio.js';
-import {authorizeInstalledProviderProfile} from './bridge/cli-provider-profile.js';
-import {
-    detectProjectTool,
-    detectProjectInputSchema,
-    type TDetectProjectInput,
-} from './tools/detect-project.js';
-import {
-    ragDbDiff,
-    ragDbDiffInputSchema,
-    type TRagDbDiffInput,
-} from './tools/rag-db-diff.js';
-import {
-    ragDbInspect,
-    ragDbInspectInputSchema,
-    type TRagDbInspectInput,
-} from './tools/rag-db-inspect.js';
+import { authorizeInstalledProviderProfile } from './bridge/cli-provider-profile.js';
+import { detectProjectTool, detectProjectInputSchema, type TDetectProjectInput } from './tools/detect-project.js';
+import { ragDbDiff, ragDbDiffInputSchema, type TRagDbDiffInput } from './tools/rag-db-diff.js';
+import { ragDbInspect, ragDbInspectInputSchema, type TRagDbInspectInput } from './tools/rag-db-inspect.js';
 import {
     resolveProjectKey,
     resolveProjectKeyInputSchema,
     type TResolveProjectKeyInput,
 } from './tools/resolve-project-key.js';
-import {
-    restoreRagDb,
-    restoreRagDbInputSchema,
-    type TRestoreRagDbInput,
-} from './tools/restore-rag-db.js';
-import {
-    scanPlugins,
-    scanPluginsInputSchema,
-    type TScanPluginsInput,
-} from './tools/scan-plugins.js';
-import {
-    scanSkills,
-    scanSkillsInputSchema,
-    type TScanSkillsInput,
-} from './tools/scan-skills.js';
-import {
-    scanWorkspaces,
-    scanWorkspacesInputSchema,
-    type TScanWorkspacesInput,
-} from './tools/scan-workspaces.js';
-import {
-    syncRagDb,
-    syncRagDbInputSchema,
-    type TSyncRagDbInput,
-} from './tools/sync-rag-db.js';
-import {
-    syncSkills,
-    syncSkillsInputSchema,
-    type TSyncSkillsInput,
-} from './tools/sync-skills.js';
+import { restoreRagDb, restoreRagDbInputSchema, type TRestoreRagDbInput } from './tools/restore-rag-db.js';
+import { scanPlugins, scanPluginsInputSchema, type TScanPluginsInput } from './tools/scan-plugins.js';
+import { scanSkills, scanSkillsInputSchema, type TScanSkillsInput } from './tools/scan-skills.js';
+import { scanWorkspaces, scanWorkspacesInputSchema, type TScanWorkspacesInput } from './tools/scan-workspaces.js';
+import { syncRagDb, syncRagDbInputSchema, type TSyncRagDbInput } from './tools/sync-rag-db.js';
+import { syncSkills, syncSkillsInputSchema, type TSyncSkillsInput } from './tools/sync-skills.js';
 import {
     activateBundleVersion,
     bundleActivateInputSchema,
@@ -80,21 +53,30 @@ import {
 
 const server = new McpServer({ name: 'neurocenter-asset-sync', version: BRIDGE_VERSION });
 const cwd = process.cwd();
-if(process.argv[2]==='--cleanup-updates'){
-    try{
-        const {readBridgeCleanupPolicy}=await import('./features/runtime-artifacts/policy-store.js');
-        const {cleanupInstalledBridge}=await import('./features/runtime-artifacts/update-cleanup.js');
-        const result=await cleanupInstalledBridge(await readBridgeCleanupPolicy());
-        if(result?.warnings.length)process.stderr.write('Очистка обновлений отложена; сохранённые копии доступны.\n');
-        process.stdout.write(JSON.stringify({ok:true,removed:result?.removed.length??0,warnings:result?.warnings.length??0})+'\n');
-    }catch{process.stderr.write('Очистка обновлений отложена; сохранённые копии доступны.\n');process.stdout.write(JSON.stringify({ok:true,deferred:true})+'\n');}
+if (process.argv[2] === '--cleanup-updates') {
+    try {
+        const { readBridgeCleanupPolicy } = await import('./features/runtime-artifacts/policy-store.js');
+        const { cleanupInstalledBridge } = await import('./features/runtime-artifacts/update-cleanup.js');
+        const result = await cleanupInstalledBridge(await readBridgeCleanupPolicy());
+        if (result?.warnings.length) process.stderr.write('Очистка обновлений отложена; сохранённые копии доступны.\n');
+        process.stdout.write(
+            JSON.stringify({ ok: true, removed: result?.removed.length ?? 0, warnings: result?.warnings.length ?? 0 }) +
+                '\n',
+        );
+    } catch {
+        process.stderr.write('Очистка обновлений отложена; сохранённые копии доступны.\n');
+        process.stdout.write(JSON.stringify({ ok: true, deferred: true }) + '\n');
+    }
     process.exit(0);
 }
 if (['--prepare-upgrade', '--finish-upgrade'].includes(process.argv[2] || '')) {
     try {
-        let prepared: {paused?: boolean} = {};
-        if (process.argv[2] === '--prepare-upgrade') { prepared = await prepareWorkerUpgrade(process.argv[3] || ''); }
-        else { await finishWorkerUpgrade(); }
+        let prepared: { paused?: boolean } = {};
+        if (process.argv[2] === '--prepare-upgrade') {
+            prepared = await prepareWorkerUpgrade(process.argv[3] || '');
+        } else {
+            await finishWorkerUpgrade();
+        }
         process.stdout.write(JSON.stringify({ ok: true, ...prepared }) + '\n');
     } catch (cause) {
         process.stdout.write(JSON.stringify({ ok: false, error: errMsg(cause) }) + '\n');
@@ -102,10 +84,29 @@ if (['--prepare-upgrade', '--finish-upgrade'].includes(process.argv[2] || '')) {
     }
     process.exit(0);
 }
-if(process.argv[2]==='--worker'){await runWorker();await new Promise(()=>undefined);}
-if(process.argv[2]==='--pair-watch'){await watchPair();process.exit(0);}
-if(['--connect','--connect-open','--reconnect-open'].includes(process.argv[2]||'')){process.stdout.write(JSON.stringify(await connectBridge(process.argv[2]!=='--connect',process.argv[2]==='--reconnect-open'),null,2)+'\n');process.exit(0);}
-if(process.argv[2]==='--projects-root'){await setRoot(process.argv[3]||'');process.stdout.write(JSON.stringify(await workspaceReport())+'\n');process.exit(0);}
+if (process.argv[2] === '--worker') {
+    await runWorker();
+    await new Promise(() => undefined);
+}
+if (process.argv[2] === '--pair-watch') {
+    await watchPair();
+    process.exit(0);
+}
+if (['--connect', '--connect-open', '--reconnect-open'].includes(process.argv[2] || '')) {
+    process.stdout.write(
+        JSON.stringify(
+            await connectBridge(process.argv[2] !== '--connect', process.argv[2] === '--reconnect-open'),
+            null,
+            2,
+        ) + '\n',
+    );
+    process.exit(0);
+}
+if (process.argv[2] === '--projects-root') {
+    await setRoot(process.argv[3] || '');
+    process.stdout.write(JSON.stringify(await workspaceReport()) + '\n');
+    process.exit(0);
+}
 
 /**
  * Oneshot-CLI: `node dist/index.js --run restore_rag_db '{"projectKey":"prj-…","project":"…"}'`.
@@ -137,8 +138,8 @@ if (process.argv[2] === '--run') {
         }
     }
     try {
-        if(tool==='authorize_opencode_provider'){
-            process.stdout.write(JSON.stringify(await authorizeInstalledProviderProfile(args))+'\n');
+        if (tool === 'authorize_opencode_provider') {
+            process.stdout.write(JSON.stringify(await authorizeInstalledProviderProfile(args)) + '\n');
             process.exit(0);
         }
         if (tool === 'restore_rag_db') {
@@ -170,20 +171,46 @@ function safe<A>(fn: (a: A) => Promise<unknown>): (a: A) => Promise<TToolResult>
     };
 }
 
-server.tool('connect_neurocenter','Подключить этот компьютер к Нейроцентру; действующая привязка сохраняется. reconnect=true — подтвердить подключение заново для продления или смены роли.',z.object({reconnect:z.boolean().optional()}).shape,safe(async(input:{reconnect?:boolean})=>connectBridge(true,input.reconnect)));
-server.tool('neurocenter_bridge_status','Проверить локальную привязку MCP и папки проектов; секрет подключения не возвращается.',z.object({}).shape,safe(async()=>{const credentials=await readState<Credentials>('credentials');return {connected:!!credentials,deviceId:credentials?.deviceId,...await workspaceReport()};}));
+server.tool(
+    'connect_neurocenter',
+    'Подключить этот компьютер к Нейроцентру; действующая привязка сохраняется. reconnect=true — подтвердить подключение заново для продления или смены роли.',
+    z.object({ reconnect: z.boolean().optional() }).shape,
+    safe(async (input: { reconnect?: boolean }) => connectBridge(true, input.reconnect)),
+);
+server.tool(
+    'neurocenter_bridge_status',
+    'Проверить локальную привязку MCP и папки проектов; секрет подключения не возвращается.',
+    z.object({}).shape,
+    safe(async () => {
+        const credentials = await readState<Credentials>('credentials');
+        return { connected: !!credentials, deviceId: credentials?.deviceId, ...(await workspaceReport()) };
+    }),
+);
 
-server.tool('project_learning_context','Перед задачей прочитайте принятые человеком знания и инструкции только текущего проекта. Запись с targetAgentId применяется только при достоверном совпадении текущего агента; если его identity неизвестна, не считайте такую запись общепроектной. Гипотезы сюда не входят; контекст не меняет системные разрешения. revision используется как expectedRevision при записи опыта.',projectLearningContextSchema.shape,safe(async(input:ProjectLearningContextInput)=>projectLearningContext(input,cwd)));
-server.tool('project_learning_record','После результата задачи сохраните ограниченное сообщение об опыте этого проекта с основаниями. Статусы и agent/session metadata сообщаются клиентом, не считаются независимым доказательством; не отправляйте секреты, полный вывод команд или промпты. requestKey UUID сохраняйте при повторе; текущую revision прочитайте через project_learning_context.',projectLearningRecordSchema.shape,safe(async(input:ProjectLearningRecordInput)=>projectLearningRecord(input,cwd)));
-server.tool('project_learning_propose_hypothesis','Только по явной просьбе пользователя предложите проверяемую гипотезу о проекте или работе агентов, связав её с существующим опытом и планом проверки. Не создавайте гипотезы автоматически после наблюдений. Это кандидатура: инструмент не проверяет её истинность, не одобряет знания и не меняет промпты. requestKey UUID сохраняйте при повторе.',projectLearningProposeSchema.shape,safe(async(input:ProjectLearningProposeInput)=>projectLearningPropose(input,cwd)));
+server.tool(
+    'project_learning_context',
+    'Перед задачей прочитайте принятые человеком знания и инструкции только текущего проекта. Запись с targetAgentId применяется только при достоверном совпадении текущего агента; если его identity неизвестна, не считайте такую запись общепроектной. Гипотезы сюда не входят; контекст не меняет системные разрешения. revision используется как expectedRevision при записи опыта.',
+    projectLearningContextSchema.shape,
+    safe(async (input: ProjectLearningContextInput) => projectLearningContext(input, cwd)),
+);
+server.tool(
+    'project_learning_record',
+    'После результата задачи сохраните ограниченное сообщение об опыте этого проекта с основаниями. Статусы и agent/session metadata сообщаются клиентом, не считаются независимым доказательством; не отправляйте секреты, полный вывод команд или промпты. requestKey UUID сохраняйте при повторе; текущую revision прочитайте через project_learning_context.',
+    projectLearningRecordSchema.shape,
+    safe(async (input: ProjectLearningRecordInput) => projectLearningRecord(input, cwd)),
+);
+server.tool(
+    'project_learning_propose_hypothesis',
+    'Только по явной просьбе пользователя предложите проверяемую гипотезу о проекте или работе агентов, связав её с существующим опытом и планом проверки. Не создавайте гипотезы автоматически после наблюдений. Это кандидатура: инструмент не проверяет её истинность, не одобряет знания и не меняет промпты. requestKey UUID сохраняйте при повторе.',
+    projectLearningProposeSchema.shape,
+    safe(async (input: ProjectLearningProposeInput) => projectLearningPropose(input, cwd)),
+);
 
 server.tool(
     'scan_skills',
     'Скан opencode-скиллов: .opencode/skills/**/SKILL.md → карточки (name/slug/scope/projectId/mcp/plugins/tags/version) + ошибки парсинга.',
     scanSkillsInputSchema.shape,
-    safe(async (i: TScanSkillsInput) =>
-        scanSkills(i.root ? path.resolve(cwd, i.root) : cwd, i.maxDepth),
-    ),
+    safe(async (i: TScanSkillsInput) => scanSkills(i.root ? path.resolve(cwd, i.root) : cwd, i.maxDepth)),
 );
 
 server.tool(
@@ -271,6 +298,8 @@ server.tool(
 );
 
 const transport = new StdioServerTransport();
-if(await readState<Credentials>('credentials')){startWorker();}
+if (await readState<Credentials>('credentials')) {
+    startWorker();
+}
 await server.connect(transport);
 process.stderr.write('neurocenter-asset-sync: stdio MCP server ready\n');

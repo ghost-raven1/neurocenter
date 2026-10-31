@@ -1,5 +1,5 @@
 /** Legacy shared ciphertext stays in place; personal deletion retains only a tombstone and masked receipts. */
-export const REMOTE_PROVIDER_SCHEMA_SQL=`
+export const REMOTE_PROVIDER_SCHEMA_SQL = `
 ALTER TABLE model_remote_connections ADD COLUMN auth_mode text CHECK(auth_mode IN('none','optional','required'));
 CREATE TABLE remote_provider_user_credentials(
  model_id text NOT NULL REFERENCES model_catalog(id) ON DELETE RESTRICT,

@@ -7,5 +7,5 @@ export const AGENT_READINESS_SCHEMA_ASSERT_SQL = `DO $verify_trial$ DECLARE miss
 /** Runtime readiness rejects a changed owner index, transition guard or diagnostic bound. */
 export async function assertAgentReadinessSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема испытаний агентов не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема испытаний агентов не готова: ' + rows.map((row) => row.issue).join(', '));
 }

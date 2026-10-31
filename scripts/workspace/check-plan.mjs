@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 export const workspacePackages = ['services/oauth2-bridge', 'services/catalog-service', 'services/feature-flags-service', 'services/skills-service',
     'services/rag-sync-service', 'services/api-gateway', 'frontend', 'mcp/neurocenter-asset-sync'];
 const packageIds = new Map(workspacePackages.map(directory => [directory === 'mcp/neurocenter-asset-sync' ? 'bridge' : path.posix.basename(directory), directory]));
-const packageSteps = ['typecheck', 'build', 'test'];
+const packageSteps = ['lint', 'format:check', 'typecheck', 'build', 'test'];
 
 export const checkHelp = `Проверка workspace: node scripts/workspace/check.mjs [--package <id>]... [--step <шаг>]... | --tooling
 Пакеты: ${[...packageIds.keys()].join(', ')}.
@@ -65,7 +65,7 @@ function toolingTestFiles(root,{readFile=name=>fs.readFileSync(path.join(root,na
     return [...files].sort();
 }
 
-/** Полный план сохраняет порядок typecheck/build/test; селекторы задают точный ограниченный объём. */
+/** Полный план сохраняет порядок lint/format:check/typecheck/build/test; селекторы задают точный ограниченный объём. */
 export function checkPlan(root, options = {}, {readManifest = directory => JSON.parse(fs.readFileSync(path.join(root, directory, 'package.json'), 'utf8')),
     readTestFiles = () => nodeTestFiles(root),readToolingFiles = () => toolingTestFiles(root)} = {}) {
     const {packages = [], steps: selectedSteps = []} = options;
@@ -83,7 +83,7 @@ export function checkPlan(root, options = {}, {readManifest = directory => JSON.
     for (const script of packageSteps.filter(step => !selectedSteps.length || selectedSteps.includes(step))) for (const directory of workspacePackages) {
         if (selectedPackages && !selectedPackages.has(directory)) continue;
         const manifest = readManifest(directory);
-        if (script === 'test' && !manifest.scripts?.test) continue;
+        if (['test', 'format:check'].includes(script) && !manifest.scripts?.[script]) continue;
         steps.push({name: `${directory}: ${script}`, directory, type: 'npm', args: ['run', script], vitest: script === 'test' && /vitest/.test(manifest.scripts.test)});
     }
     if (scoped && !steps.length) throw new Error('Выбранные пакеты не содержат указанных шагов check.');

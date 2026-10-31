@@ -8,8 +8,7 @@ import type { Request } from 'express';
  * userRoles ['admin', ...] и роли 'rag:write' в системе прав не существует —
  * gateway инжектит x-bridge-roles из этих userRoles.
  */
-export const RAG_WRITE_ROLE: string =
-    process.env.RAG_WRITE_ROLE || 'admin';
+export const RAG_WRITE_ROLE: string = process.env.RAG_WRITE_ROLE || 'admin';
 
 /**
  * DEV-обход role-gate (только dev!): true = не проверять роли.
@@ -22,7 +21,10 @@ function extractRoles(req: Request): string[] {
     if (typeof h !== 'string') {
         return [];
     }
-    return h.split(',').map((s) => s.trim()).filter(Boolean);
+    return h
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
 }
 
 /**
@@ -64,20 +66,29 @@ function resolveRoleLevel(projectKey: string, principal: string | null, req: Req
                 resolve(v);
             }
         };
-        const rq = http.get(url,{headers:{'x-neurocenter-internal':process.env.NEUROCENTER_INTERNAL_TOKEN || '', 'x-bridge-actor':String(req.headers['x-bridge-actor'] || '')}}, (res) => {
-            let data = '';
-            res.on('data', (chunk: Buffer) => {
-                data += chunk.toString('utf8');
-            });
-            res.on('end', () => {
-                try {
-                    const body = JSON.parse(data || '{}') as { level?: number };
-                    settle(Number(body.level ?? 0));
-                } catch {
-                    settle(0);
-                }
-            });
-        });
+        const rq = http.get(
+            url,
+            {
+                headers: {
+                    'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',
+                    'x-bridge-actor': String(req.headers['x-bridge-actor'] || ''),
+                },
+            },
+            (res) => {
+                let data = '';
+                res.on('data', (chunk: Buffer) => {
+                    data += chunk.toString('utf8');
+                });
+                res.on('end', () => {
+                    try {
+                        const body = JSON.parse(data || '{}') as { level?: number };
+                        settle(Number(body.level ?? 0));
+                    } catch {
+                        settle(0);
+                    }
+                });
+            },
+        );
         rq.on('error', () => settle(0));
         rq.setTimeout(8000, () => {
             rq.destroy(new Error('timeout'));

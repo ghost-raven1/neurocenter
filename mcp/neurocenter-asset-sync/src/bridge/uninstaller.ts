@@ -6,19 +6,8 @@ import { hash } from './state.js';
 import { verify, type Package } from './package.js';
 import { InstallationPlan } from './installation-plan.js';
 import { InstallationLedger } from './installation-ledger.js';
-import {
-    assetBase,
-    assetKey,
-    receiptPath,
-    removalReceipt,
-    sameValue,
-} from './installation-receipt.js';
-import {
-    commitChanges,
-    removalCompleted,
-    withProjectFiles,
-    type FileChange,
-} from './installation-files.js';
+import { assetBase, assetKey, receiptPath, removalReceipt, sameValue } from './installation-receipt.js';
+import { commitChanges, removalCompleted, withProjectFiles, type FileChange } from './installation-files.js';
 
 /** Удаляет только неизменённые файлы пакета; личный журнал сохраняет данные для восстановления. */
 export async function uninstall(
@@ -62,9 +51,7 @@ export async function uninstall(
             }
             if (hash(Buffer.from(current, 'base64')) !== digest) {
                 throw new Error(
-                    'Файл изменён вручную: ' +
-                        relative +
-                        '. Удаление остановлено, ваши изменения сохранены.',
+                    'Файл изменён вручную: ' + relative + '. Удаление остановлено, ваши изменения сохранены.',
                 );
             }
             changes.push({ relative, before: current, after: null, encoding: 'base64' });
@@ -76,19 +63,12 @@ export async function uninstall(
                 const parsed = parse(before, errors, {
                     allowTrailingComma: true,
                 }) as Record<string, unknown> | null;
-                if (
-                    errors.length ||
-                    !parsed ||
-                    Array.isArray(parsed) ||
-                    typeof parsed !== 'object'
-                ) {
-                    throw new Error(
-                        'Исправьте JSON/JSONC OpenCode перед удалением. Файлы и конфигурация не изменены.',
-                    );
+                if (errors.length || !parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+                    throw new Error('Исправьте JSON/JSONC OpenCode перед удалением. Файлы и конфигурация не изменены.');
                 }
                 let editPath: (string | number)[];
                 let value: unknown;
-                let edit = false;
+                let edit: boolean;
                 if (pkg.plugin.kind === 'mcp') {
                     if (
                         parsed.mcp !== undefined &&
@@ -96,9 +76,7 @@ export async function uninstall(
                     ) {
                         throw new Error('Поле mcp изменено вручную. Удаление остановлено.');
                     }
-                    const current = (parsed.mcp as Record<string, unknown> | undefined)?.[
-                        receipt.config.key
-                    ];
+                    const current = (parsed.mcp as Record<string, unknown> | undefined)?.[receipt.config.key];
                     if (current !== undefined && !sameValue(current, receipt.config.value)) {
                         throw new Error('Подключение MCP изменено вручную. Удаление остановлено.');
                     }
@@ -108,7 +86,7 @@ export async function uninstall(
                 } else {
                     const runtime = runtimeArtifactConnection(pkg);
                     const expected = pathToFileURL(
-                        runtime?.entrypoint ?? await safeTarget(root, `${assetBase(pkg)}/${pkg.config?.entrypoint}`),
+                        runtime?.entrypoint ?? (await safeTarget(root, `${assetBase(pkg)}/${pkg.config?.entrypoint}`)),
                     ).href;
                     if (receipt.config.value !== expected) {
                         throw new Error('Путь плагина в квитанции изменён. Удаление остановлено.');
@@ -117,16 +95,13 @@ export async function uninstall(
                     if (!Array.isArray(plugins)) {
                         throw new Error('Поле plugin изменено вручную. Удаление остановлено.');
                     }
-                    const packageUrl = pathToFileURL(
-                        runtime?.root ?? await safeTarget(root, assetBase(pkg)),
-                    ).href + '/';
+                    const packageUrl =
+                        pathToFileURL(runtime?.root ?? (await safeTarget(root, assetBase(pkg)))).href + '/';
                     // Один готовый архив может содержать несколько независимо подключённых плагинов.
                     if (
-                        (!runtime || !plugins.includes(expected)) && plugins.some(
-                            (item) =>
-                                typeof item === 'string' &&
-                                item.startsWith(packageUrl) &&
-                                item !== expected,
+                        (!runtime || !plugins.includes(expected)) &&
+                        plugins.some(
+                            (item) => typeof item === 'string' && item.startsWith(packageUrl) && item !== expected,
                         )
                     ) {
                         throw new Error('Путь плагина изменён вручную. Удаление остановлено.');
@@ -155,7 +130,9 @@ export async function uninstall(
             }
         }
         changes.push({ relative: relativeReceipt, before: raw, after: null });
-        for (const change of changes) { await plan.write(change.relative, change.after, change.encoding); }
+        for (const change of changes) {
+            await plan.write(change.relative, change.after, change.encoding);
+        }
         await ledger.remove(pkg);
         await progress(35, 'Квитанция, файлы и подключение проверены');
         await authorize();
@@ -164,10 +141,13 @@ export async function uninstall(
         }
         await plan.verifySnapshot();
         const result = {
-            projectId, assetId: pkg.plugin.id, version: pkg.plugin.version,
+            projectId,
+            assetId: pkg.plugin.id,
+            version: pkg.plugin.version,
             bindingId: await projectBindingId(projectId),
-            manifest: pkg.manifest.sha256, changed: true,
-            files: changes.filter(change => change.after === null && change.relative !== relativeReceipt).length,
+            manifest: pkg.manifest.sha256,
+            changed: true,
+            files: changes.filter((change) => change.after === null && change.relative !== relativeReceipt).length,
             note: 'Управляемые файлы и подключение удалены. Резервная копия осталась в личной папке MCP. Изменения OpenCode применит при следующем запуске.',
         };
         const recoveryPath = await commitChanges(root, plan.changes(), {

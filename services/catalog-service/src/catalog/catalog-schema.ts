@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const CATALOG_SCHEMA_SQL=`
+export const CATALOG_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS projects (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,

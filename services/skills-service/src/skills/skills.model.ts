@@ -20,8 +20,8 @@ export interface ISkillMeta {
     /** Архив скрывает общую карточку, сохраняя доступ к закреплённым версиям. */
     archivedAt?: string;
     /** Серверная квитанция восстанавливает итог после потерянного ответа файлового сервиса. */
-    assetArchive?: {requestKey:string;previousHash:string;payloadHash:string;version:number;restore:boolean};
-    assetImport?: {requestKey:string;payloadHash:string;version:number};
+    assetArchive?: { requestKey: string; previousHash: string; payloadHash: string; version: number; restore: boolean };
+    assetImport?: { requestKey: string; payloadHash: string; version: number };
     name: string;
     slug: string;
     scope: TScope;
@@ -39,7 +39,9 @@ export interface ISkillMeta {
     history: IHistoryEntry[];
 }
 
-export interface ISkillAuditReceipt { audit?: {state:'pending'}; }
+export interface ISkillAuditReceipt {
+    audit?: { state: 'pending' };
+}
 
 /** Скилл как файл: относительный путь (без расширения), метаданные, тело. */
 export interface ISkillFile extends ISkillAuditReceipt {

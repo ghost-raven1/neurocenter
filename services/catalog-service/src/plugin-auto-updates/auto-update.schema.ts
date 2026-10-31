@@ -1,5 +1,5 @@
 /** Migration41 owns policy metadata only; installation and recovery remain in the existing bridge queue. */
-export const PLUGIN_AUTO_UPDATE_SCHEMA_SQL=`
+export const PLUGIN_AUTO_UPDATE_SCHEMA_SQL = `
 CREATE TABLE plugin_auto_update_policies (
  id uuid PRIMARY KEY,owner_email text NOT NULL,actor_role text NOT NULL,
  device_id text NOT NULL REFERENCES bridge_devices(id) ON DELETE CASCADE,

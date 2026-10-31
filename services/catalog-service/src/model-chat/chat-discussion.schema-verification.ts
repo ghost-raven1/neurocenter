@@ -10,5 +10,5 @@ IF missing IS NOT NULL THEN RAISE EXCEPTION 'Discussion schema is incomplete: %'
 /** Readiness is read-only and retains the frozen schema checks of every preceding migration. */
 export async function assertChatDiscussionSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема обсуждения не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема обсуждения не готова: ' + rows.map((row) => row.issue).join(', '));
 }

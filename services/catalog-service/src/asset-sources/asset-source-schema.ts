@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const ASSET_SOURCE_SCHEMA_SQL=`
+export const ASSET_SOURCE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS asset_source_blobs (
             sha256 text PRIMARY KEY CHECK(sha256 ~ '^[a-f0-9]{64}$'),bytes bigint NOT NULL CHECK(bytes>0),created_at timestamptz NOT NULL DEFAULT now());
             CREATE TABLE IF NOT EXISTS asset_source_blob_refs (

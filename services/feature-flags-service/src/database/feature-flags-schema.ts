@@ -14,20 +14,36 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 
 export const FEATURE_FLAGS_COLUMNS = {
     security_events: {
-        event_id: ['uuid', true], actor: ['text', true], action: ['text', true], resource_id: ['text', true],
-        before_state: ['jsonb', false], after_state: ['jsonb', false], created_at: ['timestamp with time zone', true],
+        event_id: ['uuid', true],
+        actor: ['text', true],
+        action: ['text', true],
+        resource_id: ['text', true],
+        before_state: ['jsonb', false],
+        after_state: ['jsonb', false],
+        created_at: ['timestamp with time zone', true],
     },
     feature_flags: {
-        flag_key: ['text', true], overrides: ['jsonb', true], revision: ['bigint', true],
-        updated_at: ['timestamp with time zone', true], updated_by: ['text', true],
+        flag_key: ['text', true],
+        overrides: ['jsonb', true],
+        revision: ['bigint', true],
+        updated_at: ['timestamp with time zone', true],
+        updated_by: ['text', true],
     },
     feature_flags_schema_migrations: {
-        version: ['integer', true], name: ['text', true], checksum: ['text', true], applied_at: ['timestamp with time zone', true],
+        version: ['integer', true],
+        name: ['text', true],
+        checksum: ['text', true],
+        applied_at: ['timestamp with time zone', true],
     },
 } as const;
 
 export const FEATURE_FLAGS_DEFAULTS: Record<string, Record<string, string>> = {
-    security_events: {created_at: 'now()'},
-    feature_flags: {overrides: "'{}'::jsonb", revision: '1', updated_at: 'now()', updated_by: "'system:defaults'::text"},
-    feature_flags_schema_migrations: {applied_at: 'now()'},
+    security_events: { created_at: 'now()' },
+    feature_flags: {
+        overrides: "'{}'::jsonb",
+        revision: '1',
+        updated_at: 'now()',
+        updated_by: "'system:defaults'::text",
+    },
+    feature_flags_schema_migrations: { applied_at: 'now()' },
 };

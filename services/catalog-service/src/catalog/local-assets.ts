@@ -21,11 +21,17 @@ export interface ILocalAssetsScan {
 }
 
 function isDir(p: string): Promise<boolean> {
-    return fs.stat(p).then((s) => s.isDirectory()).catch(() => false);
+    return fs
+        .stat(p)
+        .then((s) => s.isDirectory())
+        .catch(() => false);
 }
 
 function isFile(p: string): Promise<boolean> {
-    return fs.stat(p).then((s) => s.isFile()).catch(() => false);
+    return fs
+        .stat(p)
+        .then((s) => s.isFile())
+        .catch(() => false);
 }
 
 /**
@@ -63,7 +69,9 @@ function projectsRoot(): string {
  * @throws {Error} если путь не абсолютный или выходит за пределы PROJECTS_ROOT.
  */
 export function resolveFsRootPath(value: string): string {
-    if (!path.isAbsolute(value)) { throw new Error('fsRootPath должен быть абсолютным путём'); }
+    if (!path.isAbsolute(value)) {
+        throw new Error('fsRootPath должен быть абсолютным путём');
+    }
     const p = path.resolve(value);
     const root = projectsRoot();
 
@@ -85,7 +93,7 @@ export function resolveFsRootPath(value: string): string {
  */
 export async function scanLocalAssets(root?: string, query?: string, maxProjects = 100): Promise<ILocalAssetsScan> {
     const base = resolveScanRoot(root);
-    let names: string[] = [];
+    let names: string[];
     try {
         names = await fs.readdir(base);
     } catch {
@@ -125,7 +133,7 @@ export async function scanLocalAssets(root?: string, query?: string, maxProjects
             try {
                 const j = (JSON.parse(await fs.readFile(c, 'utf8')) as { mcp?: Record<string, unknown> }) ?? {};
                 if (j.mcp) {
-                    for (const [ name, value ] of Object.entries(j.mcp)) {
+                    for (const [name, value] of Object.entries(j.mcp)) {
                         mcpServers.push(name);
                         if (value && typeof value === 'object' && !Array.isArray(value)) {
                             mcpConfigs[name] = value as Record<string, unknown>;
@@ -154,7 +162,7 @@ export async function scanLocalAssets(root?: string, query?: string, maxProjects
         projects.push({ project: name, path: p, skills, mcpServers, mcpConfigs, plugins });
     }
 
-    const q = (query && query.trim()) ? query.trim().toLowerCase() : null;
+    const q = query && query.trim() ? query.trim().toLowerCase() : null;
     const filtered = q ? projects.filter((pr) => pr.project.toLowerCase().includes(q)) : projects;
 
     return { root: base, query: q, projects: filtered, scannedCount: projects.length, totalProjects: filtered.length };

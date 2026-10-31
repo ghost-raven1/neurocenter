@@ -32,7 +32,7 @@ async function fixture(t){
     await writeFile(path.join(root,'package.json'),JSON.stringify({name:'neurocenter-workspace'}));
     await writeFile(path.join(root,'.gitignore'),'.run/\n');
     for(const [name,folder]of packages){await mkdir(path.join(root,folder),{recursive:true});await writeFile(path.join(root,folder,'package.json'),JSON.stringify({version:'0.10.1',
-        scripts:{typecheck:'fixture',build:'fixture',...(name==='frontend'?{test:'vitest run'}:{})}}));}
+        scripts:{lint:'fixture','format:check':'fixture',typecheck:'fixture',build:'fixture',...(name==='frontend'?{test:'vitest run'}:{})}}));}
     const git=args=>execFileSync('git',['-c','core.hooksPath=/dev/null',...args],{cwd:root,encoding:'utf8',env:{PATH:process.env.PATH,GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1'}}).trim();
     git(['init','-q','-b','main']);git(['add','.']);git(['-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','-qm','fixture']);
     const head=git(['rev-parse','HEAD']);
@@ -219,6 +219,8 @@ test('actual SDK stdio lists the current readonly catalogue, calls it and return
     assert.deepEqual(status.structuredContent.developerTools.tools,expectedToolNames);
     const plan=await call('check_plan',{packages:['frontend'],steps:['test']});
     assert.deepEqual(plan.structuredContent.steps.map(step=>step.command),['npm run test']);
+    const allPhases=await call('check_plan',{packages:['frontend'],steps:['lint','format:check','typecheck','build','test']});
+    assert.deepEqual(allPhases.structuredContent.steps.map(step=>step.command),['npm run lint','npm run format:check','npm run typecheck','npm run build','npm run test']);
     await assert.rejects(readFile(path.join(f.root,'.run/check/report.json')),{code:'ENOENT'});
     const health=await call('services_health');assert.equal(health.structuredContent.services[0].state,'http-ok');assert.equal(requests,2);assert.equal(proxies,0);assert.ok(!JSON.stringify(health).includes('DO_NOT_RETURN'));
     assert.equal(health.structuredContent.services[0].ready,false);

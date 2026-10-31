@@ -16,5 +16,5 @@ END $verify_chat_compaction$;`;
 /** Verify immutable summary receipts without changing any original chat history. */
 export async function assertChatCompactionSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема сжатия диалогов не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема сжатия диалогов не готова: ' + rows.map((row) => row.issue).join(', '));
 }

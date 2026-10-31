@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const PUBLICATION_SCHEMA_SQL=`
+export const PUBLICATION_SCHEMA_SQL = `
 ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
             ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS publication_key TEXT;
             ALTER TABLE ai_plugins ADD COLUMN IF NOT EXISTS publication_hash TEXT;

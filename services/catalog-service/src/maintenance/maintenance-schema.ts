@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const MAINTENANCE_SCHEMA_SQL=`
+export const MAINTENANCE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS maintenance_settings (
             singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), revision integer NOT NULL DEFAULT 0 CHECK(revision>=0),
             policy jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());

@@ -1,5 +1,5 @@
 /** Migration-owned journal; its primary key prevents hidden paid retries after restart. */
-export const PACKAGE_AGENT_SCHEMA_SQL=`
+export const PACKAGE_AGENT_SCHEMA_SQL = `
 CREATE TABLE tool_build_agent_steps (
  build_id uuid NOT NULL REFERENCES tool_build_jobs(id) ON DELETE CASCADE,
  execution_nonce uuid NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE tool_build_agent_steps (
 `;
 
 /** Common runtime evidence is retained on the same build, separately from model planning. */
-export const PACKAGE_BUILD_RUNTIME_SCHEMA_SQL=`
+export const PACKAGE_BUILD_RUNTIME_SCHEMA_SQL = `
 CREATE TABLE tool_build_runtime_checks (
  build_id uuid NOT NULL REFERENCES tool_build_jobs(id) ON DELETE CASCADE,
  attempt smallint NOT NULL CHECK(attempt BETWEEN 1 AND 3),

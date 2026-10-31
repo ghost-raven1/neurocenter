@@ -14,7 +14,11 @@ export function versionRelative(skillPath: string, meta: ISkillMeta, version: nu
 
 export async function syncSkillDirectory(directory: string): Promise<void> {
     const handle = await fs.open(directory, 'r');
-    try { await handle.sync(); } finally { await handle.close(); }
+    try {
+        await handle.sync();
+    } finally {
+        await handle.close();
+    }
 }
 
 /** Неизменяемый снимок прежней версии фиксируется до переключения текущего файла. */
@@ -23,12 +27,24 @@ export async function preserveVersion(file: string, raw: string): Promise<void> 
     const temporary = file + '.' + randomUUID() + '.tmp';
     try {
         const handle = await fs.open(temporary, 'wx', 0o600);
-        try { await handle.writeFile(raw, 'utf8'); await handle.sync(); } finally { await handle.close(); }
-        try { await fs.link(temporary, file); }
-        catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') { throw error; }
-            if (await fs.readFile(file, 'utf8') !== raw) { throw new Error('История версии повреждена; публикация остановлена.'); }
+        try {
+            await handle.writeFile(raw, 'utf8');
+            await handle.sync();
+        } finally {
+            await handle.close();
+        }
+        try {
+            await fs.link(temporary, file);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+                throw error;
+            }
+            if ((await fs.readFile(file, 'utf8')) !== raw) {
+                throw new Error('История версии повреждена; публикация остановлена.');
+            }
         }
         await syncSkillDirectory(path.dirname(file));
-    } finally { await fs.rm(temporary, { force: true }); }
+    } finally {
+        await fs.rm(temporary, { force: true });
+    }
 }

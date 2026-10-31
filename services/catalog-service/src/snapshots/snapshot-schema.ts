@@ -1,5 +1,5 @@
 /** Full images have a separate lifecycle from mutable row synchronization. */
-export const SNAPSHOT_SCHEMA_SQL=`
+export const SNAPSHOT_SCHEMA_SQL = `
 CREATE TABLE project_snapshot_verifiers (
  id uuid PRIMARY KEY,last_seen timestamptz NOT NULL,sdk_version text NOT NULL,image_digest text NOT NULL);
 CREATE TABLE project_snapshots (

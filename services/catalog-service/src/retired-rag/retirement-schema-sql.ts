@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const RETIREMENT_SCHEMA_SQL=`
+export const RETIREMENT_SCHEMA_SQL = `
 SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:project-retirement-schema',0));
         CREATE TABLE IF NOT EXISTS project_retirements(
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),project_id TEXT NOT NULL UNIQUE,project_name TEXT NOT NULL,

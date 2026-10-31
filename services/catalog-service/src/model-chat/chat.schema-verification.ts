@@ -16,5 +16,5 @@ END $verify_model_chat$;`;
 /** Readiness checks all chat columns, constraints and indexes without modifying personal data. */
 export async function assertChatSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема личных диалогов не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема личных диалогов не готова: ' + rows.map((row) => row.issue).join(', '));
 }

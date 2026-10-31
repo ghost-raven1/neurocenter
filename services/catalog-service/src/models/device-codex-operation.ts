@@ -1,9 +1,10 @@
-import type {PoolClient} from 'pg';
-import {DEVICE_CODEX_JOB} from '../../../shared/device-codex-inference.cjs';
+import type { PoolClient } from 'pg';
+import { DEVICE_CODEX_JOB } from '../../../shared/device-codex-inference.cjs';
 
 /** A late receipt may settle failed uncertainty. Only the locked current Codex job owns its public state. */
-export async function projectDeviceCodexOperation(db:Pick<PoolClient,'query'>,jobId:string):Promise<void>{
-    await db.query(`INSERT INTO operations(operation_id,type,project_id,resource_type,resource_id,actor,state,percent,started_at,finished_at,error,log)
+export async function projectDeviceCodexOperation(db: Pick<PoolClient, 'query'>, jobId: string): Promise<void> {
+    await db.query(
+        `INSERT INTO operations(operation_id,type,project_id,resource_type,resource_id,actor,state,percent,started_at,finished_at,error,log)
         SELECT 'bridge-'||job.id,'SYNC',job.project_id,'bridge',job.id,job.email,upper(job.state),
             CASE WHEN job.state='succeeded' THEN 100 ELSE 0 END,COALESCE(job.started_at,now()),now(),
             CASE WHEN job.state='failed' THEN 'Codex не завершил запрос. Автоматический повтор не выполняется.' ELSE NULL END,
@@ -15,5 +16,7 @@ export async function projectDeviceCodexOperation(db:Pick<PoolClient,'query'>,jo
         WHERE operations.resource_type='bridge' AND operations.resource_id=EXCLUDED.resource_id
             AND operations.actor=EXCLUDED.actor AND operations.project_id IS NOT DISTINCT FROM EXCLUDED.project_id
             AND (operations.state IS DISTINCT FROM EXCLUDED.state OR operations.percent IS DISTINCT FROM EXCLUDED.percent
-                OR operations.error IS DISTINCT FROM EXCLUDED.error OR operations.finished_at IS NULL)`,[jobId,DEVICE_CODEX_JOB]);
+                OR operations.error IS DISTINCT FROM EXCLUDED.error OR operations.finished_at IS NULL)`,
+        [jobId, DEVICE_CODEX_JOB],
+    );
 }

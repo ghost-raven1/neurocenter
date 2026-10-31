@@ -1,13 +1,17 @@
-import { Injectable,OnModuleDestroy } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import type { Server } from 'socket.io';
-import {canonicalAccessRoute} from '../../../shared/access-route.cjs';
+import { canonicalAccessRoute } from '../../../shared/access-route.cjs';
 
 /** События несут только инвалидацию; приватные данные всегда читаются через RBAC API. */
 @Injectable()
 export class LiveService implements OnModuleDestroy {
     private io?: Server;
     /** Закрывает WebSocket и его таймеры до ожидания завершения HTTP-сервера. */
-    async onModuleDestroy():Promise<void>{if(this.io){await new Promise<void>(resolve=>this.io!.close(()=>resolve()));}}
+    async onModuleDestroy(): Promise<void> {
+        if (this.io) {
+            await new Promise<void>((resolve) => this.io!.close(() => resolve()));
+        }
+    }
     attach(io: Server): void {
         this.io = io;
     }
@@ -18,49 +22,45 @@ export class LiveService implements OnModuleDestroy {
         });
     }
     bridge(email: string, deviceId?: string, jobId?: string): void {
-        this.io
-            ?.to(`user:${email}`)
-            .emit('bridge:changed', { deviceId, jobId });
+        this.io?.to(`user:${email}`).emit('bridge:changed', { deviceId, jobId });
     }
     wake(deviceId: string): void {
         this.io?.to(`device:${deviceId}`).emit('bridge:work');
     }
-    mutation(
-        path: string,
-        email: string,
-        data?: Record<string, unknown>,
-        method?: string,
-    ): void {
+    mutation(path: string, email: string, data?: Record<string, unknown>, method?: string): void {
         // Presence and read metadata are fetched only by their authorized room audience.
-        const route=canonicalAccessRoute(path);
-        if(route==='/api/chat-presence/session'||/^\/api\/projects\/[^/]+\/team-chat(?:\/rooms\/[^/]+)?\/activity$/.test(route||''))return;
+        const route = canonicalAccessRoute(path);
+        if (
+            route === '/api/chat-presence/session' ||
+            /^\/api\/projects\/[^/]+\/team-chat(?:\/rooms\/[^/]+)?\/activity$/.test(route || '')
+        )
+            return;
         // Named dialogue activity is not broadcast to users outside its private audience; authorized clients poll.
         if (/^\/api\/projects\/[^/]+\/team-chat\/rooms(?:\/|$)/.test(path)) return;
-        if (/^\/api\/projects\/[^/]+\/team-chat(?:\/|$)/.test(path)) {this.sections(['project_chat']);return;}
+        if (/^\/api\/projects\/[^/]+\/team-chat(?:\/|$)/.test(path)) {
+            this.sections(['project_chat']);
+            return;
+        }
         if (/^\/api\/catalog-requests(?:\/|$)/.test(path)) {
             this.sections(['requests', 'audit']);
             return;
         }
         if (path.startsWith('/api/feature-flags')) {
-            this.sections(['maintenance','catalog','knowledge','projects','audit']);
+            this.sections(['maintenance', 'catalog', 'knowledge', 'projects', 'audit']);
             return;
         }
-        if (path.startsWith('/api/device-install-plans')) { this.sections(['catalog','audit']); return; }
+        if (path.startsWith('/api/device-install-plans')) {
+            this.sections(['catalog', 'audit']);
+            return;
+        }
         if (path.startsWith('/api/device-jobs')) {
-            this.bridge(
-                email,
-                String(data?.deviceId || '') || undefined,
-                String(data?.id || '') || undefined,
-            );
+            this.bridge(email, String(data?.deviceId || '') || undefined, String(data?.id || '') || undefined);
             if (data?.deviceId) {
                 this.wake(String(data.deviceId));
             }
             return;
         }
-        if (
-            path.startsWith('/api/devices') ||
-            path.startsWith('/api/device-pairs')
-        ) {
+        if (path.startsWith('/api/devices') || path.startsWith('/api/device-pairs')) {
             this.bridge(email);
             return;
         }
@@ -70,9 +70,15 @@ export class LiveService implements OnModuleDestroy {
             return;
         }
         // A connect response is the server-created job; wake its exact device without sending prompt bytes.
-        if (method === 'POST' && /^\/api\/projects\/[^/]+\/agents\/connect\/?$/.test(path)
-            && data?.kind === 'configure-project-agents' && typeof data.deviceId === 'string' && data.deviceId
-            && typeof data.id === 'string' && data.id) {
+        if (
+            method === 'POST' &&
+            /^\/api\/projects\/[^/]+\/agents\/connect\/?$/.test(path) &&
+            data?.kind === 'configure-project-agents' &&
+            typeof data.deviceId === 'string' &&
+            data.deviceId &&
+            typeof data.id === 'string' &&
+            data.id
+        ) {
             this.bridge(email, data.deviceId, data.id);
             this.wake(data.deviceId);
         }
@@ -88,7 +94,9 @@ export class LiveService implements OnModuleDestroy {
                 ...(deleted ? ['access'] : []),
             ]);
             // Вместе с проектом исчезают назначения, включая активную роль пользователя.
-            if (deleted) { this.io?.emit('auth:changed'); }
+            if (deleted) {
+                this.io?.emit('auth:changed');
+            }
             return;
         }
         if (path.startsWith('/api/ai-plugins')) {

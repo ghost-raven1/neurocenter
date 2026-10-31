@@ -12,5 +12,6 @@ IF missing IS NOT NULL THEN RAISE EXCEPTION 'Project chat learning schema is inc
 /** Current readiness includes immutable answer provenance without changing historical migration assertions. */
 export async function assertProjectChatLearningSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема знаний ответов проектного чата не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length)
+        throw new Error('Схема знаний ответов проектного чата не готова: ' + rows.map((row) => row.issue).join(', '));
 }

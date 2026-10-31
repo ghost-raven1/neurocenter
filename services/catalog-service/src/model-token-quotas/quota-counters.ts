@@ -1,10 +1,28 @@
-import type {PoolClient} from 'pg';
-import type {ModelTokenQuotaPolicy,ModelTokenQuotaCounters} from './model-token-quotas.types';
+import type { PoolClient } from 'pg';
+import type { ModelTokenQuotaPolicy, ModelTokenQuotaCounters } from './model-token-quotas.types';
 
-export interface QuotaBalance extends ModelTokenQuotaCounters {unpricedUnknownCalls:number;}
+export interface QuotaBalance extends ModelTokenQuotaCounters {
+    unpricedUnknownCalls: number;
+}
 /** Active/unknown quota holds survive a period boundary; only authoritative settled charges age out. */
-export async function quotaCounters(db:Pick<PoolClient,'query'>,policy:ModelTokenQuotaPolicy,clock:string,excludeId:string|null=null):Promise<QuotaBalance>{
-    const row=(await db.query<{input:string|null;output:string|null;charged:string;active:string;held:string;unknown:string;unpriced:string;next:Date|string|null}>(`
+export async function quotaCounters(
+    db: Pick<PoolClient, 'query'>,
+    policy: ModelTokenQuotaPolicy,
+    clock: string,
+    excludeId: string | null = null,
+): Promise<QuotaBalance> {
+    const row = (
+        await db.query<{
+            input: string | null;
+            output: string | null;
+            charged: string;
+            active: string;
+            held: string;
+            unknown: string;
+            unpriced: string;
+            next: Date | string | null;
+        }>(
+            `
 WITH receipts AS (
  SELECT *,coalesce(quota_admitted_at,started_at) AS budget_at,
   quota_state IS NULL AND (input_tokens IS NULL OR output_tokens IS NULL)
@@ -24,11 +42,26 @@ SELECT CASE WHEN count(*)>0 AND count(input_tokens)=0 THEN NULL ELSE coalesce(su
  count(*) FILTER(WHERE quota_state='unknown' OR unpriced OR quota_state IS NULL AND status='pending' AND dispatch_count IS DISTINCT FROM 0)::text AS unknown,
  count(*) FILTER(WHERE unpriced)::text AS unpriced,
  min(budget_at+$4::bigint*interval '1 millisecond') FILTER(WHERE quota_state='settled' OR quota_state IS NULL AND NOT unpriced AND status<>'pending') AS next
-FROM visible`,[policy.userEmail,policy.modelId,clock,policy.periodMs,excludeId])).rows[0];
-    const charged=row?.charged??'0',active=row?.active??'0',held=row?.held??'0',spent=BigInt(charged)+BigInt(active)+BigInt(held),limit=BigInt(policy.tokenLimit);
-    const knownActual=BigInt(row?.input??0)+BigInt(row?.output??0);
-    return {actualInputTokens:row?row.input:'0',actualOutputTokens:row?row.output:'0',chargedTokens:charged,activeReservedTokens:active,
-        unknownHeldTokens:held,unknownCalls:Number(row?.unknown??0),unpricedUnknownCalls:Number(row?.unpriced??0),
-        remainingTokens:(spent<limit?limit-spent:0n).toString(),overrunTokens:(knownActual>limit?knownActual-limit:0n).toString(),
-        nextBudgetChangeAt:row?.next?new Date(row.next).toISOString():null};
+FROM visible`,
+            [policy.userEmail, policy.modelId, clock, policy.periodMs, excludeId],
+        )
+    ).rows[0];
+    const charged = row?.charged ?? '0',
+        active = row?.active ?? '0',
+        held = row?.held ?? '0',
+        spent = BigInt(charged) + BigInt(active) + BigInt(held),
+        limit = BigInt(policy.tokenLimit);
+    const knownActual = BigInt(row?.input ?? 0) + BigInt(row?.output ?? 0);
+    return {
+        actualInputTokens: row ? row.input : '0',
+        actualOutputTokens: row ? row.output : '0',
+        chargedTokens: charged,
+        activeReservedTokens: active,
+        unknownHeldTokens: held,
+        unknownCalls: Number(row?.unknown ?? 0),
+        unpricedUnknownCalls: Number(row?.unpriced ?? 0),
+        remainingTokens: (spent < limit ? limit - spent : 0n).toString(),
+        overrunTokens: (knownActual > limit ? knownActual - limit : 0n).toString(),
+        nextBudgetChangeAt: row?.next ? new Date(row.next).toISOString() : null,
+    };
 }

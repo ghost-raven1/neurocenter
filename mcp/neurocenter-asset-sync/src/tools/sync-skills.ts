@@ -6,11 +6,14 @@ import { z } from 'zod';
 import { scanSkills } from './scan-skills.js';
 
 /** Базовый URL skills-service (ingest-эндпоинт). */
-import {authorizedFetch} from '../bridge/state.js';
+import { authorizedFetch } from '../bridge/state.js';
 
 export const syncSkillsInputSchema = z.object({
     root: z.string().optional().describe('Корень проекта (деф. CWD) — там ищут .opencode/skills.'),
-    projectKey: z.string().min(1).describe('Ключ проекта в панели (напр. prj-example-project) — куда синхронизировать.'),
+    projectKey: z
+        .string()
+        .min(1)
+        .describe('Ключ проекта в панели (напр. prj-example-project) — куда синхронизировать.'),
     dryRun: z.boolean().optional().describe('true — только список найденных скиллов, без записи.'),
 });
 export type TSyncSkillsInput = z.infer<typeof syncSkillsInputSchema>;
@@ -36,7 +39,9 @@ interface ISkillSyncItem {
  */
 function splitCard(raw: string): { body: string; description?: string } {
     const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-    if (!m) {return { body: raw };}
+    if (!m) {
+        return { body: raw };
+    }
     const full = m[0] ?? raw;
     const fm = m[1] ?? '';
     const dm = fm.match(/^description:\s*(.*)$/m);
@@ -48,14 +53,18 @@ function splitCard(raw: string): { body: string; description?: string } {
 
         if (/^[>|][+-]?$/.test(first)) {
             const lines = fm.split(/\r?\n/);
-            const idx = lines.findIndex(l => /^description:\s*[>|][+-]?\s*$/.test(l));
+            const idx = lines.findIndex((l) => /^description:\s*[>|][+-]?\s*$/.test(l));
             const block: string[] = [];
 
             for (let i = idx + 1; i < lines.length; i += 1) {
                 const line = lines[i] ?? '';
 
-                if (line.trim() === '') {continue;}
-                if (/^\S/.test(line)) {break;}
+                if (line.trim() === '') {
+                    continue;
+                }
+                if (/^\S/.test(line)) {
+                    break;
+                }
                 block.push(line.trim());
             }
 
@@ -87,7 +96,14 @@ export async function syncSkills(input: TSyncSkillsInput): Promise<unknown> {
 
     const scan = await scanSkills(rootAbs, 5);
 
-    if(scan.errors.length){return {ok:false,projectKey:input.projectKey,error:'Сканирование скиллов не завершено. Серверный каталог не изменён.',sourceErrors:scan.errors};}
+    if (scan.errors.length) {
+        return {
+            ok: false,
+            projectKey: input.projectKey,
+            error: 'Сканирование скиллов не завершено. Серверный каталог не изменён.',
+            sourceErrors: scan.errors,
+        };
+    }
     if (scan.skills.length === 0) {
         return { ok: false, projectKey: input.projectKey, scanned: 0, note: 'Скиллы не найдены', errors: scan.errors };
     }
@@ -112,7 +128,13 @@ export async function syncSkills(input: TSyncSkillsInput): Promise<unknown> {
     }
 
     if (input.dryRun) {
-        return { ok: true, dryRun: true, projectKey: input.projectKey, scanned: items.length, skills: items.map(i => i.name) };
+        return {
+            ok: true,
+            dryRun: true,
+            projectKey: input.projectKey,
+            scanned: items.length,
+            skills: items.map((i) => i.name),
+        };
     }
 
     const res = await authorizedFetch('/api/skills/sync', {
@@ -123,7 +145,13 @@ export async function syncSkills(input: TSyncSkillsInput): Promise<unknown> {
     const json: unknown = await res.json();
 
     if (!res.ok) {
-        return { ok: false, projectKey: input.projectKey, scanned: items.length, error: `skills-service → ${res.status}`, detail: json };
+        return {
+            ok: false,
+            projectKey: input.projectKey,
+            scanned: items.length,
+            error: `skills-service → ${res.status}`,
+            detail: json,
+        };
     }
 
     const summary = json as { upserted?: number; removed?: number; total?: number };

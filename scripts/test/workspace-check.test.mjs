@@ -202,7 +202,8 @@ test('Общий check проверяет свежий dist, новые конт
     for (const directory of workspacePackages) {
         const build = plan.findIndex(step => step.directory === directory && step.args.includes('build'));
         const typecheck = plan.findIndex(step => step.directory === directory && step.args.includes('typecheck'));
-        assert.ok(typecheck >= 0 && build > typecheck);
+        const lint = plan.findIndex(step => step.directory === directory && step.args.includes('lint'));
+        assert.ok(lint >= 0 && typecheck > lint && build > typecheck);
     }
     assert.deepEqual(plan[0].args, ['scripts/agent-kit/generate.mjs', '--check']);
     const common = plan.findIndex(step => step.type === 'node' && step.args.includes('--test'));

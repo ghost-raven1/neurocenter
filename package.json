@@ -28,7 +28,10 @@
     "qa:postgres": "node scripts/qa/cli.mjs postgres",
     "qa:native": "node scripts/qa/cli.mjs native",
     "agent-kit:role-evals": "node scripts/agent-kit/evals/roles.mjs --controls",
-    "check:impact": "node scripts/workspace/impact-plan-cli.mjs"
+    "check:impact": "node scripts/workspace/impact-plan-cli.mjs",
+    "lint": "npm run check -- --step lint",
+    "format:check": "npm run check -- --step format:check",
+    "format": "npm --prefix services/rag-sync-service run format && npm --prefix services/feature-flags-service run format && npm --prefix services/api-gateway run format && npm --prefix services/oauth2-bridge run format && npm --prefix services/catalog-service run format && npm --prefix services/skills-service run format && npm --prefix mcp/neurocenter-asset-sync run format"
   },
   "version": "0.10.1"
 }

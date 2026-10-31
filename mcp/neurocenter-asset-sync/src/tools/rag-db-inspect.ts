@@ -46,9 +46,7 @@ async function namesOr(dir: string): Promise<string[] | null> {
     }
 }
 
-async function sumFiles(
-    dir: string,
-): Promise<{ count: number; bytes: number } | null> {
+async function sumFiles(dir: string): Promise<{ count: number; bytes: number } | null> {
     let entries;
     try {
         entries = await fs.readdir(dir, { withFileTypes: true });
@@ -78,10 +76,7 @@ async function sumFiles(
  * @param input - dbPath/root.
  * @param cwd - базовый каталог.
  */
-export async function ragDbInspect(
-    input: TRagDbInspectInput,
-    cwd: string,
-): Promise<IRagDbInspect> {
+export async function ragDbInspect(input: TRagDbInspectInput, cwd: string): Promise<IRagDbInspect> {
     const errors: string[] = [];
     if (!input.dbPath && !input.root) {
         errors.push('задайте dbPath или root');
@@ -111,13 +106,13 @@ export async function ragDbInspect(
         await fs.access(storePath);
         exists = true;
     } catch {
-    // store отсутствует.
+        // store отсутствует.
     }
 
     const tableDir = path.join(storePath, 'chunks.lance');
     const top = (await namesOr(storePath)) ?? [];
-    const tableDirs = top.filter(n => n.endsWith('.lance'));
-    const auxFiles = top.filter(n => !n.endsWith('.lance') && !n.startsWith('__'));
+    const tableDirs = top.filter((n) => n.endsWith('.lance'));
+    const auxFiles = top.filter((n) => !n.endsWith('.lance') && !n.startsWith('__'));
     const data = await sumFiles(path.join(tableDir, 'data'));
     const versions = (await namesOr(path.join(tableDir, '_versions'))) ?? [];
 

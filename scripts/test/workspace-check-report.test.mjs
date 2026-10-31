@@ -35,7 +35,7 @@ async function fixture(t, {report = valid, raw, code = 0, signal, missing = fals
     for (const [index, name] of workspacePackages.entries()) {
         await fs.mkdir(path.join(checkout, name), {recursive: true});
         await fs.writeFile(path.join(checkout, name, 'package.json'), JSON.stringify({scripts: {
-            typecheck: 'fixture', build: 'fixture', ...(index === 0 ? {test: 'vitest run'} : {}),
+            lint: 'fixture', typecheck: 'fixture', build: 'fixture', ...(index === 0 ? {test: 'vitest run'} : {}),
         }}));
     }
     const npm = path.join(directory, 'npm-cli.js');

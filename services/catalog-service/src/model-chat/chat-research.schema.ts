@@ -1,5 +1,5 @@
 /** Research receipts preserve full personal history and bind every step to its exact request attempt. */
-export const CHAT_RESEARCH_SCHEMA_SQL=`
+export const CHAT_RESEARCH_SCHEMA_SQL = `
 ALTER TABLE model_chat_turns ADD COLUMN research_request jsonb;
 ALTER TABLE model_chat_turns ADD CONSTRAINT model_chat_research_request_check CHECK(research_request IS NULL OR COALESCE((
  jsonb_typeof(research_request)='object' AND research_request-ARRAY['project','external']='{}'::jsonb

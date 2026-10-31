@@ -1,6 +1,6 @@
-import {ensureCatalogSchema} from '../database/catalog-schema';
-import {listAuditHistory} from './audit-history';
-import {createPool,observeClientErrors} from '../database/pool';
+import { ensureCatalogSchema } from '../database/catalog-schema';
+import { listAuditHistory } from './audit-history';
+import { createPool, observeClientErrors } from '../database/pool';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, ConflictException } from '@nestjs/common';
@@ -9,10 +9,10 @@ import { Client, Pool } from 'pg';
 import { PluginRepository } from '../publication/plugin-repository';
 import { OperationRepository } from '../operations/operation-repository';
 import type { IOperationCreate, IOperationReadScope, IOperationStatePatch } from '../operations/operation.types';
-import {validateProjectSettings} from './project-validation';
-import {normalizeProjectQuota} from './project-quota';
+import { validateProjectSettings } from './project-validation';
+import { normalizeProjectQuota } from './project-quota';
 import { ProjectSettingsRepository, type IProjectSettingsPatch } from './project-settings-repository';
-import {deleteProjectWithAudit} from './project-deletion';
+import { deleteProjectWithAudit } from './project-deletion';
 import type { IProjectRow } from './project-row';
 import { ProjectMemberRepository, projectMemberFromRow } from './project-member-repository';
 import type { IProjectMemberRow } from './project-member-repository';
@@ -22,8 +22,27 @@ import { SkillAuditRepository } from '../publication/skill-audit-repository';
 import { backfillModelCatalog } from '../models/models.repository';
 import type { IAccessActor } from '../access/access.model';
 
-import { IAccessDecision, IAccessDecisionList, IAiPlugin, IAiPluginCreate, IAiPluginUpdate, IAiPluginVersion, IAccessUserRow, IAuditEvent, IBackupStatus, IOperation, IOperationDetail, IOperationPage, IPage, IProjectDetail, IProjectMember, IProjectAsset, IProjectSummary, IQuota, IStorageSummary } from './dto';
-
+import {
+    IAccessDecision,
+    IAccessDecisionList,
+    IAiPlugin,
+    IAiPluginCreate,
+    IAiPluginUpdate,
+    IAiPluginVersion,
+    IAccessUserRow,
+    IAuditEvent,
+    IBackupStatus,
+    IOperation,
+    IOperationDetail,
+    IOperationPage,
+    IPage,
+    IProjectDetail,
+    IProjectMember,
+    IProjectAsset,
+    IProjectSummary,
+    IQuota,
+    IStorageSummary,
+} from './dto';
 
 /**
  * SQL-обёртка над PostgreSQL для каталога проектов (БД `catalog`).
@@ -40,7 +59,7 @@ export class CatalogDb {
     private setupDone: Promise<void> | null = null;
 
     constructor(url: string) {
-        this.pool = createPool({ connectionString: url, max: 5 },'catalog');
+        this.pool = createPool({ connectionString: url, max: 5 }, 'catalog');
         this.plugins = new PluginRepository(this.pool);
         this.operations = new OperationRepository(this.pool);
         this.members = new ProjectMemberRepository(this.pool);
@@ -50,7 +69,9 @@ export class CatalogDb {
     }
 
     /** Проверяет рабочее подключение без изменения схемы или данных. */
-    public async ready():Promise<void>{await this.pool.query('SELECT 1');}
+    public async ready(): Promise<void> {
+        await this.pool.query('SELECT 1');
+    }
 
     /**
      * Идемпотентная инициализация схемы (однократно).
@@ -66,12 +87,18 @@ export class CatalogDb {
 
     private async init(): Promise<void> {
         await ensureCatalogSchema(this.pool);
-        if(process.env.NODE_ENV!=='production'){
-            await this.pool.query("INSERT INTO projects(id,name,external_resource_id,state,rag_project_key) SELECT 'prj-example-project','example-project','example:example-project','ACTIVE','prj-example-project' WHERE NOT EXISTS(SELECT 1 FROM project_retirements WHERE project_id='prj-example-project') ON CONFLICT(id) DO NOTHING");
+        if (process.env.NODE_ENV !== 'production') {
+            await this.pool.query(
+                "INSERT INTO projects(id,name,external_resource_id,state,rag_project_key) SELECT 'prj-example-project','example-project','example:example-project','ACTIVE','prj-example-project' WHERE NOT EXISTS(SELECT 1 FROM project_retirements WHERE project_id='prj-example-project') ON CONFLICT(id) DO NOTHING",
+            );
         }
         // Production-перезапуск не назначает проекту невыбранную серверную папку.
-        if(process.env.NODE_ENV!=='production'){await this.seedFsRootPaths();}
-        if(process.env.NODE_ENV!=='production'){await this.seedProjectMembers();}
+        if (process.env.NODE_ENV !== 'production') {
+            await this.seedFsRootPaths();
+        }
+        if (process.env.NODE_ENV !== 'production') {
+            await this.seedProjectMembers();
+        }
         await this.migrateLegacyRoles();
         await backfillModelCatalog(this.pool);
     }
@@ -105,10 +132,10 @@ export class CatalogDb {
             "SELECT id, name FROM projects WHERE fs_root_path IS NULL OR fs_root_path = ''",
         );
         for (const r of rows.rows) {
-            await this.pool.query(
-                'UPDATE projects SET fs_root_path = $1, updated_at = now() WHERE id = $2',
-                [path.join(root, r.name), r.id],
-            );
+            await this.pool.query('UPDATE projects SET fs_root_path = $1, updated_at = now() WHERE id = $2', [
+                path.join(root, r.name),
+                r.id,
+            ]);
         }
     }
 
@@ -120,17 +147,31 @@ export class CatalogDb {
      * @param query - фильт по имени (ILIKE).
      * @returns {Promise<IPage<IProjectSummary>>}
      */
-    public async listProjects(page: number, size: number, query: string, allowedIds?: string[]): Promise<IPage<IProjectSummary>> {
+    public async listProjects(
+        page: number,
+        size: number,
+        query: string,
+        allowedIds?: string[],
+    ): Promise<IPage<IProjectSummary>> {
         const params: unknown[] = [];
         const where: string[] = [];
-        if (query) { params.push(`%${query}%`); where.push(`name ILIKE $${params.length}`); }
-        if (allowedIds !== undefined) { params.push(allowedIds); where.push(`id=ANY($${params.length}::text[])`); }
+        if (query) {
+            params.push(`%${query}%`);
+            where.push(`name ILIKE $${params.length}`);
+        }
+        if (allowedIds !== undefined) {
+            params.push(allowedIds);
+            where.push(`id=ANY($${params.length}::text[])`);
+        }
         const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
-        const [count,rows] = await Promise.all([
-            this.pool.query(`SELECT count(*)::int AS n FROM projects ${clause}`,params),
-            this.pool.query(`SELECT projects.*,(SELECT count(*)::int FROM operations o WHERE (o.project_id=projects.id OR (o.project_id=projects.name AND projects.name NOT LIKE 'prj-%')) AND o.state IN ('QUEUED','RUNNING')) AS active_operations FROM projects ${clause} ORDER BY created_at DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`,[...params,size,(page-1)*size]),
+        const [count, rows] = await Promise.all([
+            this.pool.query(`SELECT count(*)::int AS n FROM projects ${clause}`, params),
+            this.pool.query(
+                `SELECT projects.*,(SELECT count(*)::int FROM operations o WHERE (o.project_id=projects.id OR (o.project_id=projects.name AND projects.name NOT LIKE 'prj-%')) AND o.state IN ('QUEUED','RUNNING')) AS active_operations FROM projects ${clause} ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+                [...params, size, (page - 1) * size],
+            ),
         ]);
-        return {items:rows.rows.map(toSummary),page,size,total:Number(count.rows[0].n)};
+        return { items: rows.rows.map(toSummary), page, size, total: Number(count.rows[0].n) };
     }
 
     /**
@@ -140,7 +181,10 @@ export class CatalogDb {
      * @returns {Promise<IProjectDetail | null>}
      */
     public async getProject(idOrName: string): Promise<IProjectDetail | null> {
-        const res = await this.pool.query("SELECT projects.*,(SELECT count(*)::int FROM operations o WHERE (o.project_id=projects.id OR (o.project_id=projects.name AND projects.name NOT LIKE 'prj-%')) AND o.state IN ('QUEUED','RUNNING')) AS active_operations FROM projects WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'prj-%') ORDER BY (id=$1) DESC LIMIT 1", [idOrName]);
+        const res = await this.pool.query(
+            "SELECT projects.*,(SELECT count(*)::int FROM operations o WHERE (o.project_id=projects.id OR (o.project_id=projects.name AND projects.name NOT LIKE 'prj-%')) AND o.state IN ('QUEUED','RUNNING')) AS active_operations FROM projects WHERE id=$1 OR (name=$1 AND $1 NOT LIKE 'prj-%') ORDER BY (id=$1) DESC LIMIT 1",
+            [idOrName],
+        );
         const row = res.rows[0] as IProjectRow | undefined;
         return row ? toDetail(row) : null;
     }
@@ -172,7 +216,9 @@ export class CatalogDb {
                 fsRoot || null,
             ],
         );
-        if (!inserted.rowCount) { throw new ConflictException('Проект с таким названием уже существует.'); }
+        if (!inserted.rowCount) {
+            throw new ConflictException('Проект с таким названием уже существует.');
+        }
         const detail = await this.getProject(name);
         if (!detail) {
             throw new Error(`project not created: ${name}`);
@@ -187,7 +233,11 @@ export class CatalogDb {
      * @param body — `{ state?, retention?, quotas? }`.
      * @returns {Promise<IProjectDetail | null>}
      */
-    public async updateProject(idOrName: string, body: IProjectSettingsPatch, actor = 'system:administration'): Promise<IProjectDetail | null> {
+    public async updateProject(
+        idOrName: string,
+        body: IProjectSettingsPatch,
+        actor = 'system:administration',
+    ): Promise<IProjectDetail | null> {
         const saved = await this.projectSettings.update(idOrName, body, actor);
         return saved ? toDetail(saved) : null;
     }
@@ -199,7 +249,7 @@ export class CatalogDb {
      * @returns {Promise<boolean>} — true, если проект был удалён.
      */
     public deleteProject(idOrName: string, actor = 'admin'): Promise<boolean> {
-        return deleteProjectWithAudit(this.pool,idOrName,actor);
+        return deleteProjectWithAudit(this.pool, idOrName, actor);
     }
 
     /** Публикации обслуживает отдельный репозиторий с транзакциями. */
@@ -207,9 +257,15 @@ export class CatalogDb {
         return this.plugins.list(page, size, query, allowedIds);
     }
 
-    public getAiPlugin(idOrName: string): Promise<IAiPlugin | null> { return this.plugins.get(idOrName); }
-    public createAiPlugin(body: IAiPluginCreate, author = 'import'): Promise<IAiPlugin> { return this.plugins.create(body, author); }
-    public updateAiPlugin(idOrName: string, body: IAiPluginUpdate, author = 'import'): Promise<IAiPlugin | null> { return this.plugins.update(idOrName, body, author); }
+    public getAiPlugin(idOrName: string): Promise<IAiPlugin | null> {
+        return this.plugins.get(idOrName);
+    }
+    public createAiPlugin(body: IAiPluginCreate, author = 'import'): Promise<IAiPlugin> {
+        return this.plugins.create(body, author);
+    }
+    public updateAiPlugin(idOrName: string, body: IAiPluginUpdate, author = 'import'): Promise<IAiPlugin | null> {
+        return this.plugins.update(idOrName, body, author);
+    }
 
     /**
      * Активные ассеты проекта (глоб. бандлы/скиллы, добавленные админом проекта).
@@ -219,16 +275,20 @@ export class CatalogDb {
      */
     public async listProjectAssets(projectId: string): Promise<IProjectAsset[]> {
         const res = await this.pool.query(
-            'SELECT asset_id AS "assetId", asset_kind AS "assetKind", added_by AS "addedBy", added_at AS "addedAt", asset_version AS version,asset_manifest AS manifest,pin_origin AS "pinOrigin" '
-            + 'FROM project_assets WHERE project_id = $1 ORDER BY added_at DESC',
+            'SELECT asset_id AS "assetId", asset_kind AS "assetKind", added_by AS "addedBy", added_at AS "addedAt", asset_version AS version,asset_manifest AS manifest,pin_origin AS "pinOrigin" ' +
+                'FROM project_assets WHERE project_id = $1 ORDER BY added_at DESC',
             [projectId],
         );
-        return (res.rows as unknown[]) as IProjectAsset[];
+        return res.rows as unknown[] as IProjectAsset[];
     }
 
-    public projectCatalog(projectId:string) { return this.projectAssets.catalog(projectId); }
+    public projectCatalog(projectId: string) {
+        return this.projectAssets.catalog(projectId);
+    }
 
-    public pinProjectAsset(projectId:string,id:string,kind:string,actor:string,input:unknown) { return this.projectAssets.pin(projectId,id,kind,actor,input); }
+    public pinProjectAsset(projectId: string, id: string, kind: string, actor: string, input: unknown) {
+        return this.projectAssets.pin(projectId, id, kind, actor, input);
+    }
 
     /** Файловый сервис закрепляет зависимости до публикации текущего файла или снимка. */
     public reserveSkillDependencies(raw: unknown): Promise<{ reserved: number }> {
@@ -254,13 +314,27 @@ export class CatalogDb {
         return this.projectAssets.remove(projectId, assetId, assetKind, actor);
     }
 
-    public listAiPluginVersions(pluginId: string): Promise<IAiPluginVersion[]> { return this.plugins.versions(pluginId); }
-    public getAiPluginVersion(pluginId: string, version: number): Promise<IAiPluginVersion | null> { return this.plugins.version(pluginId, version); }
-    public activateAiPluginVersion(pluginId: string, version: number, author = 'import'): Promise<IAiPlugin | null> { return this.plugins.activate(pluginId, version, author); }
-    public deleteAiPlugin(idOrName: string, actor: string): Promise<boolean> { return this.plugins.delete(idOrName, actor); }
+    public listAiPluginVersions(pluginId: string): Promise<IAiPluginVersion[]> {
+        return this.plugins.versions(pluginId);
+    }
+    public getAiPluginVersion(pluginId: string, version: number): Promise<IAiPluginVersion | null> {
+        return this.plugins.version(pluginId, version);
+    }
+    public activateAiPluginVersion(pluginId: string, version: number, author = 'import'): Promise<IAiPlugin | null> {
+        return this.plugins.activate(pluginId, version, author);
+    }
+    public deleteAiPlugin(idOrName: string, actor: string): Promise<boolean> {
+        return this.plugins.delete(idOrName, actor);
+    }
 
     /** Список операций с ограничениями проектов, исполнителя и состояния. */
-    public listOperations(page: number, size: number, projectIds?: string[], state?: string, scope?: IOperationReadScope): Promise<IOperationPage> {
+    public listOperations(
+        page: number,
+        size: number,
+        projectIds?: string[],
+        state?: string,
+        scope?: IOperationReadScope,
+    ): Promise<IOperationPage> {
         return this.operations.list(page, size, projectIds, state, scope);
     }
 
@@ -268,7 +342,11 @@ export class CatalogDb {
         return this.operations.get(operationId, scope);
     }
 
-    public setOperationState(operationId: string, state: string, patch?: IOperationStatePatch): Promise<IOperationDetail | null> {
+    public setOperationState(
+        operationId: string,
+        state: string,
+        patch?: IOperationStatePatch,
+    ): Promise<IOperationDetail | null> {
         return this.operations.setState(operationId, state, patch);
     }
 
@@ -280,7 +358,7 @@ export class CatalogDb {
      * @returns {Promise<IPage<IAuditEvent>>}
      */
     public async listAuditEvents(page: number, size: number): Promise<IPage<IAuditEvent>> {
-        return listAuditHistory(this.pool,page,size);
+        return listAuditHistory(this.pool, page, size);
     }
 
     /**
@@ -317,7 +395,7 @@ export class CatalogDb {
             return 0;
         }
         const client = new Client({ connectionString: url });
-        observeClientErrors(client,'catalog-storage-summary');
+        observeClientErrors(client, 'catalog-storage-summary');
 
         try {
             await client.connect();
@@ -347,7 +425,9 @@ export class CatalogDb {
      * @returns {Promise<void>}
      */
     public async recordBackup(): Promise<void> {
-        await this.pool.query("INSERT INTO backup_state (key, value) VALUES ('last_backup_at', now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value");
+        await this.pool.query(
+            "INSERT INTO backup_state (key, value) VALUES ('last_backup_at', now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        );
     }
 
     /**
@@ -363,10 +443,16 @@ export class CatalogDb {
         const res = await this.pool.query('SELECT id, name, state FROM projects ORDER BY created_at DESC LIMIT 50');
         const rows = res.rows as { id: string; name: string; state: string }[];
         const decisions: IAccessDecision[] = rows.map((row) => {
-            const actions = row.state === 'ACTIVE'
-                ? [ 'read', 'create', 'update', 'delete', 'activate', 'rollback' ]
-                : [ 'read' ];
-            return { scope: 'project', scopeId: row.id, actions, decisionId: `dec-${row.id}`, policyRevision: 1, ttlSeconds: 3600 };
+            const actions =
+                row.state === 'ACTIVE' ? ['read', 'create', 'update', 'delete', 'activate', 'rollback'] : ['read'];
+            return {
+                scope: 'project',
+                scopeId: row.id,
+                actions,
+                decisionId: `dec-${row.id}`,
+                policyRevision: 1,
+                ttlSeconds: 3600,
+            };
         });
         return { decisions, externalServiceUrl: null };
     }
@@ -382,8 +468,22 @@ export class CatalogDb {
             return;
         }
         const seeds: Array<[string, string, string, string, string, string]> = [
-            ['prj-example-project', 'u-dev-admin', 'dev-admin@example.test', 'Админ проекта', 'Админ проекта', '2026-04-01T00:00:00Z'],
-            ['prj-example-project', 'u-dev-developer', 'dev-user@example.test', 'Разработчик', 'Разработчик', '2026-05-15T00:00:00Z'],
+            [
+                'prj-example-project',
+                'u-dev-admin',
+                'dev-admin@example.test',
+                'Админ проекта',
+                'Админ проекта',
+                '2026-04-01T00:00:00Z',
+            ],
+            [
+                'prj-example-project',
+                'u-dev-developer',
+                'dev-user@example.test',
+                'Разработчик',
+                'Разработчик',
+                '2026-05-15T00:00:00Z',
+            ],
         ];
         for (const seed of seeds) {
             await this.pool.query(
@@ -403,7 +503,7 @@ export class CatalogDb {
     public async listProjectMembers(projectId: string): Promise<IProjectMember[]> {
         const res = await this.pool.query<IProjectMemberRow>(
             'SELECT * FROM project_members WHERE project_id = $1 ORDER BY added_at',
-            [ projectId ],
+            [projectId],
         );
         return res.rows.map(projectMemberFromRow);
     }
@@ -427,7 +527,13 @@ export class CatalogDb {
      * @param {string} role - новая роль
      * @returns {Promise<IProjectMember | null>}
      */
-    public updateProjectMemberRole(projectId: string, userId: string, role: string, expectedRole: string|undefined, actor: IAccessActor): Promise<IProjectMember | null> {
+    public updateProjectMemberRole(
+        projectId: string,
+        userId: string,
+        role: string,
+        expectedRole: string | undefined,
+        actor: IAccessActor,
+    ): Promise<IProjectMember | null> {
         return this.members.update(projectId, userId, role, expectedRole, actor);
     }
 
@@ -438,7 +544,12 @@ export class CatalogDb {
      * @param {string} userId - id сотрудника
      * @returns {Promise<boolean>}
      */
-    public removeProjectMember(projectId: string, userId: string, expectedRole: string|undefined, actor: IAccessActor): Promise<boolean> {
+    public removeProjectMember(
+        projectId: string,
+        userId: string,
+        expectedRole: string | undefined,
+        actor: IAccessActor,
+    ): Promise<boolean> {
         return this.members.remove(projectId, userId, expectedRole, actor);
     }
 
@@ -469,7 +580,12 @@ export class CatalogDb {
                 entry = { principalName: row.principal_name, displayName: row.display_name, accesses: [] };
                 byUser.set(row.principal_name, entry);
             }
-            entry.accesses.push({ projectId: row.project_id, projectName: row.project_name, userId: row.user_id, role: row.role });
+            entry.accesses.push({
+                projectId: row.project_id,
+                projectName: row.project_name,
+                userId: row.user_id,
+                role: row.role,
+            });
         }
         if (currentPrincipal && !byUser.has(currentPrincipal)) {
             byUser.set(currentPrincipal, {
@@ -500,10 +616,6 @@ interface ICreateProjectBody {
     fsRootPath?: string;
 }
 
-
-
-
-
 function toSummary(r: IProjectRow): IProjectSummary {
     return {
         id: r.id,
@@ -513,11 +625,11 @@ function toSummary(r: IProjectRow): IProjectSummary {
         state: r.state,
         head: r.head_snapshot_id
             ? {
-                snapshotId: r.head_snapshot_id,
-                snapshotDate: r.head_snapshot_date ?? '',
-                author: r.head_author ?? '',
-                headRevision: Number(r.head_revision || 0),
-            }
+                  snapshotId: r.head_snapshot_id,
+                  snapshotDate: r.head_snapshot_date ?? '',
+                  author: r.head_author ?? '',
+                  headRevision: Number(r.head_revision || 0),
+              }
             : null,
         headRevision: Number(r.head_revision || 0),
         logicalBytes: Number(r.logical_bytes || 0),

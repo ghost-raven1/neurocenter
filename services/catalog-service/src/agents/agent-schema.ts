@@ -1,5 +1,5 @@
 /** Frozen migration 7: native agent cards, immutable templates and project desired state. */
-export const AGENT_SCHEMA_SQL=`
+export const AGENT_SCHEMA_SQL = `
 CREATE TABLE agent_catalog (
     id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,name TEXT NOT NULL,definition JSONB NOT NULL CHECK(jsonb_typeof(definition)='object'),
     version INTEGER NOT NULL CHECK(version>0),manifest TEXT NOT NULL CHECK(manifest ~ '^[a-f0-9]{64}$'),archived_at TIMESTAMPTZ,

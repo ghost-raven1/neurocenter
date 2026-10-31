@@ -1,7 +1,7 @@
-import {RAG_WRITE_LOCK} from '../rag/quota/rag-quota-schema';
+import { RAG_WRITE_LOCK } from '../rag/quota/rag-quota-schema';
 
 /** Separate text storage shares the existing deferred project budget, without changing semantic rows. */
-export const PROJECT_TEXT_SCHEMA=`
+export const PROJECT_TEXT_SCHEMA = `
 CREATE TABLE public.project_text_state (
     project_key text PRIMARY KEY,
     revision bigint NOT NULL CHECK(revision>0),
@@ -65,7 +65,9 @@ BEGIN
     RETURN NULL;
 END;
 $$;
-${['project_text_state','project_text_documents','project_text_receipts'].map(table=>`
+${['project_text_state', 'project_text_documents', 'project_text_receipts']
+    .map(
+        (table) => `
 CREATE TRIGGER ${table}_write_lock BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON public.${table}
 FOR EACH STATEMENT EXECUTE FUNCTION public.neurocenter_rag_write_lock();
 CREATE TRIGGER ${table}_budget_before BEFORE INSERT OR UPDATE OR DELETE ON public.${table}
@@ -74,18 +76,29 @@ CREATE TRIGGER ${table}_budget_after AFTER INSERT OR UPDATE OR DELETE ON public.
 FOR EACH ROW EXECUTE FUNCTION public.neurocenter_text_budget_after();
 CREATE TRIGGER ${table}_budget_truncate AFTER TRUNCATE ON public.${table}
 FOR EACH STATEMENT EXECUTE FUNCTION public.neurocenter_text_budget_recount();
-`).join('')}
+`,
+    )
+    .join('')}
 CREATE TRIGGER rag_text_chunks_budget_restore AFTER TRUNCATE ON public.rag_chunks
 FOR EACH STATEMENT EXECUTE FUNCTION public.neurocenter_text_budget_recount();
 `;
 
-export const PROJECT_TEXT_OBJECTS={
-    tables:['project_text_state','project_text_documents','project_text_receipts'],
-    indexes:['project_text_search_idx'],
-    functions:['neurocenter_text_row_bytes','neurocenter_text_budget_before','neurocenter_text_budget_after','neurocenter_text_budget_recount'],
-    triggers:[...['project_text_state','project_text_documents','project_text_receipts'].flatMap(table=>
-        ['write_lock','budget_before','budget_after','budget_truncate'].map(suffix=>`${table}_${suffix}`)),'rag_text_chunks_budget_restore'],
+export const PROJECT_TEXT_OBJECTS = {
+    tables: ['project_text_state', 'project_text_documents', 'project_text_receipts'],
+    indexes: ['project_text_search_idx'],
+    functions: [
+        'neurocenter_text_row_bytes',
+        'neurocenter_text_budget_before',
+        'neurocenter_text_budget_after',
+        'neurocenter_text_budget_recount',
+    ],
+    triggers: [
+        ...['project_text_state', 'project_text_documents', 'project_text_receipts'].flatMap((table) =>
+            ['write_lock', 'budget_before', 'budget_after', 'budget_truncate'].map((suffix) => `${table}_${suffix}`),
+        ),
+        'rag_text_chunks_budget_restore',
+    ],
 };
 
 /** All text mutations acquire the very same statement lock as semantic writes and quota changes. */
-export const PROJECT_TEXT_WRITE_LOCK=RAG_WRITE_LOCK;
+export const PROJECT_TEXT_WRITE_LOCK = RAG_WRITE_LOCK;

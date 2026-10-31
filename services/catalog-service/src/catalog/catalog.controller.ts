@@ -1,7 +1,22 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, GoneException, NotFoundException, Optional, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import type {Request} from 'express';
-import {OperationActionsService} from '../operations/operation-actions.service';
-
+import {
+    BadRequestException,
+    Body,
+    ConflictException,
+    Controller,
+    Delete,
+    ForbiddenException,
+    Get,
+    GoneException,
+    NotFoundException,
+    Optional,
+    Param,
+    Patch,
+    Post,
+    Query,
+    Req,
+} from '@nestjs/common';
+import type { Request } from 'express';
+import { OperationActionsService } from '../operations/operation-actions.service';
 
 import {
     IAccessDecisionList,
@@ -22,8 +37,8 @@ import {
 import { resolveFsRootPath } from './local-assets';
 import { IBackupRunResult } from './backup';
 import { CatalogService } from './catalog.service';
-import {pagination} from './pagination';
-import {validateProjectRetention,validateProjectSettings} from './project-validation';
+import { pagination } from './pagination';
+import { validateProjectRetention, validateProjectSettings } from './project-validation';
 import { AccessDb } from '../access/access-db';
 import { canReadCommon, IAccessActor, normalizeEmail, projectLevel } from '../access/access.model';
 import { MEMBER_ROLE_OPTIONS, T_DEFAULT_MEMBER_ROLE, roleCan } from './rbac';
@@ -40,8 +55,11 @@ interface IHttpRequest {
 
 @Controller('api')
 export class CatalogController {
-    constructor(private readonly catalog: CatalogService, private readonly access: AccessDb,@Optional() private readonly operationActions?:OperationActionsService) {
-    }
+    constructor(
+        private readonly catalog: CatalogService,
+        private readonly access: AccessDb,
+        @Optional() private readonly operationActions?: OperationActionsService,
+    ) {}
     /**
      * Список проектов.
      *
@@ -49,11 +67,19 @@ export class CatalogController {
      * @returns {IPage<IProjectSummary>}
      */
     @Get('projects')
-    public async listProjects(@Query() query: Record<string, string>, @Req() req: IHttpRequest): Promise<IPage<IProjectSummary>> {
-        const {page,size}=pagination(query);
+    public async listProjects(
+        @Query() query: Record<string, string>,
+        @Req() req: IHttpRequest,
+    ): Promise<IPage<IProjectSummary>> {
+        const { page, size } = pagination(query);
 
         const claims = await this.access.claims(this.actor(req).email);
-        return this.catalog.listProjects(page, size, query.q ?? query.query ?? '', this.isMain(req) ? undefined : claims.projects.map(item=>item.projectId));
+        return this.catalog.listProjects(
+            page,
+            size,
+            query.q ?? query.query ?? '',
+            this.isMain(req) ? undefined : claims.projects.map((item) => item.projectId),
+        );
     }
 
     /**
@@ -84,7 +110,16 @@ export class CatalogController {
     }
 
     @Post('projects')
-    public createProject(@Body() body: { name?: string; externalResourceId?: string; retention?: number; quotas?: unknown; fsRootPath?: string }): Promise<IProjectDetail> {
+    public createProject(
+        @Body()
+        body: {
+            name?: string;
+            externalResourceId?: string;
+            retention?: number;
+            quotas?: unknown;
+            fsRootPath?: string;
+        },
+    ): Promise<IProjectDetail> {
         return this.catalog.createProject({ ...body, fsRootPath: this.assertFsRootPath(body?.fsRootPath) });
     }
 
@@ -96,7 +131,11 @@ export class CatalogController {
      * @returns {Promise<IProjectDetail>}
      */
     @Patch('projects/:id')
-    public async updateProject(@Param('id') id: string, @Body() body: { state?: string; retention?: number; quotas?: unknown; fsRootPath?: string }, @Req() req: IHttpRequest): Promise<IProjectDetail> {
+    public async updateProject(
+        @Param('id') id: string,
+        @Body() body: { state?: string; retention?: number; quotas?: unknown; fsRootPath?: string },
+        @Req() req: IHttpRequest,
+    ): Promise<IProjectDetail> {
         validateProjectSettings(body);
         const normalized = { ...body, fsRootPath: this.assertFsRootPath(body.fsRootPath) };
         const actor = await this.projectSettingsActor(id, req);
@@ -113,7 +152,9 @@ export class CatalogController {
     public async deleteProject(@Param('id') id: string, @Req() req: IHttpRequest): Promise<{ ok: true; id: string }> {
         const members = await this.catalog.listProjectMembers(id);
         const principal = this.bridgePrincipal(req);
-        const myRole = this.isMain(req) ? 'Главный админ' : (members.find(m => m.principalName.toLowerCase() === principal?.toLowerCase())?.role ?? 'Наблюдатель');
+        const myRole = this.isMain(req)
+            ? 'Главный админ'
+            : (members.find((m) => m.principalName.toLowerCase() === principal?.toLowerCase())?.role ?? 'Наблюдатель');
         if (!roleCan(myRole, 'delete')) {
             throw new ForbiddenException('Недостаточно прав: требуется роль «Админ проекта»');
         }
@@ -128,8 +169,12 @@ export class CatalogController {
      * @returns {IQuota}
      */
     @Patch('projects/:id/quotas')
-    public async updateQuotas(@Param('id') id: string, @Body() body: IQuota, @Req() req: IHttpRequest): Promise<IQuota> {
-        validateProjectSettings({quotas: body});
+    public async updateQuotas(
+        @Param('id') id: string,
+        @Body() body: IQuota,
+        @Req() req: IHttpRequest,
+    ): Promise<IQuota> {
+        validateProjectSettings({ quotas: body });
         return this.catalog.updateQuotas(id, body, await this.projectSettingsActor(id, req));
     }
 
@@ -141,7 +186,11 @@ export class CatalogController {
      * @returns {{ retention: number }}
      */
     @Patch('projects/:id/retention')
-    public async updateRetention(@Param('id') id: string, @Body() body: unknown, @Req() req: IHttpRequest): Promise<{ retention: number }> {
+    public async updateRetention(
+        @Param('id') id: string,
+        @Body() body: unknown,
+        @Req() req: IHttpRequest,
+    ): Promise<{ retention: number }> {
         const retention = validateProjectRetention(body);
         const saved = await this.catalog.updateProject(id, { retention }, await this.projectSettingsActor(id, req));
         return { retention: saved.retention };
@@ -176,25 +225,36 @@ export class CatalogController {
      * @returns {IProjectMember}
      */
     @Post('projects/:id/members')
-    public async addProjectMember(@Param('id') id: string, @Body() body: IProjectMemberAdd, @Req() req: IHttpRequest): Promise<IProjectMember> {
+    public async addProjectMember(
+        @Param('id') id: string,
+        @Body() body: IProjectMemberAdd,
+        @Req() req: IHttpRequest,
+    ): Promise<IProjectMember> {
         if (!body?.principalName || !body.principalName.trim()) {
             throw new ConflictException('Укажите логин сотрудника');
         }
         const principal = this.bridgePrincipal(req);
         const membersForRole = await this.catalog.listProjectMembers(id);
-        const myRole = this.isMain(req) ? 'Главный админ' : (membersForRole.find(m => m.principalName.toLowerCase() === principal?.toLowerCase())?.role ?? 'Наблюдатель');
+        const myRole = this.isMain(req)
+            ? 'Главный админ'
+            : (membersForRole.find((m) => m.principalName.toLowerCase() === principal?.toLowerCase())?.role ??
+              'Наблюдатель');
         if (!roleCan(myRole, 'member')) {
             throw new ForbiddenException('Недостаточно прав: требуется роль «Админ проекта»');
         }
         let principalName: string;
-        try { principalName=normalizeEmail(body.principalName); } catch { throw new BadRequestException('Укажите корректную электронную почту сотрудника.'); }
+        try {
+            principalName = normalizeEmail(body.principalName);
+        } catch {
+            throw new BadRequestException('Укажите корректную электронную почту сотрудника.');
+        }
         this.assertMemberRole(body.role ?? T_DEFAULT_MEMBER_ROLE, myRole);
         const list = await this.catalog.listProjectMembers(id);
-        if (list.some(m => m.principalName.toLowerCase() === principalName.toLowerCase())) {
+        if (list.some((m) => m.principalName.toLowerCase() === principalName.toLowerCase())) {
             throw new ConflictException(`Сотрудник ${principalName} уже в проекте`);
         }
         const actor = this.actor(req);
-        await this.access.ensureProjectUser({email:principalName,displayName:body.displayName}, actor,id);
+        await this.access.ensureProjectUser({ email: principalName, displayName: body.displayName }, actor, id);
         const member: IProjectMember = {
             userId: `u-${principalName}`,
             principalName,
@@ -214,19 +274,38 @@ export class CatalogController {
      * @returns {IProjectMember}
      */
     @Patch('projects/:id/members/:userId')
-    public async updateProjectMember(@Param('id') id: string, @Param('userId') userId: string, @Body() body: { role?: string; expectedRole?: string }, @Req() req: IHttpRequest): Promise<IProjectMember> {
+    public async updateProjectMember(
+        @Param('id') id: string,
+        @Param('userId') userId: string,
+        @Body() body: { role?: string; expectedRole?: string },
+        @Req() req: IHttpRequest,
+    ): Promise<IProjectMember> {
         const members = await this.catalog.listProjectMembers(id);
         const principal = this.bridgePrincipal(req);
-        const myRole = this.isMain(req) ? 'Главный админ' : (members.find(m => m.principalName.toLowerCase() === principal?.toLowerCase())?.role ?? 'Наблюдатель');
-        if (!roleCan(myRole, 'member')) { throw new ForbiddenException('Недостаточно прав: требуется роль «Админ проекта»'); }
+        const myRole = this.isMain(req)
+            ? 'Главный админ'
+            : (members.find((m) => m.principalName.toLowerCase() === principal?.toLowerCase())?.role ?? 'Наблюдатель');
+        if (!roleCan(myRole, 'member')) {
+            throw new ForbiddenException('Недостаточно прав: требуется роль «Админ проекта»');
+        }
         this.assertMemberRole(body?.role, myRole);
-        const target = members.find(m => m.userId === userId);
+        const target = members.find((m) => m.userId === userId);
         if (!target) {
             throw new NotFoundException(`Сотрудник ${userId} не найден в проекте`);
         }
-        if (body.expectedRole!==undefined && target.role!==body.expectedRole) { throw new ConflictException('Роль сотрудника уже изменена. Обновите назначения перед сохранением.'); }
-        if (target.role==='Админ проекта' && !this.isMain(req)) { throw new ForbiddenException('Роль администратора проекта меняет Главный админ.'); }
-        const member = await this.catalog.updateProjectMemberRole(id, userId, body?.role as string, target.role, this.actor(req));
+        if (body.expectedRole !== undefined && target.role !== body.expectedRole) {
+            throw new ConflictException('Роль сотрудника уже изменена. Обновите назначения перед сохранением.');
+        }
+        if (target.role === 'Админ проекта' && !this.isMain(req)) {
+            throw new ForbiddenException('Роль администратора проекта меняет Главный админ.');
+        }
+        const member = await this.catalog.updateProjectMemberRole(
+            id,
+            userId,
+            body?.role as string,
+            target.role,
+            this.actor(req),
+        );
 
         if (!member) {
             throw new ConflictException('Назначение изменено или удалено другим администратором. Обновите список.');
@@ -243,18 +322,27 @@ export class CatalogController {
      * @returns {{ ok: true; userId: string }}
      */
     @Delete('projects/:id/members/:userId')
-    public async removeProjectMember(@Param('id') id: string, @Param('userId') userId: string, @Req() req: IHttpRequest, @Query('expectedRole') expectedRole?: string): Promise<{ ok: true; userId: string }> {
+    public async removeProjectMember(
+        @Param('id') id: string,
+        @Param('userId') userId: string,
+        @Req() req: IHttpRequest,
+        @Query('expectedRole') expectedRole?: string,
+    ): Promise<{ ok: true; userId: string }> {
         const members = await this.catalog.listProjectMembers(id);
         const principal = this.bridgePrincipal(req);
-        const myRole = this.isMain(req) ? 'Главный админ' : (members.find(m => m.principalName.toLowerCase() === principal?.toLowerCase())?.role ?? 'Наблюдатель');
+        const myRole = this.isMain(req)
+            ? 'Главный админ'
+            : (members.find((m) => m.principalName.toLowerCase() === principal?.toLowerCase())?.role ?? 'Наблюдатель');
         if (!roleCan(myRole, 'member')) {
             throw new ForbiddenException('Недостаточно прав: требуется роль «Админ проекта»');
         }
-        const target = members.find(m => m.userId === userId);
+        const target = members.find((m) => m.userId === userId);
         if (!target) {
             throw new NotFoundException(`Сотрудник ${userId} не найден в проекте`);
         }
-        if (expectedRole!==undefined && target.role!==expectedRole) { throw new ConflictException('Роль сотрудника уже изменена. Обновите назначения перед удалением.'); }
+        if (expectedRole !== undefined && target.role !== expectedRole) {
+            throw new ConflictException('Роль сотрудника уже изменена. Обновите назначения перед удалением.');
+        }
         if (target.role === 'Админ проекта' && !this.isMain(req)) {
             throw new ForbiddenException('Администратора проекта удаляет Главный админ.');
         }
@@ -281,34 +369,57 @@ export class CatalogController {
 
     /** Exact snapshots доступны участнику проекта, в том числе после архивирования общего head. */
     @Get('projects/:id/catalog')
-    public async projectCatalog(@Param('id') id:string,@Req() req:IHttpRequest) {
-        const project=await this.catalog.getProject(id, { includeLiveSizes: false });
-        if(projectLevel(await this.access.claims(this.actor(req).email),this.actor(req).activeRole,project.id)<1)throw new ForbiddenException('Нет доступа к каталогу проекта.');
+    public async projectCatalog(@Param('id') id: string, @Req() req: IHttpRequest) {
+        const project = await this.catalog.getProject(id, { includeLiveSizes: false });
+        if (projectLevel(await this.access.claims(this.actor(req).email), this.actor(req).activeRole, project.id) < 1)
+            throw new ForbiddenException('Нет доступа к каталогу проекта.');
         return this.catalog.projectCatalog(project.id);
     }
 
     @Patch('projects/:id/assets/pin')
-    public async pinProjectAsset(@Param('id') id:string,@Body() body:{assetId?:string;assetKind?:string;version?:number;expectedVersion?:number|null;expectedManifest?:string|null},@Req() req:IHttpRequest) {
-        const project=await this.catalog.getProject(id, { includeLiveSizes: false });
-        if(projectLevel(await this.access.claims(this.actor(req).email),this.actor(req).activeRole,project.id)<3)throw new ForbiddenException('Версию закрепляет админ проекта.');
-        if(!body?.assetId||!body.assetKind)throw new BadRequestException('Выберите назначение проекта.');
-        const {assetId,assetKind,...input}=body;
-        await this.catalog.pinProjectAsset(project.id,assetId,assetKind,this.actor(req).email,input);return {ok:true};
+    public async pinProjectAsset(
+        @Param('id') id: string,
+        @Body()
+        body: {
+            assetId?: string;
+            assetKind?: string;
+            version?: number;
+            expectedVersion?: number | null;
+            expectedManifest?: string | null;
+        },
+        @Req() req: IHttpRequest,
+    ) {
+        const project = await this.catalog.getProject(id, { includeLiveSizes: false });
+        if (projectLevel(await this.access.claims(this.actor(req).email), this.actor(req).activeRole, project.id) < 3)
+            throw new ForbiddenException('Версию закрепляет админ проекта.');
+        if (!body?.assetId || !body.assetKind) throw new BadRequestException('Выберите назначение проекта.');
+        const { assetId, assetKind, ...input } = body;
+        await this.catalog.pinProjectAsset(project.id, assetId, assetKind, this.actor(req).email, input);
+        return { ok: true };
     }
 
     /**
      * Добавить глобальную ассету в проект. Только админ проекта (level ≥ 3).
      */
     @Post('projects/:id/assets')
-    public async addProjectAsset(@Param('id') id: string, @Body() body: { assetId?: string; assetKind?: string }, @Req() req: IHttpRequest): Promise<{ ok: boolean }> {
-        if ((projectLevel(await this.access.claims(this.actor(req).email), this.actor(req).activeRole, id)) < 3) {
+    public async addProjectAsset(
+        @Param('id') id: string,
+        @Body() body: { assetId?: string; assetKind?: string },
+        @Req() req: IHttpRequest,
+    ): Promise<{ ok: boolean }> {
+        if (projectLevel(await this.access.claims(this.actor(req).email), this.actor(req).activeRole, id) < 3) {
             throw new ForbiddenException('В проектном каталоге может менять только админ проекта');
         }
         if (!body || !body.assetId || !body.assetKind) {
             throw new BadRequestException('assetId и assetKind обязательны');
         }
         const project = await this.catalog.getProject(id, { includeLiveSizes: false });
-        await this.catalog.addProjectAsset(project.id, body.assetId, body.assetKind as IProjectAsset['assetKind'], this.actor(req).email);
+        await this.catalog.addProjectAsset(
+            project.id,
+            body.assetId,
+            body.assetKind as IProjectAsset['assetKind'],
+            this.actor(req).email,
+        );
         return { ok: true };
     }
 
@@ -316,15 +427,21 @@ export class CatalogController {
      * Удалить актив из проектного каталога. Только админ проекта (level ≥ 3).
      */
     @Delete('projects/:id/assets')
-    public async removeProjectAsset(@Param('id') id: string, @Body() body: { assetId?: string; assetKind?: string }, @Req() req: IHttpRequest): Promise<{ ok: boolean }> {
-        if ((projectLevel(await this.access.claims(this.actor(req).email), this.actor(req).activeRole, id)) < 3) {
+    public async removeProjectAsset(
+        @Param('id') id: string,
+        @Body() body: { assetId?: string; assetKind?: string },
+        @Req() req: IHttpRequest,
+    ): Promise<{ ok: boolean }> {
+        if (projectLevel(await this.access.claims(this.actor(req).email), this.actor(req).activeRole, id) < 3) {
             throw new ForbiddenException('Удаление из проектного каталога — только для админа проекта');
         }
         if (!body || !body.assetId || !body.assetKind) {
             throw new BadRequestException('assetId и assetKind обязательны');
         }
         const project = await this.catalog.getProject(id, { includeLiveSizes: false });
-        return { ok: await this.catalog.removeProjectAsset(project.id, body.assetId, body.assetKind, this.actor(req).email) };
+        return {
+            ok: await this.catalog.removeProjectAsset(project.id, body.assetId, body.assetKind, this.actor(req).email),
+        };
     }
 
     /**
@@ -332,9 +449,12 @@ export class CatalogController {
      * 4 — Главный админ, 3 — Админ проекта, 2 — Разработчик, 1 — Наблюдатель, 0 — нет.
      */
     @Get('projects/:idOrName/role-level')
-    public async getProjectRoleLevel(@Param('idOrName') idOrName: string, @Req() req: IHttpRequest): Promise<{ level: number }> {
-        const actor=this.actor(req);
-        const level = projectLevel(await this.access.claims(actor.email),actor.activeRole,idOrName);
+    public async getProjectRoleLevel(
+        @Param('idOrName') idOrName: string,
+        @Req() req: IHttpRequest,
+    ): Promise<{ level: number }> {
+        const actor = this.actor(req);
+        const level = projectLevel(await this.access.claims(actor.email), actor.activeRole, idOrName);
         return { level };
     }
 
@@ -361,7 +481,8 @@ export class CatalogController {
         const headers = req.headers;
         const principal = headers['x-bridge-principal'];
         const userId = headers['x-bridge-user-id'];
-        const value = (Array.isArray(principal) ? principal[0] : principal) ?? (Array.isArray(userId) ? userId[0] : userId);
+        const value =
+            (Array.isArray(principal) ? principal[0] : principal) ?? (Array.isArray(userId) ? userId[0] : userId);
         return typeof value === 'string' && value.length > 0 ? value : null;
     }
 
@@ -374,23 +495,37 @@ export class CatalogController {
      * @param {IHttpRequest} req - запрос (заголовок `x-bridge-principal`).
      */
     private assertMainAdmin(req: IHttpRequest): void {
-        if (!this.isMain(req)) { throw new ForbiddenException('Нужна активная роль «Главный админ».'); }
+        if (!this.isMain(req)) {
+            throw new ForbiddenException('Нужна активная роль «Главный админ».');
+        }
     }
 
     /** Получает идентичность только из заголовка, установленного gateway. */
     private actor(req: IHttpRequest): IAccessActor {
         return JSON.parse(decodeURIComponent(String(req.headers['x-bridge-actor'] || '{}'))) as IAccessActor;
     }
-    private isMain(req: IHttpRequest): boolean { return this.actor(req).activeRole === 'Главный админ'; }
+    private isMain(req: IHttpRequest): boolean {
+        return this.actor(req).activeRole === 'Главный админ';
+    }
 
     /** Проверяет свежую роль; личный actor не даёт доступ к журналу отозванного проекта. */
     private async operationReadScope(req: IHttpRequest): Promise<IOperationReadScope | undefined> {
         const actor = this.actor(req);
         const claims = await this.access.claims(actor.email);
-        if (!claims.userRoles.includes(actor.activeRole)) { throw new ForbiddenException('Назначение активной роли отозвано.'); }
-        if (actor.activeRole === 'Главный админ') { return undefined; }
-        const projects = claims.projects.filter(item => projectLevel(claims, actor.activeRole, item.projectId) > 0);
-        return { actor: claims.email, projectIds: projects.flatMap(item => [item.projectId, ...(!item.projectName.startsWith('prj-') ? [item.projectName] : [])]) };
+        if (!claims.userRoles.includes(actor.activeRole)) {
+            throw new ForbiddenException('Назначение активной роли отозвано.');
+        }
+        if (actor.activeRole === 'Главный админ') {
+            return undefined;
+        }
+        const projects = claims.projects.filter((item) => projectLevel(claims, actor.activeRole, item.projectId) > 0);
+        return {
+            actor: claims.email,
+            projectIds: projects.flatMap((item) => [
+                item.projectId,
+                ...(!item.projectName.startsWith('prj-') ? [item.projectName] : []),
+            ]),
+        };
     }
 
     /**
@@ -400,14 +535,18 @@ export class CatalogController {
      * @returns {string | undefined} нормализованный путь или undefined (не задан)
      */
     private assertFsRootPath(value: string | undefined): string | undefined {
-        if(value!==undefined&&typeof value!=='string'){throw new BadRequestException('Путь проекта должен быть строкой.');}
+        if (value !== undefined && typeof value !== 'string') {
+            throw new BadRequestException('Путь проекта должен быть строкой.');
+        }
         if (value === undefined || value.trim().length === 0) {
             return undefined;
         }
         try {
             return resolveFsRootPath(value);
         } catch {
-            throw new BadRequestException('fsRootPath должен быть абсолютным путём внутри настроенного каталога PROJECTS_ROOT');
+            throw new BadRequestException(
+                'fsRootPath должен быть абсолютным путём внутри настроенного каталога PROJECTS_ROOT',
+            );
         }
     }
 
@@ -441,9 +580,15 @@ export class CatalogController {
     public async listOperations(@Query() query: Record<string, string>, @Req() req: IHttpRequest) {
         // Фронт (OperationListParams) шлёт `projectId`; `project` — legacy.
         const project = query.projectId ?? query.project;
-        const {page,size}=pagination(query);
-        const result=await this.catalog.listOperations(page,size, project, query.state, await this.operationReadScope(req));
-        return this.operationActions?this.operationActions.decoratePage(req as Request,result):result;
+        const { page, size } = pagination(query);
+        const result = await this.catalog.listOperations(
+            page,
+            size,
+            project,
+            query.state,
+            await this.operationReadScope(req),
+        );
+        return this.operationActions ? this.operationActions.decoratePage(req as Request, result) : result;
     }
 
     /**
@@ -454,8 +599,8 @@ export class CatalogController {
      */
     @Get('operations/:operationId')
     public async getOperation(@Param('operationId') operationId: string, @Req() req: IHttpRequest) {
-        const result=await this.catalog.getOperation(operationId, await this.operationReadScope(req));
-        return this.operationActions?this.operationActions.decorate(req as Request,result):result;
+        const result = await this.catalog.getOperation(operationId, await this.operationReadScope(req));
+        return this.operationActions ? this.operationActions.decorate(req as Request, result) : result;
     }
 
     /**
@@ -466,8 +611,8 @@ export class CatalogController {
      */
     @Get('audit')
     public listAudit(@Query() query: Record<string, string>): Promise<IPage<IAuditEvent>> {
-        const {page,size}=pagination(query);
-        return this.catalog.listAudit(page,size);
+        const { page, size } = pagination(query);
+        return this.catalog.listAudit(page, size);
     }
 
     /**
@@ -504,10 +649,21 @@ export class CatalogController {
      * @returns {Promise<unknown>}
      */
     @Get('ai-plugins')
-    public async listAiPlugins(@Req() req: IHttpRequest, @Query('page') page?: string, @Query('size') size?: string, @Query('q') q?: string) {
-        const actor=this.actor(req); const claims=await this.access.claims(actor.email);
-        const paging=pagination({page,size},100);
-        return this.catalog.listAiPlugins(paging.page,paging.size, q ?? '', canReadCommon(claims,actor.activeRole) ? undefined : claims.pluginIds);
+    public async listAiPlugins(
+        @Req() req: IHttpRequest,
+        @Query('page') page?: string,
+        @Query('size') size?: string,
+        @Query('q') q?: string,
+    ) {
+        const actor = this.actor(req);
+        const claims = await this.access.claims(actor.email);
+        const paging = pagination({ page, size }, 100);
+        return this.catalog.listAiPlugins(
+            paging.page,
+            paging.size,
+            q ?? '',
+            canReadCommon(claims, actor.activeRole) ? undefined : claims.pluginIds,
+        );
     }
 
     /**
@@ -541,7 +697,11 @@ export class CatalogController {
      * @returns {Promise<unknown>}
      */
     @Get('ai-plugins/:id/files')
-    public getAiPluginFile(@Param('id') id: string, @Query('path') filePath: string, @Query('version') version?: string) {
+    public getAiPluginFile(
+        @Param('id') id: string,
+        @Query('path') filePath: string,
+        @Query('version') version?: string,
+    ) {
         return this.catalog.getAiPluginFile(id, filePath, version === undefined ? undefined : Number(version));
     }
 
@@ -574,7 +734,9 @@ export class CatalogController {
     @Post('ai-plugins/import-local')
     public importLocalAiPlugins(@Req() req: IHttpRequest): never {
         this.assertMainAdmin(req);
-        throw new GoneException('Импорт серверной папки отключён. Используйте «Каталог → Упаковать инструмент» или импорт связанных карточек в разделе «Ассеты».');
+        throw new GoneException(
+            'Импорт серверной папки отключён. Используйте «Каталог → Упаковать инструмент» или импорт связанных карточек в разделе «Ассеты».',
+        );
     }
 
     @Post('ai-plugins')
@@ -622,13 +784,17 @@ export class CatalogController {
     @Get('local-assets/scan')
     public async scanLocalAssets(): Promise<never> {
         // Конфигурации серверных папок могут содержать секреты и не принадлежат браузерному пользователю.
-        throw new GoneException('Серверный скан отключён. Подключите локальный MCP и выберите папку на своём компьютере.');
+        throw new GoneException(
+            'Серверный скан отключён. Подключите локальный MCP и выберите папку на своём компьютере.',
+        );
     }
 
     /** Серверный установщик закрыт; установка проверенной поставки выполняется через мост. */
     @Post('local-assets/install')
     public installLocalAsset(): never {
-        throw new ConflictException('Установка в пользовательскую папку выполняется локальным мостом. Серверная запись файлов отключена; файлы не изменены.');
+        throw new ConflictException(
+            'Установка в пользовательскую папку выполняется локальным мостом. Серверная запись файлов отключена; файлы не изменены.',
+        );
     }
 
     /**
@@ -638,12 +804,34 @@ export class CatalogController {
      */
     @Get('me/decisions')
     public async getDecisions(@Req() req: IHttpRequest): Promise<IAccessDecisionList> {
-        const actor=this.actor(req); const claims=await this.access.claims(actor.email);
-        const decisions=claims.projects.map(grant=>{
-            const level=projectLevel(claims,actor.activeRole,grant.projectId);
-            return {scope:'project',scopeId:grant.projectId,actions:level>=3 ? ['project.read','project.manage','package.install'] : level>=2 ? ['project.read','package.install'] : ['project.read'],decisionId:`role:${grant.projectId}:${actor.activeRole}`,policyRevision:1,ttlSeconds:0};
+        const actor = this.actor(req);
+        const claims = await this.access.claims(actor.email);
+        const decisions = claims.projects.map((grant) => {
+            const level = projectLevel(claims, actor.activeRole, grant.projectId);
+            return {
+                scope: 'project',
+                scopeId: grant.projectId,
+                actions:
+                    level >= 3
+                        ? ['project.read', 'project.manage', 'package.install']
+                        : level >= 2
+                          ? ['project.read', 'package.install']
+                          : ['project.read'],
+                decisionId: `role:${grant.projectId}:${actor.activeRole}`,
+                policyRevision: 1,
+                ttlSeconds: 0,
+            };
         });
-        if (this.isMain(req)) { decisions.unshift({scope:'platform',scopeId:'all',actions:['platform.admin'],decisionId:'role:platform:main',policyRevision:1,ttlSeconds:0}); }
-        return {decisions,externalServiceUrl:null};
+        if (this.isMain(req)) {
+            decisions.unshift({
+                scope: 'platform',
+                scopeId: 'all',
+                actions: ['platform.admin'],
+                decisionId: 'role:platform:main',
+                policyRevision: 1,
+                ttlSeconds: 0,
+            });
+        }
+        return { decisions, externalServiceUrl: null };
     }
 }

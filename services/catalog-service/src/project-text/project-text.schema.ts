@@ -1,5 +1,5 @@
 /** Accepted text context is private turn history; its source corpus stays with the RAG owner. */
-export const PROJECT_TEXT_CONTEXT_SCHEMA_SQL=`
+export const PROJECT_TEXT_CONTEXT_SCHEMA_SQL = `
 CREATE TABLE model_chat_text_contexts(
  turn_id uuid PRIMARY KEY REFERENCES model_chat_turns(id) ON DELETE CASCADE,
  project_id text NOT NULL,

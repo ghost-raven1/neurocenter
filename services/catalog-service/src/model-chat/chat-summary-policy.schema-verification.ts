@@ -3,11 +3,29 @@ import { CATALOG_SCHEMA_FACTS_SQL } from '../database/schema-catalog';
 import { CHAT_SUMMARY_POLICY_GUARD_BODY } from './chat-summary-policy.schema';
 
 export const CHAT_SUMMARY_POLICY_SCHEMA_CONTRACT = [
-    { kind: 'column', id: 'model_chat_discussions.summary_policy', definition: { type: 'text', default: "'legacy'::text", notNull: true } },
-    { kind: 'constraint', id: 'model_chat_discussions.model_chat_discussions_summary_policy_check', definition: {
-        type: 'c', validated: true, definition: "CHECK (summary_policy = ANY (ARRAY['legacy'::text, 'unique-v1'::text]))" } },
-    { kind: 'trigger', id: 'model_chat_discussions.model_chat_summary_policy_immutable', definition: { enabled: 'O',
-        definition: 'CREATE TRIGGER model_chat_summary_policy_immutable BEFORE UPDATE OF summary_policy ON model_chat_discussions FOR EACH ROW EXECUTE FUNCTION neurocenter_chat_summary_policy_immutable()' } },
+    {
+        kind: 'column',
+        id: 'model_chat_discussions.summary_policy',
+        definition: { type: 'text', default: "'legacy'::text", notNull: true },
+    },
+    {
+        kind: 'constraint',
+        id: 'model_chat_discussions.model_chat_discussions_summary_policy_check',
+        definition: {
+            type: 'c',
+            validated: true,
+            definition: "CHECK (summary_policy = ANY (ARRAY['legacy'::text, 'unique-v1'::text]))",
+        },
+    },
+    {
+        kind: 'trigger',
+        id: 'model_chat_discussions.model_chat_summary_policy_immutable',
+        definition: {
+            enabled: 'O',
+            definition:
+                'CREATE TRIGGER model_chat_summary_policy_immutable BEFORE UPDATE OF summary_policy ON model_chat_discussions FOR EACH ROW EXECUTE FUNCTION neurocenter_chat_summary_policy_immutable()',
+        },
+    },
 ];
 
 const issues = `WITH expected AS(SELECT * FROM jsonb_to_recordset($summary_policy_contract$${JSON.stringify(CHAT_SUMMARY_POLICY_SCHEMA_CONTRACT)}$summary_policy_contract$::jsonb) AS objects(kind text,id text,definition jsonb)),actual AS(${CATALOG_SCHEMA_FACTS_SQL})
@@ -24,5 +42,5 @@ IF missing IS NOT NULL THEN RAISE EXCEPTION 'Discussion summary policy schema is
 /** Readiness checks the new policy without replacing any frozen earlier receipt contract. */
 export async function assertChatSummaryPolicySchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема политики сводок не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема политики сводок не готова: ' + rows.map((row) => row.issue).join(', '));
 }

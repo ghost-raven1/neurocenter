@@ -28,6 +28,11 @@ describe('Local frontend lint contract',()=>{
         const result=await check('export function value(){const unused=1;return 2;}');
         expect(result.messages).toContainEqual(expect.objectContaining({ruleId:'@typescript-eslint/no-unused-vars',severity:2}));
     });
+    it('permits explicit unused API parameters but rejects ordinary unused parameters',async()=>{
+        expect((await check('export function handler(_body:unknown){return 1;}')).errorCount).toBe(0);
+        expect((await check('export function handler(body:unknown){return 1;}')).messages)
+            .toContainEqual(expect.objectContaining({ruleId:'@typescript-eslint/no-unused-vars',severity:2}));
+    });
     it('permits deliberate rest-property omission without suppressing other unused variables',async()=>{
         const result=await check('export function visible(value:{secret:string;name:string}){const {secret:_secret,...rest}=value;return rest;}');
         expect(result.errorCount).toBe(0);

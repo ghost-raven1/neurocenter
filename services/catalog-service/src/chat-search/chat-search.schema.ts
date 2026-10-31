@@ -1,5 +1,5 @@
 /** Migration 39 owns revisions/tombstones independently of the chat writer and never copies message text. */
-export const CHAT_SEARCH_SCHEMA_SQL=`
+export const CHAT_SEARCH_SCHEMA_SQL = `
 CREATE TABLE chat_search_revisions (
  project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE,message_id uuid NOT NULL,
  revision bigint NOT NULL DEFAULT 1 CHECK(revision>0),tombstone boolean NOT NULL DEFAULT false,

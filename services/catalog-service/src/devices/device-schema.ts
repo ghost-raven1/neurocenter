@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const DEVICE_SCHEMA_SQL=`
+export const DEVICE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS bridge_devices (
             id text PRIMARY KEY,email text NOT NULL,role text NOT NULL,name text NOT NULL,fingerprint text NOT NULL,
             token_hash text UNIQUE NOT NULL,expires_at timestamptz NOT NULL DEFAULT now()+interval '30 days',

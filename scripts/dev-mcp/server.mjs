@@ -16,7 +16,7 @@ const schemas={workspace_status:z.object({}).strict(),services_health:z.object({
     service_logs:z.object({service:z.enum(logServices),lines:z.number().int().min(1).max(100).default(50),launchId:z.string().regex(new RegExp(launchIdPattern)).optional()}).strict(),
     verification_summary:z.object({report:z.string().max(180).regex(new RegExp(verificationReportPattern))}).strict(),
     coverage_gaps:z.object({report:z.string().max(180).regex(new RegExp(coverageReportPattern)),package:z.enum(packageNames),limit:z.number().int().min(1).max(20).default(10)}).strict(),
-    check_plan:z.object({packages:z.array(z.enum(packageNames)).min(1).max(8),steps:z.array(z.enum(checkSteps)).min(1).max(3).optional()}).strict(),
+    check_plan:z.object({packages:z.array(z.enum(packageNames)).min(1).max(8),steps:z.array(z.enum(checkSteps)).min(1).max(5).optional()}).strict(),
     evidence_catalog:z.object({families:z.array(z.enum(evidenceFamilies)).min(1).max(3).optional(),limit:z.number().int().min(1).max(20).default(10)}).strict(),
     verify_source:z.object({report:z.string().max(180).regex(new RegExp(verificationReportPattern)),expectedReportSha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict(),
     impact_plan:z.object({baseRevision:z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)}).strict(),

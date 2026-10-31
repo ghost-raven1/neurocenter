@@ -1,5 +1,5 @@
 /** Additive migration 48; accepted files are retained independently of expiring drafts. */
-export const GGUF_IMPORT_SCHEMA_SQL=`
+export const GGUF_IMPORT_SCHEMA_SQL = `
 CREATE TABLE model_gguf_uploads(
  id uuid PRIMARY KEY,actor text NOT NULL,request_key uuid NOT NULL,request_hash text NOT NULL,file_name text NOT NULL,
  bytes bigint NOT NULL CHECK(bytes>0 AND bytes<=9007199254740991),expected_sha256 text CHECK(expected_sha256~'^[a-f0-9]{64}$'),sha256 text CHECK(sha256~'^[a-f0-9]{64}$'),

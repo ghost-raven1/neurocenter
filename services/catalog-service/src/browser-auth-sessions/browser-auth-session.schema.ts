@@ -1,5 +1,5 @@
 /** The body is also checked verbatim by readiness; no profile/grant payload can widen silently. */
-export const BROWSER_AUTH_SESSION_GUARD_BODY=`
+export const BROWSER_AUTH_SESSION_GUARD_BODY = `
 DECLARE field text; bound integer;
 BEGIN
  IF NEW.token_hash !~ '^[a-f0-9]{64}$' OR jsonb_typeof(NEW.identity) IS DISTINCT FROM 'object'
@@ -27,7 +27,7 @@ END;
 `;
 
 /** Migration38 is additive; existing sessions and all earlier migration checksums stay intact. */
-export const BROWSER_AUTH_SESSION_SCHEMA_SQL=`
+export const BROWSER_AUTH_SESSION_SCHEMA_SQL = `
 CREATE TABLE browser_auth_sessions (
  token_hash text PRIMARY KEY,identity jsonb NOT NULL,selected_role text NOT NULL,
  created_at timestamptz NOT NULL DEFAULT now(),expires_at timestamptz NOT NULL,revoked_at timestamptz

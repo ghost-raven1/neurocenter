@@ -1,19 +1,10 @@
-import {
-    BadRequestException,
-    Body,
-    Controller,
-    Get,
-    ForbiddenException,
-    Patch,
-    Query,
-    Req,
-} from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, ForbiddenException, Patch, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { assertMinLevel } from './role';
 import { RagService } from './rag.service';
-import {ragPagination} from './rag-validation';
-import type {IRagQuotaUpdate} from './quota/rag-quota';
+import { ragPagination } from './rag-validation';
+import type { IRagQuotaUpdate } from './quota/rag-quota';
 
 function requireProjectKey(v: string | undefined): string {
     const pk = typeof v === 'string' ? v.trim() : '';
@@ -51,7 +42,9 @@ export class RagController {
      * @returns {{ projectKey, rowCount, lastSyncedAt, dimension }}
      */
     @Get('database')
-    public async database(@Query('projectKey') projectKey:string|undefined) { return this.ragService.databaseInfo(requireProjectKey(projectKey)); }
+    public async database(@Query('projectKey') projectKey: string | undefined) {
+        return this.ragService.databaseInfo(requireProjectKey(projectKey));
+    }
 
     @Get('summary')
     public async summary(@Query('projectKey') projectKey: string | undefined) {
@@ -88,11 +81,11 @@ export class RagController {
         @Query('projectKey') projectKey: string | undefined,
         @Query('limit') limit: string | undefined,
         @Query('offset') offset: string | undefined,
-        @Query('generation') generation?:string,
+        @Query('generation') generation?: string,
     ) {
         const pk = requireProjectKey(projectKey);
-        const {limit:lim,offset:off}=ragPagination(limit,offset);
-        const {chunks,...summary}=await this.ragService.exportPage(pk,lim,off,generation);
+        const { limit: lim, offset: off } = ragPagination(limit, offset);
+        const { chunks, ...summary } = await this.ragService.exportPage(pk, lim, off, generation);
         return {
             projectKey: pk,
             ...summary,
@@ -116,18 +109,35 @@ export class RagController {
     }
 
     @Get('quota')
-    async quota(@Query('projectKey') key:string,@Req() req:Request){
-        if(typeof key!=='string'||!key.trim()){throw new BadRequestException('Выберите проект.');}
-        await assertMinLevel(req,key.trim(),1);return this.ragService.quota(key.trim());
+    async quota(@Query('projectKey') key: string, @Req() req: Request) {
+        if (typeof key !== 'string' || !key.trim()) {
+            throw new BadRequestException('Выберите проект.');
+        }
+        await assertMinLevel(req, key.trim(), 1);
+        return this.ragService.quota(key.trim());
     }
 
     @Patch('quota')
-    async updateQuota(@Body() body:IRagQuotaUpdate&{projectKey:string},@Req() req:Request){
-        if(!body||typeof body.projectKey!=='string'||!body.projectKey.trim()){throw new BadRequestException('Выберите проект.');}
-        const key=body.projectKey.trim();await assertMinLevel(req,key,3);
-        let actor:string|undefined;
-        try{const identity=JSON.parse(decodeURIComponent(String(req.headers['x-bridge-actor']||''))) as {email?:unknown};if(typeof identity.email==='string'&&identity.email.length<=254){actor=identity.email;}}catch{/* Нельзя заменить автора данными из тела запроса. */}
-        if(!actor){throw new ForbiddenException('Не удалось подтвердить автора изменения лимита.');}
-        return this.ragService.quota(key,body,actor);
+    async updateQuota(@Body() body: IRagQuotaUpdate & { projectKey: string }, @Req() req: Request) {
+        if (!body || typeof body.projectKey !== 'string' || !body.projectKey.trim()) {
+            throw new BadRequestException('Выберите проект.');
+        }
+        const key = body.projectKey.trim();
+        await assertMinLevel(req, key, 3);
+        let actor: string | undefined;
+        try {
+            const identity = JSON.parse(decodeURIComponent(String(req.headers['x-bridge-actor'] || ''))) as {
+                email?: unknown;
+            };
+            if (typeof identity.email === 'string' && identity.email.length <= 254) {
+                actor = identity.email;
+            }
+        } catch {
+            /* Нельзя заменить автора данными из тела запроса. */
+        }
+        if (!actor) {
+            throw new ForbiddenException('Не удалось подтвердить автора изменения лимита.');
+        }
+        return this.ragService.quota(key, body, actor);
     }
 }

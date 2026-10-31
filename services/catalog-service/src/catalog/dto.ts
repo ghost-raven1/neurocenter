@@ -7,7 +7,18 @@ import type { IDependencyPin } from '../../../shared/dependency-pins.cjs';
 
 export type TSnapshotStatus = 'UPLOADING' | 'VERIFYING' | 'VERIFIED' | 'REJECTED' | 'DELETING' | 'DELETED';
 export type TOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CONFLICT';
-export type TOperationType = 'UPLOAD' | 'VERIFY' | 'DOWNLOAD' | 'SYNC' | 'RELEASE' | 'DELETE' | 'INSTALL' | 'CATALOG' | 'PROJECT' | 'BUILD' | 'MODEL';
+export type TOperationType =
+    | 'UPLOAD'
+    | 'VERIFY'
+    | 'DOWNLOAD'
+    | 'SYNC'
+    | 'RELEASE'
+    | 'DELETE'
+    | 'INSTALL'
+    | 'CATALOG'
+    | 'PROJECT'
+    | 'BUILD'
+    | 'MODEL';
 export type TProjectState = 'ACTIVE' | 'ARCHIVED' | 'LOCKED';
 
 export interface IPage<T> {
@@ -149,11 +160,17 @@ export interface IOperation {
     startedAt: string | null;
     finishedAt: string | null;
     error: string | null;
-    systemRole?: {agentId:'agent-ai-admin'|'agent-autoconfigurator'|'agent-indexer'|'agent-packager'|'agent-coordinator';runId:string;phase:string};
+    systemRole?: {
+        agentId: 'agent-ai-admin' | 'agent-autoconfigurator' | 'agent-indexer' | 'agent-packager' | 'agent-coordinator';
+        runId: string;
+        phase: string;
+    };
     bridgeJob?: { kind: string; retrySupported: boolean; minimumLevel: number };
     actions?: {
-        executor: 'bridge'|'rag-reindex'|'model-hosting'|'tool-build'|'system-role'|'history'; digest: string;
-        retry: {supported:boolean;reason?:string}; cancel: {supported:boolean;reason?:string};
+        executor: 'bridge' | 'rag-reindex' | 'model-hosting' | 'tool-build' | 'system-role' | 'history';
+        digest: string;
+        retry: { supported: boolean; reason?: string };
+        cancel: { supported: boolean; reason?: string };
     };
 }
 
@@ -163,8 +180,8 @@ export interface IOperationDetail extends IOperation {
 }
 
 export interface IAuditEvent {
-    source?: 'operation'|'security';
-    details?: {before:unknown;after:unknown}|null;
+    source?: 'operation' | 'security';
+    details?: { before: unknown; after: unknown } | null;
     id: string;
     at: string;
     actor: string;
@@ -207,7 +224,10 @@ export interface IAiPluginVersion {
     author: string;
     note: string;
     createdAt: string;
-    metadata?: Pick<IAiPlugin, 'kind' | 'description' | 'compatibility' | 'tags' | 'origin' | 'revision' | 'dependencies'>;
+    metadata?: Pick<
+        IAiPlugin,
+        'kind' | 'description' | 'compatibility' | 'tags' | 'origin' | 'revision' | 'dependencies'
+    >;
 }
 
 /** Конфиг подключения MCP-сервера / плагина (stdio или remote). */
@@ -271,8 +291,6 @@ export interface ILocalProjectsImportResult {
     total: number;
     createdNames: string[];
 }
-
-
 
 /** Payload обновления MCP/плагина. */
 export interface IAiPluginUpdate {

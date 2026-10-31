@@ -4,7 +4,10 @@ import { CHAT_SCHEMA_CONTRACT } from './chat.schema-contract';
 import { CHAT_STORAGE_SCHEMA_CONTRACT } from './chat-storage.schema-contract';
 
 const replaced = new Set(['model_chat_attachments.content', 'model_chat_attachments.model_chat_attachments_check1']);
-export const CHAT_STORAGE_CURRENT_SCHEMA_CONTRACT = [...CHAT_SCHEMA_CONTRACT.filter(fact => !replaced.has(fact.id)), ...CHAT_STORAGE_SCHEMA_CONTRACT];
+export const CHAT_STORAGE_CURRENT_SCHEMA_CONTRACT = [
+    ...CHAT_SCHEMA_CONTRACT.filter((fact) => !replaced.has(fact.id)),
+    ...CHAT_STORAGE_SCHEMA_CONTRACT,
+];
 const issues = `WITH expected AS (
  SELECT * FROM jsonb_to_recordset($chat_storage_contract$${JSON.stringify(CHAT_STORAGE_CURRENT_SCHEMA_CONTRACT)}$chat_storage_contract$::jsonb)
  AS objects(kind text,id text,definition jsonb)
@@ -22,5 +25,6 @@ END $verify_chat_storage$;`;
 /** Current readiness preserves frozen migration 13 checks while replacing its removed blob facts. */
 export async function assertChatStorageSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const result = await db.query<{ issue: string }>(issues);
-    if (result.rows.length) throw new Error('Схема хранилища файлов чата не готова: ' + result.rows.map(row => row.issue).join(', '));
+    if (result.rows.length)
+        throw new Error('Схема хранилища файлов чата не готова: ' + result.rows.map((row) => row.issue).join(', '));
 }

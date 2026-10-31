@@ -12,7 +12,9 @@ IF missing IS NOT NULL THEN RAISE EXCEPTION 'Model rate and usage details schema
 
 /** Verify exact rate-policy, admission and usage-metric objects before admitting traffic. */
 export async function assertModelRateLimitsSchema(db: Pick<Pool, 'query'>): Promise<void> {
-    if (!MODEL_RATE_LIMITS_SCHEMA_CONTRACT.length) throw new Error('Model rate schema contract has not been finalized.');
+    if (!MODEL_RATE_LIMITS_SCHEMA_CONTRACT.length)
+        throw new Error('Model rate schema contract has not been finalized.');
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw new Error('Схема лимитов моделей и статистики не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length)
+        throw new Error('Схема лимитов моделей и статистики не готова: ' + rows.map((row) => row.issue).join(', '));
 }

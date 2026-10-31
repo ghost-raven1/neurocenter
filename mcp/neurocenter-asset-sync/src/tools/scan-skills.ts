@@ -7,17 +7,8 @@ import { extractFrontmatter } from '../lib/frontmatter.js';
 
 export const scanSkillsInputSchema = z
     .object({
-        root: z
-            .string()
-            .optional()
-            .describe('Каталог с .opencode/skills (деф. = CWD/корень воркспейса).'),
-        maxDepth: z
-            .number()
-            .int()
-            .min(1)
-            .max(8)
-            .default(4)
-            .describe('Глубина обхода подкаталогов.'),
+        root: z.string().optional().describe('Каталог с .opencode/skills (деф. = CWD/корень воркспейса).'),
+        maxDepth: z.number().int().min(1).max(8).default(4).describe('Глубина обхода подкаталогов.'),
     })
     .strict();
 
@@ -50,7 +41,7 @@ export interface ISkillScan {
     errors: ISkillError[];
 }
 
-const SKIP = new Set([ '.git', 'node_modules', '.opencode', 'rag_db' ]);
+const SKIP = new Set(['.git', 'node_modules', '.opencode', 'rag_db']);
 
 async function isDir(p: string): Promise<boolean> {
     try {
@@ -66,11 +57,7 @@ async function isDir(p: string): Promise<boolean> {
  * затем сам `root` (если туда передали skills-dir напрямую).
  */
 async function resolveSkillsDir(rootAbs: string): Promise<string | null> {
-    const candidates = [
-        path.join(rootAbs, '.opencode', 'skills'),
-        path.join(rootAbs, 'skills'),
-        rootAbs,
-    ];
+    const candidates = [path.join(rootAbs, '.opencode', 'skills'), path.join(rootAbs, 'skills'), rootAbs];
     for (const c of candidates) {
         if (await isDir(c)) {
             return c;
@@ -115,10 +102,7 @@ function toVersion(v: unknown): string | null {
  * @param rootAbs - абсолютный корень обхода.
  * @param maxDepth - максимальная глубина вложенности.
  */
-export async function scanSkills(
-    rootAbs: string,
-    maxDepth: number,
-): Promise<ISkillScan> {
+export async function scanSkills(rootAbs: string, maxDepth: number): Promise<ISkillScan> {
     const skills: ISkillCard[] = [];
     const errors: ISkillError[] = [];
 
@@ -132,7 +116,7 @@ export async function scanSkills(
         try {
             entries = await fs.readdir(dir, { withFileTypes: true });
         } catch {
-            errors.push({path:dir,error:'Не удалось прочитать папку скиллов'});
+            errors.push({ path: dir, error: 'Не удалось прочитать папку скиллов' });
             return;
         }
         for (const e of entries) {
@@ -141,13 +125,15 @@ export async function scanSkills(
             }
             const full = path.join(dir, e.name);
             if (e.isSymbolicLink()) {
-                errors.push({path: full, error: 'Символьная ссылка пропущена; состав каталога неизвестен'});
+                errors.push({ path: full, error: 'Символьная ссылка пропущена; состав каталога неизвестен' });
                 continue;
             }
             if (e.isDirectory()) {
                 if (depth < maxDepth) {
                     await walk(full, depth + 1);
-                }else{errors.push({path:full,error:'Достигнута глубина обхода; состав каталога неизвестен'});}
+                } else {
+                    errors.push({ path: full, error: 'Достигнута глубина обхода; состав каталога неизвестен' });
+                }
             } else if (e.isFile() && e.name === 'SKILL.md') {
                 const card = await readCard(full);
                 if (card) {

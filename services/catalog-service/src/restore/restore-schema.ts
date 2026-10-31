@@ -1,5 +1,5 @@
 /** Frozen baseline schema; only the catalog migration runner executes this SQL. */
-export const RESTORE_SCHEMA_SQL=`
+export const RESTORE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS web_restore_runner (
    singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),runner_id uuid NOT NULL,config_digest text NOT NULL,target_prefix text NOT NULL,
    checkpoints jsonb NOT NULL,seen_at timestamptz NOT NULL DEFAULT now());

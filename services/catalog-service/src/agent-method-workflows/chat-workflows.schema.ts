@@ -1,5 +1,5 @@
 /** Server-only chat attribution leaves the native workflow protocol and existing message kinds unchanged. */
-export const METHOD_CHAT_WORKFLOWS_SCHEMA_SQL=`
+export const METHOD_CHAT_WORKFLOWS_SCHEMA_SQL = `
 CREATE TABLE project_chat_method_workflows (
  job_id text PRIMARY KEY REFERENCES bridge_jobs(id),
  project_id text NOT NULL,room_id uuid NOT NULL,source_message_id uuid NOT NULL,

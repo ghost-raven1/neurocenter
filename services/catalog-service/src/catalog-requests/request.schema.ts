@@ -1,5 +1,5 @@
 /** Migration 8 preserves request scope and history even when a project or target is removed. */
-export const CATALOG_REQUEST_SCHEMA_SQL=`
+export const CATALOG_REQUEST_SCHEMA_SQL = `
 CREATE TABLE catalog_requests (
  id uuid PRIMARY KEY,kind text NOT NULL CHECK(kind IN ('add','update','issue')),
  asset_type text NOT NULL CHECK(asset_type IN ('plugin','mcp','skill','model')),

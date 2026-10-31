@@ -10,5 +10,6 @@ IF missing IS NOT NULL THEN RAISE EXCEPTION 'OpenCode model sync schema is incom
 /** Readiness validates consent/source linkage without touching credentials. */
 export async function assertOpenCodeModelSyncSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length) throw Error('Схема синхронизации моделей OpenCode не готова: ' + rows.map(row => row.issue).join(', '));
+    if (rows.length)
+        throw Error('Схема синхронизации моделей OpenCode не готова: ' + rows.map((row) => row.issue).join(', '));
 }

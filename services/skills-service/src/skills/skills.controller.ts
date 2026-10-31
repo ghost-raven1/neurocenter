@@ -20,9 +20,7 @@ import type {
  */
 @Controller('api/skills')
 export class SkillsController {
-    public constructor(
-        private readonly skills: SkillsService,
-    ) {}
+    public constructor(private readonly skills: SkillsService) {}
 
     /**
      * Дерево каталога скиллов.
@@ -52,9 +50,14 @@ export class SkillsController {
      * @returns {Promise<{ ok: true, path: string }>}
      */
     @Post('directory')
-    public createDirectory(@Body() body: IDirectoryCreateRequest, @Req() req?: Request): Promise<{ ok: true; path: string }> {
-        if (!body || typeof body !== 'object' || Array.isArray(body)) { throw new BadRequestException('Передайте путь папки скиллов.'); }
-        return this.skills.createDirectory(body.path ?? '',this.auditActor(req));
+    public createDirectory(
+        @Body() body: IDirectoryCreateRequest,
+        @Req() req?: Request,
+    ): Promise<{ ok: true; path: string }> {
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+            throw new BadRequestException('Передайте путь папки скиллов.');
+        }
+        return this.skills.createDirectory(body.path ?? '', this.auditActor(req));
     }
 
     /**
@@ -66,7 +69,7 @@ export class SkillsController {
      */
     @Post()
     public createSkill(@Body() body: ISkillCreateRequest, @Req() req: Request): Promise<ISkillFile> {
-        return this.skills.createSkill(body, this.author(req),this.auditActor(req));
+        return this.skills.createSkill(body, this.author(req), this.auditActor(req));
     }
 
     /**
@@ -77,11 +80,16 @@ export class SkillsController {
      */
     @Post('sync')
     public syncSkills(@Body() body: ISkillsSyncRequest, @Req() req?: Request): Promise<ISkillsSyncResult> {
-        if (!body || typeof body.projectKey !== 'string' || body.projectKey.length === 0 || !Array.isArray(body.skills)) {
+        if (
+            !body ||
+            typeof body.projectKey !== 'string' ||
+            body.projectKey.length === 0 ||
+            !Array.isArray(body.skills)
+        ) {
             throw new BadRequestException('Не заданы projectKey и/или skills');
         }
 
-        return this.skills.syncSkills(body.projectKey, body.skills,this.auditActor(req));
+        return this.skills.syncSkills(body.projectKey, body.skills, this.auditActor(req));
     }
 
     /**
@@ -93,14 +101,19 @@ export class SkillsController {
     /** Отдельный контракт пакета не позволяет старому сервису незаметно отбросить ресурсы. */
     @Get('_package/*skillPath')
     public getPackage(@Req() req: Request, @Query('version') version?: string): Promise<ISkillFile> {
-        if (version === undefined) { throw new BadRequestException('Укажите точную версию установочного пакета.'); }
+        if (version === undefined) {
+            throw new BadRequestException('Укажите точную версию установочного пакета.');
+        }
         return this.getSkill(req, version);
     }
 
     @Get('*skillPath')
     public getSkill(@Req() req: Request, @Query('version') version?: string): Promise<ISkillFile> {
         const parsed = version === undefined ? undefined : Number(version);
-        if (version !== undefined && (typeof version !== 'string' || !/^[1-9][0-9]*$/.test(version) || !Number.isSafeInteger(parsed))) {
+        if (
+            version !== undefined &&
+            (typeof version !== 'string' || !/^[1-9][0-9]*$/.test(version) || !Number.isSafeInteger(parsed))
+        ) {
             throw new BadRequestException('Версия должна быть положительным целым числом.');
         }
         return this.skills.getSkill(this.skillPathOf(req), parsed);
@@ -115,7 +128,7 @@ export class SkillsController {
      */
     @Put('*skillPath')
     public updateSkill(@Req() req: Request, @Body() body: ISkillUpdateRequest): Promise<ISkillFile> {
-        return this.skills.updateSkill(this.skillPathOf(req), body, this.author(req),this.auditActor(req));
+        return this.skills.updateSkill(this.skillPathOf(req), body, this.author(req), this.auditActor(req));
     }
 
     /**
@@ -126,23 +139,30 @@ export class SkillsController {
      */
     @Delete('*skillPath')
     public deleteSkill(@Req() req: Request): Promise<{ ok: true; path: string }> {
-        return this.skills.deleteSkill(this.skillPathOf(req),this.auditActor(req));
+        return this.skills.deleteSkill(this.skillPathOf(req), this.auditActor(req));
     }
 
     private skillPathOf(req: Request): string {
-        const rest:unknown = req.params.skillPath;
+        const rest: unknown = req.params.skillPath;
 
         return Array.isArray(rest) ? rest.join('/') : typeof rest === 'string' ? rest.replace(/^\//, '') : '';
     }
 
     /** Заголовок исполнителя добавляет только авторизованный шлюз; тело запроса его не подменяет. */
     private auditActor(req?: Request): string {
-        const header=req?.headers['x-bridge-actor'];
+        const header = req?.headers['x-bridge-actor'];
         try {
-            const actor=typeof header==='string' ? JSON.parse(decodeURIComponent(header)) as {email?:unknown} : undefined;
-            const email=typeof actor?.email==='string' ? actor.email.toLowerCase() : '';
-            return email.length<=254 && /^[^\s@\u0000-\u001f\u007f]+@[^\s@\u0000-\u001f\u007f]+$/.test(email) ? email : 'skills-service';
-        } catch { return 'skills-service'; }
+            const actor =
+                typeof header === 'string'
+                    ? (JSON.parse(decodeURIComponent(header)) as { email?: unknown })
+                    : undefined;
+            const email = typeof actor?.email === 'string' ? actor.email.toLowerCase() : '';
+            return email.length <= 254 && /^[^\s@\u0000-\u001f\u007f]+@[^\s@\u0000-\u001f\u007f]+$/.test(email)
+                ? email
+                : 'skills-service';
+        } catch {
+            return 'skills-service';
+        }
     }
 
     private author(req: Request): string {
