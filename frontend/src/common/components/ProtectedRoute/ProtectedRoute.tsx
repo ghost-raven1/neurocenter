@@ -1,20 +1,11 @@
 import { Card } from 'antd';
-import { FC, ReactNode } from 'react';
+import { FC } from 'react';
 import { useSelector } from 'react-redux';
 import { Redirect, Route } from 'react-router-dom';
+import { IProtectedRouteProps } from './interfaces';
 
 import { baseRoutes } from '../../../core/baseRoutes';
 import { RootState } from '../../../store';
-
-interface IProtectedRouteProps {
-    /** Имя маршрута для проверки в `routePermissions`. */
-    name: string;
-    /** Путь маршрута. */
-    path: string;
-    /** Рендер страницы. */
-    render: (props: unknown) => ReactNode;
-    exact?: boolean;
-}
 
 /**
  * Обёртка маршрута: доступность страницы определяется `routePermissions`.
@@ -24,6 +15,7 @@ interface IProtectedRouteProps {
  */
 const ProtectedRoute: FC<IProtectedRouteProps> = ({ name, path, render, exact = false }) => {
     const { isAuth, user } = useSelector((state: RootState) => state.userBlock);
+
     const isAvailableRoute = user?.routePermissions.includes(name) ?? false;
 
     const routeItem = <Route path={path} exact={exact} render={render} />;

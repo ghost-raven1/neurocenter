@@ -1,4 +1,6 @@
-import ConfirmCasModal, { type ICasValues } from './ConfirmCasModal';
+import ConfirmCasModal from './ConfirmCasModal';
+import * as IConfirmCasModal from './interfaces';
 
-export { ConfirmCasModal, type ICasValues };
+export { ConfirmCasModal, IConfirmCasModal };
 export default ConfirmCasModal;
+export type { ICasValues } from './interfaces';

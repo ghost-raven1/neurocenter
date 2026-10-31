@@ -5,7 +5,6 @@ import type { FC, ReactNode } from 'react';
 
 type AccessibleDrawerProps = Omit<DrawerProps, 'title'> & { title: ReactNode };
 
-/** Ant Design 4 не передаёт aria-labelledby внутреннему dialog; связываем его с видимым заголовком. */
 const AccessibleDrawer: FC<AccessibleDrawerProps> = ({ title, ...props }) => {
     const titleId = useId();
     const labelDialog = useCallback((element: HTMLDivElement | null) => {

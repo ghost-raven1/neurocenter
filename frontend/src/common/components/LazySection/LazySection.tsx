@@ -3,12 +3,11 @@ import { Component, lazy, Suspense } from 'react';
 import type { ComponentType, FC, ReactNode } from 'react';
 import { useSelector } from 'react-redux';
 import { useLocation } from 'react-router-dom';
+import { IBoundaryProps } from './interfaces';
 
 import { authDataScope } from '../../../features/UserBlock/authDataScope';
 import type { RootState } from '../../../store';
 import './LazySection.less';
-
-interface IBoundaryProps { children: ReactNode; reload: () => void; }
 
 /** Ошибка загрузки раздела оставляет навигацию доступной и предлагает явный повтор. */
 export class LazySectionBoundary extends Component<IBoundaryProps, { failed: boolean }> {

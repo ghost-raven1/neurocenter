@@ -1,21 +1,6 @@
 import { Form, Input, InputNumber, Modal } from 'antd';
 import { FC, useEffect } from 'react';
-
-export interface ICasValues {
-    expectedHeadId: string;
-    expectedHeadRevision: number;
-}
-
-interface IConfirmCasModalProps {
-    open: boolean;
-    title: string;
-    confirmText?: string;
-    loading?: boolean;
-    defaultExpectedId?: string;
-    defaultExpectedRevision?: number;
-    onConfirm: (values: ICasValues) => void | Promise<void>;
-    onCancel: () => void;
-}
+import { ICasValues, IConfirmCasModalProps } from './interfaces';
 
 /**
  * Модальное окно подтверждения CAS-операций (активация head, rollback, релиз).
@@ -81,3 +66,4 @@ const ConfirmCasModal: FC<IConfirmCasModalProps> = ({
 };
 
 export default ConfirmCasModal;
+export type { ICasValues } from './interfaces';

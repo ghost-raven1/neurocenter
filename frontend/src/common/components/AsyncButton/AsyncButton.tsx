@@ -1,18 +1,9 @@
 import { Button } from 'antd';
 import block from 'bem-cn';
-import { FC, ReactNode, useCallback, useState } from 'react';
+import { FC, useCallback, useState } from 'react';
+import { IAsyncButtonProps } from './interfaces';
 
 const b = block('async-button');
-
-interface IAsyncButtonProps {
-    /** Обработчик клика (может возвращать Promise). */
-    onClick: () => Promise<void> | void;
-    children: ReactNode;
-    /** Тип кнопки AntD. */
-    type?: 'primary' | 'default' | 'text' | 'link' | 'dashed' | 'ghost';
-    danger?: boolean;
-    disabled?: boolean;
-}
 
 /**
  * Кнопка с индикацией loading во время выполнения асинхронного обработчика.
@@ -29,9 +20,7 @@ const AsyncButton: FC<IAsyncButtonProps> = ({ onClick, children, type = 'default
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
     const handleClick = useCallback(async () => {
-        if (disabled) {
-            return;
-        }
+        if (disabled) return;
 
         setIsProcessing(true);
 

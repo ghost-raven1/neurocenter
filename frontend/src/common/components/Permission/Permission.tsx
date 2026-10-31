@@ -1,18 +1,8 @@
-import { FC, ReactNode } from 'react';
+import { FC } from 'react';
 import { useSelector } from 'react-redux';
+import { IPermissionProps } from './interfaces';
 
-import { IPolitic } from '../../../core/interfaces';
 import { RootState } from '../../../store';
-
-interface IPermissionProps {
-    /** Ключ права, наличие которого проверяется. */
-    permissionKey: string;
-    /** Политика, по которой берутся права. */
-    politic: IPolitic;
-    /** Дополнительное локальное условие отображения children. */
-    isLocalAllowed?: boolean;
-    children: ReactNode;
-}
 
 /**
  * Обёртка-гейт ABAC: рендерит children только при наличии `permissionKey`
@@ -25,6 +15,7 @@ const Permission: FC<IPermissionProps> = ({ permissionKey, politic, isLocalAllow
         string[] | undefined;
 
     const hasMainPermission = (permissions ?? []).includes(permissionKey);
+
     const isAllowed = typeof isLocalAllowed === 'boolean'
         ? hasMainPermission && isLocalAllowed
         : hasMainPermission;

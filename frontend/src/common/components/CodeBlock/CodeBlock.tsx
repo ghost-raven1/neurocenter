@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import type { CSSProperties, FC } from 'react';
+import { FC } from 'react';
+import { ICodeBlockProps } from './interfaces';
 
 import hljs from 'highlight.js/lib/core';
 import bash from 'highlight.js/lib/languages/bash';
@@ -12,23 +13,6 @@ import '../../styles/codeblock-dark.css';
 hljs.registerLanguage('bash', bash);
 hljs.registerLanguage('json', json);
 hljs.registerLanguage('markdown', markdown);
-
-export type TCodeBlockLanguage = 'bash' | 'json' | 'markdown';
-
-type TCodeBlockTheme = 'light' | 'dark';
-
-export interface ICodeBlockProps {
-    /** Текст кода, который отображается. */
-    code: string;
-    /** Язык/разметка для подсветки. */
-    language?: TCodeBlockLanguage;
-    /** Цветовая тема: «light» — светлая, «dark» — тёмная. */
-    theme?: TCodeBlockTheme;
-    /** Дополнительные стили блока кода. */
-    style?: CSSProperties;
-    /** Дополнительный класс блока кода. */
-    className?: string;
-}
 
 /**
  * Экранирует спецсимволы HTML для безопасной вставки в innerHTML.
@@ -76,3 +60,4 @@ const CodeBlock: FC<ICodeBlockProps> = ({ code, language, theme = 'light', style
 };
 
 export default CodeBlock;
+export type { ICodeBlockProps, TCodeBlockLanguage } from './interfaces';
