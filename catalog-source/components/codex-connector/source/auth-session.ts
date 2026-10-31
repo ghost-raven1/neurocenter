@@ -1,24 +1,24 @@
 import { CodexConnection } from "./connection.js";
 import { z } from "zod";
+import { ICodexSession, ICodexModel } from './types';
 
-export const CODEX_PROVIDER_ID = "codexbridge";
-export const CODEX_AUTH_MARKER = "codexbridge-managed";
+const statusSchema = z.object({ 
+  authMethod: z.string().nullable(),
+  authToken: z.string().nullable()
+});
 
-/** Only access credentials live here, in memory. Refresh credentials remain owned by Codex. */
-export interface CodexSession { accessToken: string; accountId: string; expiresAt: number }
-export interface CodexModel {
-  id: string; name: string; isDefault: boolean; inputModalities: string[];
-  defaultReasoningEffort: string; reasoningEfforts: string[];
-}
-const statusSchema = z.object({ authMethod: z.string().nullable(), authToken: z.string().nullable() });
 const modelSchema = z.object({
-  model: z.string(), displayName: z.string(), isDefault: z.boolean(), hidden: z.boolean(),
-  inputModalities: z.array(z.string()), defaultReasoningEffort: z.string(),
+  model: z.string(), 
+  displayName: z.string(), 
+  isDefault: z.boolean(), 
+  hidden: z.boolean(),
+  inputModalities: z.array(z.string()),
+  defaultReasoningEffort: z.string(),
   supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })),
 });
 
 /** Read access credentials through Codex's official RPC; never read or copy its credential store. */
-async function loadSession(refreshToken: boolean): Promise<CodexSession> {
+async function loadSession(refreshToken: boolean): Promise<ICodexSession> {
   const connection = new CodexConnection();
   try {
     await connection.initialize();
@@ -34,12 +34,12 @@ async function loadSession(refreshToken: boolean): Promise<CodexSession> {
 }
 
 /** Serialize token refresh within this plugin and keep a short expiry margin. */
-export function createSessionReader(load: (refresh: boolean) => Promise<CodexSession> = loadSession) {
-  let session: CodexSession | undefined;
+export function createSessionReader(load: (refresh: boolean) => Promise<ICodexSession> = loadSession) {
+  let session: ICodexSession | undefined;
   let checkedAt = 0;
-  let pending: Promise<CodexSession> | undefined;
+  let pending: Promise<ICodexSession> | undefined;
   let pendingRefresh = false;
-  return async function read(forceRefresh = false): Promise<CodexSession> {
+  return async function read(forceRefresh = false): Promise<ICodexSession> {
     if (pending) {
       if (!forceRefresh || pendingRefresh) return pending;
       // A rejected HTTP token must not be retried after merely re-reading the same token.
@@ -65,12 +65,12 @@ export const readCodexSession = (refresh = false) => sharedSessionReader(refresh
 export function invalidateCodexSession(): void { sharedSessionReader = createSessionReader(); }
 
 /** Return only non-secret model metadata from the same Codex account as the bridge. */
-export async function connectCodex(): Promise<{ models: CodexModel[]; defaultModel: string }> {
+export async function connectCodex(): Promise<{ models: ICodexModel[]; defaultModel: string }> {
   await readCodexSession();
   const connection = new CodexConnection();
   try {
     await connection.initialize();
-    const models: CodexModel[] = [];
+    const models: ICodexModel[] = [];
     let cursor: string | null = null;
     do {
       const page = z.object({ data: z.array(modelSchema), nextCursor: z.string().nullable() }).parse(

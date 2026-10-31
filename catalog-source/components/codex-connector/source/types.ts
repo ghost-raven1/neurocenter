@@ -1,17 +1,21 @@
-export type RpcId = string | number;
-export type JsonObject = Record<string, unknown>;
-export interface RpcMessage {
-  id?: RpcId;
+export type TRpcId = string | number;
+
+export type IJsonObject = Record<string, unknown>;
+
+export interface IRpcMessage {
+  id?: TRpcId;
   method?: string;
-  params?: JsonObject;
+  params?: IJsonObject;
   result?: unknown;
   error?: { code: number; message: string };
 }
-export interface Approval {
+
+export interface IApproval {
   method: string;
-  details: JsonObject;
+  details: IJsonObject;
 }
-export interface RunOptions {
+
+export interface IRunOptions {
   prompt: string;
   cwd: string;
   threadId?: string;
@@ -20,13 +24,32 @@ export interface RunOptions {
   timeoutMs?: number;
   command?: string;
   commandArgs?: string[];
-  approve?: (request: Approval) => Promise<boolean>;
+  approve?: (request: IApproval) => Promise<boolean>;
   onText?: (text: string) => void;
 }
-export interface RunResult {
+
+export interface IRunResult {
   threadId: string;
   turnId: string;
   status: "completed" | "failed" | "interrupted";
   text: string;
   error?: string;
+}
+
+export type TSessionReader = (refresh?: boolean) => Promise<CodexSession>;
+
+/** Only access credentials live here, in memory. Refresh credentials remain owned by Codex. */
+export interface ICodexSession { 
+  accessToken: string;
+  accountId: string;
+  expiresAt: number
+}
+
+export interface ICodexModel {
+  id: string; 
+  name: string;
+  isDefault: boolean;
+  inputModalities: string[];
+  defaultReasoningEffort: string;
+  reasoningEfforts: string[];
 }
