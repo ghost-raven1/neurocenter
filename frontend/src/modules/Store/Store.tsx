@@ -361,7 +361,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             {targetProject&&bridge.device&&<LocalInstallations key={bridge.device.id+':'+targetProject.id} bridge={bridge} projectId={targetProject.id} canInspect={projectLevel>=1} connectionNoticeVisible canManage={canInstall&&!bridgeInstallError} catalog={catalog} approved={new Set(catalog.filter(isInProject).map(asset=>asset.kind+':'+asset.id))}/>}
             {targetProject && <ProjectKnowledgeLink projectId={targetProject.id} />}
             <ToolCatalogStatus sources={catalogSources} refresh={loadCatalog} />
-            {isMain&&<CatalogRebuildStatus rebuild={sourceStatus.data?.rebuild} error={sourceStatus.error}/>}
+            {isMain&&<CatalogRebuildStatus rebuild={sourceStatus.data?.rebuild} error={sourceStatus.error} plans={sourceStatus.data?.sourcePlans}/>}
             {targetProject && <CatalogUpdateSummary sourceCount={catalog.filter(app=>pendingSourceMap.has(app.kind+':'+app.id)).length} catalogCount={updateRows.filter(item => item?.catalogNewer).length} computerCount={updateRows.filter(item => item?.computerDiffers).length}
                 incomplete={catalogIncomplete || projectLoading || !projectCatalogUsable || !receiptsReady || !!sourceStatus.error} onlyUpdates={onlyUpdates}
                 onChange={enabled => setUpdateFilter({scope: updateScope, enabled})} />}

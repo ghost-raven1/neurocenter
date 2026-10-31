@@ -19,7 +19,7 @@ export function AssetArchiveStatus({assets,blocked,onCompleteSupply}:{assets:ISo
                 <Space direction="vertical" size="small" className="asset-sources__content">
                     <Typography.Text type="secondary">Опись архива проверена. Из архива / без сетевой дозагрузки.</Typography.Text>
                     <Typography.Text>Загрузка архива не меняет версии общего каталога и проектов.</Typography.Text>
-                    {incomplete>0&&<Typography.Text>Дополнительный архив должен содержать полную опись и описания ассетов, а также недостающие файлы всех заявленных платформ и зависимостей. Уже загруженные бинарные файлы повторять не нужно.</Typography.Text>}
+                    {incomplete>0&&<Typography.Text>Дополнительный архив должен содержать полную опись и описания компонентов поставки, а также недостающие файлы всех заявленных платформ и зависимостей. Уже загруженные бинарные файлы повторять не нужно.</Typography.Text>}
                     <Typography.Text>После добавления в каталог выберите проект: «Закрепить новую версию» для инструментов или «Обновить шаблон» для агентов. Установка на компьютер — отдельный шаг.</Typography.Text>
                 </Space>
             </details>

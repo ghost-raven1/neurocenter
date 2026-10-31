@@ -14,7 +14,7 @@ const sections: Record<string, {title: string; group: NavigationGroupKey | null}
     projects: {title: 'Проекты', group: 'work'},
     rag: {title: 'Базы знаний', group: 'work'},
     store: {title: 'Каталог', group: 'resources'},
-    assets: {title: 'Ассеты', group: 'resources'},
+    assets: {title: 'Поставка', group: 'resources'},
     maintenance: {title: 'Обслуживание', group: 'management'},
     audit: {title: 'История действий', group: 'management'},
     'model-usage': {title: 'Использование моделей', group: 'management'},

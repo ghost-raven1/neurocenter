@@ -25,6 +25,8 @@ export class PackageBuildController {
     }
     @Get('requests/:requestKey') request(@Req() req: Request, @Param('requestKey') key: string) {return this.builds.request(this.actor(req), key);}
     @Get('publication-target') publicationTarget(@Req() req:Request,@Query('kind') kind:string,@Query('catalogId') id:string){return this.builds.publicationTarget(this.actor(req),kind,id);}
+    /** Exact case-insensitive name lookup, including archived cards, for the current main administrator. Returns null when available; a match does not approve replacement. Fetch publication-target and explicitly confirm its version/hash before creating a build. */
+    @Get('publication-conflict') publicationConflict(@Req() req:Request,@Query('name') name:string){return this.builds.publicationConflict(this.actor(req),name);}
     @Delete('requests/:requestKey') cancelRequest(@Req() req:Request,@Param('requestKey') key:string){return this.builds.cancelRequest(this.actor(req),key);}
     @Post('archive') archive(@Req() req: Request, @Body() input: unknown) {return this.builds.archiveSource(this.actor(req), input);}
     @Post('imports') async importAsset(@Req() req:Request,@Body() input:unknown,@Res({passthrough:true}) res:Response){

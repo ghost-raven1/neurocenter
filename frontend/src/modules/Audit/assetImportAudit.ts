@@ -18,7 +18,7 @@ export function auditImportSnapshot(event: IAuditEvent): IAuditImport | undefine
 
 export function auditImportTitle(event: IAuditEvent): string | undefined {
     const snapshot = auditImportSnapshot(event); if (!snapshot) return;
-    if (!snapshot.items.length) return snapshot.ids.length ? `Импорт ассетов · позиций: ${snapshot.ids.length}` : 'Запрос импорта ассетов';
+    if (!snapshot.items.length) return snapshot.ids.length ? `Импорт поставки · позиций: ${snapshot.ids.length}` : 'Запрос импорта поставки';
     const names = snapshot.items.slice(0, 2).map(item => item.name), rest = snapshot.ids.length - names.length;
     return names.join(', ') + (rest > 0 ? ` и ещё ${rest}` : '');
 }

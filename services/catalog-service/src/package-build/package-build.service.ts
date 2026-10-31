@@ -22,7 +22,7 @@ import { AccessDb } from '../access/access-db';
 import {normalizeEmail,type IAccessActor} from '../access/access.model';
 import { createPool } from '../database/pool';
 import { notifyDeviceOperations } from '../devices/device-operations';
-import {assertBuildCreateName,lockBuildPublication,pinBuildPublication,publicationTargetPreview,managedRebuildPublication} from './publication-target';
+import {assertBuildCreateName,lockBuildPublication,pinBuildPublication,publicationTargetPreview,publicationNameConflict,managedRebuildPublication} from './publication-target';
 import {publishBuiltTool} from './publish-built-tool';
 import {configureBuildPublicationTransaction,publicationDeadlineMessage} from './publication-deadline';
 import {withBuildSqlErrors} from './build-sql-errors';
@@ -311,6 +311,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     },requestSignal);}
 
     async publicationTarget(actor:IAccessActor,kind:unknown,catalogId:unknown){await this.requireMain(actor);const result=await publicationTargetPreview(this.pool,kind,catalogId);await this.requireMain(actor);return result;}
+    async publicationConflict(actor:IAccessActor,name:unknown){await this.requireMain(actor);const result=await publicationNameConflict(this.pool,name);await this.requireMain(actor);return result;}
     async create(actor: IAccessActor, raw: unknown) {
         await this.requireMain(actor);
         const input = validateBuildInput(raw), fingerprint = requestHash(input);

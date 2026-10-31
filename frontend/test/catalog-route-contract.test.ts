@@ -17,7 +17,7 @@ function render(path:string,permissions=['store','assets','mcp-bundles']){
 }
 
 describe('Active catalog route contract',()=>{
-    it.each([['/store','Каталог'],['/assets','Ассеты']])('Keeps %s available through its registered module', (path,title)=>{
+    it.each([['/store','Каталог'],['/assets','Поставка']])('Keeps %s available through its registered module', (path,title)=>{
         const result=render(path);expect(result.html).toContain(title);expect(result.html).not.toContain('Страница не найдена');expect(result.context.url).toBeUndefined();
     });
     it('A historical bundle permission does not expose the retired editor route',()=>{

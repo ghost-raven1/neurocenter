@@ -41,10 +41,24 @@ describe('Исходники и опубликованный пакет пока
         expect(pendingCatalogSources([{...plan,catalogReady:true},{...plan,id:'unknown',catalogReady:undefined},{...plan,id:'archived',imported:{...plan.imported!,archived:true}},
             {...plan,id:'model',kind:'model'},{...plan,id:'bridge',kind:'bridge'}]).size).toBe(0);
     });
-    it.each(['preparing','attention','ready'] as const)('one readonly %s receipt retains outcomes and Operations without publication buttons',state=>{
+    it.each(['preparing','attention','ready'] as const)('one %s receipt retains outcomes and opens recovery without publishing',state=>{
         const html=renderToStaticMarkup(createElement(CatalogRebuildStatus,{rebuild:{...rebuild,state,items:[rebuild.items[0],{id:'model',name:'Модель GGUF',state:'archive-required',message:'Выберите архив'},
             {id:'failed',name:'Пакет MCP',state:'attention',message:'Проверка не пройдена'}]}}));
-        expect(html).toContain('href="/operations"');expect(html).toContain('Нужен архив');expect(html).toContain('Проверка не пройдена');expect(html).toContain('<details>');
-        expect(html).not.toContain('<button');expect(html).not.toContain('Установлено');
+        expect(html).toContain('href="/operations"');expect(html).toContain('Нужен архив');expect(html).toContain('Проверка не пройдена');expect(html).toContain(state==='attention'?'<details open="">':'<details>');
+        expect(html).toContain('href="/assets?archive=open"');expect(html).not.toContain('Установлено');
+    });
+    it('offers the exact accepted operation instead of starting another preparation',()=>{
+        const operationId='11111111-2222-4333-8444-555555555555';
+        const html=renderToStaticMarkup(createElement(CatalogRebuildStatus,{plans:[plan],rebuild:{...rebuild,state:'attention',items:[{...rebuild.items[0],state:'attention',operationId}]}}));
+        expect(html).toContain('href="/operations?operation=tool-build-'+operationId+'"');expect(html).toContain('Открыть операцию');expect(html).not.toContain('prepare=');
+    });
+    it('does not invent an operations record for an inline metadata import',()=>{
+        const html=renderToStaticMarkup(createElement(CatalogRebuildStatus,{rebuild:{...rebuild,state:'attention',items:[{id:'inline:0',name:'Встроенные агенты',state:'attention',message:'Импорт не завершён',operationId:'11111111-2222-4333-8444-555555555555'}]}}));
+        expect(html).not.toContain('operation=');expect(html).toContain('Импорт не завершён');
+    });
+    it('opens the exact eligible recipe but does not offer preparation for unavailable or published cards',()=>{
+        const render=(value:IBundledSourcePlan)=>renderToStaticMarkup(createElement(CatalogRebuildStatus,{plans:[value],rebuild:{...rebuild,state:'attention',items:[{...rebuild.items[0],state:'attention'}]}}));
+        expect(render(plan)).toContain('href="/assets?prepare=opencode-rag-plugin"');expect(render(plan)).toContain('Подготовить обновление');
+        for(const value of [{...plan,catalogReady:true},{...plan,imported:{...plan.imported!,archived:true}},{...plan,imported:{...plan.imported!,unavailable:true}}])expect(render(value)).not.toContain('prepare=');
     });
 });

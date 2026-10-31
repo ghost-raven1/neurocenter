@@ -17,6 +17,7 @@ import OperationProgress from './OperationProgress';
 import { formatOperationTime, operationResourceLabel, operationStateOptions, operationTypeLabel, shortOperationId } from './operationPresentation';
 import { useOperationActions } from './useOperationActions';
 import { useOperationsQueue } from './useOperationsQueue';
+import {useOperationDeepLink} from './useOperationDeepLink';
 
 import './Operations.less';
 
@@ -30,6 +31,7 @@ interface IOperationsQueueProps {
 /** Общая и проектная очередь с независимыми фильтром, страницей и открытой операцией. */
 const OperationsQueue: FC<IOperationsQueueProps> = ({ projectId }) => {
     const queue = useOperationsQueue(projectId);
+    const deepLink=useOperationDeepLink(queue.select,!projectId);
     const user = useSelector((state: RootState) => state.userBlock.user);
     const screens = Grid.useBreakpoint();
     const filterId = useId();
@@ -41,6 +43,7 @@ const OperationsQueue: FC<IOperationsQueueProps> = ({ projectId }) => {
     const closeDetail = (): void => {
         restoreDetailFocus.current = true;
         queue.close();
+        deepLink.clear();
         queueMicrotask(restoreTriggerFocus);
     };
     const refreshAfterAction = useCallback(async (): Promise<void> => {
@@ -87,6 +90,7 @@ const OperationsQueue: FC<IOperationsQueueProps> = ({ projectId }) => {
     ];
 
     return <div className="operations-queue">
+        {deepLink.error&&<Alert type="warning" showIcon message={deepLink.error} action={<Button onClick={deepLink.clear}>К списку операций</Button>}/>}
         <div className="operations-queue__heading">
             <Text strong>{projectId ? 'Операции проекта' : 'Все доступные операции'}</Text>
             <Text type="secondary">{queue.state ? 'Найдено: ' : 'Всего: '}<b>{queue.total}</b></Text>

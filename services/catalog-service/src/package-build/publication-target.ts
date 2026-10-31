@@ -7,12 +7,21 @@ import {SkillAssetClient} from '../asset-sources/skill-adapter';
 import type {IAiPlugin} from '../catalog/dto';
 
 export interface BuildPublicationTarget {catalogId:string;expectedVersion:number;expectedSourceHash:string}
+export interface BuildPublicationConflict {catalogId:string;kind:'mcp'|'plugin';name:string;archived:boolean}
 export interface BuildSourceOrigin {repository:string;externalId:string;revision:number;assetVersion:string;descriptorSha256:string;nativeVersion:number;nativeHash:string}
 export interface PinnedBuildPublication extends BuildPublicationTarget {kind:'mcp'|'plugin';name:string;nativeHash:string;origins:BuildSourceOrigin[]}
 export interface BuildPublicationTargetPreview extends BuildPublicationTarget {name:string;description:string;kind:'mcp'|'plugin'|'skill';sourceSummaries:Array<{repository:string;externalId:string;assetVersion:string}>;updateSupported:boolean;unsupportedReason?:string}
 export const unsupportedSkillUpdate='Новая версия скилла через упаковщик пока недоступна. Сохраните исходники и используйте редактирование скилла в каталоге.';
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const validCatalogId=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=240&&!/[\x00-\x1f\x7f]/.test(value);
+
+/** Exact name discovery proposes a target; only a later preview and consent authorize replacement. */
+export async function publicationNameConflict(pool:Pool,name:unknown):Promise<BuildPublicationConflict|null>{
+    if(typeof name!=='string'||!name.trim()||name.length>240||/[\x00-\x1f\x7f]/.test(name))throw new BadRequestException('Укажите название инструмента.');
+    const {rows}=await pool.query('SELECT id,kind,name,archived_at FROM ai_plugins WHERE lower(name)=lower($1)',[name.trim()]);
+    const row=rows[0];
+    return row?{catalogId:String(row.id),kind:row.kind,name:String(row.name),archived:!!row.archived_at}:null;
+}
 
 /** The public consent contains no caller-controlled origin replacement instructions. */
 export function validateBuildPublication(value:unknown):BuildPublicationTarget|undefined{

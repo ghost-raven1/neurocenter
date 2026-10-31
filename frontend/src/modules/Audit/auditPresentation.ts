@@ -47,7 +47,7 @@ export function auditResourceTitle(event: IAuditEvent): string {
 
 /** Различает MCP и плагин по сохранённому типу публикации. */
 export function auditResourceKind(event: IAuditEvent): string {
-    if(event.action==='asset.import.request')return 'Импорт ассетов';
+    if(event.action==='asset.import.request')return 'Импорт поставки';
     if(event.resourceType==='bridge'&&event.source==='operation'){
         const kind=snapshot(event.details?.after).kind;
         if(kind==='mcp')return 'MCP-сервер · через мост';
@@ -86,7 +86,7 @@ export function publicationAuditChanges(event: IAuditEvent): IAuditChange[] {
 
 /** Краткая сводка подтверждённых изменений для строки журнала. */
 export function auditEventSummary(event: IAuditEvent): string | undefined {
-    if(event.action==='asset.import.request')return 'Запрос принят в обработку. Итог добавления — в разделе «Ассеты».';
+    if(event.action==='asset.import.request')return 'Запрос принят в обработку. Итог добавления — в разделе «Поставка».';
     const request=requestAuditSummary(event);if(request)return request;
     if (isAgentAudit(event)) return agentAuditSummary(event);
     if (!publicationActions.has(event.action)) { return undefined; }

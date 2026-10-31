@@ -31,7 +31,7 @@ export function useAssetArchiveUpload(options:UploadOptions) {
             if(!current())return false;
             callbacks.current.onSuccess(data);setState({scope,stage:'idle',percent:100,error:''});return true;
         }catch(cause){
-            if(current())setState({scope,stage:'idle',percent:0,error:errorMessage(cause,'Не удалось импортировать архив. Сохранённый список ассетов доступен; можно повторить загрузку.')});
+            if(current())setState({scope,stage:'idle',percent:0,error:errorMessage(cause,'Не удалось импортировать архив. Сохранённый список поставки доступен; можно повторить загрузку.')});
             return false;
         }finally{
             if(request.current===controller){request.current=undefined;if(owns())callbacks.current.onFinish();}

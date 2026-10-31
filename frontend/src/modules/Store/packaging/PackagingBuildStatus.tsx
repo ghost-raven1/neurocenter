@@ -44,7 +44,7 @@ export function PackagingBuildStatus({ job, name, active = true, cancelPending =
                 catch(cause){URL.revokeObjectURL(url);throw cause;}
                 const timer=setTimeout(()=>{URL.revokeObjectURL(url);objectUrls.current.delete(url);},0);objectUrls.current.set(url,timer);
             }
-        }catch(cause){if(currentRequest())setExportError(errorMessage(cause,kind==='supply'?'Не удалось скачать поставку.':'Не удалось скачать описание ассета.'));}
+        }catch(cause){if(currentRequest())setExportError(errorMessage(cause,kind==='supply'?'Не удалось скачать поставку.':'Не удалось скачать описание поставки.'));}
         finally{if(request.current===controller){request.current=undefined;if(currentRequest())setExporting(undefined);}}
     };
     const failed = job?.state === 'FAILED';

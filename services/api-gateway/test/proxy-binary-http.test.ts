@@ -27,6 +27,17 @@ describe.sequential('Actual Proxy raw and binary dispatch',()=>{
  it.each([['POST','/api/bridge-source/check'],['GET','/api/tool-builds/repository'],['GET','/api/tool-builds/npm']])('keeps source inspection %s %s on its authenticated control plane',async(method,route)=>{
   expect((await f.send(route,{method,body:method==='POST'?{}:undefined})).status).toBe(200);expect(f.business()[0].path).toBe(route);
  });
+ it('routes exact build name discovery to Catalog with query and fresh authorization',async()=>{
+  const target={catalogId:'native-tool',kind:'mcp',name:'Tool & MCP',archived:false};f.state.businessPayload=target;
+  const response=await f.send('/api/tool-builds/publication-conflict?name=Tool%20%26%20MCP');
+  expect(response.status).toBe(200);expect(response.body).toEqual(target);
+  expect(f.business()).toHaveLength(1);expect(f.business()[0]).toMatchObject({kind:'catalog',path:'/api/tool-builds/publication-conflict',method:'GET'});
+  expect(new URL(f.business()[0].url,'http://fixture').searchParams.get('name')).toBe(target.name);
+  expect(f.calls.some(call=>call.path==='/internal/access/authorize')).toBe(true);
+ });
+ it('denied build name discovery never reaches Catalog business data',async()=>{
+  f.state.allowed=false;expect((await f.send('/api/tool-builds/publication-conflict?name=Tool')).status).toBe(403);expect(f.business()).toEqual([]);
+ });
  it('keeps non-JSON content types and deliberately empty non-JSON null responses intact',async()=>{
   f.state.handler=(_req,res)=>{res.writeHead(200,{'content-type':'text/plain'});res.end('null');};const response=await fetch(f.url+'/api/projects',{headers:browserHeaders});expect(response.status).toBe(200);expect(response.headers.get('content-type')).toMatch(/text\/plain/);expect(await response.text()).toBe('');
  });

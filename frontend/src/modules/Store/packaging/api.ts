@@ -1,5 +1,5 @@
 import base from '../../../core/api/base';
-import type { BuildPublicationTargetPreview, PackagingKind, NpmPackageMetadata, RepositoryMetadata, RepositoryQuery, ToolBuild, ToolBuildRequest, ToolBuildRequestCancellation } from './types';
+import type { BuildPublicationConflict, BuildPublicationTargetPreview, PackagingKind, NpmPackageMetadata, RepositoryMetadata, RepositoryQuery, ToolBuild, ToolBuildRequest, ToolBuildRequestCancellation } from './types';
 import type { AxiosRequestConfig } from 'axios';
 import {isAxiosError} from 'axios';
 import type { PackagingFilesResult } from './sourceFiles';
@@ -15,6 +15,7 @@ function bounded<T>(timeout: number, send: (config: AxiosRequestConfig) => Promi
 }
 
 export const packagingApi = {
+    publicationConflict: (name:string,signal?:AbortSignal):Promise<BuildPublicationConflict|null> => bounded(10_000,config=>base.get<BuildPublicationConflict|null>('/api/tool-builds/publication-conflict',{...config,params:{name}}).then(response=>response.data),signal),
     publicationTarget: (params:{kind:PackagingKind;catalogId:string}, signal?:AbortSignal):Promise<BuildPublicationTargetPreview> => bounded(10_000, config => base.get<BuildPublicationTargetPreview>('/api/tool-builds/publication-target', {...config,params}).then(response=>response.data),signal),
     /** Проверяет доступ без сборки tar; cookie-authenticated загрузку большого файла ведёт браузер. */
     supply: (id: string, signal?: AbortSignal): Promise<string> => bounded(10_000, async config => {

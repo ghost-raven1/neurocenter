@@ -6,7 +6,7 @@ export const featureFlagKeys = featureDefinitions.map(flag => flag.key);
 export type TFeatureFlagKey = FeatureFlagKey;
 export type TFeatureFlagGroup = IFeatureFlagDefinition['group'];
 export const featureGroups: ReadonlyArray<{ key: TFeatureFlagGroup; name: string }> = [
-    { key: 'platform', name: 'Проекты и компьютеры' }, { key: 'catalog', name: 'Каталог и ассеты' },
+    { key: 'platform', name: 'Проекты и компьютеры' }, { key: 'catalog', name: 'Каталог и поставки' },
     { key: 'models', name: 'Модели' }, { key: 'agents', name: 'Чаты и агенты' },
     { key: 'knowledge', name: 'Знания и поиск' }, { key: 'operations', name: 'Снимки, копии и отчёты' },
 ];

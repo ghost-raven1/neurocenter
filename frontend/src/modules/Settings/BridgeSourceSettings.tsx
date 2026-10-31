@@ -12,7 +12,7 @@ export function BridgeSourceSettings(): JSX.Element {
         <Space direction="vertical" size="middle" className="settings-page__content">
             <Typography.Paragraph type="secondary">Выберите публичный репозиторий поставок моста. Сохранение адреса не заменяет уже подготовленную версию и не обновляет компьютеры.</Typography.Paragraph>
             <FeatureAvailabilityNotice features={['asset_sources']}/>
-            {offline ? <Alert type="info" showIcon message="Автономная поставка" description="Сервер получает версии из локальной поставки. Загрузите обновлённый архив на странице «Ассеты». Обращения к GitHub отключены."/>
+            {offline ? <Alert type="info" showIcon message="Автономная поставка" description="Сервер получает версии из локальной поставки. Загрузите обновлённый архив на странице «Поставка». Обращения к GitHub отключены."/>
                 : <><label htmlFor="bridge-source-repository">Репозиторий версий моста</label>
                     <Input id="bridge-source-repository" value={source.url} maxLength={2048} disabled={source.blocked}
                         onChange={event => source.change(event.target.value)} placeholder="https://github.com/owner/neurocenter-assets" aria-describedby="bridge-source-description"/>
@@ -32,7 +32,7 @@ export function BridgeSourceSettings(): JSX.Element {
             {source.data?.importedError && <Alert type="warning" showIcon message={source.data.importedError}/>}
             <div className="settings-page__versions"><Typography.Text>Найдена в источнике: <Tag>{source.data?.available?.version ?? 'ещё не проверено'}</Tag></Typography.Text>
                 <Typography.Text>Подготовлена на сервере: <Tag>{source.data?.imported?.version ?? 'пока нет'}</Tag></Typography.Text></div>
-            <Typography.Paragraph type="secondary">Выбор ассетов, импорт архива и результаты подготовки доступны на странице <Link to="/assets">«Ассеты»</Link>. Установить мост на компьютер можно в разделе <Link to={startQueryUrl('', {setup: true, step: 1})}>«Начало работы»</Link>.</Typography.Paragraph>
+            <Typography.Paragraph type="secondary">Выбор компонентов поставки, импорт архива и результаты подготовки доступны на странице <Link to="/assets">«Поставка»</Link>. Установить мост на компьютер можно в разделе <Link to={startQueryUrl('', {setup: true, step: 1})}>«Начало работы»</Link>.</Typography.Paragraph>
         </Space>
     </Card>;
 }

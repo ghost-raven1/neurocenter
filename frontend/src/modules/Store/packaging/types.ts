@@ -6,6 +6,7 @@ export type PackagingSource = { type: 'npm'; specifier: string; entrypoint?: str
     | { type: 'repository'; url: string; ref: string; subdirectory?: string; entrypoint: string; release?: RepositoryRelease }
     | UploadedSource;
 export interface ToolBuildPublication { catalogId: string; expectedVersion: number; expectedSourceHash: string }
+export interface BuildPublicationConflict {catalogId:string;kind:'mcp'|'plugin';name:string;archived:boolean}
 export interface BuildPublicationTargetPreview extends ToolBuildPublication {
     name: string; description: string; kind: PackagingKind;
     sourceSummaries: Array<{repository:string;externalId:string;assetVersion:string}>;

@@ -96,7 +96,7 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
         });
     };
     const saved = async (): Promise<void> => { if (!await refresh()) throw new Error('Агент сохранён, но каталог не обновился. Ваш текст остался в форме; повтор безопасен.'); setProjectOnly(false); setQuery(''); };
-    const templateActions=isMain&&<><Button onClick={() => history.push('/assets')}>Из ассетов</Button><FeatureButton features={['agents']} type="primary" disabled={loading || !!error} onClick={() => setEditing('new')}>Добавить агента</FeatureButton></>;
+    const templateActions=isMain&&<><Button onClick={() => history.push('/assets')}>Из поставки</Button><FeatureButton features={['agents']} type="primary" disabled={loading || !!error} onClick={() => setEditing('new')}>Добавить агента</FeatureButton></>;
     return <section className="agent-catalog">
         <div className="agent-catalog__heading"><div><Typography.Title level={4}>{projectName ? `Агенты для «${projectName}»` : 'Агенты команды'}</Typography.Title>
             <Typography.Text type="secondary">{projectId ? 'Настройте промпты проекта и примените их к выбранной папке OpenCode.' : 'Готовые роли и собственные промпты для OpenCode.'}</Typography.Text></div>

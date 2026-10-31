@@ -24,6 +24,8 @@ const hooks=vi.hoisted(()=>{
 const ui=vi.hoisted(()=>({isMain:true,owner:'admin-a',owners:new Map<string,()=>()=>boolean>(),buttons:[] as Array<{disabled?:boolean;onClick:()=>void}>,editor:undefined as {agent:ICatalogAgent;onClose:()=>void;onSaved:()=>Promise<void>}|undefined,draft:'',editorId:'',searches:new Map<string,{onChange:(event:{target:{value:string}})=>void}>(),archives:[]as Array<{kind:string;id:string;restore?:boolean;disabled?:boolean}>,live:()=>{},refreshButtons:new Map<string,{loading?:boolean;onClick:()=>void}>(),job:undefined as IAssetImport|undefined,retry:vi.fn(),retryButton:undefined as undefined|(()=>void)}));
 const archiveUi=vi.hoisted(()=>({modal:undefined as ArchiveModalProps|undefined,buttons:[]as Array<{label:string;disabled?:boolean;onClick:()=>void}>,checkboxes:[]as Array<{'aria-label':string;disabled?:boolean;checked?:boolean;onChange:(event:{target:{checked:boolean}})=>void}>,blocked:false,start:vi.fn(),emptyDescription:''}));
 const bundledUi=vi.hoisted(()=>({props:undefined as {plans:unknown[];scope:string}|undefined}));
+const routing=vi.hoisted(()=>({location:{pathname:'/assets',search:'',hash:''},history:{replace:vi.fn()}}));
+vi.mock('react-router-dom',()=>({useLocation:()=>routing.location,useHistory:()=>routing.history}));
 vi.mock('../src/features/AssetSources/BundledCatalogSources',()=>({BundledCatalogSources:(props:{plans:unknown[];scope:string})=>{bundledUi.props=props;return null;}}));
 vi.mock('react-redux',()=>({useSelector:(select:(state:unknown)=>unknown)=>select({userBlock:{user:{activeRole:ui.isMain?'Главный админ':'Наблюдатель',userRoles:[ui.isMain?'Главный админ':'Наблюдатель']}}})}));
 vi.mock('react',async original=>({...await original<typeof import('react')>(),...hooks}));
@@ -53,7 +55,7 @@ afterEach(()=>hooks.dispose());
 
 it('Current source read failure keeps the scoped bundled build recovery mounted with no actionable recipes',async()=>{
     vi.mocked(baseApi.get).mockRejectedValueOnce(Error('Source unavailable'));render();const html=await settle();
-    expect(html).toContain('Source unavailable');expect(bundledUi.props).toEqual({plans:[],scope:'admin-a',blocked:false,onPublished:expect.any(Function),onImportArchive:expect.any(Function)});
+    expect(html).toContain('Source unavailable');expect(bundledUi.props).toEqual({plans:[],plansReady:false,prepareId:undefined,scope:'admin-a',blocked:false,onPublished:expect.any(Function),onImportArchive:expect.any(Function)});
 });
 
 it('Двойной клик и открытие второй карточки во время GET не создают конкурирующий редактор',async()=>{
@@ -87,7 +89,7 @@ it('Локальный поиск и поиск репозитория неза�
     const local={...source.assets[0],id:'local-agent',name:'Особый помощник'};
     vi.mocked(baseApi.get).mockResolvedValue({data:{...source,localAssets:[local]}});render();await settle();
     ui.searches.get('Поиск локальных упаковок')!.onChange({target:{value:'несуществующий'}});let html=render();expect(html).toContain('Локальных упаковок по этому запросу нет.');expect(html).toContain('Агент a');expect(html).toContain('Агент b');
-    ui.searches.get('Поиск ассетов в репозитории')!.onChange({target:{value:'Агент b'}});html=render();expect(html).toContain('Агент b');expect(html).not.toContain('Агент a');
+    ui.searches.get('Поиск компонентов поставки')!.onChange({target:{value:'Агент b'}});html=render();expect(html).toContain('Агент b');expect(html).not.toContain('Агент a');
     ui.searches.get('Поиск локальных упаковок')!.onChange({target:{value:'Особый'}});html=render();expect(html).toContain('Особый помощник');expect(html).toContain('Агент b');expect(html).not.toContain('Агент a');
 });
 it.each(['SUCCEEDED','RUNNING','FAILED'])('Результат импорта %s остаётся доступным без длинного отчёта по умолчанию после успеха',async state=>{
@@ -132,7 +134,7 @@ it('Автономный источник показывает закреплё�
 });
 it.each(['online','offline'])('Пустой непроверенный источник предлагает архив и подходящий режим обновления: %s',async mode=>{
     vi.mocked(baseApi.get).mockResolvedValue({data:{source:{mode,verified:false},assets:[]}});render();const html=await settle(),action=mode==='offline'?'перечитайте локальную поставку':'обновите источник';
-    expect(html).toContain('Загрузите архив или '+action+'.');expect(archiveUi.emptyDescription).toBe('Загрузите архив или '+action+', чтобы выбрать ассеты.');expect(html).not.toContain('скачиваются только небольшие описи');expect(baseApi.post).not.toHaveBeenCalled();
+    expect(html).toContain('Загрузите архив или '+action+'.');expect(archiveUi.emptyDescription).toBe('Загрузите архив или '+action+', чтобы выбрать компоненты.');expect(html).not.toContain('скачиваются только небольшие описи');expect(baseApi.post).not.toHaveBeenCalled();
 });
 it.each(['create','conflict'])('NEEDS_INPUT предлагает повтор исправленной поставки, а проверку конфликта только для action=conflict: %s',async action=>{
     ui.job={id:'missing-offline-blob',planDigest:'a'.repeat(64),state:'NEEDS_INPUT',message:'Файлы выбранного ассета отсутствуют в локальной поставке.',items:[{id:'bridge',kind:'bridge',name:'Мост',version:'0.9.17',current:true,action,state:'FAILED'}]};
@@ -197,7 +199,7 @@ it('Нажатие добавить карточку блокирует upload �
 
 it('Архив объясняет три шага обновления и позволяет дополнить неполную поставку',async()=>{
     vi.mocked(baseApi.get).mockResolvedValue({data:uploaded});render();const html=await settle();
-    expect(html).toContain('Опись архива проверена');expect(html).toContain('Файлы готовы: 1 из 2');expect(html).toContain('полную опись и описания ассетов');
+    expect(html).toContain('Опись архива проверена');expect(html).toContain('Файлы готовы: 1 из 2');expect(html).toContain('полную опись и описания компонентов поставки');
     expect(html).toContain('Загрузка архива не меняет версии общего каталога и проектов');
     expect(html).toContain('Закрепить новую версию');expect(html).toContain('Обновить шаблон');
     const complete=archiveUi.buttons.find(button=>button.label==='Дополнить поставку архивом');expect(complete?.disabled).toBe(false);
@@ -220,7 +222,7 @@ it('Выбор обновлений включает только готовые
 it('После загрузки поставки новые версии показаны перед прежними локальными упаковками',async()=>{
     const local={...source.assets[0],id:'local',name:'Прежняя упаковка'};
     vi.mocked(baseApi.get).mockResolvedValue({data:{...uploaded,localAssets:[local]}});render();const html=await settle();
-    expect(html.indexOf('Из репозитория ассетов')).toBeLessThan(html.indexOf('Упакованные на этой площадке'));
+    expect(html.indexOf('Из поставки')).toBeLessThan(html.indexOf('Упакованные на этой площадке'));
     expect(html).toContain('Открыть в каталоге');
 });
 

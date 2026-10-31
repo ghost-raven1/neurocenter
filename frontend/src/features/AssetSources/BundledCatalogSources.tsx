@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {Alert,Button,Card,Form,Input,Modal,Space,Tag,Typography} from 'antd';
-import {FeatureButton} from '../FeatureFlags/FeatureAvailability';
+import {FeatureButton,useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
 import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
 import {useToolBuild} from '../../modules/Store/packaging/useToolBuild';
 import {usePackagingPublication} from '../../modules/Store/packaging/usePackagingPublication';
@@ -9,13 +9,16 @@ import {PackagingBuildStatus} from '../../modules/Store/packaging/PackagingBuild
 import {BuildTargetChoice} from '../../modules/Store/packaging/BuildTargetChoice';
 import {packagingPlatformLabels} from '../../modules/Store/packaging/platformLabels';
 import type {IBundledSourcePlan} from './types';
+import {useBundledNameCheck} from './useBundledNameCheck';
 
 /** Recipe selection reuses the existing durable build journal, cancellation and native publication CAS. */
-export function BundledCatalogSources({plans,scope,blocked,onPublished,onImportArchive}:{plans:IBundledSourcePlan[];scope:string;blocked:boolean;onPublished:()=>void;onImportArchive:()=>void}):JSX.Element{
+export function BundledCatalogSources({plans,scope,blocked,onPublished,onImportArchive,prepareId,plansReady=true}:{plans:IBundledSourcePlan[];scope:string;blocked:boolean;onPublished:()=>void;onImportArchive:()=>void;prepareId?:string;plansReady?:boolean}):JSX.Element{
     const {captureOwner}=useAuthRequestOwner(),journalScope=scope+':bundled-catalog';
     const build=useToolBuild(journalScope),publication=usePackagingPublication(journalScope,captureOwner);
     const [open,setOpen]=useState(false),[plan,setPlan]=useState<IBundledSourcePlan>(),[name,setName]=useState(''),[targets,setTargets]=useState<string[]>();
     const observed=useRef<string>();
+    const openedLink=useRef<string>(),[linkError,setLinkError]=useState('');
+    const availability=useFeatureAvailability('asset_sources','tool_builds','tool_catalog','tool_build_validation');
     useEffect(()=>{setOpen(false);setPlan(undefined);setName('');setTargets(undefined);observed.current=undefined;},[scope]);
     useEffect(()=>{
         if(!build.draft)return;const request=build.draft.request;publication.restore(request);setName(request.name);setTargets(request.targets);
@@ -23,22 +26,37 @@ export function BundledCatalogSources({plans,scope,blocked,onPublished,onImportA
     },[build.draft]);
     useEffect(()=>{if(build.job?.state==='SUCCEEDED'&&observed.current!==build.job.id){observed.current=build.job.id;onPublished();}},[build.job?.id,build.job?.state,onPublished]);
     const retained=!!build.draft||!!build.job||build.unresolved||build.cancelPending;
-    const locked=build.active||build.recovering||build.recoveryBlocked||retained;
+    const nameCheck=useBundledNameCheck(scope,name,plan?.kind,open&&!blocked&&availability.enabled&&!build.active&&!build.recovering&&!build.recoveryBlocked&&!retained,captureOwner);
+    const locked=build.active||build.recovering||build.recoveryBlocked||retained||nameCheck.loading;
     const choose=(value:IBundledSourcePlan):void=>{
         if(blocked||locked||!captureOwner()())return;
         setPlan(value);setName(value.imported?.name||value.name);setTargets(undefined);setOpen(true);
         if(value.imported&&(value.kind==='mcp'||value.kind==='plugin'))void publication.select({catalogId:value.imported.id,kind:value.kind});else publication.clear();
     };
+    useEffect(()=>{
+        const key=scope+':'+prepareId;
+        if(!prepareId||openedLink.current===key||build.recovering||!plansReady||!availability.known||!captureOwner()())return;
+        openedLink.current=key;setLinkError('');
+        if(retained||build.recoveryBlocked){setOpen(true);return;}
+        const value=plans.find(item=>item.id===prepareId);
+        if(blocked||!availability.enabled){setLinkError('Подготовка сейчас недоступна. Проверьте доступность функции и права.');return;}
+        if(!value||value.catalogReady||value.imported?.archived||value.imported?.unavailable||!['mcp','plugin'].includes(value.kind)||!['prepared','local-project'].includes(value.delivery)){
+            setLinkError('Этот исходник сейчас нельзя подготовить. Проверьте его карточку в каталоге или выберите другой исходник.');return;
+        }
+        choose(value);
+    },[scope,prepareId,plansReady,build.recovering,build.recoveryBlocked,retained,plans,blocked,availability.enabled,availability.known,captureOwner]);
     const supported=Object.keys(packagingPlatformLabels).filter(target=>!plan?.id.includes('opencode-rag')||target!=='darwin-x64');
     const submit=():void=>{
         if(blocked||locked||!plan||!['mcp','plugin'].includes(plan.kind)||!captureOwner()()||publication.blocked||!name.trim()||targets?.length===0)return;
-        void build.submit({kind:plan.kind as 'mcp'|'plugin',name:name.trim(),description:plan.description||plan.name,
+        const send=()=>{void build.submit({kind:plan.kind as 'mcp'|'plugin',name:name.trim(),description:plan.description||plan.name,
             source:{type:'bundled',id:plan.id,revision:plan.revision},...(targets?{targets}:{}),
-            ...(publication.selection?{publication:{catalogId:publication.selection.catalogId,expectedVersion:publication.selection.expectedVersion,expectedSourceHash:publication.selection.expectedSourceHash}}:{})});
+            ...(publication.selection?{publication:{catalogId:publication.selection.catalogId,expectedVersion:publication.selection.expectedVersion,expectedSourceHash:publication.selection.expectedSourceHash}}:{})});};
+        if(publication.selection)send();else void nameCheck.check(send,target=>{void publication.select(target);});
     };
     const finish=async():Promise<void>=>{if(await build.reset()){setPlan(undefined);setName('');setTargets(undefined);publication.clear();setOpen(false);}};
-    if(!plans.length&&!retained&&!build.recoveryBlocked)return <></>;
+    if(!plans.length&&!retained&&!build.recoveryBlocked&&!linkError)return <></>;
     return <section aria-label="Исходники текущей версии приложения">
+        {linkError&&<Alert type="warning" showIcon message={linkError}/>}
         <Typography.Title level={3}>Исходники текущей версии</Typography.Title>
         <Typography.Paragraph type="secondary">Закреплённые рецепты приходят с обновлением приложения. Подготовьте пакет и проверьте результат перед установкой в проект.</Typography.Paragraph>
         {(retained||build.recoveryBlocked)&&<Button className="asset-sources__resume" onClick={()=>setOpen(true)}>Продолжить подготовку каталога</Button>}
@@ -63,6 +81,8 @@ export function BundledCatalogSources({plans,scope,blocked,onPublished,onImportA
             {!retained&&<FeatureButton features={['asset_sources','tool_builds','tool_catalog','tool_build_validation']} type="primary" disabled={blocked||locked||!plan||publication.blocked||!name.trim()||targets?.length===0} onClick={submit}>Подготовить и опубликовать</FeatureButton>}
         </Space>}>
             {build.error&&<Alert type="error" showIcon message={build.error}/>}
+            {nameCheck.error&&<Alert type="warning" showIcon message={nameCheck.error}/>}
+            {nameCheck.loading&&<Typography.Text>Проверяем название в каталоге…</Typography.Text>}
             {build.recoveryBlocked&&<Button onClick={build.retryRecovery}>Повторить восстановление запроса</Button>}
             {retained?<PackagingBuildStatus job={build.job} name={build.draft?.request.name||name} active={open} cancelPending={build.cancelPending} cancelled={build.cancelled}/>:<>
                 <Typography.Paragraph>{plan?.name} · {plan?.sourceRevision}</Typography.Paragraph>

@@ -30,8 +30,8 @@ export function describeAuditAction(action: string): { label: string; color: str
         'project.agent.remove': {label:'Агент убран из проекта',color:'red'}, 'project.agents.connect': {label:'Настройки отправлены мосту',color:'purple'},
     };
     if (agentLabels[normalized]) return agentLabels[normalized];
-    if (normalized === 'asset.import.request') return {label:'Запрос импорта ассетов',color:'blue'};
-    if (normalized === 'asset.import.replace') return {label:'Подтверждение замены ассетов',color:'orange'};
+    if (normalized === 'asset.import.request') return {label:'Запрос импорта поставки',color:'blue'};
+    if (normalized === 'asset.import.replace') return {label:'Подтверждение замены компонентов поставки',color:'orange'};
     if (normalized === 'skill.dependencies.preserve') { return { label: 'История зависимостей', color: 'orange' }; }
     if (normalized === 'skill.directory.create') { return { label: 'Создание папки', color: 'blue' }; }
     if (normalized === 'project.settings.update') { return { label: 'Настройки проекта', color: 'cyan' }; }

@@ -32,7 +32,7 @@ export function LocalAssetCards({assets,actions,query,onQuery,total}:{assets:ISo
         <div className="asset-sources__grid">{assets.map(asset=><Card key={asset.id} size="small" title={asset.imported?.name??asset.name} className="asset-sources__card asset-sources__card_local">
             <div className="asset-sources__card-content">
                 <LocalAssetMetadata asset={asset}/>
-                <Typography.Paragraph>{asset.description||'Описание не добавлено в ассет.'}</Typography.Paragraph>
+                <Typography.Paragraph>{asset.description||'Описание поставки не добавлено.'}</Typography.Paragraph>
                 <Typography.Text type={asset.imported?.unavailable?'warning':'secondary'}>{asset.imported?.unavailable?'Карточка временно недоступна. Обновите список после восстановления соединения.':asset.imported?.archived?'Карточка в архиве. Её можно вернуть в каталог.':'Доступен в общем каталоге'}</Typography.Text>
                 <div className="asset-sources__card-actions"><Button href={assetCatalogLink(asset)} disabled={asset.imported?.archived||asset.imported?.unavailable}>Открыть в каталоге</Button>{actions(asset)}</div>
             </div>

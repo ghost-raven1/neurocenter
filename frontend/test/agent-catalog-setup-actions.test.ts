@@ -182,10 +182,10 @@ describe('Agent setup: actual toolbar, pinned configuration and recovery actions
         props.projectId = undefined; props.projectName = undefined; expect(render()).toContain('Агенты команды'); expect(h.ui.nodes.some(node => node.kind === 'Checkbox' && node.text === 'Только в проекте')).toBe(false);
     });
     it('new template, assets navigation and private group launch have direct explicit entrypoints', () => {
-        start(); button('Из ассетов').onClick(); expect(h.navigate).toHaveBeenCalledWith('/assets'); button('Чат с агентами').onClick(); expect(h.chat).toHaveBeenCalledExactlyOnceWith({projectId: 'project-one', group: true});
+        start(); button('Из поставки').onClick(); expect(h.navigate).toHaveBeenCalledWith('/assets'); button('Чат с агентами').onClick(); expect(h.chat).toHaveBeenCalledExactlyOnceWith({projectId: 'project-one', group: true});
         button('Добавить агента').onClick(); render(); expect(h.editor?.agent).toBeUndefined(); h.editor!.onClose(); render(); expect(h.editor).toBeUndefined();
         props.isMain = false; props.canManage = false; h.user = {activeRole: 'Наблюдатель', userRoles: ['Наблюдатель'], projectRoles: [{projectId: 'project-one', projectName: 'Alpha', role: 'Наблюдатель'}]}; render();
-        expect(h.ui.nodes.some(node => node.kind === 'Button' && ['Добавить агента', 'Из ассетов', 'Чат с агентами', 'Применить настройки'].includes(node.text))).toBe(false);
+        expect(h.ui.nodes.some(node => node.kind === 'Button' && ['Добавить агента', 'Из поставки', 'Чат с агентами', 'Применить настройки'].includes(node.text))).toBe(false);
     });
     it('template save only clears search/project filter after its authoritative refresh; failure stays in the editor', async () => {
         props.embedded = true; start(); uiNode(h.ui, 'Search').onChange({target: {value: 'Ревьюер'}}); card().onEdit(); render(); expect(h.editor?.agent?.id).toBe(agent().id);

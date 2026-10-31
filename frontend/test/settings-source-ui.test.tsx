@@ -9,7 +9,8 @@ const io = vi.hoisted(() => ({admin: true, assigned: true, enabled: true, url: '
     saveDraft: vi.fn(), check: vi.fn(), reload: vi.fn(), acceptCurrent: vi.fn(), keepDraft: vi.fn(), change: vi.fn(), buttons: new Map<string, {disabled?: boolean; onClick?: () => void}>(), inputs: [] as Array<Record<string, unknown>>}));
 vi.mock('../src/modules/Settings/useBridgeSourceDraft', () => ({useBridgeSourceDraft: () => ({...io, loading: false, saving: false, checking: false,
     data: {url: 'https://github.com/other-admin/assets', revision: 4, sourceMode: io.offline ? 'offline' : 'online', imported: {version: '0.9.18'}}})}));
-vi.mock('../src/modules/Settings/AssetSourceSettings', () => ({AssetSourceSettings: () => createElement('div', null, 'Поставка ассетов')}));
+vi.mock('../src/modules/Settings/AssetSourceSettings', () => ({AssetSourceSettings: () => createElement('div', null, 'Поставка')}));
+vi.mock('../src/features/RuntimeLimits/RuntimeLimitsSettings', () => ({RuntimeLimitsSettings: () => null}));
 vi.mock('react-redux', () => ({useSelector: (select: (state: unknown) => unknown) => select({userBlock: {user: {activeRole: io.admin ? 'Главный админ' : 'Разработчик', userRoles: io.assigned ? ['Главный админ', 'Разработчик'] : []}}})}));
 vi.mock('../src/features/UserBlock/useAuthRequestOwner', () => ({useAuthRequestOwner: () => ({scope: 'account'})}));
 vi.mock('../src/features/FeatureFlags/FeatureAvailability', () => ({FeatureAvailabilityNotice: () => io.enabled ? null : createElement('div', null, 'Функция выключена'),
@@ -52,9 +53,9 @@ describe('Настройки источника вместо скрытой фо
     });
     it.each(['developer', 'unassigned'] as const)('Неподходящая активная роль %s не монтирует общую форму', role => {
         if (role === 'developer') io.admin = false; else io.assigned = false;
-        const html = render(true); expect(html).toContain('Общие настройки доступны главному администратору'); expect(io.inputs).toHaveLength(0); expect(html).not.toContain('Поставка ассетов');
+        const html = render(true); expect(html).toContain('Общие настройки доступны главному администратору'); expect(io.inputs).toHaveLength(0); expect(html).not.toContain('Поставка');
     });
     it('Главному администратору даёт ссылки на действующие настройки доступа и обслуживания', () => {
-        const html = render(true); expect(html).toContain('href="/maintenance"'); expect(html).toContain('href="/access"'); expect(html).toContain('Поставка ассетов');
+        const html = render(true); expect(html).toContain('href="/maintenance"'); expect(html).toContain('href="/access"'); expect(html).toContain('Поставка');
     });
 });

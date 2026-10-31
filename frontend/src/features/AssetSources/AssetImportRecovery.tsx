@@ -8,7 +8,7 @@ export function AssetImportRecovery({imports,onChangeSelection}:{imports:ReturnT
  if(!imports.error&&!(unresolved&&imports.busy)){return null;}
  const changeSelection=():void=>{if(imports.canReset&&!imports.busy){onChangeSelection?.(imports.intent?.ids??[]);imports.clear();}};
  return <Alert type={imports.error?'error':'info'} showIcon message={imports.busy&&unresolved?'Ждём подтверждения импорта…':imports.error}
-  description={unresolved?(imports.busy?'Выбранные ассеты сохранены. Дождитесь ответа.':imports.canReset?'Импорт не создан. Можно изменить выбор или повторить запрос.':'Результат запроса пока неизвестен. Проверьте состояние или повторите тот же запрос.'):undefined}
+  description={unresolved?(imports.busy?'Выбранные компоненты поставки сохранены. Дождитесь ответа.':imports.canReset?'Импорт не создан. Можно изменить выбор или повторить запрос.':'Результат запроса пока неизвестен. Проверьте состояние или повторите тот же запрос.'):undefined}
   action={unresolved?<Space wrap>
    {imports.canReset?<Button type="primary" disabled={imports.busy} onClick={changeSelection}>Изменить выбор</Button>:<Button disabled={imports.busy} onClick={()=>void imports.recheck()}>Проверить состояние</Button>}
    <FeatureButton features={['asset_sources']} disabled={imports.busy} onClick={()=>void imports.repeat()}>Повторить запрос</FeatureButton>

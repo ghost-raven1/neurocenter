@@ -215,8 +215,8 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 327);
-    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 401);
+    assert.equal(Object.keys(actual.paths).length, 328);
+    assert.equal(Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0), 402);
     for (const representative of ['/api/projects','/api/skills','/api/rag/sync','/api/feature-flags','/auth/me','/api/bridge/install.sh','/api/mcp-host/connect','/api/catalog-requests','/api/catalog-requests/targets','/api/catalog-requests/{id}/actions']) assert.ok(actual.paths[representative], representative);
     for(const [pathname,methods] of Object.entries({'/api/models/{id}/token-quotas/{email}':['get','put'],'/api/models/{id}/token-quotas/{email}/requests/{requestKey}':['get']})) assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods,pathname);
     for(const [pathname,methods]of Object.entries({'/api/runtime-limits':['get'],'/api/runtime-limits/admin':['get','patch'],'/api/runtime-limits/admin/requests/{key}':['get'],'/api/models/gguf-imports':['post'],'/api/models/gguf-imports/limits':['get'],'/api/models/gguf-imports/requests/{key}':['get'],'/api/models/gguf-imports/{id}':['get','delete'],'/api/models/gguf-imports/{id}/accept':['post'],'/api/models/gguf-imports/{id}/content':['put']}))assert.deepEqual(Object.keys(actual.paths[pathname]).sort(),methods.sort(),pathname);
@@ -439,6 +439,22 @@ test('Catalog requests document typed submissions, review actions and scoped fil
     assert.equal(action.properties.expectedRevision.type, 'number');
     assert.ok(jsonResponse(requests.get).properties.items.items.properties.permissions);
     assert.ok(jsonResponse(actual.paths['/api/catalog-requests/{id}'].get).properties.history.items.properties.actor);
+});
+
+test('Build name discovery documents a nullable typed match without publication consent',()=>{
+    const operation=actual.paths['/api/tool-builds/publication-conflict'].get;
+    assert.deepEqual(operation.security,[{sessionCookie:[]}]);
+    assert.deepEqual(operation.parameters,[{name:'name',in:'query',required:true,schema:{type:'string'}}]);
+    assert.equal(operation.requestBody,undefined);
+    const match=jsonResponse(operation);
+    assert.equal(match.nullable,true);
+    assert.deepEqual([...match.required].sort(),['archived','catalogId','kind','name']);
+    assert.deepEqual([...match.properties.kind.enum].sort(),['mcp','plugin']);
+    assert.equal(match.properties.archived.type,'boolean');
+    assert.equal(match.properties.expectedSourceHash,undefined);
+    assert.match(operation.description,/including archived cards/);
+    assert.match(operation.description,/does not approve replacement/);
+    for(const status of ['400','401','403'])assert.ok(operation.responses[status]);
 });
 
 test('Redirects, manual OAuth JSON, binary streams and HEAD reflect the actual HTTP transport', () => {
