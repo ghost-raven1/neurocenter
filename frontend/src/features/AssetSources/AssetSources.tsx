@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useHistory, useLocation } from 'react-router-dom';
 import { baseApi, bffApi } from '../../core/api';
-import { PageHeading } from '../../common/components/PageHeading';
+import { AssetSourcesHeading } from './AssetSourcesHeading/AssetSourcesHeading';
+import type { IAssetSourcesProps } from './interfaces';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
@@ -51,7 +52,7 @@ const itemStates: Record<string, string> = {
     FAILED: 'Не удалось добавить',
 };
 /** Главный администратор явно выбирает состав общего каталога; обычное добавление занимает один клик. */
-export default function AssetSources(): JSX.Element {
+export default function AssetSources({ embedded }: IAssetSourcesProps = {}): JSX.Element {
     const location = useLocation(),
         history = useHistory(),
         prepareId = new URLSearchParams(location.search).get('prepare') ?? undefined,
@@ -309,10 +310,9 @@ export default function AssetSources(): JSX.Element {
           : imports.job?.message;
     if (!isMain) return <></>;
     return (
-        <section className="asset-sources">
-            <PageHeading
-                title="Поставка"
-                description="Выберите инструменты, модели и агентов для общего каталога."
+        <section className={embedded ? 'asset-sources asset-sources--embedded' : 'asset-sources'}>
+            <AssetSourcesHeading
+                embedded={embedded}
                 actions={
                     <Space wrap>
                         <Button href="/settings#sources">Настройки источников</Button>

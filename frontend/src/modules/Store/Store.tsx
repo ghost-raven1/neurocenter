@@ -129,6 +129,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     } = useAvailableProjects();
 
     const { apps: commonCatalog, sources: catalogSources, refresh: loadCatalog } = useToolCatalog();
+    const suppliesActive = catalogSection(location.search, !!embedded) === 'supplies';
     const requestedTarget = presetTarget ?? storeProjectQuery(location.search);
     const selectedTarget = selectStoreTarget(projectsReady ? projects : [], requestedTarget, user);
     const targetProject = selectedTarget.project;
@@ -329,7 +330,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             return;
         }
         projectsInitialized.current = true;
-        if (embedded || presetTarget || requestedTarget !== null) {
+        if (embedded || suppliesActive || presetTarget || requestedTarget !== null) {
             return;
         }
         const saved = readSavedTarget();
@@ -345,6 +346,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         embedded,
         presetTarget,
         requestedTarget,
+        suppliesActive,
         history,
         location.search,
         location.hash,
@@ -760,7 +762,12 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     const activeSection = catalogSection(location.search, !!embedded);
     const canAddFromCommon =
-        !!embedded && !!targetProject && canManage && canBrowseCommon && activeSection !== 'requests';
+        !!embedded &&
+        !!targetProject &&
+        canManage &&
+        canBrowseCommon &&
+        activeSection !== 'requests' &&
+        !suppliesActive;
     return (
         <div className="store">
             {!embedded && (
@@ -781,7 +788,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                     }
                 />
             )}
-            {(!embedded || !projectsReady || canAddFromCommon) && (
+            {!suppliesActive && (!embedded || !projectsReady || canAddFromCommon) && (
                 <div className="store__destination">
                     {(!embedded || !projectsReady) && (
                         <div>
@@ -826,7 +833,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                     )}
                 </div>
             )}
-            {projectLoadError && (
+            {!suppliesActive && projectLoadError && (
                 <Alert
                     className="store__projects-error"
                     type={projectsReady ? 'warning' : 'error'}
@@ -850,7 +857,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                     }
                 />
             )}
-            {targetProject && projectCatalogError && (
+            {!suppliesActive && targetProject && projectCatalogError && (
                 <Alert
                     className="store__projects-error"
                     type={projectCatalogReady ? 'warning' : 'error'}

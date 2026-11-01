@@ -99,3 +99,7 @@ export interface IAssetImport {
         replacement?: { id: string; version: number; hash: string };
     }>;
 }
+
+export interface IAssetSourcesProps {
+    embedded?: boolean;
+}

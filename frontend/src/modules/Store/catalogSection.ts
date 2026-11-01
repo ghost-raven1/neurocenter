@@ -1,9 +1,9 @@
-export type TCatalogSection = 'tools' | 'models' | 'agents' | 'requests';
+export type TCatalogSection = 'tools' | 'models' | 'agents' | 'requests' | 'supplies';
 
 /** В карточке проекта параметр tab уже выбирает вкладку самого проекта. */
 export function catalogSection(search: string, embedded = false): TCatalogSection {
     const value = new URLSearchParams(search).get(embedded ? 'catalogTab' : 'tab');
-    return value === 'models' || value === 'agents' || value === 'requests' ? value : 'tools';
+    return value === 'models' || value === 'agents' || value === 'requests' || value === 'supplies' ? value : 'tools';
 }
 
 export function catalogSectionUrl(

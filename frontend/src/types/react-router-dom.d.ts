@@ -4,6 +4,7 @@ declare module 'react-router-dom' {
     import type { AnchorHTMLAttributes, ElementType, ReactElement, ReactNode } from 'react';
 
     export interface IRouterHistory {
+        length: number;
         push(path: string): void;
         replace(path: string): void;
         block(prompt: string): () => void;
@@ -20,6 +21,7 @@ declare module 'react-router-dom' {
         params: Params;
     }
 
+    export function MemoryRouter(props: { initialEntries?: string[]; children?: ReactNode }): ReactElement;
     export function BrowserRouter(props: { children?: ReactNode }): ReactElement;
     export function Switch(props: { children?: ReactNode }): ReactElement;
     export function Redirect(props: { to: string }): ReactElement | null;

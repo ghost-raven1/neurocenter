@@ -1,3 +1,5 @@
+import { CatalogSupplies } from './CatalogSupplies';
+import { useCatalogSuppliesAccess } from '../../features/AssetSources/hooks/useCatalogSuppliesAccess';
 import { Tabs } from 'antd';
 import type { ReactNode } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
@@ -18,9 +20,11 @@ interface IProps extends IModelCatalogProps {
 export function CatalogTabs({ tools, projects, scope, bridge, ...models }: IProps): JSX.Element {
     const location = useLocation();
     const history = useHistory();
+    const { integrated } = useCatalogSuppliesAccess();
+    const section = catalogSection(location.search, models.embedded);
     return (
         <Tabs
-            activeKey={catalogSection(location.search, models.embedded)}
+            activeKey={section}
             destroyInactiveTabPane
             onChange={(key) =>
                 history.replace(
@@ -35,6 +39,9 @@ export function CatalogTabs({ tools, projects, scope, bridge, ...models }: IProp
             }
             items={[
                 { key: 'tools', label: 'Инструменты', children: tools },
+                ...(integrated || section === 'supplies'
+                    ? [{ key: 'supplies', label: 'Поставки', children: <CatalogSupplies /> }]
+                    : []),
                 {
                     key: 'models',
                     label: 'Модели',

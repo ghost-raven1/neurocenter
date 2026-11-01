@@ -1,3 +1,4 @@
+import { useCatalogSuppliesAccess } from '../../features/AssetSources/hooks/useCatalogSuppliesAccess';
 import { BrandMark } from '../../common/components/BrandMark';
 import { MenuOutlined } from '@ant-design/icons';
 import { Alert, Button, Grid, Layout, Space, Typography } from 'antd';
@@ -61,6 +62,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
     const history = useHistory();
     const location = useLocation();
     const screens = Grid.useBreakpoint();
+    const { integrated: suppliesIntegrated } = useCatalogSuppliesAccess();
     const compact = !screens.lg;
     const { isAuth, user, authorizationUnconfirmed, processing, error } = useSelector(
         (state: TRootState) => state.userBlock,
@@ -123,7 +125,10 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
         return <LoginScreen />;
     }
 
-    const items = navigationEntries(modulesStructure, user?.routePermissions ?? []);
+    const items = navigationEntries(
+        modulesStructure.filter((entry) => !suppliesIntegrated || entry.name !== 'assets'),
+        user?.routePermissions ?? [],
+    );
     const selected = selectedNavigationEntry(items, location.pathname);
     const openComputerSetup = (): void => {
         const params = new URLSearchParams(location.pathname === '/start' ? location.search : '');

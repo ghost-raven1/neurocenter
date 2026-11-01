@@ -23,7 +23,7 @@ export function CatalogHeaderActions({
     onCreate,
     onPackage,
 }: IProps): JSX.Element | null {
-    if (section === 'requests' || section === 'agents') return null;
+    if (section === 'requests' || section === 'agents' || section === 'supplies') return null;
     const request = (
         <CatalogRequestButton
             projects={projects}
