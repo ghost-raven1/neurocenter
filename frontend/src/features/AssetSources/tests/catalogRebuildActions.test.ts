@@ -26,3 +26,37 @@ describe('catalog rebuild recovery destinations', () => {
         expect(catalogRebuildAction({ ...item, importId: id, state: 'ready' })).toBeUndefined();
     });
 });
+
+const source: import('../interfaces').IBundledSourcePlan = {
+    id: 'recipe',
+    name: 'Recipe',
+    kind: 'mcp',
+    delivery: 'prepared',
+    description: '',
+    sourceRevision: 'application',
+    revision: 'a'.repeat(64),
+};
+it('shares recipe preparation while keeping recovery and published-result priority', () => {
+    const attention = { ...item, id: 'recipe' };
+    expect(catalogRebuildAction(attention, [source])).toEqual({
+        kind: 'prepare',
+        label: 'Подготовить пакет',
+        href: '/assets?prepare=recipe',
+    });
+    expect(catalogRebuildAction({ ...attention, operationId: id }, [source])?.kind).toBe('operation');
+    expect(catalogRebuildAction(attention, [{ ...source, catalogReady: true }])).toBeUndefined();
+    expect(catalogRebuildAction({ ...attention, state: 'archive-required' }, [source])?.kind).toBe('archive');
+});
+it.each(['model', 'bridge'] as const)('does not expand rebuild preparation support to %s', (kind) => {
+    expect(catalogRebuildAction({ ...item, id: 'recipe' }, [{ ...source, kind }])).toBeUndefined();
+});
+it.each(['archived', 'unavailable'] as const)('does not offer a new rebuild for %s publication', (reason) => {
+    expect(
+        catalogRebuildAction({ ...item, id: 'recipe' }, [
+            {
+                ...source,
+                imported: { id: 'catalog', version: 1, originVersion: 'old', updateAvailable: true, [reason]: true },
+            },
+        ]),
+    ).toBeUndefined();
+});

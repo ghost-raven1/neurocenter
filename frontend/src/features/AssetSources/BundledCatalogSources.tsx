@@ -1,6 +1,7 @@
+import { BundledSourceCard } from './BundledSourceCard/BundledSourceCard';
 import { useBundledBuildRetry } from './hooks/useBundledBuildRetry';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Card, Form, Input, Modal, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Form, Input, Modal, Space, Typography } from 'antd';
 import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
 import { useToolBuild } from '../../modules/Store/packaging/hooks/useToolBuild';
@@ -238,81 +239,16 @@ export function BundledCatalogSources({
             )}
             <div className="asset-sources__grid">
                 {plans.map((value) => (
-                    <Card key={value.id} size="small" title={value.name} className="asset-sources__card">
-                        <div className="asset-sources__card-content">
-                            <Space wrap>
-                                <Tag>
-                                    {value.kind === 'mcp'
-                                        ? 'MCP'
-                                        : value.kind === 'plugin'
-                                          ? 'Плагин'
-                                          : value.kind === 'model'
-                                            ? 'Модель'
-                                            : 'Мост компьютера'}
-                                </Tag>
-                                <Typography.Text type="secondary" title={value.sourceRevision}>
-                                    {value.sourceRevision === 'application'
-                                        ? 'Из исходников приложения'
-                                        : 'Исходники ' +
-                                          value.sourceRevision.replace(/^(git-[a-f0-9]{8})[a-f0-9]{32}$/, '$1')}
-                                </Typography.Text>
-                            </Space>
-                            <Typography.Paragraph>{value.description}</Typography.Paragraph>
-                            {value.imported && (
-                                <Typography.Text type="secondary">
-                                    В каталоге: редакция {value.imported.version} · {value.imported.originVersion}
-                                </Typography.Text>
-                            )}
-                        </div>
-                        <div className="asset-sources__bundled-action">
-                            {value.catalogReady && value.imported ? (
-                                <>
-                                    <Typography.Text>Пакет этой версии опубликован в каталоге</Typography.Text>
-                                    <Button
-                                        href={'/store?' + new URLSearchParams({ q: value.imported.name || value.name })}
-                                    >
-                                        Открыть в каталоге
-                                    </Button>
-                                </>
-                            ) : ['prepared', 'local-project'].includes(value.delivery) ? (
-                                <FeatureButton
-                                    features={['asset_sources', 'tool_builds', 'tool_catalog', 'tool_build_validation']}
-                                    disabled={
-                                        blocked || locked || value.imported?.archived || value.imported?.unavailable
-                                    }
-                                    onClick={() => choose(value)}
-                                >
-                                    {value.imported ? 'Подготовить обновление' : 'Подготовить пакет'}
-                                </FeatureButton>
-                            ) : value.kind === 'model' ? (
-                                <>
-                                    <Typography.Text type="secondary">
-                                        Веса добавляются выбранным GGUF или локальным архивом.
-                                    </Typography.Text>
-                                    <Button href="/store?tab=models">Открыть модели</Button>
-                                </>
-                            ) : value.kind === 'bridge' ? (
-                                <Typography.Text type="secondary">
-                                    Архив моста создаётся из текущей версии приложения.
-                                </Typography.Text>
-                            ) : (
-                                <>
-                                    <Typography.Text type="secondary">
-                                        Для этой версии нужен выбранный локальный архив.
-                                    </Typography.Text>
-                                    <FeatureButton
-                                        features={['asset_sources']}
-                                        disabled={blocked}
-                                        onClick={() => {
-                                            if (captureOwner()()) onImportArchive();
-                                        }}
-                                    >
-                                        Импортировать архив
-                                    </FeatureButton>
-                                </>
-                            )}
-                        </div>
-                    </Card>
+                    <BundledSourceCard
+                        key={value.id}
+                        plan={value}
+                        blocked={blocked}
+                        locked={locked}
+                        onPrepare={choose}
+                        onImportArchive={() => {
+                            if (captureOwner()()) onImportArchive();
+                        }}
+                    />
                 ))}
             </div>
             <Modal

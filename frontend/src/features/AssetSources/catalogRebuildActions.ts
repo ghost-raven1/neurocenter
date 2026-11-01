@@ -1,3 +1,4 @@
+import { sourcePlanPreparation } from './sourcePlanPreparation';
 import type { IBundledSourcePlan, ICatalogRebuildItem } from './interfaces';
 
 export interface ICatalogRebuildAction {
@@ -34,18 +35,17 @@ export function catalogRebuildAction(
     if (item.state === 'archive-required')
         return { kind: 'archive', label: 'Импортировать архив', href: '/assets?archive=open' };
     const plan = plans.find((value) => value.id === item.id);
+    const preparation = plan ? sourcePlanPreparation(plan) : undefined;
     if (
         item.state === 'attention' &&
         plan &&
         !plan.catalogReady &&
-        !plan.imported?.archived &&
-        !plan.imported?.unavailable &&
-        ['mcp', 'plugin'].includes(plan.kind) &&
-        ['prepared', 'local-project'].includes(plan.delivery)
+        preparation?.available &&
+        ['mcp', 'plugin'].includes(plan.kind)
     ) {
         return {
             kind: 'prepare',
-            label: plan.imported ? 'Подготовить обновление' : 'Подготовить пакет',
+            label: preparation.label,
             href: '/assets?' + new URLSearchParams({ prepare: plan.id }),
         };
     }

@@ -148,3 +148,10 @@ Final full bridge rerun completed successfully:161 test files passed,6 skipped;1
 - User-facing errors, progress and new history notes now use supplies; GitHub release assets remain release files. No machine identifiers, routes, error codes, stored history or policy bounds changed. The source-management flag keeps its key and only changes its display name.
 - Independent review of26 production files and3 existing tests found no actionable issues. AST comparison confirmed string-literal-only production changes. Gateway38, skill import11, runtime3 and producer/bundled source33 tests passed; Catalog/Skills TypeScript and scoped lint/format passed. Evidence: `.run/refactor-20261101/p1-supply-*`.
 - The retained producer closure was repinned and verified after these reviewed public input changes. No service deployment, live database mutation or browser acceptance is claimed.
+
+### 2026-11-01 — P1 3.3, reviewed source-card slice
+
+- Extracted BundledSourceCard from the large preparation owner without changing its DOM, CSS classes, action order or fresh owner check. A single sourcePlanPreparation helper now supplies delivery eligibility, new/update wording and archived/unavailable handling to the card and rebuild recovery resolver.
+- Callers retain their published-result, supported-kind, accepted import/operation and durable-journal priorities. Source revision, published catalog edition, project pin and installation receipt are not collapsed. LocalAssetCards was not forced into a shared wrapper: its metadata and action layout have different responsibilities, with no confirmed duplicate behavior to remove.
+- 35 tests passed across4 files, including the real card with controlled feature availability and callbacks. Inclusive TypeScript833 files/0 diagnostics, final production typecheck, formatting and scoped lint passed (2 existing effect warnings retained). Independent review found no actionable issues. Evidence `.run/refactor-20261101/p1-source-cards-*`.
+- This closes the confirmed source-preparation duplication. The broader project/computer/manual-conflict/offline acceptance in3.3 remains open; no browser or deployment claim is made.
