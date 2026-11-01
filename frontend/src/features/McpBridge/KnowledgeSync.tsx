@@ -1,22 +1,21 @@
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Modal, Space, Typography } from 'antd';
-import { useEffect, useRef, useState, type FC } from 'react';
+import { useEffect, useMemo, useRef, useState, type FC } from 'react';
 import { Link } from 'react-router-dom';
-import { bridgeApi, type IBridgeJob } from './api';
+import { type IBridgeJob } from './api';
 import { useBridge } from './hooks/useBridge';
 import { BridgeConnection } from './BridgeConnection';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { isPending } from './installationHelpers';
 import { bridgeOperationBlocker } from './readiness';
-import {
-    currentKnowledgeJob,
-    knowledgeSyncBlocker,
-    validKnowledgeAck,
-    type TKnowledgeJobKind,
-} from './knowledgeSyncState';
+import { currentKnowledgeJob, knowledgeSyncBlocker, type TKnowledgeJobKind } from './knowledgeSyncState';
 import { OpenCodeRagUi } from './ragUi/OpenCodeRagUi';
 import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
-import { createBridgeRequestKey } from './bridgeRequestKey';
+import { knowledgeSyncJournal } from './knowledgeSyncJournal';
+import { useSelector } from 'react-redux';
+import type { TRootState } from '../../store';
+import { durableJournalOwner } from '../UserBlock/durableJournalOwner';
+import { baseApi } from '../../core/api';
 import { projectBindingUrl } from '../../modules/Projects/projectNavigation';
 import type { IRagUiPreference } from './ragUi/ragUiPreference';
 
@@ -30,9 +29,11 @@ export const KnowledgeSync: FC<{
 }> = ({ projectId, canWrite, connection, serverReady, preferred }) => {
     const { scope: ownerScope, captureOwner } = useAuthRequestOwner();
     const bridge = useBridge();
+    const user = useSelector((state: TRootState) => state.userBlock.user);
     const bridgeError = knowledgeSyncBlocker(bridge.device);
     const restoreError = serverReady === false ? 'Сначала синхронизируйте полный индекс с сервером' : '';
     const [error, setError] = useState('');
+    const [recoveredTerminal, setRecoveredTerminal] = useState(false);
     const [busy, setBusy] = useState(false);
     const [submitted, setSubmitted] = useState<{ scope: string; epoch: number; job: IBridgeJob }>();
     const lock = useRef(false);
@@ -54,16 +55,18 @@ export const KnowledgeSync: FC<{
         currentScope.current = { scope, epoch: currentScope.current.epoch + 1 };
     }
     const epoch = currentScope.current.epoch;
-    const request = useRef<{
-        scope: string;
-        epoch: number;
-        kind: TKnowledgeJobKind;
-        key: string;
-        accepted?: IBridgeJob;
-    }>();
-    if (request.current?.scope !== scope || request.current.epoch !== epoch) {
-        request.current = undefined;
-    }
+    const journalOwner = durableJournalOwner(user, baseApi.defaults.baseURL || window.location.origin);
+    const journal = useMemo(
+        () =>
+            knowledgeSyncJournal(
+                journalOwner,
+                user?.activeRole || '',
+                bridge.device?.id || '',
+                projectId,
+                binding?.bindingId || '',
+            ),
+        [journalOwner, user?.activeRole, bridge.device?.id, projectId, binding?.bindingId],
+    );
     const accepted = submitted?.scope === scope && submitted.epoch === epoch ? submitted.job : undefined;
     const job = currentKnowledgeJob(
         bridge.jobs,
@@ -79,15 +82,13 @@ export const KnowledgeSync: FC<{
         job?.kind === 'sync-rag' &&
         job.state === 'failed' &&
         job.message.startsWith('Происхождение векторов не подтверждено.');
-    if (request.current?.accepted && !pending) {
-        request.current = undefined;
-    }
     const sequence = useRef(0);
     useEffect(() => {
         sequence.current++;
         lock.current = false;
         setBusy(false);
         setError('');
+        setRecoveredTerminal(false);
         setSubmitted(undefined);
         return () => {
             sequence.current++;
@@ -95,6 +96,29 @@ export const KnowledgeSync: FC<{
             confirmation.current = undefined;
         };
     }, [scope]);
+    useEffect(() => {
+        const owns = captureOwner();
+        const ticket = ++sequence.current;
+        let active = true;
+        const current = () =>
+            active &&
+            ticket === sequence.current &&
+            owns() &&
+            currentScope.current.scope === scope &&
+            currentScope.current.epoch === epoch;
+        void journal
+            .recover(current)
+            .then((job) => {
+                if (current() && job) setSubmitted({ scope, epoch, job });
+            })
+            .catch((cause) => {
+                if (current())
+                    setError(errorMessage(cause, 'Не удалось прочитать журнал синхронизации. Исходный ключ сохранён.'));
+            });
+        return () => {
+            active = false;
+        };
+    }, [journal, scope, epoch, captureOwner]);
     useEffect(() => {
         // Свежий итог заменяет локальный queued ACK и переживает следующий отказ чтения.
         if (
@@ -118,7 +142,7 @@ export const KnowledgeSync: FC<{
                 bridge.device?.id,
                 projectId,
                 binding?.bindingId,
-                request.current?.accepted,
+                accepted,
                 bridge.jobsReady,
             ),
         );
@@ -148,27 +172,11 @@ export const KnowledgeSync: FC<{
             currentScope.current.epoch === epoch;
         setBusy(true);
         setError('');
+        setRecoveredTerminal(false);
         try {
-            // Потерянный ответ повторяет исходный POST; смена направления означает новое действие.
-            if (request.current?.kind !== kind) {
-                request.current = undefined;
-            }
-            const saved = request.current ?? { scope, epoch, kind, key: createBridgeRequestKey() };
-            request.current = saved;
-            const acceptedJob = await bridgeApi.create({
-                deviceId: bridge.device.id,
-                projectId,
-                kind,
-                expectedBindingId: binding.bindingId,
-                requestKey: saved.key,
-            });
-            if (current()) {
-                if (!validKnowledgeAck(acceptedJob, bridge.device.id, projectId, binding.bindingId!, kind)) {
-                    throw new Error(
-                        'Сервер вернул неполное подтверждение задания. Повторите отправку: исходный ключ сохранён.',
-                    );
-                }
-                saved.accepted = acceptedJob;
+            const acceptedJob = await journal.submit(kind, current);
+            if (current() && acceptedJob) {
+                setRecoveredTerminal(!isPending(acceptedJob));
                 setSubmitted({ scope, epoch, job: acceptedJob });
                 void bridge.reload().catch(() => {
                     if (current()) {
@@ -249,8 +257,7 @@ export const KnowledgeSync: FC<{
         if (!owns() || lock.current || currentScope.current.scope !== scope || currentScope.current.epoch !== epoch) {
             return;
         }
-        const saved = request.current,
-            ticket = ++sequence.current;
+        const ticket = ++sequence.current;
         const current = (): boolean =>
             owns() &&
             ticket === sequence.current &&
@@ -260,34 +267,8 @@ export const KnowledgeSync: FC<{
         setBusy(true);
         setError('');
         try {
-            // Завершённое задание могло выпасть из последних 100 записей: исходный POST возвращает его по тому же ключу.
-            if (
-                saved?.accepted &&
-                bridge.jobsReady &&
-                !bridge.loading &&
-                bridge.device &&
-                binding &&
-                !bridge.jobs.some((item) => item.id === saved.accepted!.id)
-            ) {
-                const reconciled = await bridgeApi.create({
-                    deviceId: bridge.device.id,
-                    projectId,
-                    kind: saved.kind,
-                    expectedBindingId: binding.bindingId,
-                    requestKey: saved.key,
-                });
-                if (!current() || request.current !== saved) {
-                    return;
-                }
-                if (
-                    !validKnowledgeAck(reconciled, bridge.device.id, projectId, binding.bindingId!, saved.kind) ||
-                    reconciled.id !== saved.accepted.id
-                ) {
-                    throw new Error('Не удалось подтвердить исходное задание. Сохранён прежний ключ запроса.');
-                }
-                saved.accepted = reconciled;
-                setSubmitted({ scope, epoch, job: reconciled });
-            }
+            const reconciled = await journal.recover(current);
+            if (current() && reconciled) setSubmitted({ scope, epoch, job: reconciled });
             if (current()) {
                 void bridge.reload().catch(() => {
                     if (current()) {
@@ -455,6 +436,9 @@ export const KnowledgeSync: FC<{
                         Обновить состояние задания
                     </Button>
                 </>
+            )}
+            {recoveredTerminal && (
+                <Alert role="status" type="info" message="Предыдущая операция завершена; можно запустить снова." />
             )}
             {error && <Alert role="alert" type="error" message={error} />}
         </Space>
