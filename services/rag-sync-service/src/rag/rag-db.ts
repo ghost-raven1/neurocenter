@@ -40,6 +40,7 @@ import {
     IDENTITY_MIGRATION,
     PROJECT_TEXT_MIGRATION,
     PROJECT_TEXT_LIMITS_MIGRATION,
+    PROJECT_TEXT_SEARCH_MIGRATION,
 } from '../database/migration-definitions';
 import { RagGenerations, ensureGenerationSearchIndex } from './rag-generations';
 import { buildUpsert, parseVector, type IUpsertRow } from './rag-rows';
@@ -108,7 +109,11 @@ export class RagDb {
         if (!(await checkRagQuotaMigration(this.pool))) throw new Error('Миграция квоты RAG не подтверждена.');
         await migrateRag(this.pool, [PLATFORM_QUOTA_CACHE_MIGRATION]);
         if (this.scope === 'project')
-            await migrateRag(this.pool, [PROJECT_TEXT_MIGRATION, PROJECT_TEXT_LIMITS_MIGRATION]);
+            await migrateRag(this.pool, [
+                PROJECT_TEXT_MIGRATION,
+                PROJECT_TEXT_LIMITS_MIGRATION,
+                PROJECT_TEXT_SEARCH_MIGRATION,
+            ]);
         if (this.scope === 'base') {
             await migrateRag(this.pool, [PLATFORM_QUOTA_MIGRATION]);
             await seedPlatformQuotaPolicy(this.pool);

@@ -49,7 +49,7 @@ function physicalSchema(migration: IRagMigration, rows: IAppliedMigration[]): IR
             item.replacesSchemaOf?.includes(migration.version) && rows.some((row) => row.version === item.version),
     );
     if (successors.length > 1) throw historyError();
-    return successors[0] ?? migration;
+    return successors[0] ? physicalSchema(successors[0], rows) : migration;
 }
 
 /** Frozen quota SQL has its own ledger; both its history and actual enforcement must remain intact. */

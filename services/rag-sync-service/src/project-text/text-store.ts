@@ -196,9 +196,9 @@ export class ProjectTextStore {
                 query_lexemes: string[];
             }>(
                 `SELECT d.id,d.path,d.content,
-                ts_rank_cd(d.search_vector,plainto_tsquery('simple',$2),32) AS score,
-                tsvector_to_array(to_tsvector('simple',$2)) AS query_lexemes
-                FROM project_text_documents d WHERE d.project_key=$1 AND d.search_vector @@ plainto_tsquery('simple',$2)
+                ts_rank_cd(d.search_vector,plainto_tsquery('simple',public.neurocenter_text_search_fold($2)),32) AS score,
+                tsvector_to_array(to_tsvector('simple',public.neurocenter_text_search_fold($2))) AS query_lexemes
+                FROM project_text_documents d WHERE d.project_key=$1 AND d.search_vector @@ plainto_tsquery('simple',public.neurocenter_text_search_fold($2))
                 ORDER BY score DESC,d.path COLLATE "C",d.id LIMIT $3`,
                 [projectId, input.query, admission.limits.sources],
             );

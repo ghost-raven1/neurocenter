@@ -1,3 +1,4 @@
+import { PROJECT_TEXT_SEARCH_SCHEMA, PROJECT_TEXT_SEARCH_OBJECTS } from '../project-text/text-search-schema';
 import { createHash } from 'node:crypto';
 import { RAG_GENERATION_SCHEMA } from '../rag/rag-generation-schema';
 import { RAG_QUOTA_MIGRATION, RAG_QUOTA_SCHEMA } from '../rag/quota/rag-quota-schema';
@@ -86,6 +87,17 @@ export const PROJECT_TEXT_LIMITS_MIGRATION: IRagMigration = {
     replacesSchemaOf: [PROJECT_TEXT_MIGRATION.version],
     schemaSha256: '9f2a2baca7b62be7e5c067e41a74073b7c1ff4da778d1ac655d84d86c55f9a3d',
 };
+/** Physical successor recomputes persisted vectors without rewriting source documents or receipts. */
+export const PROJECT_TEXT_SEARCH_MIGRATION: IRagMigration = {
+    version: 'project-text-search-1',
+    name: 'project-text-russian-case-fold',
+    scope: 'project',
+    sql: PROJECT_TEXT_SEARCH_SCHEMA,
+    objects: PROJECT_TEXT_SEARCH_OBJECTS,
+    lockTables: ['rag_chunks', 'rag_storage_budget'],
+    replacesSchemaOf: [PROJECT_TEXT_LIMITS_MIGRATION.version],
+    schemaSha256: 'e5cf63d1f3e464f5f6c246a9b8cb71a91aa393080753cddb032d6605880fadb9',
+};
 export const RAG_MIGRATIONS = [
     GENERATION_MIGRATION,
     LIFECYCLE_MIGRATION,
@@ -94,6 +106,7 @@ export const RAG_MIGRATIONS = [
     PLATFORM_QUOTA_CACHE_MIGRATION,
     PROJECT_TEXT_MIGRATION,
     PROJECT_TEXT_LIMITS_MIGRATION,
+    PROJECT_TEXT_SEARCH_MIGRATION,
 ] as const;
 export const QUOTA_MIGRATION: IRagMigration = {
     version: RAG_QUOTA_MIGRATION,
