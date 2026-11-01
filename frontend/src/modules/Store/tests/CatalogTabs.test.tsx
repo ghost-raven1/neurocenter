@@ -30,7 +30,7 @@ vi.mock('react-redux', () => ({
         }),
 }));
 vi.mock('../../../features/FeatureFlags/FeatureAvailability', () => ({
-    useFeatureAvailability: () => ({ enabled: io.enabled }),
+    useFeatureAvailability: () => ({ enabled: io.enabled, known: true }),
 }));
 vi.mock('../../../features/AssetSources/AssetSources', () => ({
     default: ({ embedded }: { embedded?: boolean }) => {
