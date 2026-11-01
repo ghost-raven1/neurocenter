@@ -1,3 +1,4 @@
+import type { ITextContext } from '@neurocenter/project-text-knowledge';
 import { useEffect, useState } from 'react';
 import { useAuthRequestOwner } from '../../UserBlock/hooks/useAuthRequestOwner';
 import { errorMessage } from '../../../common/utils/errorMessage';
@@ -11,6 +12,7 @@ export function useChatContext(
     prompt: string,
     attachmentIds: string[],
     enabled = true,
+    textContext?: ITextContext,
 ) {
     const { captureOwner } = useAuthRequestOwner();
     const recipients =
@@ -25,6 +27,7 @@ export function useChatContext(
         recipients?.ids,
         recipients?.error,
         enabled,
+        textContext,
     ]);
     const [state, setState] = useState<{
         key: string;
@@ -38,7 +41,7 @@ export function useChatContext(
             owns = captureOwner();
         const timer = setTimeout(() => {
             void modelChatApi
-                .context(detail.conversation.id, prompt, attachmentIds, abort.signal, recipients?.ids)
+                .context(detail.conversation.id, prompt, attachmentIds, abort.signal, recipients?.ids, textContext)
                 .then((context) => {
                     if (owns() && !abort.signal.aborted) setState({ key, context });
                 })
@@ -64,7 +67,7 @@ export function useChatContext(
         };
     }, [key, captureOwner]);
     if (!enabled || recipients?.error) return { context: undefined, error: '', rejected: false, loading: false };
-    const baseline = !prompt && !attachmentIds.length ? detail?.context : undefined;
+    const baseline = !prompt && !attachmentIds.length && !textContext ? detail?.context : undefined;
     return {
         context: state.key === key ? state.context : baseline,
         error: state.key === key ? state.error : '',

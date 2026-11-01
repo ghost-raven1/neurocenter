@@ -1,3 +1,5 @@
+import { ChatTextContext } from './ChatTextContext/ChatTextContext';
+import { useChatTextContext } from './hooks/useChatTextContext';
 import type { IChatWorkspaceNavigation } from './ChatWorkspace.interfaces';
 import {
     DeleteOutlined,
@@ -61,6 +63,7 @@ export function ChatWorkspace({
         () => navigation?.initialDetail?.conversation.id ?? crypto.randomUUID(),
     );
     const agentTools = useAgentTools(JSON.stringify([model.id, toolsDraftIdentity]), projectId);
+    const textContext = useChatTextContext(model.id, projectId, chat.detail?.conversation.id);
     const [draft, setDraft] = useState(''),
         [fileError, setFileError] = useState(''),
         [preview, setPreview] = useState<string>();
@@ -76,7 +79,7 @@ export function ChatWorkspace({
         [title, setTitle] = useState('');
     const [actionsOpen, setActionsOpen] = useState(false);
     const [toolPanel, setToolPanel] = useState<{
-        pane: 'context' | 'research' | 'files';
+        pane: 'context' | 'research' | 'files' | 'text';
         scope: string;
         owns: () => boolean;
     }>();
@@ -91,7 +94,7 @@ export function ChatWorkspace({
     const participantScope = JSON.stringify([projectId, model.id, chat.detail?.conversation.id]),
         participantRoot = JSON.stringify([projectId, model.id]);
     const activeTool = toolPanel?.scope === participantScope && toolPanel.owns() ? toolPanel.pane : undefined;
-    const openTool = (pane: 'context' | 'research' | 'files', open: boolean): void => {
+    const openTool = (pane: 'context' | 'research' | 'files' | 'text', open: boolean): void => {
         const owns = chat.captureOwner();
         if (!owns() || participantScope !== liveParticipantScope.current.scope) return;
         if (open) setToolPanel({ pane, scope: participantScope, owns });
@@ -120,10 +123,11 @@ export function ChatWorkspace({
         draft,
         chat.attachments.map((file) => file.id),
         availability.enabled,
+        textContext.selection,
     );
     const unresolved = chat.turns.some(modelChatTurnUnresolved),
         disabled = !!chat.activity || unresolved || !!chat.blocked || !!navigation?.opening || !availability.enabled;
-    const hasDraft = !!draft.trim() || !!chat.uploads.length;
+    const hasDraft = !!draft.trim() || !!chat.uploads.length || !!textContext.selection;
     useEffect(() => () => confirmation.current?.destroy(), []);
     useEffect(() => {
         setToolPanel(undefined);
@@ -181,6 +185,7 @@ export function ChatWorkspace({
                 if (ok && owns()) {
                     setDraft('');
                     research.reset();
+                    textContext.clear();
                     setToolsDraftIdentity(crypto.randomUUID());
                     setFileError('');
                     setPreview(undefined);
@@ -205,6 +210,7 @@ export function ChatWorkspace({
                 if (ok && owns()) {
                     setDraft('');
                     research.reset();
+                    textContext.clear();
                     setToolsDraftIdentity(id);
                     setFileError('');
                     setPreview(undefined);
@@ -214,17 +220,26 @@ export function ChatWorkspace({
         }, 'Открыть другой диалог?');
     };
     const researchBlocked = research.enabled && (!researchAvailable.enabled || !research.request);
+    const textBlocked =
+        !!textContext.selection && (!textContext.availability.enabled || research.enabled || agentTools.draft.enabled);
     const toolsConflict = research.enabled && agentTools.draft.enabled,
         toolsBlocked = agentTools.blocked || toolsConflict;
     const systemMention = !!chatSystemRoleMention(draft, chat.detail?.participants).agentId;
     const send = (): void => {
-        if (!availability.enabled || researchBlocked || toolsBlocked) return;
+        if (!availability.enabled || researchBlocked || toolsBlocked || textBlocked) return;
         const started = agentTools.request
-            ? chat.send(draft, research.request, agentTools.request, agentTools.afterSubmission())
-            : chat.send(draft, research.request);
+            ? chat.send(
+                  draft,
+                  research.request,
+                  agentTools.request,
+                  agentTools.afterSubmission(),
+                  textContext.selection,
+              )
+            : chat.send(draft, research.request, undefined, undefined, textContext.selection);
         if (started) {
             setDraft('');
             research.reset();
+            textContext.clear();
             setFileError('');
         }
     };
@@ -235,6 +250,7 @@ export function ChatWorkspace({
         if (owns() && value !== undefined) {
             setDraft(value);
             research.restore(previous?.research);
+            textContext.restore(previous?.textContext?.selection);
             agentTools.restore(previous?.agentTools);
         }
     };
@@ -254,6 +270,7 @@ export function ChatWorkspace({
                     if (ok && owns()) {
                         setDraft('');
                         research.reset();
+                        textContext.clear();
                         setPreview(undefined);
                     }
                 }
@@ -603,6 +620,19 @@ export function ChatWorkspace({
                                 onRetryUpload={chat.retryUpload}
                                 onRemoveUpload={chat.removeUpload}
                             />
+                            <ChatTextContext
+                                projectId={projectId}
+                                value={textContext}
+                                disabled={disabled}
+                                conflicting={research.enabled || agentTools.draft.enabled}
+                                onUseTextContext={() => {
+                                    if (disabled || !chat.captureOwner()()) return;
+                                    research.setEnabled(false);
+                                    agentTools.disable();
+                                }}
+                                open={activeTool === 'text'}
+                                onOpenChange={(open) => openTool('text', open)}
+                            />
                             <div className="model-chat__tools">
                                 <ChatContextMeter
                                     context={context.context}
@@ -664,6 +694,7 @@ export function ChatWorkspace({
                                     !chat.uploads.length &&
                                     !contextBlocked &&
                                     !researchBlocked &&
+                                    !textBlocked &&
                                     (!toolsBlocked || systemMention) &&
                                     (!!draft.trim() || !!chat.attachments.length)
                                 }

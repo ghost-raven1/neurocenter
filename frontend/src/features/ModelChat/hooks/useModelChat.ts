@@ -1,3 +1,5 @@
+import { TEXT_KNOWLEDGE_CEILINGS, normalizeTextContext, type ITextContext } from '@neurocenter/project-text-knowledge';
+import { useFeatureAvailability } from '../../FeatureFlags/FeatureAvailability';
 import { useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../../UserBlock/hooks/useAuthRequestOwner';
@@ -48,6 +50,7 @@ export function useModelChat(
     selection?: { initialDetail?: IModelChatDetail; autoSelect: boolean },
 ) {
     const { scope, captureOwner } = useAuthRequestOwner();
+    const textAvailability = useFeatureAvailability('project_text_knowledge');
     const [items, setItems] = useState<IModelChatConversation[]>(
             selection?.initialDetail ? [selection.initialDetail.conversation] : [],
         ),
@@ -410,6 +413,7 @@ export function useModelChat(
         research?: IChatResearchRequest,
         agentTools?: IAgentToolGrant,
         onAccepted?: () => void,
+        textContext?: ITextContext,
     ): boolean => {
         if (!mounted.current || active.current || blocked || !captureOwner()()) return false;
         const original = current.current,
@@ -437,8 +441,17 @@ export function useModelChat(
             setError('Выберите один способ: инструменты агентов или исследование источников. Текст и выбор сохранены.');
             return false;
         }
+        const selectedText = previous ? previous.textContext?.selection : textContext;
+        if (selectedText && (!projectId || !textAvailability.enabled || consent || toolGrant)) {
+            setError(
+                'Текстовый контекст сейчас недоступен или выбран вместе с другим режимом. Сообщение и выбор сохранены.',
+            );
+            return false;
+        }
+        const acceptedText = selectedText && normalizeTextContext(selectedText, TEXT_KNOWLEDGE_CEILINGS);
         const acceptedTools = toolGrant && structuredClone(toolGrant);
         const temporary: IModelChatTurn = {
+            ...(acceptedText ? { textContext: { selection: acceptedText } } : {}),
             ...(consent ? { research: consent } : {}),
             ...(acceptedTools ? { agentTools: acceptedTools } : {}),
             id: previous?.id ?? `client:${requestId}`,
@@ -488,7 +501,8 @@ export function useModelChat(
                               signal,
                               original?.conversation.mode === 'group' ? temporary.targetAgentIds : undefined,
                               consent,
-                              ...(acceptedTools ? [acceptedTools] : []),
+                              acceptedTools,
+                              acceptedText,
                           );
                 if (owns() && liveModelPin.current === expectedPin) {
                     accept(result);
@@ -529,9 +543,10 @@ export function useModelChat(
         research?: IChatResearchRequest,
         agentTools?: IAgentToolGrant,
         onAccepted?: () => void,
+        textContext?: ITextContext,
     ): boolean => {
         if ((pending.current && modelChatTurnUnresolved(pending.current)) || fileRows.current.length) return false;
-        return generate(prompt, unusedIds(current.current), undefined, research, agentTools, onAccepted);
+        return generate(prompt, unusedIds(current.current), undefined, research, agentTools, onAccepted, textContext);
     };
     const retry = (): void => {
         const tail = pending.current ?? current.current?.turns[current.current.turns.length - 1];

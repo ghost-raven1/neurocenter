@@ -1,3 +1,4 @@
+import { normalizeTextContext, TEXT_KNOWLEDGE_CEILINGS } from '../../../shared/project-text-knowledge.cjs';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 
@@ -78,4 +79,13 @@ export function chatUpload(value: unknown): { name: string; bytes: Buffer; reque
         requestId: chatUuid(body.requestId),
         hash: chatHash([body.name.trim(), createHash('sha256').update(bytes).digest('hex')]),
     };
+}
+
+/** Preview and send accept the same pinned text corpus selection. */
+export function chatTextContext(value: unknown) {
+    try {
+        return value === undefined ? undefined : normalizeTextContext(value, TEXT_KNOWLEDGE_CEILINGS);
+    } catch (error) {
+        throw new BadRequestException((error as Error).message);
+    }
 }

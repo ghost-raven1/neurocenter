@@ -1,3 +1,4 @@
+import type { ITextContext } from '@neurocenter/project-text-knowledge';
 import type { ICatalogModel } from '../ModelCatalog/interfaces';
 
 import type { IAgentToolGrant } from '../AgentTools/interfaces';
@@ -18,6 +19,9 @@ export interface IChatProjectSource {
     excerpt: string;
 }
 export interface IChatProjectEvidence {
+    mode?: 'text';
+    textRevision?: number;
+    corpusHash?: string;
     status: 'none' | 'metadata' | 'ready' | 'empty' | 'unavailable';
     project?: { id: string; name: string; state: string; headRevision: number };
     generation?: string;
@@ -57,6 +61,7 @@ export interface IModelChatResponse {
     error?: string;
 }
 export interface IModelChatTurn {
+    textContext?: { selection: ITextContext; evidence?: IChatProjectEvidence };
     id: string;
     requestId: string;
     prompt: string;

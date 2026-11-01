@@ -1,3 +1,4 @@
+import { TEXT_KNOWLEDGE_CEILINGS, normalizeTextContext } from '@neurocenter/project-text-knowledge';
 import type { IModelChatTurn } from '../interfaces';
 
 const prefix = 'neurocenter:model-chat-submit:v1:';
@@ -91,6 +92,16 @@ export function readModelChatSubmission(key: string): IModelChatTurn | null {
                     ? turn.error.slice(0, 2000)
                     : 'Результат запроса не подтверждён. Можно явно повторить запрос с прежним ключом.',
             ...(turn.targetAgentIds ? { targetAgentIds: turn.targetAgentIds } : {}),
+            ...(turn.textContext
+                ? {
+                      textContext: {
+                          selection: normalizeTextContext(
+                              (turn.textContext as { selection: unknown }).selection,
+                              TEXT_KNOWLEDGE_CEILINGS,
+                          ),
+                      },
+                  }
+                : {}),
             ...(turn.research ? { research: turn.research as IModelChatTurn['research'] } : {}),
             ...(turn.agentTools ? { agentTools: turn.agentTools as IModelChatTurn['agentTools'] } : {}),
         };
@@ -102,12 +113,32 @@ export function readModelChatSubmission(key: string): IModelChatTurn | null {
 /** Persist before dispatch so clearing the composer cannot discard an unacknowledged request. */
 export function saveModelChatSubmission(key: string, turn: IModelChatTurn): boolean {
     try {
-        const { requestId, prompt, attachmentIds, createdAt, targetAgentIds, research, agentTools, error } = turn;
+        const {
+            requestId,
+            prompt,
+            attachmentIds,
+            createdAt,
+            targetAgentIds,
+            research,
+            agentTools,
+            textContext,
+            error,
+        } = turn;
         sessionStorage.setItem(
             key,
             JSON.stringify({
                 version: 1,
-                turn: { requestId, prompt, attachmentIds, createdAt, targetAgentIds, research, agentTools, error },
+                turn: {
+                    requestId,
+                    prompt,
+                    attachmentIds,
+                    createdAt,
+                    targetAgentIds,
+                    research,
+                    agentTools,
+                    ...(textContext ? { textContext: { selection: textContext.selection } } : {}),
+                    error,
+                },
             }),
         );
         return true;

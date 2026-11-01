@@ -29,6 +29,9 @@ export function ChatProjectContext({
             </summary>
             <div className="model-chat__project-context-body">
                 {evidence.project && <Typography.Text strong>{evidence.project.name}</Typography.Text>}
+                {evidence.mode === 'text' && (
+                    <Typography.Text>Текстовая база · ревизия {evidence.textRevision}</Typography.Text>
+                )}
                 {evidence.message && <p>{evidence.message}</p>}
                 {!answer && evidence.status !== 'metadata' && (
                     <p>

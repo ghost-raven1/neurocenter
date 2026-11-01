@@ -1,3 +1,4 @@
+import type { ITextContext } from '@neurocenter/project-text-knowledge';
 import api from '../../core/api/base';
 import chatDeadline from '../../../../services/shared/model-chat-deadline.json';
 import type { ICatalogModel } from '../ModelCatalog/interfaces';
@@ -97,6 +98,7 @@ export const modelChatApi = {
         targetAgentIds?: string[],
         research?: IChatResearchRequest,
         agentTools?: IAgentToolGrant,
+        textContext?: ITextContext,
     ) =>
         api
             .post<IModelChatDetail>(
@@ -110,6 +112,7 @@ export const modelChatApi = {
                     ...(targetAgentIds?.length ? { targetAgentIds } : {}),
                     ...(research ? { research } : {}),
                     ...(agentTools ? { agentTools } : {}),
+                    ...(textContext ? { textContext } : {}),
                 },
                 { signal, timeout: chatDeadline.clientTimeoutMs },
             )
@@ -166,11 +169,23 @@ export const modelChatApi = {
                 signal,
             })
             .then((value) => value.data),
-    context: (id: string, prompt: string, attachmentIds: string[], signal: AbortSignal, targetAgentIds?: string[]) =>
+    context: (
+        id: string,
+        prompt: string,
+        attachmentIds: string[],
+        signal: AbortSignal,
+        targetAgentIds?: string[],
+        textContext?: ITextContext,
+    ) =>
         api
             .post<IModelChatContext>(
                 `${chatRoute(id)}/context-preview`,
-                { prompt, attachmentIds, ...(targetAgentIds?.length ? { targetAgentIds } : {}) },
+                {
+                    prompt,
+                    attachmentIds,
+                    ...(targetAgentIds?.length ? { targetAgentIds } : {}),
+                    ...(textContext ? { textContext } : {}),
+                },
                 { signal },
             )
             .then((value) => value.data),

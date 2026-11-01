@@ -1,4 +1,3 @@
-import { normalizeTextContext, TEXT_KNOWLEDGE_CEILINGS } from '../../../shared/project-text-knowledge.cjs';
 import { runModelChatAgentTools } from '../agent-tools/agent-tools.model-chat';
 import { traceSavedChat } from '../../../shared/dev-trace.cjs';
 import { AgentToolsService } from '../agent-tools/agent-tools.service';
@@ -75,6 +74,7 @@ import {
     CHAT_TEXT_BYTES,
     chatAttachmentIds,
     chatBody,
+    chatTextContext,
     chatChanged,
     chatHash,
     chatPin,
@@ -539,24 +539,39 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         return this.read(req, id);
     }
     async preview(req: Request, id: string, raw: unknown) {
-        const body = chatBody(raw, ['prompt', 'attachmentIds', 'targetAgentIds']),
+        const body = chatBody(raw, ['prompt', 'attachmentIds', 'targetAgentIds', 'textContext']),
             prompt = chatPrompt(body.prompt ?? '', true),
             ids = chatAttachmentIds(body.attachmentIds ?? []),
             scope = await this.scope(req, id);
         const targets = body.targetAgentIds === undefined ? undefined : chatAgentIds(body.targetAgentIds, true);
+        const textContext = chatTextContext(body.textContext);
+        if (textContext && !scope.row.project_id)
+            throw new BadRequestException('Текстовый контекст доступен только в диалоге проекта.');
         return this.repository.owned(
             scope.owner,
             id,
             () => scope.authorize(),
             async (db, row) => {
-                return this.contextFor(
+                const selected = textContext
+                    ? await this.projectContext.prepareText(
+                          req,
+                          row.project_id!,
+                          textContext,
+                          new AbortController().signal,
+                      )
+                    : undefined;
+                const context = await this.contextFor(
                     req,
                     db,
                     row,
                     await scope.authorize(),
                     prompt || ids.length ? await this.inputText(db, id, prompt, ids) : undefined,
                     targets,
+                    true,
+                    selected?.messages,
                 );
+                await selected?.assertCurrent();
+                return context;
             },
         );
     }
@@ -582,15 +597,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             research = chatResearchInput(body.research, scope.row.project_id),
             agentTools = agentToolGrant(body.agentTools, scope.row.project_id),
             values = scope.row.mode === 'group' ? [prompt, ids, targets] : [prompt, ids];
-        let textContext;
-        try {
-            textContext =
-                body.textContext === undefined
-                    ? undefined
-                    : normalizeTextContext(body.textContext, TEXT_KNOWLEDGE_CEILINGS);
-        } catch (error) {
-            throw new BadRequestException((error as Error).message);
-        }
+        const textContext = chatTextContext(body.textContext);
         if (textContext && (!scope.row.project_id || research || agentTools))
             throw new BadRequestException(
                 'Выберите текстовый контекст проекта отдельно от исследования и инструментов.',
@@ -1473,10 +1480,11 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         draft?: string,
         targets?: string[],
         strict = true,
+        projectMessages: IChatMessage[] = [],
     ): Promise<IChatContext> {
         if (row.mode !== 'group') {
             if (targets?.length) throw new BadRequestException('Адресаты доступны в групповом диалоге.');
-            return (await this.state(db, row, model, draft)).context;
+            return (await this.state(db, row, model, draft, projectMessages)).context;
         }
         const plans = strict
             ? await this.groups.plan(req, row, model, targets, db)
@@ -1496,7 +1504,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
                         row,
                         agent.model,
                         draft,
-                        [{ role: 'system', content: agent.snapshot.definition.prompt }],
+                        [...projectMessages, { role: 'system', content: agent.snapshot.definition.prompt }],
                         agent.snapshot.modelPin,
                     )
                 ).context,
