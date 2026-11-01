@@ -7,8 +7,9 @@ import { Alert, Button, Collapse, Form, Input, Modal, Radio, Space, Typography }
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../../../features/UserBlock/hooks/useAuthRequestOwner';
-import { packagingEntrypoints, readPackagingFiles } from './sourceFiles';
-import { readPackagingArchive } from './sourceArchive';
+import { packagingEntrypoints } from './sourceFiles';
+import { usePackagingSourceRead } from './hooks/usePackagingSourceRead';
+import { SourceReadHelp } from './SourceReadHelp/SourceReadHelp';
 import { SourceFilesPicker } from './SourceFilesPicker';
 import { useNpmMetadata } from './hooks/useNpmMetadata';
 import { useRepositoryMetadata } from './hooks/useRepositoryMetadata';
@@ -69,11 +70,10 @@ export const ToolPackagingModal: FC<IProps> = ({ open, start, scope, projectId, 
     const [archiveName, setArchiveName] = useState('');
     const [entrypoint, setEntrypoint] = useState('');
     const [reading, setReading] = useState(false);
+    const [pythonHandoff, setPythonHandoff] = useState<object>();
     const [preparing, setPreparing] = useState(false);
     const [error, setError] = useState('');
-    const archiveRequest = useRef<AbortController>();
     const alive = useRef(true);
-    const readRequest = useRef(0);
     const preparation = useRef(0);
     const manualEntrypoint = useRef(false);
     const explicitKind = useRef<{ source: string; package?: string }>();
@@ -91,6 +91,7 @@ export const ToolPackagingModal: FC<IProps> = ({ open, start, scope, projectId, 
     const upload = useSourceUpload(scope, captureOwner);
     const appliedStart = useRef<typeof start>();
     const view = useMemo(() => ({}), [open, scope, projectId, captureOwner]);
+    useEffect(() => setPythonHandoff(undefined), [view, source]);
     const currentView = useRef(view);
     currentView.current = view;
     const closeRevision = useRef(0);
@@ -289,15 +290,8 @@ export const ToolPackagingModal: FC<IProps> = ({ open, start, scope, projectId, 
         alive.current = true;
         return () => {
             alive.current = false;
-            readRequest.current++;
-            archiveRequest.current?.abort();
         };
     }, []);
-    useEffect(() => {
-        readRequest.current++;
-        archiveRequest.current?.abort();
-        setReading(false);
-    }, [view, source]);
     useEffect(() => {
         // A handoff selects the archive picker after recovery, without replacing an existing request.
         if (
@@ -393,56 +387,48 @@ export const ToolPackagingModal: FC<IProps> = ({ open, start, scope, projectId, 
 
     const available = useRef(availability.enabled);
     available.current = availability.enabled;
-    const readFiles = async (input: readonly File[], fromArchive = false): Promise<void> => {
-        if (!available.current || !input?.length || busy || build.unresolved || build.recoveryBlocked) return;
-        const selected = Array.from(input);
-        const request = ++readRequest.current;
-        const owns = captureOwner(),
-            closed = closeRevision.current;
-        const current = () =>
-            available.current &&
-            alive.current &&
-            request === readRequest.current &&
-            owns() &&
-            currentView.current === view &&
-            closeRevision.current === closed &&
-            readSourceKey.current === sourceKey;
-        archiveRequest.current?.abort();
-        const controller = new AbortController();
-        archiveRequest.current = controller;
-        manualEntrypoint.current = false;
-        explicitKind.current = undefined;
-        setKind('mcp');
-        setReading(true);
-        setError('');
-        setUploaded(undefined);
-        setEntrypoint('');
-        setArchiveName('');
-        try {
-            if (fromArchive && selected.length !== 1) throw new Error('Добавьте один архив за раз.');
-            const next = fromArchive
-                ? await readPackagingArchive(selected[0], controller.signal)
-                : await readPackagingFiles(selected);
-            if (!current()) return;
+    const sourceRead = usePackagingSourceRead({
+        context: view,
+        source: sourceKey,
+        enabled: availability.enabled,
+        blocked: busy || build.unresolved || build.recoveryBlocked,
+        captureCurrent: () => {
+            const owns = captureOwner(),
+                closed = closeRevision.current;
+            return () =>
+                available.current &&
+                alive.current &&
+                owns() &&
+                currentView.current === view &&
+                closeRevision.current === closed &&
+                readSourceKey.current === sourceKey;
+        },
+        onReading: setReading,
+        onStart: () => {
+            setError('');
+            setPythonHandoff(undefined);
+        },
+        onRead: async (next, selectedArchive, current) => {
             if (isPythonSourceUpload(next)) {
-                if (upload.blocked) throw new Error('Сначала восстановите состояние сохранённой загрузки.');
+                if (upload.blocked) throw Error('Сначала восстановите состояние сохранённой загрузки.');
                 const file = createPythonSourceUpload(next);
                 if (!current()) return;
-                setReading(false);
-                setSource('upload');
-                setUploadEntry(undefined);
+                // The upload owner switches source only after its durable intent exists; a resolved select is not proof of success.
+                setPythonHandoff(view);
                 await upload.select(file);
                 return;
             }
+            manualEntrypoint.current = false;
+            explicitKind.current = undefined;
+            setKind('mcp');
+            setEntrypoint('');
             setUploaded(next);
-            setArchiveName(fromArchive ? selected[0].name : '');
-        } catch (cause) {
-            if (current()) setError(errorMessage(cause, 'Не удалось прочитать исходники.'));
-        } finally {
-            if (current()) setReading(false);
-        }
-    };
+            setArchiveName(selectedArchive);
+        },
+    });
     const submit = async (): Promise<void> => {
+        sourceRead.clearError();
+        setPythonHandoff(undefined);
         if (!availability.enabled || build.cancelPending || build.cancelled || publication.blocked) return;
         if (busy) return;
         if (build.unresolved) {
@@ -1100,7 +1086,7 @@ export const ToolPackagingModal: FC<IProps> = ({ open, start, scope, projectId, 
                                     uploaded={uploaded}
                                     archiveName={archiveName}
                                     onSelect={(input, fromArchive) => {
-                                        void readFiles(input, fromArchive);
+                                        void sourceRead.read(input, fromArchive);
                                     }}
                                 />
                             </Form.Item>
@@ -1295,13 +1281,21 @@ export const ToolPackagingModal: FC<IProps> = ({ open, start, scope, projectId, 
                     action={<Button onClick={build.retryRecovery}>Повторить восстановление</Button>}
                 />
             )}
-            {(error || build.error) && (
+            {(error ||
+                build.error ||
+                sourceRead.error ||
+                (source === 'files' && pythonHandoff === view && upload.error)) && (
                 <Alert
                     className="tool-packaging__error"
                     type="error"
                     role="alert"
                     showIcon
-                    message={error || build.error}
+                    message={sourceRead.error || error || build.error || upload.error}
+                    description={
+                        sourceRead.error || (source === 'files' && pythonHandoff === view && upload.error) ? (
+                            <SourceReadHelp />
+                        ) : undefined
+                    }
                 />
             )}
         </Modal>
