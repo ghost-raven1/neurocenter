@@ -1,11 +1,11 @@
-import type { QuirkEntry, QuirksReceipt, QuirksSnapshot } from '../../../shared/project-learning-quirks.cjs';
+import type { IQuirkEntry, IQuirksReceipt, IQuirksSnapshot } from '../../../shared/project-learning-quirks.cjs';
 
 /** A late failure preserves every committed immutable observation and returns an explicit retry receipt. */
 export async function importQuirkSnapshot(
-    snapshot: QuirksSnapshot,
-    append: (entry: QuirkEntry) => Promise<boolean>,
+    snapshot: IQuirksSnapshot,
+    append: (entry: IQuirkEntry) => Promise<boolean>,
     authorize: () => Promise<void>,
-): Promise<QuirksReceipt> {
+): Promise<IQuirksReceipt> {
     let imported = 0,
         skipped = 0;
     try {

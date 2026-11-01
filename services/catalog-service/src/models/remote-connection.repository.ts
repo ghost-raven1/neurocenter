@@ -2,21 +2,21 @@ import { BadRequestException, ConflictException, NotFoundException, ServiceUnava
 import type { Pool, PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
 import { modelFromRow, nextModelRevision, saveModelVersion, type IModelRow } from './model-history';
-import type { IModel } from './model.types';
+import type { IModel } from './model.interfaces';
 import {
     canStoreModelCredential,
     openModelCredential,
     sealModelCredential,
     type ISealedModelCredential,
 } from './remote-model-secret';
+import { isRemoteModel } from './remote-model.utils';
 import {
-    isRemoteModel,
     type IRemoteConnectionInput,
     type IRemoteConnectionView,
     type IRemoteModelConnection,
-} from './remote-model.types';
+} from './remote-model.interfaces';
 import { assertRemoteModelOptions, remoteModelOptions, remoteModelTimeout } from './remote-model-options';
-import type { IRemoteModelOptions } from './remote-model.types';
+import type { IRemoteModelOptions } from './remote-model.interfaces';
 import { providerFence, remoteAuthMode } from '../remote-providers/remote-provider.identity';
 
 export interface IRemoteConnectionRow {
@@ -35,7 +35,7 @@ export interface IRemoteConnectionRow {
     failure_message: string | null;
     revoked_at: string | Date | null;
 }
-type Db = Pick<PoolClient, 'query'>;
+type TDb = Pick<PoolClient, 'query'>;
 const iso = (value: Date | string | null): string | null => (value ? new Date(value).toISOString() : null);
 const changed = () =>
     new ConflictException('Подключение или карточка модели изменились. Обновите данные перед повторной проверкой.');
@@ -46,7 +46,7 @@ export class RemoteConnectionRepository {
         private readonly pool: Pool,
         private readonly environment: NodeJS.ProcessEnv = process.env,
     ) {}
-    async head(id: string, db: Db = this.pool): Promise<IRemoteConnectionRow | null> {
+    async head(id: string, db: TDb = this.pool): Promise<IRemoteConnectionRow | null> {
         const result = await db.query<IRemoteConnectionRow>(
             'SELECT * FROM model_remote_connections WHERE model_id=$1 ORDER BY revision DESC LIMIT 1',
             [id],
@@ -340,7 +340,7 @@ export class RemoteConnectionRepository {
             timeoutMs: row.timeout_ms,
         };
     }
-    private async pin(db: Db, current: IModel, digest: string | null, dimension: number | null): Promise<IModel> {
+    private async pin(db: TDb, current: IModel, digest: string | null, dimension: number | null): Promise<IModel> {
         if ((current.verificationSha256 ?? null) === digest && current.dimension === dimension) return current;
         const {
             id: _id,
@@ -360,7 +360,7 @@ export class RemoteConnectionRepository {
         await saveModelVersion(db, result.rows[0]);
         return modelFromRow(result.rows[0]);
     }
-    private async lockModel(db: Db, id: string): Promise<IModel> {
+    private async lockModel(db: TDb, id: string): Promise<IModel> {
         const result = await db.query<IModelRow>('SELECT * FROM model_catalog WHERE id=$1 FOR UPDATE', [id]);
         if (!result.rows[0]) throw new NotFoundException('Модель отсутствует в каталоге.');
         const model = modelFromRow(result.rows[0]);
@@ -368,7 +368,7 @@ export class RemoteConnectionRepository {
             throw new BadRequestException('Эта модель использует управляемый серверный runtime.');
         return model;
     }
-    private async providerWriteFence(db: Db, id: string): Promise<void> {
+    private async providerWriteFence(db: TDb, id: string): Promise<void> {
         await db.query('SELECT pg_advisory_xact_lock_shared(72465381)');
         await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [providerFence(id)]);
     }

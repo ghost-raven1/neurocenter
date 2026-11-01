@@ -9,7 +9,7 @@ import bffApi from '../../../core/api/bff';
 import type { ISkillFile, ISkillListSummary } from '../../../core/api/interfaces';
 import { useAppDispatch } from '../../../core/hooks';
 import { skillCollectionManageKey, skillsPolitics } from '../../../features/UserBlock/permissions';
-import { RootState } from '../../../store';
+import { TRootState } from '../../../store';
 
 import { deleteSkill, fetchSkill, fetchSkillList, fetchSkillTree } from '../redux/actions';
 import { openEditor } from '../redux/reducers';
@@ -25,20 +25,18 @@ const { Text } = Typography;
 
 const SkillListTable: FC<ISkillListTableProps> = ({ dirPath }) => {
     const dispatch = useAppDispatch();
-    const { skills, listLoading } = useSelector((state: RootState) => state.skills);
-    const [ viewSkill, setViewSkill ] = useState<ISkillFile | null>(null);
-    const [ viewLoading, setViewLoading ] = useState(false);
-    const handleView = useCallback(
-        (path: string): void => {
-            setViewLoading(true);
-            setViewSkill(null);
-            bffApi.getSkill(path)
-                .then((file) => setViewSkill(file))
-                .catch(() => message.error('Не удалось загрузить скилл'))
-                .finally(() => setViewLoading(false));
-        },
-        [],
-    );
+    const { skills, listLoading } = useSelector((state: TRootState) => state.skills);
+    const [viewSkill, setViewSkill] = useState<ISkillFile | null>(null);
+    const [viewLoading, setViewLoading] = useState(false);
+    const handleView = useCallback((path: string): void => {
+        setViewLoading(true);
+        setViewSkill(null);
+        bffApi
+            .getSkill(path)
+            .then((file) => setViewSkill(file))
+            .catch(() => message.error('Не удалось загрузить скилл'))
+            .finally(() => setViewLoading(false));
+    }, []);
 
     const handleEdit = useCallback(
         (path: string): void => {
@@ -52,7 +50,7 @@ const SkillListTable: FC<ISkillListTableProps> = ({ dirPath }) => {
         (path: string): void => {
             dispatch(deleteSkill(path))
                 .unwrap()
-                .then(result => {
+                .then((result) => {
                     notifySkillMutation(result, 'Скилл удалён', 'delete');
                     dispatch(fetchSkillTree());
                     dispatch(fetchSkillList({ path: dirPath }));
@@ -73,18 +71,24 @@ const SkillListTable: FC<ISkillListTableProps> = ({ dirPath }) => {
             key: 'mcp',
             render: (_value, record) =>
                 record.meta.mcp.length > 0
-                    ? record.meta.mcp.map(item => <Tag key={item} color="blue">{item}</Tag>)
+                    ? record.meta.mcp.map((item) => (
+                          <Tag key={item} color="blue">
+                              {item}
+                          </Tag>
+                      ))
                     : '—',
         },
         {
             title: 'Плагины',
             key: 'plugins',
             render: (_value, record) =>
-                record.meta.plugins.length > 0
-                    ? record.meta.plugins.map(item => <Tag key={item}>{item}</Tag>)
-                    : '—',
+                record.meta.plugins.length > 0 ? record.meta.plugins.map((item) => <Tag key={item}>{item}</Tag>) : '—',
         },
-        { title: 'Обновлён', key: 'updatedAt', render: (_value, record) => new Date(record.meta.updatedAt).toLocaleDateString('ru-RU') },
+        {
+            title: 'Обновлён',
+            key: 'updatedAt',
+            render: (_value, record) => new Date(record.meta.updatedAt).toLocaleDateString('ru-RU'),
+        },
         {
             title: 'Действия',
             key: 'actions',
@@ -128,7 +132,11 @@ const SkillListTable: FC<ISkillListTableProps> = ({ dirPath }) => {
             <Modal
                 title={viewSkill ? `Скилл: ${viewSkill.meta.name}` : 'Скилл'}
                 open={viewLoading || !!viewSkill}
-                onCancel={() => { if (!viewLoading) { setViewSkill(null); } }}
+                onCancel={() => {
+                    if (!viewLoading) {
+                        setViewSkill(null);
+                    }
+                }}
                 onOk={() => setViewSkill(null)}
                 okText="Закрыть"
                 width="72%"
@@ -139,16 +147,43 @@ const SkillListTable: FC<ISkillListTableProps> = ({ dirPath }) => {
                             <Tag color="blue">v{viewSkill.meta.version}</Tag>
                             <Tag>slug: {viewSkill.meta.slug}</Tag>
                             <Tag>scope: {viewSkill.meta.scope}</Tag>
-                            {viewSkill.meta.tags.map(tag => <Tag key={tag} color="geekblue">{tag}</Tag>)}
+                            {viewSkill.meta.tags.map((tag) => (
+                                <Tag key={tag} color="geekblue">
+                                    {tag}
+                                </Tag>
+                            ))}
                         </Space>
                         {viewSkill.meta.description ? (
-                            <Typography.Paragraph style={{ marginBottom: 12 }}>{viewSkill.meta.description}</Typography.Paragraph>
+                            <Typography.Paragraph style={{ marginBottom: 12 }}>
+                                {viewSkill.meta.description}
+                            </Typography.Paragraph>
                         ) : null}
-                        <div style={{ border: '1px solid #e0e0e0', borderRadius: 6, padding: 12, maxHeight: '60vh', overflow: 'auto', background: '#fafafa' }}>
-                            <CodeBlock code={viewSkill.body} language="markdown" theme="light" style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 13, lineHeight: 1.5 }} />
+                        <div
+                            style={{
+                                border: '1px solid #e0e0e0',
+                                borderRadius: 6,
+                                padding: 12,
+                                maxHeight: '60vh',
+                                overflow: 'auto',
+                                background: '#fafafa',
+                            }}
+                        >
+                            <CodeBlock
+                                code={viewSkill.body}
+                                language="markdown"
+                                theme="light"
+                                style={{
+                                    margin: 0,
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    fontSize: 13,
+                                    lineHeight: 1.5,
+                                }}
+                            />
                         </div>
                         <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-                            Обновлено: {new Date(viewSkill.meta.updatedAt).toLocaleString('ru-RU')} · владелец: {viewSkill.meta.owner}
+                            Обновлено: {new Date(viewSkill.meta.updatedAt).toLocaleString('ru-RU')} · владелец:{' '}
+                            {viewSkill.meta.owner}
                         </Text>
                     </div>
                 ) : (
@@ -157,7 +192,6 @@ const SkillListTable: FC<ISkillListTableProps> = ({ dirPath }) => {
                     </div>
                 )}
             </Modal>
-
         </>
     );
 };

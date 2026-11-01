@@ -1,0 +1,540 @@
+import fs from 'node:fs/promises';
+import { constants } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
+if (!process.argv[2]) throw Error('Pass isolated prepared native runtime');
+const sourceRuntime = await fs.realpath(path.resolve(process.argv[2])),
+    temporary = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'nc-rag-reindex-native-')));
+const sha = (value) => createHash('sha256').update(value).digest('hex'),
+    hub = 'https://fixture.example.test',
+    state = path.join(temporary, 'private', sha(hub).slice(0, 20)),
+    runtime = path.join(state, 'runtime-artifacts', 'a'.repeat(64));
+await fs.mkdir(path.dirname(runtime), { recursive: true });
+await fs.cp(sourceRuntime, runtime, { recursive: true, mode: constants.COPYFILE_FICLONE });
+// Exercise the current candidate adapter against cloned native dependencies; packaged-artifact verification is separate.
+const candidateSource = await fs.readFile(new URL('../adapters/rag-reindex.mjs', import.meta.url)),
+    budgetSource = await fs.readFile(new URL('../adapters/rag-errors.mjs', import.meta.url)),
+    corpusSource = await fs.readFile(new URL('../adapters/rag-index-corpus.mjs', import.meta.url));
+const profileSource = await fs.readFile(new URL('../adapters/rag-index-profile.mjs', import.meta.url), 'utf8'),
+    contractImport = '../../../../services/shared/rag-index-contract.cjs';
+assert.equal(profileSource.split(contractImport).length, 2);
+async function writableClone(directory) {
+    await fs.chmod(directory, 0o700);
+    for (const entry of await fs.readdir(directory, { withFileTypes: true }))
+        if (entry.isDirectory()) await writableClone(path.join(directory, entry.name));
+}
+const load = (name) => import(pathToFileURL(path.join(runtime, name)).href),
+    root = path.join(temporary, 'project'),
+    active = path.join(root, '.opencode', 'rag_db');
+let mode = 'ok',
+    calls = 0,
+    dimension = 5,
+    store;
+const requestedTexts = [];
+const server = http.createServer(async (req, res) => {
+    let raw = '';
+    for await (const part of req) raw += part;
+    const body = JSON.parse(raw);
+    calls++;
+    const texts = Array.isArray(body.input) ? body.input : [body.input];
+    requestedTexts.push(...texts);
+    if (mode === 'source-change' && texts.some((text) => text.includes('firstInvoice'))) {
+        mode = 'changed';
+        await fs.writeFile(path.join(root, 'first.ts'), 'export function editedWhileEmbedding(){return 42;}\n');
+    }
+    if (mode === 'fail' && texts.some((text) => text.includes('secondInvoice'))) {
+        res.writeHead(503);
+        res.end('{"error":"fixture"}');
+        return;
+    }
+    res.setHeader('content-type', 'application/json');
+    res.end(
+        JSON.stringify({
+            model: body.model,
+            data: texts.map((_, index) => ({ index, embedding: Array.from({ length: dimension }, (_, i) => i + 1) })),
+        }),
+    );
+});
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+const profile = () => ({ provider: 'openai', model: 'neurocenter/model-fixture/sha256/' + 'a'.repeat(64), dimension });
+const build = async (stage, changes = {}) =>
+    new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [path.join(runtime, 'opencode-rag.mjs'), 'reindex', '--stage', stage], {
+            cwd: root,
+            env: {
+                ...process.env,
+                NEUROCENTER_RAG_REINDEX_CONTEXT: JSON.stringify({
+                    profile: profile(),
+                    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+                    apiKey: 'a'.repeat(64),
+                    ...changes,
+                }),
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let output = '',
+            errors = '';
+        child.stdout.on('data', (chunk) => (output += chunk));
+        child.stderr.on('data', (chunk) => (errors += chunk));
+        child.once('error', reject);
+        child.once('close', (code) => resolve({ code, output, errors }));
+    });
+try {
+    await writableClone(temporary);
+    for (const [name, source] of [
+        ['rag-reindex.mjs', candidateSource],
+        ['rag-errors.mjs', budgetSource],
+        ['rag-index-profile.mjs', profileSource.replace(contractImport, './rag-index-contract.cjs')],
+        ['rag-index-corpus.mjs', corpusSource],
+    ]) {
+        try {
+            await fs.chmod(path.join(runtime, name), 0o600);
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+        }
+        await fs.writeFile(path.join(runtime, name), source, { mode: 0o600 });
+    }
+    await fs.mkdir(active, { recursive: true });
+    await fs.writeFile(path.join(root, 'first.ts'), 'export function firstInvoice(amount:number){return amount*2;}\n');
+    await fs.writeFile(
+        path.join(root, 'second.ts'),
+        'export function secondInvoice(amount:number){return amount*3;}\n',
+    );
+    await fs.writeFile(
+        path.join(root, '.opencode', 'rag.json'),
+        JSON.stringify({
+            embedding: { provider: 'ollama', model: 'original', vectorDimension: 3 },
+            vectorStore: { path: '.opencode/rag_db' },
+            indexing: { includeExtensions: ['.ts'], minFileSizeBytes: 0 },
+            logging: { level: 'none' },
+        }),
+    );
+    const { DEFAULT_CONFIG } = await load('upstream/dist/core/config.js'),
+        { createVectorStore } = await load('upstream/dist/vectorstore/factory.js');
+    store = createVectorStore(DEFAULT_CONFIG, active, 3);
+    await store.upsert?.([
+        { id: 'old', content: 'old preserved corpus', filePath: path.join(root, 'old.ts'), embedding: [1, 2, 3] },
+    ]);
+    // Use the native table to establish the active schema even if the upstream public wrapper changes its write method.
+    if ((await store.count()) === 0) {
+        const { connect } = await load('node_modules/@lancedb/lancedb/dist/index.js');
+        const db = await connect(active);
+        const table = await db.createTable('chunks', [
+            { id: 'old', content: 'old preserved corpus', filePath: path.join(root, 'old.ts'), embedding: [1, 2, 3] },
+        ]);
+        table.close();
+        db.close();
+    }
+    const originalCount = await store.count();
+    assert.equal(originalCount, 1);
+    await store.close();
+    store = undefined;
+    const before = await fs.readdir(active),
+        stage = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-'));
+    const result = await build(stage);
+    assert.equal(result.code, 0, result.errors);
+    assert.equal(JSON.parse(result.output).dimension, 5);
+    assert.ok(JSON.parse(result.output).rowCount >= 2);
+    assert.deepEqual(await fs.readdir(active), before);
+    const target = createVectorStore(DEFAULT_CONFIG, stage, 5);
+    assert.ok((await target.count()) >= 2);
+    assert.equal(await target.getVectorDimension(), 5);
+    await target.close();
+    // Updating an installed package invalidates its old grant, but an explicit candidate must still rebuild in isolation.
+    const instanceId = 'fixture-instance',
+        projectId = 'fixture-project',
+        assetId = 'rag-fixture',
+        privateDirectory = path.join(state, 'local-configuration'),
+        privateFile = path.join(privateDirectory, sha(JSON.stringify([hub, root, instanceId])) + '.json');
+    const oldPackage = {
+        plugin: { id: assetId, kind: 'mcp', version: 1 },
+        manifest: { sha256: 'b'.repeat(64) },
+        config: {
+            extra: {
+                hostedEmbedding: { schemaVersion: 1, profileSchemaVersion: 2 },
+                runtimeArtifacts: [{ sha256: 'c'.repeat(64) }],
+            },
+        },
+    };
+    const oldRecord = {
+        schemaVersion: 2,
+        server: hub,
+        root,
+        projectId,
+        instanceId,
+        bindingId: 'd'.repeat(64),
+        relay: { port: server.address().port },
+        grants: [
+            {
+                pkg: oldPackage,
+                selection: {
+                    revision: 1,
+                    modelPin: 'e'.repeat(64),
+                    profile: {
+                        provider: 'openai',
+                        model: 'neurocenter/previous/sha256/' + 'e'.repeat(64),
+                        dimension: 3,
+                    },
+                },
+                key: 'f'.repeat(64),
+            },
+        ],
+    };
+    await fs.mkdir(privateDirectory, { mode: 0o700 });
+    await fs.mkdir(path.join(root, '.opencode/neurocenter/receipts'), { recursive: true });
+    await fs.writeFile(
+        path.join(root, '.opencode/neurocenter.json'),
+        JSON.stringify({ version: 2, server: hub, instanceId, projectId }),
+    );
+    await fs.writeFile(
+        path.join(root, '.opencode/neurocenter/receipts', sha('mcp:' + assetId).slice(0, 24) + '.json'),
+        JSON.stringify({ version: 2, manifest: '9'.repeat(64) }),
+    );
+    const privateBefore = JSON.stringify(oldRecord);
+    await fs.writeFile(privateFile, privateBefore, { mode: 0o600 });
+    await fs.writeFile(
+        path.join(state, 'rag-hosted-connections.json'),
+        JSON.stringify([path.basename(privateFile, '.json')]),
+    );
+    const { readRagConfiguration } = await load('rag-context.mjs');
+    const callsBeforeOrdinary = calls;
+    await assert.rejects(readRagConfiguration(root), /Приватное подключение/);
+    assert.equal(calls, callsBeforeOrdinary);
+    const upgraded = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-')),
+        upgradeResult = await build(upgraded);
+    assert.equal(upgradeResult.code, 0, 'Explicit candidate rebuild after package upgrade: ' + upgradeResult.errors);
+    assert.ok(JSON.parse(upgradeResult.output).rowCount >= 2);
+    assert.equal(await fs.readFile(privateFile, 'utf8'), privateBefore);
+    assert.deepEqual(await fs.readdir(active), before);
+    await assert.rejects(readRagConfiguration(root), /Приватное подключение/);
+    dimension = 2560;
+    const qwenStage = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-')),
+        qwenResult = await build(qwenStage);
+    assert.equal(qwenResult.code, 0, qwenResult.errors);
+    assert.equal(JSON.parse(qwenResult.output).dimension, 2560);
+    assert.ok(JSON.parse(qwenResult.output).rowCount >= 2);
+    const qwenStore = createVectorStore(DEFAULT_CONFIG, qwenStage, 2560);
+    assert.equal(await qwenStore.getVectorDimension(), 2560);
+    assert.ok((await qwenStore.count()) >= 2);
+    await qwenStore.close();
+    assert.equal(await fs.readFile(privateFile, 'utf8'), privateBefore);
+    assert.deepEqual(await fs.readdir(active), before);
+    dimension = 5;
+    mode = 'source-change';
+    const changed = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-'));
+    assert.notEqual((await build(changed)).code, 0);
+    assert.equal(mode, 'changed');
+    assert.deepEqual(await fs.readdir(active), before);
+    const { reindexSourceSnapshot } = await load('rag-reindex-source.mjs'),
+        proofRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-rag-proof-'));
+    try {
+        const config = structuredClone(DEFAULT_CONFIG);
+        config.indexing.includeExtensions = ['.ts'];
+        await fs.writeFile(path.join(proofRoot, 'first.ts'), 'first');
+        await fs.writeFile(path.join(proofRoot, 'second.ts'), 'second');
+        await assert.rejects(reindexSourceSnapshot(proofRoot, config, { maxFiles: 1 }), /лимита/);
+        await fs.mkdir(path.join(proofRoot, 'first-directory'));
+        await fs.mkdir(path.join(proofRoot, 'second-directory'));
+        await assert.rejects(reindexSourceSnapshot(proofRoot, config, { maxDirs: 1 }), /лимита/);
+        const proof = await reindexSourceSnapshot(proofRoot, config);
+        await fs.mkdir(path.join(proofRoot, 'node_modules'));
+        await fs.writeFile(path.join(proofRoot, 'node_modules', 'ignored.ts'), 'ignored');
+        assert.equal(await reindexSourceSnapshot(proofRoot, config), proof);
+        config.chunking = { ...config.chunking, parsers: { '.custom': 'typescript' } };
+        await fs.writeFile(path.join(proofRoot, 'included.custom'), 'custom');
+        assert.notEqual(await reindexSourceSnapshot(proofRoot, config), proof);
+    } finally {
+        await fs.rm(proofRoot, { recursive: true, force: true });
+    }
+    dimension = 7;
+    mode = 'fail';
+    const failed = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-'));
+    assert.notEqual((await build(failed)).code, 0);
+    assert.deepEqual(await fs.readdir(active), before);
+    mode = 'ok';
+    for (const change of [
+        { baseUrl: 'https://example.test/v1' },
+        { apiKey: 'invalid' },
+        { profile: { ...profile(), dimension: 0 } },
+        { profile: { ...profile(), model: 'unverified-model' } },
+    ]) {
+        const invalid = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-'));
+        const prior = calls;
+        assert.notEqual((await build(invalid, change)).code, 0);
+        assert.equal(calls, prior);
+        assert.equal(await fs.readFile(privateFile, 'utf8'), privateBefore);
+        assert.deepEqual(await fs.readdir(active), before);
+    }
+    await fs.unlink(path.join(root, 'first.ts'));
+    await fs.unlink(path.join(root, 'second.ts'));
+    const zero = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-'));
+    const empty = await build(zero);
+    assert.equal(empty.code, 0, empty.errors);
+    assert.equal(JSON.parse(empty.output).rowCount, 0);
+    // With vision disabled, raster bytes are outside the text corpus. The source proof and pipeline must select the same text files.
+    await fs.unlink(path.join(root, '.opencode', 'rag.json'));
+    dimension = 1024;
+    const text = '# Unicode provenance\n\n' + 'Линия 漢字 😀 "quoted" \\ escaped\tvalue\n'.repeat(600);
+    await fs.writeFile(path.join(root, 'knowledge.md'), text);
+    const textStart = requestedTexts.length,
+        textCalls = calls,
+        baseline = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-')),
+        textOnly = await build(baseline);
+    assert.equal(textOnly.code, 0, textOnly.errors);
+    const expectedTexts = requestedTexts.slice(textStart),
+        baselineCalls = calls - textCalls;
+    assert.ok(expectedTexts.some((value) => value.includes('漢字 😀 "quoted" \\ escaped')));
+    const binaryMarker = 'uninterpreted-raster-fixture';
+    await fs.writeFile(
+        path.join(root, 'uninterpreted.PNG'),
+        Buffer.concat([
+            Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+            Buffer.from((binaryMarker + '\0').repeat(13000)),
+        ]),
+    );
+    const imageStart = requestedTexts.length,
+        imageCalls = calls,
+        rasterStage = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-')),
+        withRaster = await build(rasterStage);
+    assert.equal(withRaster.code, 0, withRaster.errors);
+    assert.equal(
+        requestedTexts.slice(imageStart).some((value) => value.includes(binaryMarker)),
+        false,
+        'Disabled vision must not embed raw raster bytes as one oversized text',
+    );
+    assert.deepEqual(
+        requestedTexts.slice(imageStart),
+        expectedTexts,
+        'Text contents, provenance and input order must match the no-image baseline',
+    );
+    assert.equal(calls - imageCalls, baselineCalls);
+    assert.equal(JSON.parse(withRaster.output).rowCount, JSON.parse(textOnly.output).rowCount);
+    const configured = JSON.stringify({
+        indexing: { includeExtensions: ['.md'] },
+        chunking: { parsers: { PNG: 'markdown' } },
+    });
+    await fs.writeFile(path.join(root, '.opencode', 'rag.json'), configured);
+    const parserStart = requestedTexts.length,
+        parserStage = await fs.mkdtemp(path.join(path.dirname(active), '.neurocenter-rag-restore-')),
+        withParser = await build(parserStage);
+    assert.equal(withParser.code, 0, withParser.errors);
+    assert.deepEqual(
+        requestedTexts.slice(parserStart),
+        expectedTexts,
+        'A parser override must not reintroduce excluded raster files',
+    );
+    assert.equal(await fs.readFile(path.join(root, '.opencode', 'rag.json'), 'utf8'), configured);
+    // A manual full scan applies the new effective selection: prune derived raster rows, keep unchanged text rows and original files.
+    const { runIndexPass } = await load('upstream/dist/indexer/pipeline.js'),
+        { indexCorpusConfiguration } = await load('rag-index-corpus.mjs'),
+        { SUPPORTED_IMAGE_EXTENSIONS } = await load('upstream/dist/content/image.js'),
+        { KeywordIndex } = await load('upstream/dist/retriever/keyword-index.js'),
+        { requireSuccessfulIndex: requireSuccessfulManual } = await load('rag-errors.mjs');
+    assert.deepEqual(
+        indexCorpusConfiguration({
+            indexing: { includeExtensions: [...SUPPORTED_IMAGE_EXTENSIONS, '.svg', '.pdf', '.docx'] },
+            imageDescription: { enabled: false },
+        }).indexing.includeExtensions,
+        ['.svg', '.pdf', '.docx'],
+        'The pinned vision formats must match the text-only policy',
+    );
+    const manualRoot = path.join(temporary, 'manual-project'),
+        manualPath = path.join(manualRoot, '.opencode', 'rag_db'),
+        textFile = path.join(manualRoot, 'preserved.ts'),
+        imageFile = path.join(manualRoot, 'diagram.PNG'),
+        configFile = path.join(manualRoot, '.opencode', 'rag.json');
+    await fs.mkdir(manualPath, { recursive: true });
+    const png = Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            'base64',
+        ),
+        sourceText = 'export function preservedManualText(amount:number){return amount*2;}\n';
+    await fs.writeFile(textFile, sourceText);
+    await fs.writeFile(imageFile, png);
+    const manualConfig = structuredClone(DEFAULT_CONFIG);
+    manualConfig.embedding = {
+        provider: 'openai',
+        model: 'fixture-manual',
+        baseUrl: 'http://127.0.0.1:1/v1',
+        vectorDimension: 4,
+    };
+    manualConfig.imageDescription = {
+        ...manualConfig.imageDescription,
+        enabled: true,
+        resizeMaxDimension: 0,
+        prompt: 'fixture-vision-prompt',
+    };
+    manualConfig.indexing = {
+        ...manualConfig.indexing,
+        includeExtensions: ['.ts', 'diagram.png', '.svg', '.pdf', '.docx'],
+        minFileSizeBytes: 0,
+    };
+    manualConfig.chunking = { ...manualConfig.chunking, parsers: { PNG: 'markdown' } };
+    manualConfig.logging = { ...manualConfig.logging, level: 'none' };
+    const manualBytes = JSON.stringify(manualConfig);
+    await fs.writeFile(configFile, manualBytes);
+    let visionCalls = 0,
+        manualDocumentCalls = 0;
+    const vision = {
+            async describeImage(base64, mimeType, prompt) {
+                visionCalls++;
+                assert.equal(mimeType, 'image/png');
+                assert.equal(prompt, 'fixture-vision-prompt');
+                assert.deepEqual(Buffer.from(base64, 'base64'), png);
+                return 'syntheticRasterVisionDescription';
+            },
+        },
+        manualEmbedder = {
+            model: 'fixture-manual',
+            async embed(texts, purpose) {
+                if (purpose === 'document') manualDocumentCalls++;
+                return texts.map(() => [1, 2, 3, 4]);
+            },
+        };
+    const manualStore = createVectorStore(manualConfig, manualPath, 4),
+        manualKeyword = new KeywordIndex(manualPath);
+    try {
+        const options = {
+            cwd: manualRoot,
+            storePath: manualPath,
+            config: manualConfig,
+            store: manualStore,
+            embedder: manualEmbedder,
+            keywordIndex: manualKeyword,
+            dimension: 4,
+            imageVisionProvider: vision,
+        };
+        const initial = requireSuccessfulManual(await runIndexPass(options));
+        assert.equal(initial.finalCount, 2);
+        assert.equal(visionCalls, 1, 'Enabled vision must still call the injected provider');
+        const textRows = await manualStore.getChunksByFilePath(textFile);
+        assert.equal(textRows.length, 1);
+        assert.equal((await manualStore.getChunksByFilePath(imageFile)).length, 1);
+        assert.equal(manualKeyword.search('syntheticRasterVisionDescription', 5).length, 1);
+        const documentCalls = manualDocumentCalls,
+            disabled = { ...manualConfig, imageDescription: { ...manualConfig.imageDescription, enabled: false } };
+        const filtered = requireSuccessfulManual(await runIndexPass({ ...options, config: disabled }));
+        assert.equal(filtered.finalCount, 1);
+        assert.equal(filtered.deletedFiles, 1);
+        assert.deepEqual(
+            await manualStore.getChunksByFilePath(textFile),
+            textRows,
+            'Unchanged text rows, IDs and provenance must survive raster pruning',
+        );
+        assert.deepEqual(await manualStore.getChunksByFilePath(imageFile), []);
+        assert.deepEqual(manualKeyword.search('syntheticRasterVisionDescription', 5), []);
+        const manifest = JSON.parse(await fs.readFile(path.join(manualPath, 'manifest.json'), 'utf8'));
+        assert.ok(manifest.files[textFile]);
+        assert.equal(manifest.files[imageFile], undefined);
+        assert.equal(visionCalls, 1);
+        assert.equal(manualDocumentCalls, documentCalls, 'Pruning excluded raster must not re-embed unchanged text');
+        assert.equal(await fs.readFile(textFile, 'utf8'), sourceText);
+        assert.deepEqual(await fs.readFile(imageFile), png);
+        assert.equal(await fs.readFile(configFile, 'utf8'), manualBytes);
+    } finally {
+        await manualStore.close();
+        manualKeyword.close();
+    }
+    // Exercise the real upstream retry predicate, not a copied regular expression. All debug output stays in the fixture.
+    const { embedBatch } = await load('upstream/dist/embedder/factory.js'),
+        { protectedEmbedder } = await load('rag-errors.mjs');
+    const hostedConfig = { [Symbol.for('neurocenter.hosted-rag')]: sha('fixture-profile') },
+        largeTexts = ['a'.repeat(140000), 'b'.repeat(140000)],
+        previousCwd = process.cwd();
+    try {
+        process.chdir(root);
+        for (const failure of ['partial', 'abort']) {
+            let attempts = 0;
+            const provider = {
+                async embed(texts) {
+                    if (++attempts === 2)
+                        throw failure === 'abort'
+                            ? new DOMException('fixture-abort', 'AbortError')
+                            : new Error('upstream (503): private fixture detail');
+                    return texts.map(() => [1]);
+                },
+            };
+            assert.deepEqual(
+                await embedBatch(
+                    protectedEmbedder(provider, hostedConfig),
+                    largeTexts,
+                    8,
+                    'document',
+                    1,
+                    undefined,
+                    3,
+                    0,
+                ),
+                [[], []],
+            );
+            assert.equal(
+                attempts,
+                2,
+                'Permanent partial/abort failure must not replay an already successful subrequest',
+            );
+        }
+        let attempts = 0;
+        const unavailable = {
+            async embed() {
+                attempts++;
+                throw new Error('upstream (503): private fixture detail');
+            },
+        };
+        assert.deepEqual(
+            await embedBatch(protectedEmbedder(unavailable, hostedConfig), ['x'], 8, 'document', 1, undefined, 3, 0),
+            [[]],
+        );
+        assert.equal(attempts, 4, 'An initial503 keeps the existing upstream retry budget');
+    } finally {
+        process.chdir(previousCwd);
+    }
+    const original = createVectorStore(DEFAULT_CONFIG, active, 3);
+    assert.equal(await original.count(), 1);
+    assert.equal(await original.getVectorDimension(), 3);
+    await original.close();
+    assert.equal(await fs.readFile(privateFile, 'utf8'), privateBefore);
+    console.log(
+        JSON.stringify({
+            status: 'passed',
+            scope: 'current candidate/budget/corpus/profile adapters over cloned native dependencies; manual full index prunes derived raster rows, preserves text rows and original files',
+            candidateSha256: sha(candidateSource),
+            budgetSha256: sha(budgetSource),
+            corpusSha256: sha(corpusSource),
+            profileSha256: sha(profileSource),
+            checks: [
+                '3-to-5-stage-isolation',
+                'upgraded-package-old-grant-explicit-candidate',
+                'explicit2560dim-candidate-native-shape',
+                'ordinary-startup-still-rejects-stale-grant',
+                'source-change-before-commit-preserves-original',
+                'exact-upstream-file-and-directory-limits-reject-truncation',
+                'upstream-exclusions-and-parser-overrides',
+                '7dim-partial-failure-preserves-original',
+                'invalid-candidate-rejected-before-inference',
+                'zero-corpus-stage',
+                'no-config-raster-excluded-preserves-Unicode-escaped-text-order-provenance',
+                'parser-override-cannot-reintroduce-raster',
+                'pinned-vision-extensions-match-text-only-policy',
+                'enabled-vision-provider-unchanged',
+                'manual-full-scan-prunes-raster-rows-preserves-text-and-original-files',
+                'real-upstream-no-replay-after-partial-failure-or-abort',
+                'real-upstream-initial503-existing-retry',
+            ],
+            calls,
+        }),
+    );
+} finally {
+    await store?.close();
+    const { destroyAllPooledConnections } = await load('upstream/dist/embedder/http.js');
+    destroyAllPooledConnections();
+    await new Promise((resolve) => {
+        server.close(resolve);
+        server.closeAllConnections();
+    });
+    await fs.rm(temporary, { recursive: true, force: true });
+}

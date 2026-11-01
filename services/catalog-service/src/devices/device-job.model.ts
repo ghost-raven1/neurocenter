@@ -1,6 +1,6 @@
-import type { AgentMethod } from '../../../shared/agent-method-workflow.cjs';
+import type { TAgentMethod } from '../../../shared/agent-method-workflow.cjs';
 
-export interface Job {
+export interface IJob {
     id: string;
     device_id: string;
     email: string;
@@ -13,7 +13,7 @@ export interface Job {
     lease_until: Date;
     percent: number | null;
 }
-export interface JobInput {
+export interface IJobInput {
     deviceId: string;
     projectId?: string;
     expectedLearningRevision?: number;
@@ -22,7 +22,7 @@ export interface JobInput {
     kind: string;
     requestKey: string;
     scope?: 'global' | 'project';
-    runtimeCachePolicy?: import('../../../shared/runtime-cache-policy.cjs').RuntimeCachePolicyPayload;
+    runtimeCachePolicy?: import('../../../shared/runtime-cache-policy.cjs').TRuntimeCachePolicyPayload;
     assetKind?: string;
     assetId?: string;
     version?: number;
@@ -54,7 +54,7 @@ export interface JobInput {
     snapshotId?: string;
     expectedAgentsRevision?: number;
     workflow?: {
-        method: AgentMethod;
+        method: TAgentMethod;
         instruction: string;
         checks: Array<{ command: string; args: string[] }>;
         agentId?: string;

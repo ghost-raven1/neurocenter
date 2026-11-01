@@ -25,7 +25,7 @@ export class OpenCodeAuthOwnerError extends Error {
         );
     }
 }
-export interface OpenCodeAuthOwnerProof {
+export interface IOpenCodeAuthOwnerProof {
     assertCurrent(): Promise<void>;
 }
 const active = new Map<AbortController, { id: string; finished: Promise<void>; settled: boolean }>();
@@ -49,7 +49,7 @@ export async function assertOpenCodeAuthOwner(
     deviceId: string,
     authorize: (signal?: AbortSignal) => Promise<unknown>,
     external?: AbortSignal,
-): Promise<OpenCodeAuthOwnerProof> {
+): Promise<IOpenCodeAuthOwnerProof> {
     if (stopping || active.size) throw new OpenCodeAuthOwnerError();
     const controller = new AbortController(),
         signal = external ? AbortSignal.any([external, controller.signal]) : controller.signal;

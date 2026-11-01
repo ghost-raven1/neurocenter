@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { hash } from '../../bridge/state.js';
 import { openVerificationPage } from '../../bridge/open-browser.js';
 import { readPrivateConfiguration, writePrivateConfiguration } from '../local-configuration/private-store.js';
-import { providerContext, sameDescriptor, stale, type Authorize } from './context.js';
+import { providerContext, sameDescriptor, stale, type TAuthorize } from './context.js';
 import {
     providerReportIdentity,
     type OpenCodeProviderDescriptor,
@@ -10,22 +10,22 @@ import {
 } from './contract.js';
 import { providerStatus } from './engine.js';
 import { startProviderSession } from './server.js';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 export { authorizeManagedProvider } from './authorization.js';
-interface Preparation {
+interface IPreparation {
     descriptor: OpenCodeProviderDescriptor;
     preparationId: string;
     expiresAt: string;
     site: string;
     openJobId?: string;
-    connectorPackage?: Package;
+    connectorPackage?: IPackage;
 }
 const preparationKey = (id: string) => hash('opencode-provider-preparation:' + id);
 /** Preparation is inert and private; no URL, browser capability or credential enters a completion. */
 export async function prepareOpenCodeProvider(
     input: unknown,
-    authorize: Authorize,
-    connectorPackage?: Package,
+    authorize: TAuthorize,
+    connectorPackage?: IPackage,
 ): Promise<OpenCodeProviderPreparation> {
     const context = await providerContext(input, authorize, connectorPackage),
         preparationId = randomUUID(),
@@ -49,15 +49,15 @@ export async function openOpenCodeProvider(
         preparationId: string;
         expiresAt: string;
         openJobId: string;
-        authorizeSave: Authorize;
+        authorizeSave: TAuthorize;
         open?: (url: string) => Promise<boolean>;
-        connectorPackage?: Package;
+        connectorPackage?: IPackage;
     },
-    authorize: Authorize,
+    authorize: TAuthorize,
 ) {
     if (!/^[a-f0-9-]{36}$/.test(options.preparationId) || !/^[a-f0-9-]{36}$/.test(options.openJobId)) throw stale();
     const context = await providerContext(input, authorize, options.connectorPackage),
-        prepared = await readPrivateConfiguration<Preparation>(preparationKey(options.preparationId));
+        prepared = await readPrivateConfiguration<IPreparation>(preparationKey(options.preparationId));
     if (
         !prepared ||
         prepared.site !== context.site ||
@@ -91,6 +91,6 @@ export async function openOpenCodeProvider(
         opened: true as const,
     };
 }
-export async function getOpenCodeProviderStatus(input: unknown, authorize: Authorize, connectorPackage?: Package) {
+export async function getOpenCodeProviderStatus(input: unknown, authorize: TAuthorize, connectorPackage?: IPackage) {
     return providerStatus(await providerContext(input, authorize, connectorPackage), authorize);
 }

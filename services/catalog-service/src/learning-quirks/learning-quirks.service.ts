@@ -6,32 +6,32 @@ import {
     preflightQuirkImport,
     quirkExperienceKey,
     quirkReportedExperience,
-    type QuirkEntry,
+    type IQuirkEntry,
 } from '../../../shared/project-learning-quirks.cjs';
-import { DeviceStore, type Device } from '../devices/device-store';
+import { DeviceStore, type IDevice } from '../devices/device-store';
 import { DeviceInstallations } from '../devices/device-installations';
 import { InstallPlans } from '../devices/install-plans';
-import type { Job } from '../devices/device-job.model';
+import type { IJob } from '../devices/device-job.model';
 import type { IPackage } from '../catalog/bundle-package';
 import { LearningService } from '../learning/learning.service';
 import {
     authorizeDeviceLearning,
     currentLearningDevice,
     deviceLearningEnvelope,
-    type DeviceLearningEnvelope,
+    type IDeviceLearningEnvelope,
 } from '../learning/device-learning-auth';
 import { authorizeLearning } from '../learning/learning-access';
 import { assertQuirksJob, LEARNING_QUIRKS_KIND } from './learning-quirks-jobs';
 import { importQuirkSnapshot } from './learning-quirks-import';
 
 const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
-interface ImportEnvelope extends DeviceLearningEnvelope {
+interface IImportEnvelope extends IDeviceLearningEnvelope {
     jobId: string;
     lease: string;
     source: { jsonl: string; fileSha256: string; configurationRevision: string | null };
 }
-function envelope(value: unknown): ImportEnvelope {
-    const body = value as ImportEnvelope,
+function envelope(value: unknown): IImportEnvelope {
+    const body = value as IImportEnvelope,
         source = body?.source;
     if (
         !body ||
@@ -65,7 +65,7 @@ export class LearningQuirksService {
         private readonly plans: InstallPlans,
         private readonly learning: LearningService,
     ) {}
-    async import(original: Device, value: unknown) {
+    async import(original: IDevice, value: unknown) {
         const target = envelope(value);
         let snapshot: ReturnType<typeof parseQuirksJsonl>;
         try {
@@ -118,7 +118,7 @@ export class LearningQuirksService {
                 throw new BadRequestException({ code: 'LEARNING_QUIRKS_QUOTA', message: (error as Error).message });
             }
         });
-        const append = async (entry: QuirkEntry) => {
+        const append = async (entry: IQuirkEntry) => {
             const id = quirkExperienceKey(target.projectId, target.instanceId, entry.quirk.id, entry.recordSha256);
             const exists = await this.learning.repository.read(actor, target.projectId, async (db) => {
                 await this.currentJob(db, device, target);
@@ -189,11 +189,11 @@ export class LearningQuirksService {
         };
         return importQuirkSnapshot(snapshot, append, check);
     }
-    private async currentJob(db: PoolClient, device: Device, target: ImportEnvelope): Promise<Job> {
+    private async currentJob(db: PoolClient, device: IDevice, target: IImportEnvelope): Promise<IJob> {
         await authorizeLearning(db, { email: device.email, activeRole: device.role }, target.projectId, 2);
         await authorizeDeviceLearning(db, device, target);
         const job = (
-            await db.query<Job>(
+            await db.query<IJob>(
                 `SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3 AND role=$4 AND project_id=$5
             AND kind=$6 AND state='running' AND lease=$7 AND lease_until>clock_timestamp() FOR SHARE`,
                 [

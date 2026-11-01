@@ -2,14 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import type { BuildRow } from './package-build.model';
+import type { IBuildRow } from './package-build.model';
 
-const ackPath = (root: string, row: BuildRow) =>
+const ackPath = (root: string, row: IBuildRow) =>
     path.join(root, '.cleanup-acks', row.id + '.' + row.execution_nonce + '.json');
-const reapPath = (root: string, row: BuildRow) =>
+const reapPath = (root: string, row: IBuildRow) =>
     path.join(root, '.process-reaped', row.id + '.' + row.execution_nonce + '.json');
 export const hasBuildReapProof = (stage: string, nonce: string) =>
-    proof(reapPath(path.dirname(stage), { id: path.basename(stage), execution_nonce: nonce } as BuildRow), nonce);
+    proof(reapPath(path.dirname(stage), { id: path.basename(stage), execution_nonce: nonce } as IBuildRow), nonce);
 async function proof(filename: string, nonce: string): Promise<boolean> {
     try {
         const directory = await fs.lstat(path.dirname(filename));
@@ -72,11 +72,11 @@ export async function writeBuildReapFailure(
     }
 }
 /** A cleanup acknowledgment is written only by the old worker after child close AND stage removal. */
-export async function acknowledgeBuildCleanup(root: string, row: BuildRow): Promise<void> {
+export async function acknowledgeBuildCleanup(root: string, row: IBuildRow): Promise<void> {
     if (!row.execution_nonce) return;
     await writeBuildProof(ackPath(root, row), row.execution_nonce);
 }
-export async function forgetBuildCleanup(root: string, row: BuildRow): Promise<void> {
+export async function forgetBuildCleanup(root: string, row: IBuildRow): Promise<void> {
     if (row.execution_nonce) {
         await fs.rm(ackPath(root, row), { force: true });
         await fs.rm(reapPath(root, row), { force: true });
@@ -87,7 +87,7 @@ export async function forgetBuildCleanup(root: string, row: BuildRow): Promise<v
 }
 
 /** SQL ownership alone never proves that an old worker has stopped writing its private stage. */
-export async function mayRecoverBuildStage(root: string, row: BuildRow): Promise<boolean> {
+export async function mayRecoverBuildStage(root: string, row: IBuildRow): Promise<boolean> {
     const nonce = row.execution_nonce;
     if (!nonce) return row.state !== 'CANCELLING';
     if (await proof(ackPath(root, row), nonce)) return true;

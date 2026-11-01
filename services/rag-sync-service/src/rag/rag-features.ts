@@ -1,9 +1,9 @@
 import { HttpException } from '@nestjs/common';
 import { FeatureFlagError, requireFeaturesEnabled } from '../../../shared/feature-client.cjs';
-import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import type { TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 
 /** Internal RAG routes and per-batch workers apply the same uncached feature policy as the gateway. */
-export async function requireRagFeatures(keys: readonly FeatureFlagKey[], signal?: AbortSignal): Promise<void> {
+export async function requireRagFeatures(keys: readonly TFeatureFlagKey[], signal?: AbortSignal): Promise<void> {
     try {
         await requireFeaturesEnabled(keys, process.env, globalThis.fetch, signal);
     } catch (error) {

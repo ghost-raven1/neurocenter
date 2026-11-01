@@ -1,17 +1,32 @@
 import OperationsQueue from '../Operations/OperationsQueue';
-import { Alert, Button, Col, Descriptions, Grid, message, Modal, Result, Row, Space, Spin, Statistic, Tabs, Typography } from "antd";
-import { FC, useEffect, useRef } from "react";
-import { useSelector } from "react-redux";
-import { useAppDispatch } from "../../core/hooks";
-import { useHistory, useLocation, useParams } from "react-router-dom";
-import StatusTag from "../../common/components/StatusTag";
-import { formatDate } from "../../common/utils/format";
-import bffApi from "../../core/api/bff";
-import type { TProjectState } from "../../core/api/interfaces";
-import { baseRoutes } from "../../core/baseRoutes";
-import { RootState } from "../../store";
-import Store from "../Store/Store";
-import { fetchProject } from "./redux/actions";
+import {
+    Alert,
+    Button,
+    Col,
+    Descriptions,
+    Grid,
+    message,
+    Modal,
+    Result,
+    Row,
+    Space,
+    Spin,
+    Statistic,
+    Tabs,
+    Typography,
+} from 'antd';
+import { FC, useEffect, useRef } from 'react';
+import { useSelector } from 'react-redux';
+import { useAppDispatch } from '../../core/hooks';
+import { useHistory, useLocation, useParams } from 'react-router-dom';
+import StatusTag from '../../common/components/StatusTag';
+import { formatDate } from '../../common/utils/format';
+import bffApi from '../../core/api/bff';
+import type { TProjectState } from '../../core/api/interfaces';
+import { baseRoutes } from '../../core/baseRoutes';
+import { TRootState } from '../../store';
+import Store from '../Store/Store';
+import { fetchProject } from './redux/actions';
 import { clearSelected } from './redux/reducers';
 import ProjectBackups from './components/ProjectBackups';
 import RagQuotaPanel from './features/RagQuota/RagQuotaPanel';
@@ -19,23 +34,31 @@ import RagTab from './components/RagTab';
 import MembersTab from './components/MembersTab';
 import { projectRoleLevel, isMainAdminRole } from '../../features/UserBlock/roles';
 import { PageHeading } from '../../common/components/PageHeading';
-import {useSectionUpdates} from '../../core/socket/useSectionUpdates';
-import {projectTabSearch} from './projectNavigation';
-import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
+import { useSectionUpdates } from '../../core/socket/hooks/useSectionUpdates';
+import { projectTabSearch } from './projectNavigation';
+import { useAuthRequestOwner } from '../../features/UserBlock/hooks/useAuthRequestOwner';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { ProjectSize } from './features/ProjectSize/ProjectSize';
 import { ProjectFolderDataSize } from './features/ProjectSize/ProjectFolderDataSize';
-import { useBridge } from '../../features/McpBridge/useBridge';
+import { useBridge } from '../../features/McpBridge/hooks/useBridge';
 import { ProjectSnapshots } from '../../features/ProjectSnapshots/ProjectSnapshots';
 import { ProjectLearning } from '../../features/ProjectLearning/ProjectLearning';
 import './ProjectDetail.less';
 
-
 const { Paragraph } = Typography;
 
-
 /** Ключи вкладок детальной страницы проекта — используются для deep-link «?tab=<key>». */
-const PROJECT_TAB_KEYS: string[] = ['overview', 'members', 'store', 'rag', 'learning', 'snapshots', 'quotas', 'backups', 'audit'];
+const PROJECT_TAB_KEYS: string[] = [
+    'overview',
+    'members',
+    'store',
+    'rag',
+    'learning',
+    'snapshots',
+    'quotas',
+    'backups',
+    'audit',
+];
 
 /**
  * Экран карточки проекта с вкладками (Обзор, RAG-индекс, Версии, Скиллы, MCP/Плагины, Передачи, Квоты, Аудит).
@@ -53,7 +76,9 @@ const ProjectDetail: FC = () => {
     const { captureOwner } = useAuthRequestOwner();
     const confirmationRef = useRef<{ destroy(): void }>();
     const viewRef = useRef({ projectId, active: true });
-    if (viewRef.current.projectId !== projectId) { viewRef.current = { projectId, active: true }; }
+    if (viewRef.current.projectId !== projectId) {
+        viewRef.current = { projectId, active: true };
+    }
     const view = viewRef.current;
     useEffect(() => {
         view.active = true;
@@ -63,13 +88,15 @@ const ProjectDetail: FC = () => {
             confirmationRef.current = undefined;
         };
     }, [view, captureOwner]);
-    const user=useSelector((state:RootState)=>state.userBlock.user);
+    const user = useSelector((state: TRootState) => state.userBlock.user);
     const bridge = useBridge();
-    const canUseTab=(key:string):boolean=>(!['quotas','backups'].includes(key)||projectRoleLevel(user,projectId)>=3)&&(key!=='audit'||isMainAdminRole(user?.activeRole));
+    const canUseTab = (key: string): boolean =>
+        (!['quotas', 'backups'].includes(key) || projectRoleLevel(user, projectId) >= 3) &&
+        (key !== 'audit' || isMainAdminRole(user?.activeRole));
 
     /** Активная вкладка — берётся из URL (?tab=) при загрузке, иначе «Обзор». */
-    const requestedTab=new URLSearchParams(location.search).get('tab')??'overview';
-    const activeTab=PROJECT_TAB_KEYS.includes(requestedTab)&&canUseTab(requestedTab)?requestedTab:'overview';
+    const requestedTab = new URLSearchParams(location.search).get('tab') ?? 'overview';
+    const activeTab = PROJECT_TAB_KEYS.includes(requestedTab) && canUseTab(requestedTab) ? requestedTab : 'overview';
 
     /** Смена вкладки: обновляет состояние и deep-link в URL запроса. */
     const handleTabChange = (key: string): void => {
@@ -81,17 +108,25 @@ const ProjectDetail: FC = () => {
         if (new URLSearchParams(location.search).get('tab') !== activeTab) {
             history.replace(`${location.pathname}${projectTabSearch(location.search, activeTab)}${location.hash}`);
         }
-    }, [ history, location, activeTab ]);
+    }, [history, location, activeTab]);
 
-    const { selectedId, selected, selectedLoading, selectedError, authScope } = useSelector((state: RootState) => state.projects);
+    const { selectedId, selected, selectedLoading, selectedError, authScope } = useSelector(
+        (state: TRootState) => state.projects,
+    );
 
     useEffect(() => {
         if (projectId) {
             dispatch(fetchProject(projectId));
         }
-        return () => { dispatch(clearSelected()); };
-    }, [ dispatch, projectId, authScope ]);
-    useSectionUpdates(['projects'],()=>{if(projectId){void dispatch(fetchProject(projectId));}});
+        return () => {
+            dispatch(clearSelected());
+        };
+    }, [dispatch, projectId, authScope]);
+    useSectionUpdates(['projects'], () => {
+        if (projectId) {
+            void dispatch(fetchProject(projectId));
+        }
+    });
 
     const backToList = (
         <Button type="primary" onClick={() => history.push(baseRoutes.projects)}>
@@ -104,17 +139,37 @@ const ProjectDetail: FC = () => {
     }
 
     const retryLoad = (): void => {
-        if (captureOwner()() && view.active && viewRef.current === view) { void dispatch(fetchProject(projectId)); void bridge.reload(); }
+        if (captureOwner()() && view.active && viewRef.current === view) {
+            void dispatch(fetchProject(projectId));
+            void bridge.reload();
+        }
     };
     const loadError = selectedId === projectId ? selectedError : null;
 
     if (!selected || (selected.id !== projectId && selected.name !== projectId)) {
         if (loadError) {
             const status = loadError.status === 404 ? '404' : loadError.status === 403 ? '403' : 'error';
-            const title = status === '404' ? 'Проект не найден' : status === '403' ? 'Нет доступа к проекту' : 'Не удалось загрузить проект';
-            return <Result status={status} title={title} subTitle={loadError.message} extra={
-                <Space wrap><Button onClick={retryLoad} loading={selectedLoading}>Повторить</Button>{backToList}</Space>
-            } />;
+            const title =
+                status === '404'
+                    ? 'Проект не найден'
+                    : status === '403'
+                      ? 'Нет доступа к проекту'
+                      : 'Не удалось загрузить проект';
+            return (
+                <Result
+                    status={status}
+                    title={title}
+                    subTitle={loadError.message}
+                    extra={
+                        <Space wrap>
+                            <Button onClick={retryLoad} loading={selectedLoading}>
+                                Повторить
+                            </Button>
+                            {backToList}
+                        </Space>
+                    }
+                />
+            );
         }
         return (
             <div style={{ padding: 48, textAlign: 'center' }}>
@@ -127,21 +182,52 @@ const ProjectDetail: FC = () => {
         <div>
             <Row gutter={[24, 16]} style={{ marginBottom: 24 }}>
                 <Col xs={24} sm={8}>
-                    <ProjectFolderDataSize title="Данные проекта" project={selected} bridge={bridge} canRead={projectRoleLevel(user,selected.id)>=1} canBind={projectRoleLevel(user,selected.id)>=2} loading={selectedLoading} onRetry={retryLoad} />
+                    <ProjectFolderDataSize
+                        title="Данные проекта"
+                        project={selected}
+                        bridge={bridge}
+                        canRead={projectRoleLevel(user, selected.id) >= 1}
+                        canBind={projectRoleLevel(user, selected.id) >= 2}
+                        loading={selectedLoading}
+                        onRetry={retryLoad}
+                    />
                 </Col>
                 <Col xs={24} sm={8}>
-                    <ProjectSize title="Серверная копия знаний" kind="retained" bytes={selected.retainedBytes} error={selected.retainedSizeError} loading={selectedLoading} onRetry={retryLoad} />
+                    <ProjectSize
+                        title="Серверная копия знаний"
+                        kind="retained"
+                        bytes={selected.retainedBytes}
+                        error={selected.retainedSizeError}
+                        loading={selectedLoading}
+                        onRetry={retryLoad}
+                    />
                 </Col>
                 <Col xs={24} sm={8}>
                     <Statistic title="Активные передачи" value={selected.activeOperations} />
                 </Col>
             </Row>
-            <Descriptions className="project-detail__overview" column={overviewColumns} layout={screens.sm ? 'horizontal' : 'vertical'} bordered size="small" title="Обзор">
-                <Descriptions.Item label="Имя" span={overviewColumns}>{selected.name}</Descriptions.Item>
-                <Descriptions.Item label="Идентификатор внешнего ресурса" span={overviewColumns}>{selected.externalResourceId}</Descriptions.Item>
-                <Descriptions.Item label="Состояние">{<StatusTag status={selected.state as TProjectState} />}</Descriptions.Item>
+            <Descriptions
+                className="project-detail__overview"
+                column={overviewColumns}
+                layout={screens.sm ? 'horizontal' : 'vertical'}
+                bordered
+                size="small"
+                title="Обзор"
+            >
+                <Descriptions.Item label="Имя" span={overviewColumns}>
+                    {selected.name}
+                </Descriptions.Item>
+                <Descriptions.Item label="Идентификатор внешнего ресурса" span={overviewColumns}>
+                    {selected.externalResourceId}
+                </Descriptions.Item>
+                <Descriptions.Item label="Состояние">
+                    {<StatusTag status={selected.state as TProjectState} />}
+                </Descriptions.Item>
                 <Descriptions.Item label="Создан">{formatDate(selected.createdAt)}</Descriptions.Item>
-                <Descriptions.Item label="Защита базы знаний" span={overviewColumns}>Лимит и расход доступны на вкладке «База знаний».{canUseTab('quotas')?' Изменить лимит можно на вкладке «Квоты».':''}</Descriptions.Item>
+                <Descriptions.Item label="Защита базы знаний" span={overviewColumns}>
+                    Лимит и расход доступны на вкладке «База знаний».
+                    {canUseTab('quotas') ? ' Изменить лимит можно на вкладке «Квоты».' : ''}
+                </Descriptions.Item>
             </Descriptions>
         </div>
     );
@@ -149,19 +235,29 @@ const ProjectDetail: FC = () => {
     const items = [
         { key: 'overview', label: 'Обзор', children: overviewTab },
         { key: 'members', label: 'Сотрудники', children: <MembersTab project={selected} /> },
-        { key: 'store', label: 'Каталог', children: <Store presetTarget={ selected.id } embedded /> },
+        { key: 'store', label: 'Каталог', children: <Store presetTarget={selected.id} embedded /> },
         { key: 'rag', label: 'База знаний', children: <RagTab projectKey={selected.id} /> },
         { key: 'learning', label: 'Обучение', children: <ProjectLearning key={selected.id} projectId={selected.id} /> },
-        { key: 'snapshots', label: 'Снимки', children: <ProjectSnapshots key={selected.id} projectId={selected.id} onChanged={retryLoad} /> },
-        { key: 'backups', label: 'Резервные копии', children: <ProjectBackups key={selected.id} projectKey={selected.id} /> },
+        {
+            key: 'snapshots',
+            label: 'Снимки',
+            children: <ProjectSnapshots key={selected.id} projectId={selected.id} onChanged={retryLoad} />,
+        },
+        {
+            key: 'backups',
+            label: 'Резервные копии',
+            children: <ProjectBackups key={selected.id} projectKey={selected.id} />,
+        },
         { key: 'quotas', label: 'Квоты', children: <RagQuotaPanel key={selected.id} projectKey={selected.id} /> },
         { key: 'audit', label: 'История', children: <OperationsQueue projectId={selected.id} /> },
-    ].filter(item=>canUseTab(item.key));
+    ].filter((item) => canUseTab(item.key));
 
     const confirmDeleteProject = (): void => {
         const isOwnerCurrent = captureOwner();
         const isCurrent = (): boolean => isOwnerCurrent() && view.active && viewRef.current === view;
-        if (confirmationRef.current || !isCurrent() || projectRoleLevel(user, selected.id) < 3) { return; }
+        if (confirmationRef.current || !isCurrent() || projectRoleLevel(user, selected.id) < 3) {
+            return;
+        }
         let deleting = false;
         const confirmation = Modal.confirm({
             title: `Удалить проект «${selected.name}»?`,
@@ -169,20 +265,32 @@ const ProjectDetail: FC = () => {
             okText: 'Удалить',
             okButtonProps: { danger: true },
             cancelText: 'Отмена',
-            afterClose: () => { if (confirmationRef.current === confirmation) { confirmationRef.current = undefined; } },
+            afterClose: () => {
+                if (confirmationRef.current === confirmation) {
+                    confirmationRef.current = undefined;
+                }
+            },
             onOk: async () => {
-                if (deleting || !isCurrent()) { return; }
+                if (deleting || !isCurrent()) {
+                    return;
+                }
                 deleting = true;
                 try {
                     await bffApi.deleteProject(projectId);
-                    if (!isCurrent()) { return; }
+                    if (!isCurrent()) {
+                        return;
+                    }
                     message.success('Проект удалён');
                     history.push(baseRoutes.projects);
                 } catch (err) {
-                    if (!isCurrent()) { return; }
+                    if (!isCurrent()) {
+                        return;
+                    }
                     message.error(errorMessage(err, 'Не удалось удалить проект'));
                     throw err; // Отклонённый Promise оставляет подтверждение открытым для повтора.
-                } finally { deleting = false; }
+                } finally {
+                    deleting = false;
+                }
             },
         });
         confirmationRef.current = confirmation;
@@ -190,22 +298,36 @@ const ProjectDetail: FC = () => {
 
     return (
         <div className="project-detail">
-            {loadError && <Alert
-                className="project-detail__refresh-error"
-                type="warning"
-                showIcon
-                message="Не удалось обновить проект"
-                description={loadError.message}
-                action={<Button onClick={retryLoad} loading={selectedLoading}>Повторить</Button>}
-            />}
+            {loadError && (
+                <Alert
+                    className="project-detail__refresh-error"
+                    type="warning"
+                    showIcon
+                    message="Не удалось обновить проект"
+                    description={loadError.message}
+                    action={
+                        <Button onClick={retryLoad} loading={selectedLoading}>
+                            Повторить
+                        </Button>
+                    }
+                />
+            )}
             <Paragraph>
-                <Button type="link" onClick={() => history.push(baseRoutes.projects)}>← Все проекты</Button>
-            </Paragraph>
-            <PageHeading title={selected.name} description="Инструменты, знания и участники проекта." actions={
-                projectRoleLevel(user,selected.id)>=3 && <Button danger onClick={confirmDeleteProject}>
-                    Удалить проект
+                <Button type="link" onClick={() => history.push(baseRoutes.projects)}>
+                    ← Все проекты
                 </Button>
-            } />
+            </Paragraph>
+            <PageHeading
+                title={selected.name}
+                description="Инструменты, знания и участники проекта."
+                actions={
+                    projectRoleLevel(user, selected.id) >= 3 && (
+                        <Button danger onClick={confirmDeleteProject}>
+                            Удалить проект
+                        </Button>
+                    )
+                }
+            />
             <Tabs activeKey={activeTab} onChange={handleTabChange} items={items} style={{ marginTop: 8 }} />
         </div>
     );

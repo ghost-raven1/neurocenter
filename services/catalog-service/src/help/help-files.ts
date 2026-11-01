@@ -4,7 +4,7 @@ import { lstat, open, readdir, rename, unlink } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-export interface HelpArticle {
+export interface IHelpArticle {
     slug: string;
     title: string;
     summary: string;
@@ -53,7 +53,7 @@ export class HelpFiles {
             throw new ServiceUnavailableException('Каталог статей недоступен. Проверьте HELP_CONTENT_DIR.');
         }
     }
-    async read(slug: string): Promise<HelpArticle> {
+    async read(slug: string): Promise<IHelpArticle> {
         helpSlug(slug);
         await this.root();
         const file = path.join(this.directory, slug + '.md');
@@ -91,7 +91,7 @@ export class HelpFiles {
             await handle?.close();
         }
     }
-    async list(): Promise<Array<Omit<HelpArticle, 'content'>>> {
+    async list(): Promise<Array<Omit<IHelpArticle, 'content'>>> {
         await this.root();
         const entries = await readdir(this.directory, { withFileTypes: true });
         const files = entries.filter(
@@ -99,7 +99,7 @@ export class HelpFiles {
         );
         if (files.length > 500)
             throw new ServiceUnavailableException('В разделе помощи больше 500 статей. Разделите каталог.');
-        const result: Array<Omit<HelpArticle, 'content'>> = [];
+        const result: Array<Omit<IHelpArticle, 'content'>> = [];
         for (const item of files) {
             const { content: _content, ...article } = await this.read(item.name.slice(0, -3));
             result.push(article);
@@ -107,7 +107,7 @@ export class HelpFiles {
         return result.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
     }
     /** Expected SHA protects drafts from external edits; the caller serializes remote UI writers. */
-    async save(slug: string, content: unknown, expectedRevision: unknown): Promise<HelpArticle> {
+    async save(slug: string, content: unknown, expectedRevision: unknown): Promise<IHelpArticle> {
         helpSlug(slug);
         await this.root();
         if (
@@ -129,11 +129,11 @@ export class HelpFiles {
             this.publish(slug, content, expectedRevision),
         );
     }
-    private async publish(slug: string, content: string, expectedRevision: unknown): Promise<HelpArticle> {
+    private async publish(slug: string, content: string, expectedRevision: unknown): Promise<IHelpArticle> {
         const temporary = path.join(this.directory, '.' + slug + '.' + randomUUID() + '.tmp');
         let created = false;
         try {
-            let current: HelpArticle | undefined;
+            let current: IHelpArticle | undefined;
             try {
                 current = await this.read(slug);
             } catch (error) {
@@ -151,7 +151,7 @@ export class HelpFiles {
             } finally {
                 await output.close();
             }
-            let latest: HelpArticle | undefined;
+            let latest: IHelpArticle | undefined;
             try {
                 latest = await this.read(slug);
             } catch (error) {

@@ -1,12 +1,12 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { roleHash } from '../system-roles/system-role.definitions';
 import type { PoolClient } from 'pg';
-type SystemDialogDb = Pick<PoolClient, 'query'>;
-export interface DialogContextReference {
+type TSystemDialogDb = Pick<PoolClient, 'query'>;
+export interface IDialogContextReference {
     id: string;
     revision: number;
 }
-interface ContextRow {
+interface IContextRow {
     id: string;
     agent_id: string;
     instruction: string;
@@ -16,17 +16,17 @@ interface ContextRow {
 }
 /** A context receipt keeps references only. Every model checkpoint resolves the same completed own-dialog answers again. */
 export async function systemDialogContext(
-    db: SystemDialogDb,
+    db: TSystemDialogDb,
     owner: string,
     dialogId: string,
-    references?: DialogContextReference[],
+    references?: IDialogContextReference[],
 ) {
     const dialog = (
         await db.query('SELECT id FROM system_role_dialogs WHERE id=$1 AND owner_email=$2', [dialogId, owner])
     ).rows[0];
     if (!dialog) throw new NotFoundException('Контекст личного диалога недоступен.');
     const values = (
-        await db.query<ContextRow>(
+        await db.query<IContextRow>(
             `SELECT i.id,i.agent_id,i.input->>'instruction' AS instruction,r.id AS run_id,r.revision,r.result
         FROM system_role_dialog_intents i JOIN system_role_dialogs d ON d.id=i.dialog_id AND d.owner_email=i.owner_email
         JOIN system_role_runs r ON r.id=i.run_id AND r.actor=i.owner_email AND r.agent_id=i.agent_id AND r.project_id IS NOT DISTINCT FROM d.project_id

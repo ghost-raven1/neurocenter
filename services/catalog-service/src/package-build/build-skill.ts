@@ -3,11 +3,11 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { validateAsset, type SkillAsset } from '@neurocenter/asset-contract';
 import { readSkillRepository } from '../../../shared/skill-repository.cjs';
-import type { BuildConfiguration } from './package-build.model';
+import type { IBuildConfiguration } from './package-build.model';
 import { inspectSkillSource } from './skill-source';
 
 /** Skills are data: no npm, runtime builder or upstream code executes during packaging. */
-export async function buildSkillAsset(config: BuildConfiguration, stage: string) {
+export async function buildSkillAsset(config: IBuildConfiguration, stage: string) {
     if (config.kind !== 'skill' || (config.source.type !== 'files' && config.source.type !== 'repository'))
         throw new Error('Нужны исходники скилла.');
     const files =

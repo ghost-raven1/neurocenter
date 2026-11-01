@@ -15,7 +15,7 @@ import LegacyOperationsRedirect from '../modules/Operations/LegacyOperationsRedi
  * @param {IModule[]} modules - список модулей
  * @returns список элементов роутов
  */
-const getRoutes = (modules: IModule[]): ReactNode[] => modules.flatMap(module => module.getRoute());
+const getRoutes = (modules: IModule[]): ReactNode[] => modules.flatMap((module) => module.getRoute());
 
 /**
  * Собирает пункты меню всех модулей.
@@ -23,7 +23,7 @@ const getRoutes = (modules: IModule[]): ReactNode[] => modules.flatMap(module =>
  * @param {IModule[]} modules - список модулей
  * @returns список пунктов меню
  */
-const getStructure = (modules: IModule[]): IMenuItem[] => modules.flatMap(module => module.getStructure());
+const getStructure = (modules: IModule[]): IMenuItem[] => modules.flatMap((module) => module.getStructure());
 
 /**
  * Компонент маршрутизации: оболочка Core + роуты модулей + 403/404.

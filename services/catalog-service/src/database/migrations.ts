@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
 
-export interface CatalogMigration {
+export interface ICatalogMigration {
     version: number;
     name: string;
     sql: string;
 }
-export interface MigrationRow {
+export interface IMigrationRow {
     version: number;
     name: string;
     checksum: string;
@@ -14,7 +14,10 @@ export interface MigrationRow {
 export const migrationChecksum = (sql: string): string => createHash('sha256').update(sql).digest('hex');
 
 /** Validate all history before feature DDL; only the old missing baseline is adoptable. */
-export function validateMigrationHistory(migrations: readonly CatalogMigration[], rows: readonly MigrationRow[]): void {
+export function validateMigrationHistory(
+    migrations: readonly ICatalogMigration[],
+    rows: readonly IMigrationRow[],
+): void {
     const first = migrations[0]?.version;
     if (
         migrations.some(
@@ -48,12 +51,12 @@ export function validateMigrationHistory(migrations: readonly CatalogMigration[]
 /** Read-only preflight neither creates a ledger nor treats pending migrations as readiness. */
 export async function catalogMigrationHistory(
     pool: Pick<Pool, 'query'>,
-    migrations: readonly CatalogMigration[],
+    migrations: readonly ICatalogMigration[],
 ): Promise<{ applied: number[]; pending: number[] }> {
     const exists = (await pool.query("SELECT to_regclass('catalog_schema_migrations') AS name")).rows[0]?.name;
-    const rows: MigrationRow[] = exists
+    const rows: IMigrationRow[] = exists
         ? (
-              await pool.query<MigrationRow>(
+              await pool.query<IMigrationRow>(
                   'SELECT version,name,checksum FROM catalog_schema_migrations ORDER BY version',
               )
           ).rows
@@ -67,7 +70,7 @@ export async function catalogMigrationHistory(
 }
 
 /** One transaction fences baseline adoption, historical migrations and final verification. */
-export async function migrateCatalog(pool: Pool, migrations: readonly CatalogMigration[]): Promise<void> {
+export async function migrateCatalog(pool: Pool, migrations: readonly ICatalogMigration[]): Promise<void> {
     validateMigrationHistory(migrations, []);
     const client = await pool.connect();
     try {
@@ -75,7 +78,7 @@ export async function migrateCatalog(pool: Pool, migrations: readonly CatalogMig
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:catalog:migrations',0))");
         await client.query(`CREATE TABLE IF NOT EXISTS catalog_schema_migrations (
             version integer PRIMARY KEY,name text NOT NULL,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now())`);
-        const { rows } = await client.query<MigrationRow>(
+        const { rows } = await client.query<IMigrationRow>(
             'SELECT version,name,checksum FROM catalog_schema_migrations ORDER BY version',
         );
         validateMigrationHistory(migrations, rows);

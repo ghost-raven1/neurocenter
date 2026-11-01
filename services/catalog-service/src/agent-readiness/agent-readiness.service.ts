@@ -16,10 +16,10 @@ import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { readFeatures } from '../../../shared/feature-client.cjs';
 import { AgentTrialPolicy, agentTrialPin } from './agent-readiness.policy';
-import { AgentTrialRepository, trialPending, type TrialRow } from './agent-readiness.repository';
+import { AgentTrialRepository, trialPending, type ITrialRow } from './agent-readiness.repository';
 import { AgentTrialRunner, AGENT_TRIAL_FEATURES } from './agent-readiness.runner';
 import { startAgentTrial, trialHash } from './agent-readiness.validation';
-import type { AgentTrial, AgentTrialOverview, AgentTrialReceipt } from './agent-readiness.types';
+import type { IAgentTrial, IAgentTrialOverview, IAgentTrialReceipt } from './agent-readiness.interfaces';
 
 /** Private bounded diagnostics: metadata reads and lease recovery never start a model call. */
 @Injectable()
@@ -29,7 +29,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
     readonly runner: AgentTrialRunner;
     private readonly active = new Map<
         string,
-        { abort: AbortController; row: TrialRow; receipt: AgentTrialReceipt; settled: Promise<void> }
+        { abort: AbortController; row: ITrialRow; receipt: IAgentTrialReceipt; settled: Promise<void> }
     >();
     private timer?: NodeJS.Timeout;
     constructor(
@@ -64,7 +64,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
         );
         await Promise.allSettled([...this.active.values()].map((value) => value.settled));
     }
-    async overview(req: Request, projectId: string): Promise<AgentTrialOverview> {
+    async overview(req: Request, projectId: string): Promise<IAgentTrialOverview> {
         const actor = await this.policy.actor(req, projectId);
         await this.repository.expire();
         const assignments = await this.policy.agents.assignments(projectId),
@@ -77,10 +77,10 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
         } catch {
             throw new ServiceUnavailableException('Не удалось проверить доступность функций. Повторите позже.');
         }
-        const items: AgentTrialOverview['items'] = [];
+        const items: IAgentTrialOverview['items'] = [];
         for (const assignment of assignments.filter((row) => !row.removed)) {
             const fixed = !!assignment.effective.model,
-                models: AgentTrialOverview['items'][number]['eligibility']['models'] = [];
+                models: IAgentTrialOverview['items'][number]['eligibility']['models'] = [];
             let reason: string | undefined;
             try {
                 await this.policy.assignment(projectId, assignment.agentId);
@@ -144,7 +144,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
         await this.policy.actor(req, projectId);
         return { executionSurface: 'server_chat', items };
     }
-    async start(req: Request, projectId: string, id: string, raw: unknown): Promise<AgentTrial> {
+    async start(req: Request, projectId: string, id: string, raw: unknown): Promise<IAgentTrial> {
         agentId(id);
         const input = startAgentTrial(raw),
             actor = await this.policy.actor(req, projectId),
@@ -190,7 +190,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
                     );
                 toolPin = tool.pin;
             }
-            const receipt: AgentTrialReceipt = {
+            const receipt: IAgentTrialReceipt = {
                 agentVersion: assignment.version,
                 agentManifest: assignment.manifest,
                 agentPin: pin,
@@ -231,18 +231,18 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
         if (saved.created) this.launch(req, saved.row);
         return this.view(req, saved.row);
     }
-    private same(row: TrialRow, hash: string): void {
+    private same(row: ITrialRow, hash: string): void {
         if (row.request_hash !== hash)
             throw new ConflictException('Этот ключ запроса уже использован для другого испытания.');
     }
-    async read(req: Request, project: string, agent: string, id: string): Promise<AgentTrial> {
+    async read(req: Request, project: string, agent: string, id: string): Promise<IAgentTrial> {
         agentId(agent);
         request(id);
         const actor = await this.policy.actor(req, project);
         await this.repository.expire();
         return this.view(req, await this.repository.owned(actor.email, project, agent, id));
     }
-    async cancel(req: Request, project: string, agent: string, id: string, raw: unknown): Promise<AgentTrial> {
+    async cancel(req: Request, project: string, agent: string, id: string, raw: unknown): Promise<IAgentTrial> {
         agentId(agent);
         request(id);
         const input = object(raw, ['expectedRevision']);
@@ -261,7 +261,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
         this.active.get(id)?.abort.abort();
         return this.view(req, row);
     }
-    private launch(req: Request, row: TrialRow): void {
+    private launch(req: Request, row: ITrialRow): void {
         const abort = new AbortController(),
             receipt = structuredClone(row.receipt),
             value = { abort, row, receipt, settled: Promise.resolve() };
@@ -269,7 +269,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
         value.settled = new Promise<void>((resolve) => setImmediate(resolve)).then(async () => {
             const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(90000)]);
             try {
-                const checkpoint = (next: AgentTrialReceipt) =>
+                const checkpoint = (next: IAgentTrialReceipt) =>
                     this.repository.transaction(async (db) => {
                         signal.throwIfAborted();
                         const current = await this.repository.owned(
@@ -345,7 +345,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
             }
         });
     }
-    private async view(req: Request, row: TrialRow): Promise<AgentTrial> {
+    private async view(req: Request, row: ITrialRow): Promise<IAgentTrial> {
         let current = true;
         try {
             await this.repository.transaction((db) => this.policy.assertCurrent(req, row, db));

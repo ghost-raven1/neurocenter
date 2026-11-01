@@ -1,24 +1,24 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 
-interface DeviceJobReadScope {
+interface IDeviceJobReadScope {
     email: string;
     main: boolean;
     projects: string[];
 }
-type JobView = Record<string, unknown> & { id: string };
-type ReceiptView = JobView & { requestFingerprint: string | null };
+type TJobView = Record<string, unknown> & { id: string };
+type TReceiptView = TJobView & { requestFingerprint: string | null };
 
 /** Точный receipt читает принятый alias без запуска, продления или изменения задания. */
 export async function readDeviceJobReceipt(
     db: Pick<PoolClient, 'query'>,
     view: string,
-    scope: DeviceJobReadScope,
+    scope: IDeviceJobReadScope,
     requestKey: string,
 ) {
     if (!/^[-a-f0-9]{36}$/.test(requestKey || ''))
         throw new BadRequestException('Нужен корректный ключ запроса задания.');
-    const { rows } = await db.query<ReceiptView>(
+    const { rows } = await db.query<TReceiptView>(
         `WITH receipt AS (
         SELECT job_id,device_id AS receipt_device_id,
             CASE WHEN request_hash ~ '^[a-f0-9]{64}$' THEN request_hash ELSE NULL END AS request_fingerprint

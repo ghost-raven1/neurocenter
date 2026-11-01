@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 
 import { useAppDispatch } from '../../../core/hooks';
 import type { ISkillCreateRequest, ISkillUpdateRequest } from '../../../core/api/interfaces';
-import { RootState } from '../../../store';
+import { TRootState } from '../../../store';
 
 import { createSkill, fetchSkillList, fetchSkillTree, updateSkill } from '../redux/actions';
 import { closeEditor } from '../redux/reducers';
@@ -34,9 +34,9 @@ interface IEditorValues {
 const SkillEditorModal: FC<ISkillEditorModalProps> = ({ dirPath }) => {
     const dispatch = useAppDispatch();
     const { editorOpen, editorMode, editorPath, editorSkill, editorSaving } = useSelector(
-        (state: RootState) => state.skills,
+        (state: TRootState) => state.skills,
     );
-    const [ form ] = Form.useForm<IEditorValues>();
+    const [form] = Form.useForm<IEditorValues>();
 
     useEffect(() => {
         if (!editorOpen) {
@@ -57,18 +57,14 @@ const SkillEditorModal: FC<ISkillEditorModalProps> = ({ dirPath }) => {
         }
 
         return undefined;
-    }, [ editorOpen, editorMode, editorSkill, form ]);
+    }, [editorOpen, editorMode, editorSkill, form]);
 
-    const handleCancel = useCallback(
-        (): void => {
-            dispatch(closeEditor());
-        },
-        [dispatch],
-    );
+    const handleCancel = useCallback((): void => {
+        dispatch(closeEditor());
+    }, [dispatch]);
 
     const handleSave = useCallback((): void => {
-        form
-            .validateFields()
+        form.validateFields()
             .then((values: IEditorValues) => {
                 const meta = {
                     mcp: values.mcp ?? [],
@@ -93,7 +89,7 @@ const SkillEditorModal: FC<ISkillEditorModalProps> = ({ dirPath }) => {
 
                     dispatch(createSkill(request))
                         .unwrap()
-                        .then(result => {
+                        .then((result) => {
                             notifySkillMutation(result, 'Скилл создан');
                             afterSave();
                         })
@@ -111,7 +107,7 @@ const SkillEditorModal: FC<ISkillEditorModalProps> = ({ dirPath }) => {
 
                 dispatch(updateSkill({ path: editorPath ?? '', request }))
                     .unwrap()
-                    .then(result => {
+                    .then((result) => {
                         notifySkillMutation(result, 'Скилл сохранён (новая версия)');
                         afterSave();
                     })
@@ -130,17 +126,29 @@ const SkillEditorModal: FC<ISkillEditorModalProps> = ({ dirPath }) => {
             destroyOnClose
             onCancel={handleCancel}
             footer={[
-                <Button key="cancel" onClick={handleCancel}>Отмена</Button>,
-                <Button key="save" type="primary" loading={editorSaving} onClick={handleSave}>Сохранить</Button>,
+                <Button key="cancel" onClick={handleCancel}>
+                    Отмена
+                </Button>,
+                <Button key="save" type="primary" loading={editorSaving} onClick={handleSave}>
+                    Сохранить
+                </Button>,
             ]}
         >
             <Form form={form} layout="vertical">
-                <Form.Item name="name" label="Наименование" rules={[{ required: true, message: 'Укажите наименование' }]}>
+                <Form.Item
+                    name="name"
+                    label="Наименование"
+                    rules={[{ required: true, message: 'Укажите наименование' }]}
+                >
                     <Input placeholder="Например: code-review" />
                 </Form.Item>
 
                 {editorMode === 'create' ? (
-                    <Form.Item name="slug" label="Идентификатор" rules={[{ required: true, message: 'Укажите идентификатор' }]}>
+                    <Form.Item
+                        name="slug"
+                        label="Идентификатор"
+                        rules={[{ required: true, message: 'Укажите идентификатор' }]}
+                    >
                         <Input placeholder="через-дефис, напр. code-review" />
                     </Form.Item>
                 ) : null}
@@ -161,7 +169,11 @@ const SkillEditorModal: FC<ISkillEditorModalProps> = ({ dirPath }) => {
                     <Select mode="tags" placeholder="теги" />
                 </Form.Item>
 
-                <Form.Item name="body" label="Содержимое (Markdown)" rules={[{ required: true, message: 'Укажите содержимое' }]}>
+                <Form.Item
+                    name="body"
+                    label="Содержимое (Markdown)"
+                    rules={[{ required: true, message: 'Укажите содержимое' }]}
+                >
                     <Input.TextArea rows={14} placeholder="# SKILL: ..." />
                 </Form.Item>
 

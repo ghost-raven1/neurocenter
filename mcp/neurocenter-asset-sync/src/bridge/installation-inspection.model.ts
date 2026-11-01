@@ -1,5 +1,5 @@
-export type InspectionStatus = 'synced' | 'modified' | 'missing' | 'unknown';
-export type InspectionIssue =
+export type TInspectionStatus = 'synced' | 'modified' | 'missing' | 'unknown';
+export type TInspectionIssue =
     | 'inspection-busy'
     | 'binding-changed'
     | 'receipt-missing'
@@ -20,7 +20,7 @@ export type InspectionIssue =
     | 'snapshot-changed'
     | 'inspection-failed'
     | 'runtime-path-unverified';
-export interface InstallationInspection {
+export interface IInstallationInspection {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -31,7 +31,7 @@ export interface InstallationInspection {
     checkedAt: string;
     readiness: 'unverified';
     state: 'checked' | 'busy';
-    status: InspectionStatus;
-    issues: InspectionIssue[];
+    status: TInspectionStatus;
+    issues: TInspectionIssue[];
     ownerKeys?: string[];
 }

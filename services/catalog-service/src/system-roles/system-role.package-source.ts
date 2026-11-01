@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
-import type { RoleDb } from './system-role.repository';
+import type { TRoleDb } from './system-role.repository';
 import { roleHash } from './system-role.definitions';
 import { roleObject } from './system-role.validation';
 const invalid = (): never => {
@@ -9,7 +9,7 @@ const text = (value: unknown, bytes = 256): value is string =>
     typeof value === 'string' && !!value && Buffer.byteLength(value) <= bytes && !/[\x00-\x1f]/.test(value);
 /** Inspection metadata is evidence of discovery only; the existing build owner still verifies source and runtime. */
 export async function readRolePackageSource(
-    db: RoleDb,
+    db: TRoleDb,
     id: string,
     actor: string,
     project: string | null,

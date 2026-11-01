@@ -1,10 +1,10 @@
 import { estimateModelTokens } from '../model-token-quotas/quota-estimate';
-import type { IModel } from './model.types';
-import type { IRemoteModelConnection } from './remote-model.types';
-import { isRemoteModel } from './remote-model.types';
+import type { IModel } from './model.interfaces';
+import type { IRemoteModelConnection } from './remote-model.interfaces';
+import { isRemoteModel } from './remote-model.utils';
 import { remoteModelBaseUrl } from './remote-model-validation';
 import { assertRemoteModelOptions, remoteModelOptions } from './remote-model-options';
-import type { IRemoteModelOptions } from './remote-model.types';
+import type { IRemoteModelOptions } from './remote-model.interfaces';
 import type { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 import { RemoteModelError } from './remote-model-error';
 import { openaiResponsesBody, openaiResponsesResult } from './remote-openai-responses';
@@ -13,8 +13,8 @@ import { markModelProviderUnavailable } from './model-provider-availability';
 import { currentModelUsage } from '../model-usage/model-usage.context';
 export { RemoteModelError } from './remote-model-error';
 
-type Json = Record<string, unknown>;
-const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
+type TJson = Record<string, unknown>;
+const object = (value: unknown): value is TJson => !!value && typeof value === 'object' && !Array.isArray(value);
 const validVector = (vector: unknown, dimension: number | null): vector is number[] =>
     Array.isArray(vector) &&
     vector.length > 0 &&
@@ -38,9 +38,9 @@ export class RemoteModelClient {
         model: IModel,
         connection: IRemoteModelConnection,
         endpoint: 'embed' | 'chat',
-        body: Json,
+        body: TJson,
         signal?: AbortSignal,
-    ): Promise<Json> {
+    ): Promise<TJson> {
         if (
             !isRemoteModel(model) ||
             !model.modelVersion ||
@@ -187,7 +187,7 @@ export class RemoteModelClient {
     private tokens(value: unknown): number | null {
         return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
     }
-    private openaiVectors(value: Json, count: number): unknown {
+    private openaiVectors(value: TJson, count: number): unknown {
         if (value.object !== 'list' || !Array.isArray(value.data) || value.data.length !== count) {
             return undefined;
         }
@@ -208,7 +208,7 @@ export class RemoteModelClient {
         return result;
     }
 
-    private chatBody(model: IModel, body: Json, openai: boolean, defaults?: IRemoteModelOptions): Json {
+    private chatBody(model: IModel, body: TJson, openai: boolean, defaults?: IRemoteModelOptions): TJson {
         if (!Array.isArray(body.messages) || !body.messages.length) {
             throw new RemoteModelError('response', 'Передайте сообщения для модели.');
         }
@@ -283,11 +283,11 @@ export class RemoteModelClient {
 
     private async request(
         url: string,
-        body: Json,
+        body: TJson,
         apiKey?: string,
         signal?: AbortSignal,
         timeoutMs?: number,
-    ): Promise<Json> {
+    ): Promise<TJson> {
         signal?.throwIfAborted();
         const wire = currentModelUsage().providerWire;
         const lease = wire ? (wire.current ?? (await wire.acquire(signal))) : undefined;

@@ -1,11 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
-import type { GgufImportIntent, GgufImportReceipt, GgufMetadata } from '../../../../shared/gguf-import';
-import type { GgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
+import type { IGgufImportIntent, IGgufImportReceipt, IGgufMetadata } from '../../../../shared/gguf-import';
+import type { IGgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
 import { uploadId } from '../../source-upload/source-upload.model';
 import { validateModelCreate } from '../model-validation';
 
 export { uploadId as ggufImportId };
-export interface GgufUploadRow {
+export interface IGgufUploadRow {
     id: string;
     actor: string;
     request_key: string;
@@ -14,11 +14,11 @@ export interface GgufUploadRow {
     bytes: string;
     expected_sha256: string | null;
     sha256: string | null;
-    state: GgufImportReceipt['state'];
+    state: IGgufImportReceipt['state'];
     auth_epoch: string;
     lease_token: string | null;
-    metadata: GgufMetadata | null;
-    limits: GgufImportPolicy;
+    metadata: IGgufMetadata | null;
+    limits: IGgufImportPolicy;
     model_id: string | null;
     accept_hash: string | null;
     expires_at: Date | string;
@@ -26,7 +26,7 @@ export interface GgufUploadRow {
     updated_at: Date | string;
     cleaned_at: Date | string | null;
 }
-export function ggufReceipt(row: GgufUploadRow): GgufImportReceipt {
+export function ggufReceipt(row: IGgufUploadRow): IGgufImportReceipt {
     return {
         id: row.id,
         requestKey: row.request_key,
@@ -42,7 +42,7 @@ export function ggufReceipt(row: GgufUploadRow): GgufImportReceipt {
     };
 }
 /** The admission accepts a single complete GGUF; bytes remain outside JSON. */
-export function ggufIntent(raw: unknown, limits: GgufImportPolicy): GgufImportIntent {
+export function ggufIntent(raw: unknown, limits: IGgufImportPolicy): IGgufImportIntent {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
         throw new BadRequestException('Выберите GGUF и передайте UUID, имя и размер.');
     const item = raw as Record<string, unknown>;

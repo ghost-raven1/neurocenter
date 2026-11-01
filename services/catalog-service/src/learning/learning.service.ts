@@ -20,8 +20,8 @@ import {
     normalizeLearningAnalysisInput,
     normalizeLearningAnalysisRecord,
 } from '../../../shared/project-learning.cjs';
-import type { LearningDeviceContext, LearningOverview } from '../../../shared/project-learning.cjs';
-import { LearningRepository, type LearningDeviceAuthorization } from './learning.repository';
+import type { ILearningDeviceContext, ILearningOverview } from '../../../shared/project-learning.cjs';
+import { LearningRepository, type TLearningDeviceAuthorization } from './learning.repository';
 import { learningInput, learningUuid } from './learning-validation';
 import { requireLearningHuman } from './learning-access';
 
@@ -46,7 +46,7 @@ export class LearningService implements OnModuleInit, OnApplicationShutdown {
             project = await this.access.resolveProject(req, id, minimum, actor);
         return { actor, projectId: project.id };
     }
-    async overview(req: Request, id: string): Promise<LearningOverview> {
+    async overview(req: Request, id: string): Promise<ILearningOverview> {
         const { actor, projectId } = await this.scope(req, id),
             level = projectLevel(actor.claims, actor.activeRole, projectId),
             human = !req.headers.authorization && !req.headers['x-neurocenter-device-id'];
@@ -168,15 +168,15 @@ export class LearningService implements OnModuleInit, OnApplicationShutdown {
             { actor, projectId } = await this.scope(req, id, 3);
         return this.repository.candidateAction(actor, projectId, candidateId, input, action);
     }
-    async deviceContext(actor: IAccessActor, projectId: string, authorizeDevice?: LearningDeviceAuthorization) {
+    async deviceContext(actor: IAccessActor, projectId: string, authorizeDevice?: TLearningDeviceAuthorization) {
         return this.repository.read(actor, projectId, (db) => this.repository.context(db, projectId), authorizeDevice);
     }
     async recordDeviceExperience(
         actor: IAccessActor,
         projectId: string,
         raw: unknown,
-        device: LearningDeviceContext,
-        authorizeDevice: LearningDeviceAuthorization,
+        device: ILearningDeviceContext,
+        authorizeDevice: TLearningDeviceAuthorization,
     ) {
         const input = learningInput(normalizeLearningExperienceInput, raw);
         return this.repository.addExperience(actor, projectId, input, { origin: 'device', device }, authorizeDevice);
@@ -185,8 +185,8 @@ export class LearningService implements OnModuleInit, OnApplicationShutdown {
         actor: IAccessActor,
         projectId: string,
         raw: unknown,
-        device: LearningDeviceContext,
-        authorizeDevice: LearningDeviceAuthorization,
+        device: ILearningDeviceContext,
+        authorizeDevice: TLearningDeviceAuthorization,
     ) {
         const input = learningInput(normalizeLearningObservedExperienceInput, raw);
         return this.repository.addExperience(
@@ -202,8 +202,8 @@ export class LearningService implements OnModuleInit, OnApplicationShutdown {
         actor: IAccessActor,
         projectId: string,
         raw: unknown,
-        device: LearningDeviceContext,
-        authorizeDevice: LearningDeviceAuthorization,
+        device: ILearningDeviceContext,
+        authorizeDevice: TLearningDeviceAuthorization,
     ) {
         const input = learningInput(normalizeLearningHypothesisInput, raw),
             { requestKey, expectedRevision, ...draft } = input;
@@ -233,7 +233,7 @@ export class LearningService implements OnModuleInit, OnApplicationShutdown {
         });
     }
     /** Late model output may append only hypotheses; its original source revision remains provenance. */
-    async recordAnalysis(req: Request, id: string, raw: unknown, authorize?: LearningDeviceAuthorization) {
+    async recordAnalysis(req: Request, id: string, raw: unknown, authorize?: TLearningDeviceAuthorization) {
         requireLearningHuman(req);
         const normalized = learningInput(normalizeLearningAnalysisRecord, raw),
             input = { ...normalized, model: { ...normalized.model, sourceRevision: normalized.expectedRevision } },

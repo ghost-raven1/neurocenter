@@ -2,10 +2,10 @@ import fs from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import { safeTarget } from '../../bridge/workspace-paths.js';
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
-import { enqueueLearningObservation, type LearningQueueTarget } from './observation-queue.js';
+import { enqueueLearningObservation, type ILearningQueueTarget } from './observation-queue.js';
 import type { LearningObservedExperienceInput } from './contract.js';
 
-export interface LearningCollectorConfiguration extends LearningQueueTarget {
+export interface ILearningCollectorConfiguration extends ILearningQueueTarget {
     directory: string;
     server: string;
     queueDirectory: string;
@@ -30,7 +30,7 @@ const TOOL_NAMES = new Set([
 ]);
 const SESSION_LIMIT = 64,
     CALL_LIMIT = 10000;
-interface Session {
+interface ISession {
     startedAt: number;
     tools: Record<string, number>;
     calls: number;
@@ -42,7 +42,7 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const sessionId = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(value);
 
-async function current(configuration: LearningCollectorConfiguration): Promise<boolean> {
+async function current(configuration: ILearningCollectorConfiguration): Promise<boolean> {
     try {
         if ((await fs.realpath(configuration.directory)) !== configuration.directory) return false;
         const marker = JSON.parse(
@@ -62,13 +62,13 @@ async function current(configuration: LearningCollectorConfiguration): Promise<b
 /** Hooks capture only bounded allowlisted metadata; no args, output, prompt, diff or credentials are inspected. */
 export async function createLearningCollector(
     input: { directory?: unknown },
-    configuration: LearningCollectorConfiguration,
+    configuration: ILearningCollectorConfiguration,
 ) {
     const enabled =
         typeof input.directory === 'string' &&
         (await fs.realpath(input.directory).catch(() => undefined)) === configuration.directory &&
         (await current(configuration));
-    const sessions = new Map<string, Session>();
+    const sessions = new Map<string, ISession>();
     const get = (id: string) => {
         let value = sessions.get(id);
         if (!value) {
@@ -163,7 +163,7 @@ export async function createLearningCollector(
 export const LEARNING_COLLECTOR_FILE = '.opencode/plugins/neurocenter-learning.js';
 
 /** The wrapper pins this bridge's collector and target; the private queue path contains no authentication secret. */
-export function renderLearningCollector(configuration: LearningCollectorConfiguration): string {
+export function renderLearningCollector(configuration: ILearningCollectorConfiguration): string {
     const factory = import.meta.url;
     return `import {createLearningCollector} from ${JSON.stringify(factory)};\nexport default async input=>createLearningCollector(input,${JSON.stringify(configuration)});\n`;
 }

@@ -2,7 +2,7 @@ import { MEMORY_SYNC_CAPABILITY } from '../features/project-learning-memory-sync
 import { acknowledgeMemoryCheckpoint } from '../features/project-learning-memory-sync/receipts.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { api, stateDir, readState, type Credentials } from './state.js';
+import { api, stateDir, readState, type ICredentials } from './state.js';
 import { atomicText, syncDirectory } from './atomic-file.js';
 import { readBoundedUtf8 } from './read-bounded.js';
 import { DEVICE_CODEX_PROTOCOL } from '../features/device-codex-inference/contract.js';
@@ -12,7 +12,7 @@ import { AGENT_METHOD_WORKFLOW_PROTOCOL } from '../features/agent-method-workflo
 import { acknowledgeMethodReceipt, methodDeliveryResult } from '../features/agent-method-workflow/receipts.js';
 import { contract as globalProvidersContract } from '../features/opencode-local-providers/contract.js';
 
-export interface Completion {
+export interface ICompletion {
     id: string;
     lease: string;
     deviceId?: string;
@@ -22,7 +22,7 @@ export interface Completion {
 }
 const uuid = /^[-a-f0-9]{36}$/;
 const directory = () => path.join(stateDir(), 'completions');
-function providerInventory(item: Completion): boolean {
+function providerInventory(item: ICompletion): boolean {
     const kind = item.result?.kind;
     if (
         kind !== globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB &&
@@ -39,8 +39,8 @@ function providerInventory(item: Completion): boolean {
         throw new Error('Исход локального действия OpenCode не подтверждён.');
     return kind === globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB;
 }
-function validate(value: unknown): Completion {
-    const item = value as Completion | null;
+function validate(value: unknown): ICompletion {
+    const item = value as ICompletion | null;
     if (
         !item ||
         !uuid.test(item.id) ||
@@ -68,7 +68,7 @@ function validate(value: unknown): Completion {
 }
 
 /** Результат сохраняется до отправки; ошибка сети не меняет факт локальной записи. */
-export async function saveCompletion(completion: Completion): Promise<void> {
+export async function saveCompletion(completion: ICompletion): Promise<void> {
     // Открытие отчёта тоже содержит changePlanId, но не является квитанцией изменения asset.
     if (
         completion?.result &&
@@ -117,14 +117,14 @@ export async function saveCompletion(completion: Completion): Promise<void> {
     await atomicText(destination, JSON.stringify(completion), 0o600);
 }
 
-export async function pendingCompletions(): Promise<Completion[]> {
+export async function pendingCompletions(): Promise<ICompletion[]> {
     const files = await fs.readdir(directory()).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') {
             return [];
         }
         throw error;
     });
-    const items: Completion[] = [];
+    const items: ICompletion[] = [];
     for (const file of files.filter((file) => /^[-a-f0-9]{36}\.json$/.test(file)).sort()) {
         const completion = validate(JSON.parse(await readBoundedUtf8(path.join(directory(), file), 600 * 1024)));
         if (file !== completion.id + '.json') {
@@ -137,9 +137,9 @@ export async function pendingCompletions(): Promise<Completion[]> {
 
 /** Повторяется только отчёт: сами файлы и конфигурация повторно не изменяются. */
 export async function deliverCompletions(
-    send: (item: Completion) => Promise<unknown> = (item) => api(`jobs/${item.id}/complete`, item),
+    send: (item: ICompletion) => Promise<unknown> = (item) => api(`jobs/${item.id}/complete`, item),
 ): Promise<void> {
-    const credentials = await readState<Credentials>('credentials');
+    const credentials = await readState<ICredentials>('credentials');
     for (const item of await pendingCompletions()) {
         if (item.deviceId && credentials && item.deviceId !== credentials.deviceId) {
             const archive = path.join(directory(), 'previous-devices');

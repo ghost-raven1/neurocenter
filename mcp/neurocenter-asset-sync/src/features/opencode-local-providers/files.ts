@@ -14,7 +14,7 @@ export const unsafe = () =>
         Error('Локальный файл или его права небезопасны. Исправьте файл на этом компьютере и перечитайте состояние.'),
         { code: 'GLOBAL_PROVIDER_UNSAFE' },
     );
-export interface LocalSnapshot {
+export interface ILocalSnapshot {
     file: string;
     text: string | null;
     fingerprint: string | null;
@@ -44,7 +44,7 @@ export async function assertPath(file: string, create = false): Promise<void> {
     const parent = await fs.lstat(directory);
     if (process.platform !== 'win32' && parent.uid !== process.getuid?.()) throw unsafe();
 }
-export async function snapshot(file: string, maximum: number, secret: boolean): Promise<LocalSnapshot> {
+export async function snapshot(file: string, maximum: number, secret: boolean): Promise<ILocalSnapshot> {
     await assertPath(file);
     try {
         const info = await fs.lstat(file);
@@ -65,13 +65,13 @@ export async function snapshot(file: string, maximum: number, secret: boolean): 
         throw error;
     }
 }
-export async function unchanged(previous: LocalSnapshot, maximum: number): Promise<void> {
+export async function unchanged(previous: ILocalSnapshot, maximum: number): Promise<void> {
     const current = await snapshot(previous.file, maximum, previous.secret);
     if (current.fingerprint !== previous.fingerprint || current.text !== previous.text) throw conflict();
 }
 /** A same-user external writer need not honor our lock: fresh byte/inode checks bound detection; no cross-process CAS promise. */
 export async function publish(
-    previous: LocalSnapshot,
+    previous: ILocalSnapshot,
     text: string,
     maximum: number,
     authorize: () => Promise<unknown>,

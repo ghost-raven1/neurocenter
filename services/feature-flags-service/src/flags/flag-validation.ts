@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { isFeatureFlagKey, type FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import { isFeatureFlagKey, type TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 
-export function featureFlagKey(value: unknown): FeatureFlagKey {
+export function featureFlagKey(value: unknown): TFeatureFlagKey {
     if (!isFeatureFlagKey(value)) {
         throw new NotFoundException('Переключатель функции не зарегистрирован.');
     }

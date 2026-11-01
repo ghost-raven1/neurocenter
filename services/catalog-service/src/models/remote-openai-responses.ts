@@ -1,23 +1,23 @@
 import { RemoteModelError } from './remote-model-error';
-import type { IRemoteModelOptions } from './remote-model.types';
+import type { IRemoteModelOptions } from './remote-model.interfaces';
 
-type Json = Record<string, unknown>;
-const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
+type TJson = Record<string, unknown>;
+const object = (value: unknown): value is TJson => !!value && typeof value === 'object' && !Array.isArray(value);
 const fail = (): never => {
     throw new RemoteModelError('response', 'Responses API не завершил текстовый ответ поддерживаемого формата.');
 };
 
 /** EasyInputMessage accepts assistant history with input_text, without fabricating output IDs/status. */
-export function openaiResponsesBody(model: string, messages: Json[], options: IRemoteModelOptions): Json {
+export function openaiResponsesBody(model: string, messages: TJson[], options: IRemoteModelOptions): TJson {
     const input = messages.map((message) => ({
         role: message.role,
         content:
             typeof message.content === 'string'
                 ? [{ type: 'input_text', text: message.content }]
-                : (message.content as Json[]).map((part) =>
+                : (message.content as TJson[]).map((part) =>
                       part.type === 'text'
                           ? { type: 'input_text', text: part.text }
-                          : { type: 'input_image', image_url: (part.image_url as Json).url, detail: 'auto' },
+                          : { type: 'input_image', image_url: (part.image_url as TJson).url, detail: 'auto' },
                   ),
     }));
     return {
@@ -33,7 +33,7 @@ export function openaiResponsesBody(model: string, messages: Json[], options: IR
 }
 
 /** Only a terminal text response is accepted; refusals, tools, malformed and partial transports fail closed. */
-export function openaiResponsesResult(value: Json): {
+export function openaiResponsesResult(value: TJson): {
     content: string;
     reason: 'stop' | 'length';
     inputTokens: unknown;

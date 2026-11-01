@@ -1,7 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
-import { hub, apiHub, readState, type Credentials } from '../../bridge/state.js';
-import type { Package } from '../../bridge/package.js';
+import { hub, apiHub, readState, type ICredentials } from '../../bridge/state.js';
+import type { IPackage } from '../../bridge/package.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 /** Путь канала хоста в конфигурации OpenCode: /api/mcp-host/m/<ticket>. */
@@ -17,8 +17,8 @@ export const isHostedMcpUrl = (value: unknown): value is string =>
     );
 
 /** Берёт билет хоста у площадки за устройство и одобренный пакет; токен устройства в проект не уходит. */
-export async function requestHostedMcpConnection(projectId: string, pkg: Package): Promise<string> {
-    const credentials = await readState<Credentials>('credentials');
+export async function requestHostedMcpConnection(projectId: string, pkg: IPackage): Promise<string> {
+    const credentials = await readState<ICredentials>('credentials');
     if (
         !credentials ||
         !uuid.test(credentials.deviceId) ||

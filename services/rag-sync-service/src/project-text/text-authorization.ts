@@ -1,14 +1,14 @@
 import { ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
-import type { TextAdmission } from '../../../shared/project-text-knowledge.cjs';
-import type { TextActor } from './text-values';
+import type { ITextAdmission } from '../../../shared/project-text-knowledge.cjs';
+import type { ITextActor } from './text-values';
 
 /** Fresh Catalog authorization runs inside the locked transaction, immediately before its first mutation. */
 export async function authorizeTextUpload(value: {
     projectId: string;
-    actor: TextActor;
+    actor: ITextActor;
     requestKey: string;
     requestHash: string;
-    admission?: TextAdmission;
+    admission?: ITextAdmission;
 }): Promise<void> {
     const base = (process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/+$/, '');
     let response: Response, body: unknown;

@@ -1,10 +1,10 @@
 import { ForbiddenException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { ROLES, projectLevel, roleLevel, type IAccessActor } from '../access/access.model';
-import type { RequestActor, RequestPermissions, RequestRow } from './request.types';
+import type { IRequestActor, IRequestPermissions, IRequestRow } from './request.interfaces';
 
 /** Locks make role revocation and a request mutation share a single authorization boundary. */
-export async function currentActor(db: Pick<PoolClient, 'query'>, input: IAccessActor): Promise<RequestActor> {
+export async function currentActor(db: Pick<PoolClient, 'query'>, input: IAccessActor): Promise<IRequestActor> {
     const account = (
         await db.query<{ enabled: boolean; is_main_admin: boolean }>(
             'SELECT enabled,is_main_admin FROM platform_users WHERE email=$1 FOR SHARE',
@@ -25,7 +25,7 @@ export async function currentActor(db: Pick<PoolClient, 'query'>, input: IAccess
         throw new ForbiddenException('Активная роль больше не назначена пользователю.');
     return { ...input, claims: { email: input.email, userRoles, projects, pluginIds: [], skillPaths: [] } };
 }
-export function canRead(actor: RequestActor, row: RequestRow): boolean {
+export function canRead(actor: IRequestActor, row: IRequestRow): boolean {
     if (actor.activeRole === 'Главный админ') return true;
     if (row.project_id && projectLevel(actor.claims, actor.activeRole, row.project_id) < 1) return false;
     return (
@@ -33,7 +33,7 @@ export function canRead(actor: RequestActor, row: RequestRow): boolean {
         (!!row.project_id && projectLevel(actor.claims, actor.activeRole, row.project_id) >= 3)
     );
 }
-export function permissions(actor: RequestActor, row: RequestRow): RequestPermissions {
+export function permissions(actor: IRequestActor, row: IRequestRow): IRequestPermissions {
     const owner = row.created_by === actor.email,
         active = ['submitted', 'in_progress', 'needs_info'].includes(row.status);
     const reviewer =

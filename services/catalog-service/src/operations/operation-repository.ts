@@ -2,7 +2,12 @@ import type { Pool } from 'pg';
 
 import type { IOperation, IOperationDetail, IOperationPage } from '../catalog/dto';
 import { toOperation, toOperationDetail } from './operation-mappers';
-import type { IOperationCreate, IOperationReadScope, IOperationRow, IOperationStatePatch } from './operation.types';
+import type {
+    IOperationCreate,
+    IOperationReadScope,
+    IOperationRow,
+    IOperationStatePatch,
+} from './operation.interfaces';
 
 /** Один SQL-предикат защищает список и detail; исполнитель не заменяет отозванный доступ к проекту. */
 function readScopeCondition(scope: IOperationReadScope, params: unknown[]): string {

@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { readDevBridgeRuntime } from './dev-bridge-runtime';
-import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.types';
+import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.interfaces';
 
 const SHA = /^[a-f0-9]{64}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;

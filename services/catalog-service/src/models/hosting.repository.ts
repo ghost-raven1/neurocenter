@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
-import type { HostingAction, IHostingJobRow, IHostingProgress } from './hosting.types';
+import type { THostingAction, IHostingJobRow, IHostingProgress } from './hosting.interfaces';
 
 /** Операции переживают перезапуск; незавершённая загрузка требует явного повтора. */
 export class ModelHostingRepository {
@@ -45,7 +45,7 @@ export class ModelHostingRepository {
         }
     }
 
-    async create(client: PoolClient, modelId: string, action: HostingAction, actor: string): Promise<IHostingJobRow> {
+    async create(client: PoolClient, modelId: string, action: THostingAction, actor: string): Promise<IHostingJobRow> {
         const id = randomUUID(),
             operationId = 'op-model-' + id;
         const message =

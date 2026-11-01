@@ -10,7 +10,7 @@ import { PROJECT_AGENTS_JOB } from '../../../shared/project-agents.cjs';
 import { AgentRepository } from './agent.repository';
 import { ProjectAgentRepository } from './project-agent.repository';
 import { object, request, revision } from './agent-validation';
-import type { AgentList } from './agent.types';
+import type { IAgentList } from './agent.interfaces';
 /** Native templates and project desired state share the existing trusted actor and project access boundary. */
 @Injectable()
 export class AgentsService implements OnModuleInit, OnApplicationShutdown {
@@ -30,7 +30,7 @@ export class AgentsService implements OnModuleInit, OnApplicationShutdown {
     async onApplicationShutdown() {
         await this.pool.end();
     }
-    async list(req: Request, projectId?: string): Promise<AgentList> {
+    async list(req: Request, projectId?: string): Promise<IAgentList> {
         const actor = await this.access.actor(req);
         if (projectId !== undefined) {
             const project = await this.access.resolveProject(req, projectId, 1, actor),

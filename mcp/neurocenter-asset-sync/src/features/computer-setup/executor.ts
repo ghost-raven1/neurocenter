@@ -33,10 +33,10 @@ import {
     recoverComputerSetupCompletions,
     CliCleanupError,
     cliFailureMessage,
-    type CliReceipt,
+    type ICliReceipt,
 } from './receipts.js';
 
-interface CliJob {
+interface ICliJob {
     id: string;
     lease: string;
     kind: string;
@@ -45,7 +45,7 @@ interface CliJob {
 }
 const active = new Map<
     AbortController,
-    { finished: Promise<void>; settled: boolean; closed: () => CliReceipt | undefined }
+    { finished: Promise<void>; settled: boolean; closed: () => ICliReceipt | undefined }
 >();
 let stopping = false;
 
@@ -74,7 +74,7 @@ export async function recoverComputerSetupJobs(): Promise<void> {
 
 /** Device-global observation never borrows a project folder, SDK probe or browser-supplied executable. */
 export async function runComputerSetupJob(
-    job: CliJob,
+    job: ICliJob,
     deviceId: string,
     authorize: (signal?: AbortSignal) => Promise<unknown>,
 ): Promise<void> {
@@ -92,7 +92,7 @@ export async function runComputerSetupJob(
         : normalizeOpenCodeCliPayload(job.payload);
     if (payload.deviceId !== deviceId) throw new Error('Проверка OpenCode относится к другому компьютеру.');
     const controller = new AbortController();
-    let closed: CliReceipt | undefined;
+    let closed: ICliReceipt | undefined;
     const timer = setTimeout(
         () => controller.abort(Object.assign(new Error('Проверка OpenCode превысила срок.'), { name: 'TimeoutError' })),
         installing ? 90000 : 10000,
@@ -106,7 +106,7 @@ export async function runComputerSetupJob(
             if (previous.phase === 'closed') return;
             throw new CliCleanupError(new Error('Сначала восстановите прерванную проверку OpenCode.'));
         }
-        let receipt: CliReceipt = await beginCliReceipt(
+        let receipt: ICliReceipt = await beginCliReceipt(
             identity,
             installing ? normalizeOpenCodeInstallPayload(payload) : undefined,
         );

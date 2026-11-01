@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { hash } from '../../bridge/state.js';
 import { readPrivateConfiguration } from '../local-configuration/private-store.js';
 import { updateCleanup } from './update-cleanup.js';
-import type { RuntimeCachePolicyResult } from '../../../../../services/shared/runtime-cache-policy.cjs';
+import type { TRuntimeCachePolicyResult } from '../../../../../services/shared/runtime-cache-policy.cjs';
 
 const contract = createRequire(import.meta.url)(
     fileURLToPath(
@@ -25,20 +25,20 @@ export const {
 } = contract;
 export const runtimeCachePolicyKey = hash('runtime-cache-policy:v1');
 export const runtimeCacheReceiptKey = (jobId: string) => hash('runtime-cache-policy-receipt:v1:' + jobId);
-export interface RuntimeCachePolicyReceipt {
+export interface IRuntimeCachePolicyReceipt {
     schemaVersion: 1;
     jobId: string;
     lease: string;
     deviceId: string;
     payloadHash: string;
-    result: RuntimeCachePolicyResult;
+    result: TRuntimeCachePolicyResult;
 }
-export interface RuntimeCachePolicy {
+export interface IRuntimeCachePolicy {
     schemaVersion: 1;
     revision: number;
     limitBytes: number;
-    lastChange: RuntimeCachePolicyReceipt;
-    cleanup?: import('../../../../../services/shared/runtime-cache-policy.cjs').BridgeUpdateCleanupPolicy;
+    lastChange: IRuntimeCachePolicyReceipt;
+    cleanup?: import('../../../../../services/shared/runtime-cache-policy.cjs').IBridgeUpdateCleanupPolicy;
 }
 const uuid = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
@@ -49,7 +49,7 @@ const exact = (value: unknown, keys: string[]): value is Record<string, unknown>
     Object.keys(value).sort().join(',') === [...keys].sort().join(',');
 
 /** Локальный журнал хранит только численный лимит и квитанцию; настройки проектов в него не входят. */
-export function normalizeRuntimeCacheReceipt(value: unknown): RuntimeCachePolicyReceipt {
+export function normalizeRuntimeCacheReceipt(value: unknown): IRuntimeCachePolicyReceipt {
     if (
         !exact(value, ['schemaVersion', 'jobId', 'lease', 'deviceId', 'payloadHash', 'result']) ||
         value.schemaVersion !== 1 ||
@@ -60,10 +60,10 @@ export function normalizeRuntimeCacheReceipt(value: unknown): RuntimeCachePolicy
         !/^[a-f0-9]{64}$/.test(value.payloadHash)
     )
         throw new Error('Повреждена квитанция настройки кэша.');
-    return { ...value, result: normalizeRuntimeCachePolicyResult(value.result) } as RuntimeCachePolicyReceipt;
+    return { ...value, result: normalizeRuntimeCachePolicyResult(value.result) } as IRuntimeCachePolicyReceipt;
 }
 
-export async function readRuntimeCachePolicy(): Promise<RuntimeCachePolicy | undefined> {
+export async function readRuntimeCachePolicy(): Promise<IRuntimeCachePolicy | undefined> {
     const value = await readPrivateConfiguration<unknown>(runtimeCachePolicyKey);
     if (value === undefined) return undefined;
     if (
@@ -85,7 +85,7 @@ export async function readRuntimeCachePolicy(): Promise<RuntimeCachePolicy | und
     const cleanup = Object.hasOwn(value, 'cleanup') ? updateCleanup.normalizeCleanupPolicy(value.cleanup) : undefined;
     if (lastChange.result.schemaVersion === 2 && JSON.stringify(lastChange.result.cleanup) !== JSON.stringify(cleanup))
         throw new Error('Квитанция не соответствует настройке очистки.');
-    return { ...value, lastChange, ...(cleanup ? { cleanup } : {}) } as RuntimeCachePolicy;
+    return { ...value, lastChange, ...(cleanup ? { cleanup } : {}) } as IRuntimeCachePolicy;
 }
 
 export async function readBridgeCleanupPolicy() {

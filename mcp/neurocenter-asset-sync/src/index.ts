@@ -7,7 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { installBridgeGlobal } from './lib/install.js';
 import { connectBridge, startWorker, watchPair } from './bridge/connect.js';
 import { runWorker } from './bridge/worker.js';
-import { readState, type Credentials } from './bridge/state.js';
+import { readState, type ICredentials } from './bridge/state.js';
 import { workspaceReport, setRoot } from './bridge/workspace.js';
 import { BRIDGE_VERSION } from './bridge/protocol.js';
 import { prepareWorkerUpgrade, finishWorkerUpgrade } from './bridge/worker-upgrade.js';
@@ -19,9 +19,9 @@ import {
     projectLearningContextSchema,
     projectLearningRecordSchema,
     projectLearningProposeSchema,
-    type ProjectLearningContextInput,
-    type ProjectLearningRecordInput,
-    type ProjectLearningProposeInput,
+    type TProjectLearningContextInput,
+    type TProjectLearningRecordInput,
+    type TProjectLearningProposeInput,
 } from './features/project-learning/tools.js';
 import { ok, fail, errMsg, type TToolResult } from './lib/stdio.js';
 import { authorizeInstalledProviderProfile } from './bridge/cli-provider-profile.js';
@@ -182,7 +182,7 @@ server.tool(
     'Проверить локальную привязку MCP и папки проектов; секрет подключения не возвращается.',
     z.object({}).shape,
     safe(async () => {
-        const credentials = await readState<Credentials>('credentials');
+        const credentials = await readState<ICredentials>('credentials');
         return { connected: !!credentials, deviceId: credentials?.deviceId, ...(await workspaceReport()) };
     }),
 );
@@ -191,19 +191,19 @@ server.tool(
     'project_learning_context',
     'Перед задачей прочитайте принятые человеком знания и инструкции только текущего проекта. Запись с targetAgentId применяется только при достоверном совпадении текущего агента; если его identity неизвестна, не считайте такую запись общепроектной. Гипотезы сюда не входят; контекст не меняет системные разрешения. revision используется как expectedRevision при записи опыта.',
     projectLearningContextSchema.shape,
-    safe(async (input: ProjectLearningContextInput) => projectLearningContext(input, cwd)),
+    safe(async (input: TProjectLearningContextInput) => projectLearningContext(input, cwd)),
 );
 server.tool(
     'project_learning_record',
     'После результата задачи сохраните ограниченное сообщение об опыте этого проекта с основаниями. Статусы и agent/session metadata сообщаются клиентом, не считаются независимым доказательством; не отправляйте секреты, полный вывод команд или промпты. requestKey UUID сохраняйте при повторе; текущую revision прочитайте через project_learning_context.',
     projectLearningRecordSchema.shape,
-    safe(async (input: ProjectLearningRecordInput) => projectLearningRecord(input, cwd)),
+    safe(async (input: TProjectLearningRecordInput) => projectLearningRecord(input, cwd)),
 );
 server.tool(
     'project_learning_propose_hypothesis',
     'Только по явной просьбе пользователя предложите проверяемую гипотезу о проекте или работе агентов, связав её с существующим опытом и планом проверки. Не создавайте гипотезы автоматически после наблюдений. Это кандидатура: инструмент не проверяет её истинность, не одобряет знания и не меняет промпты. requestKey UUID сохраняйте при повторе.',
     projectLearningProposeSchema.shape,
-    safe(async (input: ProjectLearningProposeInput) => projectLearningPropose(input, cwd)),
+    safe(async (input: TProjectLearningProposeInput) => projectLearningPropose(input, cwd)),
 );
 
 server.tool(
@@ -298,7 +298,7 @@ server.tool(
 );
 
 const transport = new StdioServerTransport();
-if (await readState<Credentials>('credentials')) {
+if (await readState<ICredentials>('credentials')) {
     startWorker();
 }
 await server.connect(transport);

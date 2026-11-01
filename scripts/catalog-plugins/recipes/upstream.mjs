@@ -8,12 +8,28 @@ const execFileAsync = promisify(execFile);
 const cache = path.resolve('.run/catalog-plugin-cache');
 
 /** Release archives are supplied explicitly or already verified in the private cache; they are never mandatory downloads. */
-export async function cachedArchive(sha256){
-    if(!/^[a-f0-9]{64}$/.test(sha256))throw new Error('Некорректная SHA-256 архива.');
-    const filename=path.join(cache,sha256);
-    try{const info=await fs.lstat(filename);if(!info.isFile()||info.isSymbolicLink()||info.nlink!==1||info.size>256*1024*1024)throw new Error();
-        if(createHash('sha256').update(await fs.readFile(filename)).digest('hex')!==sha256)throw new Error();return filename;
-    }catch{throw Object.assign(new Error('Нужен явно выбранный локальный архив этой версии. Автоматическое скачивание GitHub Releases выключено.'),{code:'SOURCE_ARCHIVE_REQUIRED'});}
+export async function cachedArchive(sha256) {
+    if (!/^[a-f0-9]{64}$/.test(sha256)) throw new Error('Некорректная SHA-256 архива.');
+    const filename = path.join(cache, sha256);
+    try {
+        const info = await fs.lstat(filename);
+        if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > 256 * 1024 * 1024)
+            throw new Error();
+        if (
+            createHash('sha256')
+                .update(await fs.readFile(filename))
+                .digest('hex') !== sha256
+        )
+            throw new Error();
+        return filename;
+    } catch {
+        throw Object.assign(
+            new Error(
+                'Нужен явно выбранный локальный архив этой версии. Автоматическое скачивание GitHub Releases выключено.',
+            ),
+            { code: 'SOURCE_ARCHIVE_REQUIRED' },
+        );
+    }
 }
 
 /** Выполняет подготовку только на площадке; lifecycle scripts на клиенте не нужны. */
@@ -25,30 +41,58 @@ export async function run(command, args, options = {}) {
 export async function download(url, sha256) {
     await fs.mkdir(cache, { recursive: true });
     const destination = path.join(cache, sha256);
-    const valid = async file => {
-        try { return createHash('sha256').update(await fs.readFile(file)).digest('hex') === sha256; }
-        catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+    const valid = async (file) => {
+        try {
+            return (
+                createHash('sha256')
+                    .update(await fs.readFile(file))
+                    .digest('hex') === sha256
+            );
+        } catch (error) {
+            if (error.code === 'ENOENT') return false;
+            throw error;
+        }
     };
     if (await valid(destination)) return destination;
     const temporary = destination + '.' + process.pid + '.tmp';
     try {
-        await run('curl', ['-fsSL', '--insecure', '--retry', '2', '--connect-timeout', '20', '--max-time', '180', url, '-o', temporary]);
-        if (!await valid(temporary)) throw new Error('Не совпала SHA256 внешнего пакета.');
+        await run('curl', [
+            '-fsSL',
+            '--insecure',
+            '--retry',
+            '2',
+            '--connect-timeout',
+            '20',
+            '--max-time',
+            '180',
+            url,
+            '-o',
+            temporary,
+        ]);
+        if (!(await valid(temporary))) throw new Error('Не совпала SHA256 внешнего пакета.');
         await fs.rename(temporary, destination);
         return destination;
-    } finally { await fs.rm(temporary, { force: true }); }
+    } finally {
+        await fs.rm(temporary, { force: true });
+    }
 }
 
 /** Известные архивы имеют закреплённые байты; пути и ссылки дополнительно проверяются. */
 export async function extract(archive, directory, format = 'tar') {
     await fs.mkdir(directory, { recursive: true });
-    const listing = await run(format === 'zip' ? 'unzip' : 'tar', format === 'zip' ? ['-Z1', archive] : ['-tzf', archive]);
+    const listing = await run(
+        format === 'zip' ? 'unzip' : 'tar',
+        format === 'zip' ? ['-Z1', archive] : ['-tzf', archive],
+    );
     for (const name of listing.stdout.split('\n').filter(Boolean)) {
-        if (name.startsWith('/') || name.includes('\\') || name.split('/').some(part => part === '..')) {
+        if (name.startsWith('/') || name.includes('\\') || name.split('/').some((part) => part === '..')) {
             throw new Error('Небезопасный путь во внешнем архиве.');
         }
     }
-    await run(format === 'zip' ? 'unzip' : 'tar', format === 'zip' ? ['-q', archive, '-d', directory] : ['-xzf', archive, '-C', directory]);
+    await run(
+        format === 'zip' ? 'unzip' : 'tar',
+        format === 'zip' ? ['-q', archive, '-d', directory] : ['-xzf', archive, '-C', directory],
+    );
     await assertRegularTree(directory);
 }
 
@@ -67,7 +111,9 @@ async function npmCli() {
         try {
             const candidate = await fs.realpath(path.join(directory, 'npm'));
             if (candidate.endsWith('.js')) return candidate;
-        } catch { /* Следующий каталог PATH. */ }
+        } catch {
+            /* Следующий каталог PATH. */
+        }
     }
     throw new Error('На площадке требуется npm-cli.js (можно задать NPM_CLI_JS).');
 }
@@ -84,24 +130,78 @@ export const TARGETS = Object.freeze({
 });
 
 /** npm проверяет integrity всех транзитивных пакетов; установки из сети на клиенте нет. */
-export async function installDependencies(directory, dependencies, target, {optionalDependencies={}}={}) {
+export async function installDependencies(directory, dependencies, target, { optionalDependencies = {} } = {}) {
     const platform = TARGETS[target];
     if (!platform) throw new Error('Неизвестная платформа: ' + target);
     await fs.mkdir(directory, { recursive: true });
-    await fs.writeFile(path.join(directory, 'package.json'), JSON.stringify({ name: 'neurocenter-prepared-runtime', version: '1.0.0', private: true, type: 'module', dependencies,
-        ...(Object.keys(optionalDependencies).length?{optionalDependencies}:{}) }, null, 2) + '\n');
+    await fs.writeFile(
+        path.join(directory, 'package.json'),
+        JSON.stringify(
+            {
+                name: 'neurocenter-prepared-runtime',
+                version: '1.0.0',
+                private: true,
+                type: 'module',
+                dependencies,
+                ...(Object.keys(optionalDependencies).length ? { optionalDependencies } : {}),
+            },
+            null,
+            2,
+        ) + '\n',
+    );
     await fs.mkdir(cache, { recursive: true });
     const home = await fs.mkdtemp(path.join(cache, 'npm-home-'));
     const userconfig = path.join(home, 'npmrc');
     const globalconfig = path.join(home, 'global-npmrc');
     await Promise.all([fs.writeFile(userconfig, ''), fs.writeFile(globalconfig, '')]);
     try {
-        const locked = await fs.stat(path.join(directory, 'package-lock.json')).then(() => true).catch(error => { if (error.code === 'ENOENT') return false; throw error; });
-        const args = [locked ? 'ci' : 'install', '--prefix', directory, '--ignore-scripts', '--omit=dev', '--include=optional', '--no-bin-links', '--no-audit', '--no-fund',
-            '--registry=https://registry.npmjs.org', '--strict-ssl=false', '--cache', path.join(cache, 'npm'), '--userconfig', userconfig, '--globalconfig', globalconfig,
-            '--os', platform.os, '--cpu', platform.cpu, ...(platform.libc ? ['--libc', platform.libc] : [])];
-        const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)));
-        await run(process.execPath, [await npmCli(), ...args], { env: { ...environment, HOME: home, USERPROFILE: home, npm_config_update_notifier: 'false', NPM_CONFIG_STRICT_SSL: 'false', npm_config_strict_ssl: 'false', NODE_TLS_REJECT_UNAUTHORIZED: '0' } });
+        const locked = await fs
+            .stat(path.join(directory, 'package-lock.json'))
+            .then(() => true)
+            .catch((error) => {
+                if (error.code === 'ENOENT') return false;
+                throw error;
+            });
+        const args = [
+            locked ? 'ci' : 'install',
+            '--prefix',
+            directory,
+            '--ignore-scripts',
+            '--omit=dev',
+            '--include=optional',
+            '--no-bin-links',
+            '--no-audit',
+            '--no-fund',
+            '--registry=https://registry.npmjs.org',
+            '--strict-ssl=false',
+            '--cache',
+            path.join(cache, 'npm'),
+            '--userconfig',
+            userconfig,
+            '--globalconfig',
+            globalconfig,
+            '--os',
+            platform.os,
+            '--cpu',
+            platform.cpu,
+            ...(platform.libc ? ['--libc', platform.libc] : []),
+        ];
+        const environment = Object.fromEntries(
+            Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)),
+        );
+        await run(process.execPath, [await npmCli(), ...args], {
+            env: {
+                ...environment,
+                HOME: home,
+                USERPROFILE: home,
+                npm_config_update_notifier: 'false',
+                NPM_CONFIG_STRICT_SSL: 'false',
+                npm_config_strict_ssl: 'false',
+                NODE_TLS_REJECT_UNAUTHORIZED: '0',
+            },
+        });
         await assertRegularTree(directory);
-    } finally { await fs.rm(home, { recursive: true, force: true }); }
+    } finally {
+        await fs.rm(home, { recursive: true, force: true });
+    }
 }

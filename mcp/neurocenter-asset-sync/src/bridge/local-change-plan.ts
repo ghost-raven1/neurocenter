@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { hash } from './state.js';
-import { verify, type Package } from './package.js';
+import { verify, type IPackage } from './package.js';
 import { projectFolder, projectBindingId, projectInstanceId } from './workspace.js';
 import { InstallationPlan } from './installation-plan.js';
 import { InstallationLedger } from './installation-ledger.js';
@@ -8,7 +8,7 @@ import { planInstall } from './installation-planner.js';
 import { resolvePreparedRuntimeArtifact, selectedRuntimeArtifact } from '../features/runtime-artifacts/cache.js';
 import { assetBase, assetKey, sameValue } from './installation-receipt.js';
 import { commitChanges, withProjectFiles } from './installation-files.js';
-import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type InstallSet } from './install-set.js';
+import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type IInstallSet } from './install-set.js';
 import { validateChanges } from './installation-journal.js';
 import {
     localChangeFiles,
@@ -18,16 +18,20 @@ import {
     saveLocalChangePlan,
     verifyLocalChangeSnapshot,
 } from './local-change-plan-storage.js';
-import type { ApplyLocalChangeOptions, LocalChangeSummary, PrivateLocalChangePlan } from './local-change-plan.model.js';
+import type {
+    IApplyLocalChangeOptions,
+    ILocalChangeSummary,
+    IPrivateLocalChangePlan,
+} from './local-change-plan.model.js';
 export { localChangeReportPath } from './local-change-plan-storage.js';
-export type { ApplyLocalChangeOptions, LocalChangeSummary } from './local-change-plan.model.js';
+export type { IApplyLocalChangeOptions, ILocalChangeSummary } from './local-change-plan.model.js';
 
-type Authorize = () => Promise<unknown>;
-type Progress = (percent: number, message: string) => Promise<unknown>;
+type TAuthorize = () => Promise<unknown>;
+type TProgress = (percent: number, message: string) => Promise<unknown>;
 function frozenPackages(
-    pkg: Package,
-    set: InstallSet | undefined,
-): { root: Package; packages: Package[]; manifest: string } {
+    pkg: IPackage,
+    set: IInstallSet | undefined,
+): { root: IPackage; packages: IPackage[]; manifest: string } {
     pkg = structuredClone(pkg);
     set = set ? structuredClone(set) : undefined;
     verify(pkg);
@@ -64,10 +68,10 @@ async function assertIdentity(projectId: string, root: string, bindingId: string
 /** Сохраняет локальный полный diff; безопасный результат не содержит исходников, секретов и абсолютных путей. */
 export async function prepareLocalChange(
     projectId: string,
-    pkg: Package,
-    installSet: InstallSet | undefined,
-    authorize: Authorize,
-): Promise<LocalChangeSummary> {
+    pkg: IPackage,
+    installSet: IInstallSet | undefined,
+    authorize: TAuthorize,
+): Promise<ILocalChangeSummary> {
     const frozen = frozenPackages(pkg, installSet);
     pkg = frozen.root;
     return withProjectFiles(projectId, async (root) => {
@@ -85,7 +89,7 @@ export async function prepareLocalChange(
             bases.add(base);
             ledger.assertInstall(key, member);
         }
-        const runtimeRepairs = new Set<Package>();
+        const runtimeRepairs = new Set<IPackage>();
         for (const member of frozen.packages) {
             if (!selectedRuntimeArtifact(member)) {
                 continue;
@@ -109,7 +113,7 @@ export async function prepareLocalChange(
         await assertIdentity(projectId, root, bindingId, instanceId);
         await plan.verifySnapshot();
         const checkedAt = new Date();
-        const summary: LocalChangeSummary = {
+        const summary: ILocalChangeSummary = {
             schemaVersion: 1,
             planId: randomUUID(),
             revision: 1,
@@ -118,7 +122,7 @@ export async function prepareLocalChange(
             bindingId,
             instanceId,
             assetId: pkg.plugin.id,
-            assetKind: pkg.plugin.kind as LocalChangeSummary['assetKind'],
+            assetKind: pkg.plugin.kind as ILocalChangeSummary['assetKind'],
             version: pkg.plugin.version,
             manifest: pkg.manifest.sha256,
             checkedAt: checkedAt.toISOString(),
@@ -127,7 +131,7 @@ export async function prepareLocalChange(
             files: localChangeFiles(changes),
             ...(runtimeRepairs.size ? { runtimeRepairRequired: true as const } : {}),
         };
-        const saved: PrivateLocalChangePlan = {
+        const saved: IPrivateLocalChangePlan = {
             schemaVersion: 1,
             summary,
             root,
@@ -148,11 +152,11 @@ export async function prepareLocalChange(
 /** Применяет ровно просмотренный снимок после нового разрешения; резервная копия хранит ручной вариант. */
 export async function applyLocalChange(
     projectId: string,
-    pkg: Package,
-    options: ApplyLocalChangeOptions,
-    authorize: Authorize,
-    progress: Progress,
-    prepareRuntime?: (packages: Package[]) => Promise<void>,
+    pkg: IPackage,
+    options: IApplyLocalChangeOptions,
+    authorize: TAuthorize,
+    progress: TProgress,
+    prepareRuntime?: (packages: IPackage[]) => Promise<void>,
 ) {
     const frozen = frozenPackages(pkg, options.installSet);
     pkg = frozen.root;

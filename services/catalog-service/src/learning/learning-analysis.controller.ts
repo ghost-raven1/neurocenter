@@ -1,12 +1,12 @@
 import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { LearningAnalysisService } from './learning-analysis.service';
-import type { LearningAnalysisInput } from '../../../shared/project-learning.cjs';
+import type { ILearningAnalysisInput } from '../../../shared/project-learning.cjs';
 /** Generation is an observable job; only the separate human review can promote its hypotheses. */
 @Controller('api/projects/:id/learning/analyses')
 export class LearningAnalysisController {
     constructor(private readonly analyses: LearningAnalysisService) {}
-    @Post() create(@Req() req: Request, @Param('id') id: string, @Body() body: LearningAnalysisInput) {
+    @Post() create(@Req() req: Request, @Param('id') id: string, @Body() body: ILearningAnalysisInput) {
         return this.analyses.create(req, id, body);
     }
     @Get('requests/:key') request(@Req() req: Request, @Param('id') id: string, @Param('key') key: string) {

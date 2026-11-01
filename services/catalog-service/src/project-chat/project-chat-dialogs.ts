@@ -2,19 +2,19 @@ import { BadRequestException, ConflictException, ForbiddenException, NotFoundExc
 import { randomUUID } from 'node:crypto';
 import { normalizeEmail, type IAccessActor } from '../access/access.model';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import type { ProjectChatActor } from './project-chat.policy';
+import type { IProjectChatActor } from './project-chat.policy';
 import { ProjectChatRepository } from './project-chat.repository';
 import { projectChatBody, projectChatHash, projectChatRevision, projectChatUuid } from './project-chat.validation';
 import { assertProjectChatRoomAccess, projectChatMembers, projectChatRoomEmails } from './project-chat-room-access';
+import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.constants';
+import { projectChatRoomId } from './project-chat.utils';
 import {
-    DEFAULT_PROJECT_CHAT_ROOM,
-    projectChatRoomId,
-    type ProjectChatDb,
-    type ProjectChatRoomRow,
-    type ProjectChatRooms,
-    type ProjectChatRoomSummary,
-    type ProjectChatVisibility,
-} from './project-chat.types';
+    type TProjectChatDb,
+    type IProjectChatRoomRow,
+    type IProjectChatRooms,
+    type IProjectChatRoomSummary,
+    type TProjectChatVisibility,
+} from './project-chat.interfaces';
 
 const title = (raw: unknown): string => {
     if (typeof raw !== 'string' || !raw.trim() || raw.trim().length > 120 || /[\x00-\x1f]/.test(raw))
@@ -33,7 +33,7 @@ const emails = (raw: unknown): string[] => {
     if (new Set(result).size !== result.length) throw new BadRequestException('Участники не должны повторяться.');
     return result.sort();
 };
-export const canManageProjectChatRoom = (room: ProjectChatRoomRow, actor: ProjectChatActor): boolean =>
+export const canManageProjectChatRoom = (room: IProjectChatRoomRow, actor: IProjectChatActor): boolean =>
     projectChatRoomId(room) !== DEFAULT_PROJECT_CHAT_ROOM &&
     actor.level >= 2 &&
     (room.creator_email === actor.email || (room.visibility === 'PUBLIC' && actor.level >= 3));
@@ -42,10 +42,10 @@ export const canManageProjectChatRoom = (room: ProjectChatRoomRow, actor: Projec
 export class ProjectChatDialogs {
     constructor(private readonly repository: ProjectChatRepository) {}
     private async summary(
-        db: ProjectChatDb,
-        room: ProjectChatRoomRow,
-        actor: ProjectChatActor,
-    ): Promise<ProjectChatRoomSummary> {
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        actor: IProjectChatActor,
+    ): Promise<IProjectChatRoomSummary> {
         return {
             id: projectChatRoomId(room),
             title: room.title ?? 'Общий чат',
@@ -56,10 +56,10 @@ export class ProjectChatDialogs {
             memberEmails: await projectChatRoomEmails(db, room),
         };
     }
-    async list(projectId: string, actor: IAccessActor): Promise<ProjectChatRooms> {
+    async list(projectId: string, actor: IAccessActor): Promise<IProjectChatRooms> {
         return this.repository.scoped(projectId, actor, 1, false, async (db, defaultRoom, current) => {
             const values = (
-                await db.query<ProjectChatRoomRow>(
+                await db.query<IProjectChatRoomRow>(
                     `SELECT r.* FROM project_chat_rooms r WHERE r.project_id=$1 AND
                 (r.visibility='PUBLIC' OR r.creator_email=$2 OR EXISTS(SELECT 1 FROM project_chat_room_members m WHERE m.project_id=r.project_id AND m.room_id=r.id AND m.email=$2))
                 ORDER BY (r.id=$3) DESC,r.updated_at DESC,r.id LIMIT 101 FOR SHARE OF r`,
@@ -68,7 +68,7 @@ export class ProjectChatDialogs {
             ).rows;
             if (!values.some((row) => projectChatRoomId(row) === DEFAULT_PROJECT_CHAT_ROOM))
                 values.unshift(defaultRoom);
-            const rooms: ProjectChatRoomSummary[] = [];
+            const rooms: IProjectChatRoomSummary[] = [];
             for (const room of values) {
                 try {
                     await assertProjectChatRoomAccess(db, room, current.email);
@@ -84,7 +84,7 @@ export class ProjectChatDialogs {
             };
         });
     }
-    private async invited(db: ProjectChatDb, projectId: string, values: string[], creator: string): Promise<void> {
+    private async invited(db: TProjectChatDb, projectId: string, values: string[], creator: string): Promise<void> {
         const others = values.filter((email) => email !== creator);
         if (!others.length) return;
         const current = (
@@ -108,14 +108,14 @@ export class ProjectChatDialogs {
         if (others.some((email) => !fresh.some((row) => row.email === email)))
             throw new BadRequestException('Состав проекта изменился. Обновите участников.');
     }
-    async create(projectId: string, actor: IAccessActor, raw: unknown): Promise<ProjectChatRoomSummary> {
+    async create(projectId: string, actor: IAccessActor, raw: unknown): Promise<IProjectChatRoomSummary> {
         const body = projectChatBody(raw, ['requestKey', 'title', 'visibility', 'memberEmails']),
             key = projectChatUuid(body.requestKey),
             name = title(body.title),
             members = emails(body.memberEmails);
         if (!['PUBLIC', 'PRIVATE'].includes(String(body.visibility)) || typeof body.visibility !== 'string')
             throw new BadRequestException('Выберите публичный или приватный диалог.');
-        const visibility = body.visibility as ProjectChatVisibility;
+        const visibility = body.visibility as TProjectChatVisibility;
         if (visibility === 'PUBLIC' && members.length)
             throw new BadRequestException('Публичный диалог доступен всему проекту; отдельный список не требуется.');
         const hash = projectChatHash({ title: name, visibility, memberEmails: members });
@@ -126,7 +126,7 @@ export class ProjectChatDialogs {
             true,
             async (db, _room, current) => {
                 const prior = (
-                    await db.query<ProjectChatRoomRow>(
+                    await db.query<IProjectChatRoomRow>(
                         'SELECT * FROM project_chat_rooms WHERE project_id=$1 AND creator_email=$2 AND create_request_key=$3',
                         [projectId, current.email, key],
                     )
@@ -151,7 +151,7 @@ export class ProjectChatDialogs {
                 const invitees = visibility === 'PRIVATE' ? [...new Set([...members, current.email])].sort() : [];
                 await this.invited(db, projectId, invitees, current.email);
                 const room = (
-                    await db.query<ProjectChatRoomRow>(
+                    await db.query<IProjectChatRoomRow>(
                         `INSERT INTO project_chat_rooms(project_id,id,title,visibility,creator_email,create_request_key,create_request_hash)
                 VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
                         [projectId, randomUUID(), name, visibility, current.email, key, hash],
@@ -173,7 +173,7 @@ export class ProjectChatDialogs {
         actor: IAccessActor,
         roomId: string,
         raw: unknown,
-    ): Promise<ProjectChatRoomSummary> {
+    ): Promise<IProjectChatRoomSummary> {
         projectChatUuid(roomId);
         const body = projectChatBody(raw, ['expectedRevision', 'title', 'memberEmails']);
         const revision = projectChatRevision(body.expectedRevision),

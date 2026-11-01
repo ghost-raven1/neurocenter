@@ -1,15 +1,35 @@
 import api from '../../core/api/base';
-import type {AgentMethod,AgentMethodWorkflowAgentIdentity} from '../../../../services/shared/agent-method-workflow.cjs';
-import type { IInstallPlan, IInstallPlanInput } from './installPlanTypes';
-import type { IBridgeBinding, IRuntimeProbe, TWorkspaceBindingMode } from './operationTypes';
-import type { IMcpConfigurationRevision, IMcpConfigurationStatus } from './mcpConfigurationTypes';
-import type { RuntimeCachePolicyPayload } from '../../../../services/shared/runtime-cache-policy.cjs';
-export type { RuntimeCachePolicyPayload, RuntimeCachePolicyResult } from '../../../../services/shared/runtime-cache-policy.cjs';
-export type { IInstallPlan, IInstallPlanInput } from './installPlanTypes';
-export type { IBridgeBinding, IRuntimeProbe, IWorkspacePreparation, ILocalChangePlan, IProjectInventory, IProjectInventoryEntry,
-    ILocalVariant, ILocalVariants, TWorkspaceBindingMode } from './operationTypes';
+import type {
+    TAgentMethod,
+    IAgentMethodWorkflowAgentIdentity,
+} from '../../../../services/shared/agent-method-workflow.cjs';
+import type { IInstallPlan, IInstallPlanInput } from './installPlanInterfaces';
+import type { IBridgeBinding, IRuntimeProbe, TWorkspaceBindingMode } from './operationInterfaces';
+import type { IMcpConfigurationRevision, IMcpConfigurationStatus } from './mcpConfigurationInterfaces';
+import type { TRuntimeCachePolicyPayload } from '../../../../services/shared/runtime-cache-policy.cjs';
+export type {
+    TRuntimeCachePolicyPayload as RuntimeCachePolicyPayload,
+    TRuntimeCachePolicyResult as RuntimeCachePolicyResult,
+} from '../../../../services/shared/runtime-cache-policy.cjs';
+export type { IInstallPlan, IInstallPlanInput } from './installPlanInterfaces';
+export type {
+    IBridgeBinding,
+    IRuntimeProbe,
+    IWorkspacePreparation,
+    ILocalChangePlan,
+    IProjectInventory,
+    IProjectInventoryEntry,
+    ILocalVariant,
+    ILocalVariants,
+    TWorkspaceBindingMode,
+} from './operationInterfaces';
 
-export interface IBridgePair {name:string;fingerprint:string;approved:boolean;expiresAt:string;}
+export interface IBridgePair {
+    name: string;
+    fingerprint: string;
+    approved: boolean;
+    expiresAt: string;
+}
 
 export interface IBridgeDevice {
     id: string;
@@ -30,7 +50,7 @@ export interface IBridgeDevice {
         runtimeVersion?: string;
         bridgeVersion?: string;
         buildId?: string;
-        openCodeInstallSupply?:import('../../../../services/shared/opencode-cli-install.cjs').OpenCodeInstallSupply;
+        openCodeInstallSupply?: import('../../../../services/shared/opencode-cli-install.cjs').IOpenCodeInstallSupply;
         protocolVersion?: number;
         capabilities?: string[];
         previousDeviceCompletions?: number;
@@ -44,9 +64,9 @@ export interface IBridgeJob {
     deviceId: string;
     projectId: string | null;
     kind: string;
-    method?: AgentMethod;
+    method?: TAgentMethod;
     workflowId?: string;
-    agent?: AgentMethodWorkflowAgentIdentity|null;
+    agent?: IAgentMethodWorkflowAgentIdentity | null;
     state: string;
     percent?: number;
     message: string;
@@ -61,10 +81,27 @@ export interface IBridgeJob {
     updatedAt: string;
     result?: Record<string, unknown>;
 }
-export type TInspectionIssue = 'inspection-busy' | 'binding-changed' | 'receipt-missing' | 'receipt-invalid' | 'receipt-mismatch'
-    | 'ledger-missing' | 'ledger-invalid' | 'ledger-mismatch' | 'file-missing' | 'file-modified' | 'file-unsafe'
-    | 'config-missing' | 'config-invalid' | 'config-modified' | 'config-ambiguous' | 'limit-exceeded' | 'read-failed'
-    | 'snapshot-changed' | 'inspection-failed' | 'runtime-path-unverified';
+export type TInspectionIssue =
+    | 'inspection-busy'
+    | 'binding-changed'
+    | 'receipt-missing'
+    | 'receipt-invalid'
+    | 'receipt-mismatch'
+    | 'ledger-missing'
+    | 'ledger-invalid'
+    | 'ledger-mismatch'
+    | 'file-missing'
+    | 'file-modified'
+    | 'file-unsafe'
+    | 'config-missing'
+    | 'config-invalid'
+    | 'config-modified'
+    | 'config-ambiguous'
+    | 'limit-exceeded'
+    | 'read-failed'
+    | 'snapshot-changed'
+    | 'inspection-failed'
+    | 'runtime-path-unverified';
 export interface IInstallationInspection {
     schemaVersion: 1;
     projectId: string;
@@ -100,10 +137,10 @@ export interface IBridgeInstallation {
     configurationInvalidatedAt?: string;
     configurationObservedAt?: string;
     configuration?: IMcpConfigurationStatus;
-    learningMemory?: {supported:true};
-    learningQuirks?: {supported:true};
+    learningMemory?: { supported: true };
+    learningQuirks?: { supported: true };
     ragUi?: { supported: true; mode: 'web' };
-    hostedEmbedding?: { supported: true;reindexSupported?:true };
+    hostedEmbedding?: { supported: true; reindexSupported?: true };
 }
 interface IBridgeJobInputBase {
     deviceId: string;
@@ -117,77 +154,195 @@ interface IBridgeJobInputBase {
     planId?: string;
     planRevision?: number;
 }
-export interface IBridgeWorkflowOrigin {roomId:string;messageId:string;}
-export type IBridgeJobInput = IBridgeJobInputBase & (
-    {kind:'run-agent-method-workflow';projectId:string;expectedBindingId:string;expectedInstanceId:string;workflow:{method:AgentMethod;instruction:string;checks:Array<{command:string;args:string[]}>;agentId?:string;expectedAgentsRevision?:number;origin?:IBridgeWorkflowOrigin}}
-    | {kind:'runtime-cache-policy';projectId?:never;runtimeCachePolicy:RuntimeCachePolicyPayload}
-    | {kind:'import-learning-quirks';projectId:string;assetId:string;assetKind:'mcp'|'plugin';version:number;expectedManifest:string;expectedBindingId:string;expectedInstanceId:string;expectedConfigurationRevisions:IMcpConfigurationRevision[]}
-    | {kind: 'open-project-configuration';projectId:string;expectedBindingId:string;expectedInstanceId:string}
-    | {kind: 'open-rag-ui'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;
-        expectedManifest: string; expectedBindingId: string; expectedInstanceId: string}
-    | {kind: 'connect-rag-model'; projectId: string; assetId: string; assetKind: 'mcp' | 'plugin'; version: number;
-        expectedManifest: string; expectedBindingId: string; expectedInstanceId: string;
-        expectedEmbeddingRevision: number; expectedEmbeddingPin: string;reindex:true}
-    | {kind: 'uninstall' | 'inspect-installation'; assetId: string; assetKind: string; expectedManifest: string; expectedBindingId: string}
-    | {kind: 'prepare-bind-project' | 'bind-project'; projectId: string; folderName: string; bindingMode: TWorkspaceBindingMode;
-        expectedBindingId?: string; expectedInstanceId?: string; preparationJobId?: string; expectedPreparation?: string}
-    | {kind: 'prepare-local-change' | 'apply-local-change' | 'open-local-change-report' | 'probe-runtime'; projectId: string;
-        assetId: string; assetKind: string; expectedManifest: string; expectedBindingId: string;
-        changePlanId?: string; changePlanRevision?: number; expectedChangeDigest?: string; consentManifest?: string;
-        expectedConfigurationRevisions?: IMcpConfigurationRevision[]}
-    | {kind: 'prepare-mcp-configuration' | 'get-mcp-configuration-status' | 'open-mcp-configuration'; projectId: string;
-        assetId: string; assetKind: 'mcp'; version: number; expectedManifest: string; expectedBindingId: string;
-        configurationPreparationJobId?: string; expectedConfigurationSchemaDigest?: string}
-    | {kind: 'open-local-recovery-folder'; projectId: string; expectedBindingId: string}
-    | {kind: 'scan-project-inventory'; projectId: string; expectedBindingId: string}
-    | {kind: 'scan-opencode-models'; scope:'global'; projectId?:never; expectedBindingId?:never}
-    | {kind: 'scan-opencode-models'; scope:'project'; projectId:string; expectedBindingId:string}
-    | {kind: 'prepare-adopt-installation'; projectId: string; assetId: string; assetKind: string; version: number;
-        expectedBindingId: string; expectedManifest: string; planId: string; planRevision: number;
-        inventoryJobId: string; scanId: string; candidateId: string; expectedInventoryDigest: string}
-    | {kind: 'apply-adopt-installation' | 'list-local-variants' | 'prepare-local-restore' | 'apply-local-restore'; projectId: string;
-        assetId: string; assetKind: string; expectedManifest: string; expectedBindingId: string;
-        changePlanId?: string; changePlanRevision?: number; expectedChangeDigest?: string; recoveryId?: string; restorePaths?: string[]}
-    | {kind: 'choose-root' | 'install' | 'restore-rag' | 'sync-rag'; expectedBindingId?: string}
-);
-export type IBridgeJobDraft = IBridgeJobInput extends infer T ? T extends IBridgeJobInput ? Omit<T, 'requestKey'> : never : never;
+export interface IBridgeWorkflowOrigin {
+    roomId: string;
+    messageId: string;
+}
+export type TBridgeJobInput = IBridgeJobInputBase &
+    (
+        | {
+              kind: 'run-agent-method-workflow';
+              projectId: string;
+              expectedBindingId: string;
+              expectedInstanceId: string;
+              workflow: {
+                  method: TAgentMethod;
+                  instruction: string;
+                  checks: Array<{ command: string; args: string[] }>;
+                  agentId?: string;
+                  expectedAgentsRevision?: number;
+                  origin?: IBridgeWorkflowOrigin;
+              };
+          }
+        | { kind: 'runtime-cache-policy'; projectId?: never; runtimeCachePolicy: TRuntimeCachePolicyPayload }
+        | {
+              kind: 'import-learning-quirks';
+              projectId: string;
+              assetId: string;
+              assetKind: 'mcp' | 'plugin';
+              version: number;
+              expectedManifest: string;
+              expectedBindingId: string;
+              expectedInstanceId: string;
+              expectedConfigurationRevisions: IMcpConfigurationRevision[];
+          }
+        | {
+              kind: 'open-project-configuration';
+              projectId: string;
+              expectedBindingId: string;
+              expectedInstanceId: string;
+          }
+        | {
+              kind: 'open-rag-ui';
+              projectId: string;
+              assetId: string;
+              assetKind: 'mcp' | 'plugin';
+              version: number;
+              expectedManifest: string;
+              expectedBindingId: string;
+              expectedInstanceId: string;
+          }
+        | {
+              kind: 'connect-rag-model';
+              projectId: string;
+              assetId: string;
+              assetKind: 'mcp' | 'plugin';
+              version: number;
+              expectedManifest: string;
+              expectedBindingId: string;
+              expectedInstanceId: string;
+              expectedEmbeddingRevision: number;
+              expectedEmbeddingPin: string;
+              reindex: true;
+          }
+        | {
+              kind: 'uninstall' | 'inspect-installation';
+              assetId: string;
+              assetKind: string;
+              expectedManifest: string;
+              expectedBindingId: string;
+          }
+        | {
+              kind: 'prepare-bind-project' | 'bind-project';
+              projectId: string;
+              folderName: string;
+              bindingMode: TWorkspaceBindingMode;
+              expectedBindingId?: string;
+              expectedInstanceId?: string;
+              preparationJobId?: string;
+              expectedPreparation?: string;
+          }
+        | {
+              kind: 'prepare-local-change' | 'apply-local-change' | 'open-local-change-report' | 'probe-runtime';
+              projectId: string;
+              assetId: string;
+              assetKind: string;
+              expectedManifest: string;
+              expectedBindingId: string;
+              changePlanId?: string;
+              changePlanRevision?: number;
+              expectedChangeDigest?: string;
+              consentManifest?: string;
+              expectedConfigurationRevisions?: IMcpConfigurationRevision[];
+          }
+        | {
+              kind: 'prepare-mcp-configuration' | 'get-mcp-configuration-status' | 'open-mcp-configuration';
+              projectId: string;
+              assetId: string;
+              assetKind: 'mcp';
+              version: number;
+              expectedManifest: string;
+              expectedBindingId: string;
+              configurationPreparationJobId?: string;
+              expectedConfigurationSchemaDigest?: string;
+          }
+        | { kind: 'open-local-recovery-folder'; projectId: string; expectedBindingId: string }
+        | { kind: 'scan-project-inventory'; projectId: string; expectedBindingId: string }
+        | { kind: 'scan-opencode-models'; scope: 'global'; projectId?: never; expectedBindingId?: never }
+        | { kind: 'scan-opencode-models'; scope: 'project'; projectId: string; expectedBindingId: string }
+        | {
+              kind: 'prepare-adopt-installation';
+              projectId: string;
+              assetId: string;
+              assetKind: string;
+              version: number;
+              expectedBindingId: string;
+              expectedManifest: string;
+              planId: string;
+              planRevision: number;
+              inventoryJobId: string;
+              scanId: string;
+              candidateId: string;
+              expectedInventoryDigest: string;
+          }
+        | {
+              kind:
+                  'apply-adopt-installation' | 'list-local-variants' | 'prepare-local-restore' | 'apply-local-restore';
+              projectId: string;
+              assetId: string;
+              assetKind: string;
+              expectedManifest: string;
+              expectedBindingId: string;
+              changePlanId?: string;
+              changePlanRevision?: number;
+              expectedChangeDigest?: string;
+              recoveryId?: string;
+              restorePaths?: string[];
+          }
+        | { kind: 'choose-root' | 'install' | 'restore-rag' | 'sync-rag'; expectedBindingId?: string }
+    );
+export type TBridgeJobDraft = TBridgeJobInput extends infer T
+    ? T extends TBridgeJobInput
+        ? Omit<T, 'requestKey'>
+        : never
+    : never;
 export const bridgeApi = {
     plan: async (id: string): Promise<IInstallPlan> =>
         (await api.get<IInstallPlan>('/api/device-install-plans/' + encodeURIComponent(id))).data,
     preparePlan: async (input: IInstallPlanInput): Promise<IInstallPlan> =>
         (await api.post<IInstallPlan>('/api/device-install-plans', input)).data,
     approvePlan: async (plan: Pick<IInstallPlan, 'id' | 'manifest' | 'revision'>): Promise<IInstallPlan> =>
-        (await api.post<IInstallPlan>('/api/device-install-plans/' + encodeURIComponent(plan.id) + '/approve',
-            { expectedManifest: plan.manifest, expectedRevision: plan.revision })).data,
+        (
+            await api.post<IInstallPlan>('/api/device-install-plans/' + encodeURIComponent(plan.id) + '/approve', {
+                expectedManifest: plan.manifest,
+                expectedRevision: plan.revision,
+            })
+        ).data,
     revokePlan: async (plan: Pick<IInstallPlan, 'id' | 'manifest' | 'revision'>): Promise<IInstallPlan> =>
-        (await api.post<IInstallPlan>('/api/device-install-plans/' + encodeURIComponent(plan.id) + '/revoke',
-            { expectedManifest: plan.manifest, expectedRevision: plan.revision })).data,
-    devices: async (signal?:AbortSignal): Promise<IBridgeDevice[]> =>
-        (await api.get<IBridgeDevice[]>('/api/devices',{signal,timeout:10000})).data,
-    jobs: async (): Promise<IBridgeJob[]> =>
-        (await api.get<IBridgeJob[]>('/api/device-jobs',{timeout:10000})).data,
-    request: async (requestKey:string,signal?:AbortSignal):Promise<{requestKey:string;requestFingerprint:string|null;job:IBridgeJob}> =>
-        (await api.get<{requestKey:string;requestFingerprint:string|null;job:IBridgeJob}>('/api/device-jobs/requests/'+encodeURIComponent(requestKey),{signal,timeout:10000})).data,
+        (
+            await api.post<IInstallPlan>('/api/device-install-plans/' + encodeURIComponent(plan.id) + '/revoke', {
+                expectedManifest: plan.manifest,
+                expectedRevision: plan.revision,
+            })
+        ).data,
+    devices: async (signal?: AbortSignal): Promise<IBridgeDevice[]> =>
+        (await api.get<IBridgeDevice[]>('/api/devices', { signal, timeout: 10000 })).data,
+    jobs: async (): Promise<IBridgeJob[]> => (await api.get<IBridgeJob[]>('/api/device-jobs', { timeout: 10000 })).data,
+    request: async (
+        requestKey: string,
+        signal?: AbortSignal,
+    ): Promise<{ requestKey: string; requestFingerprint: string | null; job: IBridgeJob }> =>
+        (
+            await api.get<{ requestKey: string; requestFingerprint: string | null; job: IBridgeJob }>(
+                '/api/device-jobs/requests/' + encodeURIComponent(requestKey),
+                { signal, timeout: 10000 },
+            )
+        ).data,
     installations: async (): Promise<IBridgeInstallation[]> =>
-        (await api.get<IBridgeInstallation[]>('/api/device-installations',{timeout:10000}))
-            .data,
-    create: async (input: IBridgeJobInput): Promise<IBridgeJob> =>
-        (await api.post<IBridgeJob>('/api/device-jobs', input,{timeout:10000})).data,
-    retry:async(id:string,requestKey:string):Promise<IBridgeJob> => (await api.post<IBridgeJob>('/api/device-jobs/'+encodeURIComponent(id)+'/retry',{requestKey})).data,
+        (await api.get<IBridgeInstallation[]>('/api/device-installations', { timeout: 10000 })).data,
+    create: async (input: TBridgeJobInput): Promise<IBridgeJob> =>
+        (await api.post<IBridgeJob>('/api/device-jobs', input, { timeout: 10000 })).data,
+    retry: async (id: string, requestKey: string): Promise<IBridgeJob> =>
+        (await api.post<IBridgeJob>('/api/device-jobs/' + encodeURIComponent(id) + '/retry', { requestKey })).data,
     cancel: async (id: string): Promise<void> => {
-        await api.delete('/api/device-jobs/' + encodeURIComponent(id),{timeout:10000});
+        await api.delete('/api/device-jobs/' + encodeURIComponent(id), { timeout: 10000 });
     },
     revoke: async (id: string): Promise<void> => {
         await api.delete('/api/devices/' + encodeURIComponent(id));
     },
-    pair: async (
-        code: string,
-    ): Promise<IBridgePair> =>
-        (await api.get('/api/device-pairs/' + encodeURIComponent(code),{timeout:15000})).data,
+    pair: async (code: string): Promise<IBridgePair> =>
+        (await api.get('/api/device-pairs/' + encodeURIComponent(code), { timeout: 15000 })).data,
     approve: async (code: string): Promise<void> => {
-        await api.post(
-            '/api/device-pairs/' + encodeURIComponent(code) + '/approve',
-            undefined,{timeout:15000},
-        );
+        await api.post('/api/device-pairs/' + encodeURIComponent(code) + '/approve', undefined, { timeout: 15000 });
     },
 };

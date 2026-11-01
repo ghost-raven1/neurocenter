@@ -20,8 +20,8 @@ if (
 const notify = (value: Record<string, unknown>): void => {
     if (process.connected) process.send?.(value, () => {});
 };
-type Owner = { pid: number; parent: number; uid: number; birth: string; state: string };
-const known = new Map<number, Owner>();
+type TOwner = { pid: number; parent: number; uid: number; birth: string; state: string };
+const known = new Map<number, TOwner>();
 let permitted = false,
     closing: Promise<void> | undefined;
 async function census() {
@@ -40,7 +40,7 @@ async function census() {
         );
         query = child.pid ?? 0;
     });
-    const rows = new Map<number, Owner>();
+    const rows = new Map<number, TOwner>();
     for (const line of stdout.split('\n')) {
         const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+((?:\S+\s+){4}\S+)\s+(\S+)$/);
         if (!match) continue;
@@ -55,7 +55,7 @@ async function census() {
     }
     return rows;
 }
-function discover(rows: Map<number, Owner>) {
+function discover(rows: Map<number, TOwner>) {
     const parents = new Set([process.pid]);
     for (const value of known.values()) if (rows.get(value.pid)?.birth === value.birth) parents.add(value.pid);
     let changed = true;
@@ -71,11 +71,11 @@ function discover(rows: Map<number, Owner>) {
             }
     }
 }
-function exact(rows: Map<number, Owner>, item: Owner) {
+function exact(rows: Map<number, TOwner>, item: TOwner) {
     const actual = rows.get(item.pid);
     return actual?.uid === item.uid && actual.birth === item.birth;
 }
-async function publish(owner: Owner) {
+async function publish(owner: TOwner) {
     const directory = path.dirname(receipt!),
         info = await fs.lstat(directory);
     if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid!() || (info.mode & 0o077) !== 0)

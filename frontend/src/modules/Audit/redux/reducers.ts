@@ -40,16 +40,20 @@ const auditSlice = createSlice({
             state.page = action.payload;
         },
     },
-    extraReducers: builder => {
+    extraReducers: (builder) => {
         builder
             .addCase(fetchAudit.pending, (state, action) => {
-                if (!state.authScope) { return; }
+                if (!state.authScope) {
+                    return;
+                }
                 state.loading = true;
                 state.error = null;
                 state.requestId = action.meta.requestId;
             })
             .addCase(fetchAudit.fulfilled, (state, action) => {
-                if (state.requestId !== action.meta.requestId) { return; }
+                if (state.requestId !== action.meta.requestId) {
+                    return;
+                }
                 state.loading = false;
                 state.requestId = null;
                 state.list = action.payload.items;
@@ -57,7 +61,9 @@ const auditSlice = createSlice({
                 state.loadedPage = action.payload.page;
             })
             .addCase(fetchAudit.rejected, (state, action) => {
-                if (state.requestId !== action.meta.requestId) { return; }
+                if (state.requestId !== action.meta.requestId) {
+                    return;
+                }
                 state.loading = false;
                 state.requestId = null;
                 state.error = action.payload?.message || 'Не удалось загрузить историю операций';
@@ -68,26 +74,40 @@ const auditSlice = createSlice({
                 }
             })
             .addCase(authInit.rejected, (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
-                if (action.payload === 'unauthorized' || action.payload === 'forbidden') { return initialState; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
+                if (action.payload === 'unauthorized' || action.payload === 'forbidden') {
+                    return initialState;
+                }
                 state.authRequestId = null;
             })
             .addCase(authLogout.fulfilled, (state, action) => {
-                if (state.authRequestId === action.meta.requestId) { return initialState; }
+                if (state.authRequestId === action.meta.requestId) {
+                    return initialState;
+                }
             })
             .addCase(signOut, () => initialState)
             .addMatcher(isAnyOf(authInit.pending, authSwitchRole.pending, authLogout.pending), (state, action) => {
                 state.authRequestId = action.meta.requestId;
             })
             .addMatcher(isAnyOf(authInit.fulfilled, authSwitchRole.fulfilled), (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
                 const authScope = authDataScope(action.payload);
-                if (state.authScope !== authScope) { return { ...initialState, authScope }; }
+                if (state.authScope !== authScope) {
+                    return { ...initialState, authScope };
+                }
                 state.authRequestId = null;
             })
             .addMatcher(isAnyOf(authSwitchRole.rejected, authLogout.rejected), (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
-                if (action.payload === 'unauthorized') { return initialState; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
+                if (action.payload === 'unauthorized') {
+                    return initialState;
+                }
                 state.authRequestId = null;
             });
     },

@@ -6,7 +6,7 @@ import { useSelector } from 'react-redux';
 
 import { useAppDispatch } from '../../../core/hooks';
 import type { ISkillTreeNode } from '../../../core/api/interfaces';
-import { RootState } from '../../../store';
+import { TRootState } from '../../../store';
 
 import { fetchSkill } from '../redux/actions';
 import { openEditor, setSelectedPath } from '../redux/reducers';
@@ -20,12 +20,12 @@ const FILE_KEY_PREFIX = 'file:';
  */
 const SkillCatalogTree: FC = () => {
     const dispatch = useAppDispatch();
-    const { tree, selectedPath } = useSelector((state: RootState) => state.skills);
+    const { tree, selectedPath } = useSelector((state: TRootState) => state.skills);
 
     const toData = useCallback(
         (nodes: ISkillTreeNode[]): DataNode[] =>
-            nodes.map(node => ({
-                key: node.type === 'dir' ? (node.path || 'root') : `${FILE_KEY_PREFIX}${node.path}`,
+            nodes.map((node) => ({
+                key: node.type === 'dir' ? node.path || 'root' : `${FILE_KEY_PREFIX}${node.path}`,
                 title: node.type === 'dir' ? node.name : `${node.name}.md`,
                 isLeaf: node.type === 'file',
                 children: node.children !== undefined ? toData(node.children) : undefined,
@@ -33,13 +33,7 @@ const SkillCatalogTree: FC = () => {
         [],
     );
 
-    const data = useMemo(
-        () => [
-            { key: 'root', title: 'Все скиллы', isLeaf: true },
-            ...toData(tree),
-        ],
-        [tree, toData],
-    );
+    const data = useMemo(() => [{ key: 'root', title: 'Все скиллы', isLeaf: true }, ...toData(tree)], [tree, toData]);
 
     const handleSelect = useCallback(
         (keys: Key[]): void => {
@@ -67,7 +61,7 @@ const SkillCatalogTree: FC = () => {
         [dispatch],
     );
 
-    const selectedKeys: Key[] = selectedPath === null ? [] : [ selectedPath === '' ? 'root' : selectedPath ];
+    const selectedKeys: Key[] = selectedPath === null ? [] : [selectedPath === '' ? 'root' : selectedPath];
 
     return <Tree blockNode treeData={data} selectedKeys={selectedKeys} onSelect={handleSelect} />;
 };

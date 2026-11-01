@@ -7,12 +7,12 @@ import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { collectRoleDiagnostic } from './system-role.diagnostics';
 import { ROLE_GUIDANCE_POLICY } from './system-role.definitions';
 import { roleProjection } from './system-role.privacy';
-import type { RoleGuidanceAction, RoleGuidanceEvidence } from './system-role.types';
+import type { IRoleGuidanceAction, IRoleGuidanceEvidence } from './system-role.interfaces';
 
-export interface RoleGuidanceContext {
+export interface IRoleGuidanceContext {
     content: string;
-    evidence: RoleGuidanceEvidence;
-    actions: RoleGuidanceAction[];
+    evidence: IRoleGuidanceEvidence;
+    actions: IRoleGuidanceAction[];
 }
 const bytes = (value: unknown): number => Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value));
 /** A bounded page declares omissions and a stable character cursor instead of silently truncating a guide. */
@@ -63,15 +63,15 @@ export class SystemRoleGuidance {
         signal: AbortSignal,
         checkpoint: () => Promise<unknown>,
         scope: 'private-owner' | 'project-shared' = 'private-owner',
-    ): Promise<RoleGuidanceContext> {
+    ): Promise<IRoleGuidanceContext> {
         if (scope === 'project-shared' && !projectId)
             throw new ForbiddenException('Для общей справки выберите проект.');
-        const evidence: RoleGuidanceEvidence = {
+        const evidence: IRoleGuidanceEvidence = {
             status: 'unavailable',
             checkedAt: new Date().toISOString(),
             sources: [],
         };
-        const actions: RoleGuidanceAction[] = [{ id: 'help', label: 'Открыть справку', path: '/help' }];
+        const actions: IRoleGuidanceAction[] = [{ id: 'help', label: 'Открыть справку', path: '/help' }];
         await checkpoint();
         signal.throwIfAborted();
         try {

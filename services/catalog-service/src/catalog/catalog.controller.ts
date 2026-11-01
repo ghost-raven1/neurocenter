@@ -42,7 +42,7 @@ import { validateProjectRetention, validateProjectSettings } from './project-val
 import { AccessDb } from '../access/access-db';
 import { canReadCommon, IAccessActor, normalizeEmail, projectLevel } from '../access/access.model';
 import { MEMBER_ROLE_OPTIONS, T_DEFAULT_MEMBER_ROLE, roleCan } from './rbac';
-import type { IOperationReadScope } from '../operations/operation.types';
+import type { IOperationReadScope } from '../operations/operation.interfaces';
 
 /**
  * PostgreSQL-backed проекты, назначения, версии инструментов и история обслуживания.

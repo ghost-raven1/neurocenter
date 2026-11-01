@@ -3,12 +3,12 @@ import { createHash } from 'node:crypto';
 import { normalizeRuntimeArtifacts } from '../../../../shared/runtime-artifacts.cjs';
 import { systemRoleMcpDigest, roleMcpProducer } from '../../../../shared/system-role-mcp.cjs';
 import { hostRuntimeTarget } from '../mcp-host/host-target';
-import type { HostedMcpClaim } from '../mcp-host/ticket';
+import type { IHostedMcpClaim } from '../mcp-host/ticket';
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 const invalid = () => new BadRequestException('Нужен закреплённый серверный пакет MCP с проверенным комплектом.');
 /** Internal catalogue pins replace arbitrary commands, endpoints and configuration on the server host. */
-export function roleHostedPackage(raw: unknown, sessionId: string, target = hostRuntimeTarget()): HostedMcpClaim {
+export function roleHostedPackage(raw: unknown, sessionId: string, target = hostRuntimeTarget()): IHostedMcpClaim {
     if (
         !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(sessionId) ||
         !object(raw) ||

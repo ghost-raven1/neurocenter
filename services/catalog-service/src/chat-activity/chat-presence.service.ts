@@ -5,7 +5,7 @@ import { roleLevel, type IAccessActor } from '../access/access.model';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ProjectChatPolicy } from '../project-chat/project-chat.policy';
 import { ProjectChatRepository } from '../project-chat/project-chat.repository';
-import type { ProjectChatDb } from '../project-chat/project-chat.types';
+import type { TProjectChatDb } from '../project-chat/project-chat.interfaces';
 import { chatActivitySession } from './chat-activity.validation';
 import { prepareChatActivitySession } from './chat-activity.sessions';
 
@@ -16,7 +16,7 @@ export class ChatPresenceService {
     constructor(models: ModelsService) {
         this.repository = new ProjectChatRepository(models.pool);
     }
-    private async authorize(db: ProjectChatDb, actor: IAccessActor): Promise<void> {
+    private async authorize(db: TProjectChatDb, actor: IAccessActor): Promise<void> {
         const account = (
             await db.query<{ enabled: boolean; is_main_admin: boolean }>(
                 'SELECT enabled,is_main_admin FROM platform_users WHERE email=$1 FOR SHARE',

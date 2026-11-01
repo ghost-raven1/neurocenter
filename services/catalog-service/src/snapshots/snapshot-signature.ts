@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import { createHash, createPrivateKey, createPublicKey, sign, verify, type KeyObject } from 'node:crypto';
 import { ServiceUnavailableException, ConflictException } from '@nestjs/common';
 import { snapshotCanonicalJson } from '../../../shared/project-snapshot.cjs';
-import type { SnapshotSignature } from './snapshot-types';
+import type { ISnapshotSignature } from './snapshot-interfaces';
 
 /** One configured Ed25519 identity signs both full images and release capsules. */
 export class SnapshotSigner {
@@ -27,7 +27,7 @@ export class SnapshotSigner {
             await file.close();
         }
     }
-    async signature(value: unknown): Promise<SnapshotSignature> {
+    async signature(value: unknown): Promise<ISnapshotSignature> {
         const key = await this.privateKey(),
             publicKey = createPublicKey(key).export({ type: 'spki', format: 'pem' }).toString();
         return {
@@ -37,7 +37,7 @@ export class SnapshotSigner {
             value: sign(null, Buffer.from(snapshotCanonicalJson(value)), key).toString('base64'),
         };
     }
-    async verify(value: unknown, signature: SnapshotSignature): Promise<void> {
+    async verify(value: unknown, signature: ISnapshotSignature): Promise<void> {
         const identity = await this.signature({ purpose: 'identity' });
         const trusted: Record<string, string> = { [identity.keyId]: identity.publicKey };
         if (process.env.SNAPSHOT_TRUSTED_KEYS_FILE) {

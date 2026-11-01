@@ -2,7 +2,7 @@ import { constants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
-import { parseSkillFile } from './frontmatter';
+import { parseSkillFile } from './frontmatter/frontmatter';
 import { SKILL_JOURNAL_DIRECTORY, parseSkillJournal } from './skill-journal';
 import { SKILL_VERSIONS_DIRECTORY } from './skill-versions';
 import { isSkillDirectoryChange } from './skill-directory-change';

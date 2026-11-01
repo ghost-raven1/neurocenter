@@ -1,9 +1,9 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 
 /** Прокси передаёт сообщения только на закреплённый URL, без OAuth, discovery и перенаправлений. */
-export async function startConfiguredRemote(pkg: Package, headers: Record<string, string>): Promise<void> {
+export async function startConfiguredRemote(pkg: IPackage, headers: Record<string, string>): Promise<void> {
     const url = new URL(pkg.config?.url ?? '');
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) {
         throw new Error('configuration-required');

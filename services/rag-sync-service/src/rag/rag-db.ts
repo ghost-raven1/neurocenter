@@ -43,7 +43,7 @@ import {
 } from '../database/migration-definitions';
 import { RagGenerations, ensureGenerationSearchIndex } from './rag-generations';
 import { buildUpsert, parseVector, type IUpsertRow } from './rag-rows';
-import { searchProjectIndex, type ProjectSearchInput } from './rag-search';
+import { searchProjectIndex, type IProjectSearchInput } from './rag-search';
 import { ProjectTextStore } from '../project-text/text-store';
 export { buildUpsert, type IUpsertRow } from './rag-rows';
 
@@ -73,7 +73,7 @@ export class RagDb {
     public readonly generations: RagGenerations;
     public readonly text: ProjectTextStore;
 
-    public search(input: ProjectSearchInput) {
+    public search(input: IProjectSearchInput) {
         return searchProjectIndex(this.pool, input);
     }
 

@@ -1,4 +1,4 @@
-import { hub, readState, type Credentials } from '../../bridge/state.js';
+import { hub, readState, type ICredentials } from '../../bridge/state.js';
 import { projectFolder, projectBindingId, projectInstanceId } from '../../bridge/workspace.js';
 import { withProjectFiles } from '../../bridge/installation-files.js';
 import { roleMcpLifecycleSupported } from '../system-role-mcp/owned-process.js';
@@ -13,9 +13,9 @@ import {
     type AgentMethodWorkflowResult,
     type AgentMethodFailureCode,
 } from './contract.js';
-import { MethodExecutionError, runMethodCommand, type MethodCommandRunner } from './process.js';
-import { prepareMethod, methodEnvironment, type PreparedMethod } from './preparation.js';
-import { snapshotWorkspace, methodChanges, type WorkspaceSnapshot } from './snapshot.js';
+import { MethodExecutionError, runMethodCommand, type TMethodCommandRunner } from './process.js';
+import { prepareMethod, methodEnvironment, type IPreparedMethod } from './preparation.js';
+import { snapshotWorkspace, methodChanges, type TWorkspaceSnapshot } from './snapshot.js';
 import { assertMethodCompleted } from './completion.js';
 import { assertSelectedMethodAgent } from './selected-agent.js';
 import {
@@ -24,18 +24,22 @@ import {
     methodProcessJournal,
     stopReceiptProcess,
     methodCompletionSummary,
-    type MethodReceipt,
+    type IMethodReceipt,
 } from './receipts.js';
 
-interface MethodJob {
+interface IMethodJob {
     id: string;
     lease: string;
     project_id?: string;
     payload: unknown;
 }
-export interface MethodExecutorDependencies {
+export interface IMethodExecutorDependencies {
     /** Native fixtures inject a harmless executable; production always resolves real pinned method and coding CLIs. */
-    prepare?: (root: string, payload: AgentMethodWorkflowPayload, run: MethodCommandRunner) => Promise<PreparedMethod>;
+    prepare?: (
+        root: string,
+        payload: AgentMethodWorkflowPayload,
+        run: TMethodCommandRunner,
+    ) => Promise<IPreparedMethod>;
     pollMs?: number;
 }
 const active = new Map<string, { controller: AbortController; finished: Promise<void> }>();
@@ -101,11 +105,11 @@ export async function stopMethodWorkflows(): Promise<void> {
 
 /** One accepted intent executes at most once. Replay only returns its private receipt, including after a lost completion ACK. */
 export async function runAgentMethodWorkflow(
-    job: MethodJob,
+    job: IMethodJob,
     deviceId: string,
     authorize: () => Promise<unknown>,
     progress: (percent: number, message: string) => Promise<unknown> = async () => {},
-    dependencies: MethodExecutorDependencies = {},
+    dependencies: IMethodExecutorDependencies = {},
 ) {
     const payload = normalizeAgentMethodWorkflowPayload(job.payload),
         payloadHash = agentMethodWorkflowDigest(payload);
@@ -117,7 +121,7 @@ export async function runAgentMethodWorkflow(
     if (active.has(payload.workflowId)) throw durableError();
     if (receipt) {
         await stopReceiptProcess(receipt);
-        const completed: MethodReceipt = {
+        const completed: IMethodReceipt = {
             ...receipt,
             state: 'completed',
             result: {
@@ -145,16 +149,16 @@ export async function runAgentMethodWorkflow(
     let poll: ReturnType<typeof setInterval> | undefined,
         pollPending = false,
         root: string | undefined,
-        before: WorkspaceSnapshot | undefined,
+        before: TWorkspaceSnapshot | undefined,
         result = initialResult(payload),
         runningCheck: number | undefined;
     let quirk: Awaited<ReturnType<typeof assertMethodQuirkStorage>> | undefined;
-    const save = async (next: MethodReceipt) => {
+    const save = async (next: IMethodReceipt) => {
         await writeMethodReceipt(next, receipt);
         receipt = next;
     };
     const identity = async () => {
-        const credentials = await readState<Credentials>('credentials');
+        const credentials = await readState<ICredentials>('credentials');
         if (hub() !== site || credentials?.deviceId !== deviceId) throw new MethodExecutionError('AUTHORIZATION_LOST');
         if (
             root &&
@@ -205,7 +209,7 @@ export async function runAgentMethodWorkflow(
         try {
             await inspect();
             await save({ ...receipt, result });
-            const run: MethodCommandRunner = async (command, args, capture = false) => {
+            const run: TMethodCommandRunner = async (command, args, capture = false) => {
                 if (command !== 'git') throw new MethodExecutionError('EXECUTION_FAILED');
                 await inspect();
                 const journal = await methodProcessJournal(receipt!, save);
@@ -253,7 +257,7 @@ export async function runAgentMethodWorkflow(
                     pollPending = false;
                 });
         }, dependencies.pollMs ?? 1000);
-        const run: MethodCommandRunner = async (command, args, capture = false) => {
+        const run: TMethodCommandRunner = async (command, args, capture = false) => {
             await admit();
             const journal = await methodProcessJournal(receipt!, save);
             return runMethodCommand(command, args, root!, env, admit, controller.signal, journal, capture);
@@ -371,7 +375,7 @@ export async function runAgentMethodWorkflow(
                     );
                 }
             result = normalizeAgentMethodWorkflowResult(result, payload);
-            const completed: MethodReceipt = {
+            const completed: IMethodReceipt = {
                 schemaVersion: 1,
                 jobId: job.id,
                 lease: job.lease,

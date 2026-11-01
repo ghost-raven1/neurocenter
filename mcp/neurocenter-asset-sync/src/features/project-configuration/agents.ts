@@ -1,12 +1,12 @@
 import { agentsPrivateProof, AGENTS_RECEIPT, agentFile } from '../project-agents/receipt.js';
 import type { InstallationPlan } from '../../bridge/installation-plan.js';
 import { hash } from '../../bridge/state.js';
-import type { ConfigurationContext } from './context.js';
+import type { TConfigurationContext } from './context.js';
 const begin = '<!-- neurocenter:agents:start -->',
     end = '<!-- neurocenter:agents:end -->';
 /** Only names and paths from byte-verified site-owned files enter the explicit managed section. */
 export async function agentSection(
-    context: ConfigurationContext,
+    context: TConfigurationContext,
     plan: InstallationPlan,
     raw: string | null,
 ): Promise<string> {

@@ -6,7 +6,7 @@ import { atomicText } from './atomic-file.js';
 import { readBoundedUtf8 } from './read-bounded.js';
 import { recoveryDirectory, withRecoveryBudget } from './installation-space.js';
 import { inventoryRelative } from './project-inventory-reader.js';
-import type { PrivateInventoryScan } from './project-inventory.model.js';
+import type { IPrivateInventoryScan } from './project-inventory.model.js';
 
 export const INVENTORY_REASONS = [
     'managed-receipt',
@@ -30,11 +30,11 @@ export const INVENTORY_REASONS = [
 const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const SHA = /^[a-f0-9]{64}$/;
 const directory = () => path.join(stateDir(), 'project-inventory');
-export function inventoryDigest(scan: PrivateInventoryScan): string {
+export function inventoryDigest(scan: IPrivateInventoryScan): string {
     const { digest: _digest, ...summary } = scan.summary;
     return hash(JSON.stringify(canonicalV4({ ...scan, summary })));
 }
-function validate(scan: PrivateInventoryScan): void {
+function validate(scan: IPrivateInventoryScan): void {
     const item = scan?.summary;
     if (
         !scan ||
@@ -94,7 +94,7 @@ function validate(scan: PrivateInventoryScan): void {
     }
 }
 /** Снимки закрыты, ограничены 64 МиБ на текущий hub и не удаляются автоматически. */
-export async function saveInventoryScan(scan: PrivateInventoryScan): Promise<void> {
+export async function saveInventoryScan(scan: IPrivateInventoryScan): Promise<void> {
     validate(scan);
     const text = JSON.stringify(scan);
     if (Buffer.byteLength(text) > 2 * 1048576) {
@@ -129,7 +129,7 @@ export async function saveInventoryScan(scan: PrivateInventoryScan): Promise<voi
         await atomicText(destination, text, 0o600);
     });
 }
-export async function readInventoryScan(scanId: string): Promise<PrivateInventoryScan> {
+export async function readInventoryScan(scanId: string): Promise<IPrivateInventoryScan> {
     try {
         if (!UUID.test(scanId)) {
             throw new Error();
@@ -137,7 +137,7 @@ export async function readInventoryScan(scanId: string): Promise<PrivateInventor
         await recoveryDirectory(directory(), false);
         const scan = JSON.parse(
             await readBoundedUtf8(path.join(directory(), scanId + '.json'), 2 * 1048576),
-        ) as PrivateInventoryScan;
+        ) as IPrivateInventoryScan;
         validate(scan);
         if (scan.summary.scanId !== scanId) {
             throw new Error();

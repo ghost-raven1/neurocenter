@@ -11,15 +11,15 @@ import {
     type ProjectAgentsPayload,
     type ProjectAgentsResult,
 } from './contract.js';
-import { AGENTS_RECEIPT, agentFile, agentsJournalKey, agentsPrivateProof, type AgentsReceipt } from './receipt.js';
+import { AGENTS_RECEIPT, agentFile, agentsJournalKey, agentsPrivateProof, type TAgentsReceipt } from './receipt.js';
 import { agentConflict, assertAgentNamespace } from './namespace.js';
 import { LEARNING_COLLECTOR_FILE, renderLearningCollector } from '../project-learning/collector-plugin.js';
-import { approveProjectAgents, projectAgentMappings, type ApproveAgentCompilation } from './model-compiler.js';
+import { approveProjectAgents, projectAgentMappings, type TApproveAgentCompilation } from './model-compiler.js';
 import { isDeepStrictEqual } from 'node:util';
 import { learningQueueRoot } from '../project-learning/observation-queue.js';
 
-type Authorize = () => Promise<unknown>;
-type Progress = (percent: number, message: string) => Promise<unknown>;
+type TAuthorize = () => Promise<unknown>;
+type TProgress = (percent: number, message: string) => Promise<unknown>;
 const stale = () =>
     Object.assign(
         new Error('Настройки агентов устарели или папка проекта изменилась. Повторите действие для текущей привязки.'),
@@ -38,9 +38,9 @@ async function assertIdentity(payload: ProjectAgentsPayload, root: string): Prom
 /** Apply one complete desired set through the existing project lock, CAS and crash-recoverable file journal. */
 export async function configureProjectAgents(
     input: unknown,
-    authorize: Authorize,
-    progress: Progress,
-    approve: ApproveAgentCompilation,
+    authorize: TAuthorize,
+    progress: TProgress,
+    approve: TApproveAgentCompilation,
 ): Promise<ProjectAgentsResult> {
     const payload = normalizeProjectAgentsPayload(input);
     return withProjectFiles(payload.projectId, async (root) => {
@@ -117,7 +117,7 @@ export async function configureProjectAgents(
             await plan.write(file, body);
         }
         const agents = compilation.agents;
-        const receipt: AgentsReceipt = {
+        const receipt: TAgentsReceipt = {
             schemaVersion: 2,
             compiledManifestSha256: compilation.manifestSha256,
             projectId: payload.projectId,

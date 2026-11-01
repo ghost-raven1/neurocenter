@@ -2,19 +2,19 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { ProbeError } from './model.js';
-import { packageEnvironment, type ProbeProfile } from './profile.js';
+import { packageEnvironment, type IProbeProfile } from './profile.js';
 import type { ProbeScope } from './process.js';
 import { ProbeStdioTransport } from './mcp-transport.js';
 import { resolvePreparedRuntimeArtifact } from '../runtime-artifacts/cache.js';
 
-interface Counts {
+interface ICounts {
     tools: number;
     resources: number;
     prompts: number;
 }
-async function remoteTransport(pkg: Package, scope: ProbeScope, authorize: () => Promise<void>): Promise<Transport> {
+async function remoteTransport(pkg: IPackage, scope: ProbeScope, authorize: () => Promise<void>): Promise<Transport> {
     let url: URL;
     try {
         url = new URL(pkg.config?.url ?? '');
@@ -84,11 +84,11 @@ async function remoteTransport(pkg: Package, scope: ProbeScope, authorize: () =>
 
 /** Выполняет только initialize и списки объявленных возможностей; tools/call и чтения ресурсов отсутствуют. */
 export async function probeMcp(
-    pkg: Package,
-    profile: ProbeProfile,
+    pkg: IPackage,
+    profile: IProbeProfile,
     scope: ProbeScope,
     authorize: () => Promise<void>,
-): Promise<Counts> {
+): Promise<ICounts> {
     let transport: Transport;
     if (pkg.config?.transport === 'remote') {
         transport = await remoteTransport(pkg, scope, authorize);
@@ -124,7 +124,7 @@ export async function probeMcp(
         await scope.wait(client.connect(transport, { timeout: scope.remaining() }));
         phase = 'list';
         const capabilities = client.getServerCapabilities();
-        const counts: Counts = { tools: 0, resources: 0, prompts: 0 };
+        const counts: ICounts = { tools: 0, resources: 0, prompts: 0 };
         for (const category of ['tools', 'resources', 'prompts'] as const) {
             if (!capabilities?.[category]) {
                 continue;

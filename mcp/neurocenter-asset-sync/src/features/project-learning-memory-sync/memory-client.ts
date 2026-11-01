@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { MEMORY_SYNC_LIMITS as limits, type MemoryEntity } from './contract.js';
 
-export interface MemoryPort {
+export interface IMemoryPort {
     nodes(names: string[]): Promise<MemoryEntity[]>;
     create(entity: MemoryEntity): Promise<void>;
     add(name: string, observations: string[]): Promise<void>;
@@ -11,7 +11,7 @@ export interface MemoryPort {
 }
 const tools = ['open_nodes', 'create_entities', 'add_observations', 'delete_observations'];
 /** Every read names only this projection's entities; read_graph and arbitrary tool invocation are absent. */
-export async function connectMemory(entrypoint: string, cwd: string, signal: AbortSignal): Promise<MemoryPort> {
+export async function connectMemory(entrypoint: string, cwd: string, signal: AbortSignal): Promise<IMemoryPort> {
     signal.throwIfAborted();
     const client = new Client({ name: 'neurocenter-learning-memory', version: '1.0.0' }, { capabilities: {} });
     const transport = new StdioClientTransport({

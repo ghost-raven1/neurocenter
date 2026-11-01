@@ -1,11 +1,12 @@
 import { NotFoundException } from '@nestjs/common';
-import type { ProjectChatDb, ProjectChatRoomRow } from './project-chat.types';
-import { DEFAULT_PROJECT_CHAT_ROOM, projectChatRoomId } from './project-chat.types';
+import type { TProjectChatDb, IProjectChatRoomRow } from './project-chat.interfaces';
+import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.constants';
+import { projectChatRoomId } from './project-chat.utils';
 
 /** A project administrator does not implicitly join a private dialogue. */
 export async function assertProjectChatRoomAccess(
-    db: ProjectChatDb,
-    room: ProjectChatRoomRow,
+    db: TProjectChatDb,
+    room: IProjectChatRoomRow,
     email: string,
 ): Promise<void> {
     if (room.visibility === 'PUBLIC' || (!room.visibility && projectChatRoomId(room) === DEFAULT_PROJECT_CHAT_ROOM))
@@ -19,7 +20,7 @@ export async function assertProjectChatRoomAccess(
     if (!member.rowCount) throw new NotFoundException('Диалог не найден.');
 }
 
-export async function projectChatRoomEmails(db: ProjectChatDb, room: ProjectChatRoomRow): Promise<string[]> {
+export async function projectChatRoomEmails(db: TProjectChatDb, room: IProjectChatRoomRow): Promise<string[]> {
     if (room.visibility !== 'PRIVATE') return [];
     return (
         await db.query<{ email: string }>(
@@ -30,7 +31,7 @@ export async function projectChatRoomEmails(db: ProjectChatDb, room: ProjectChat
 }
 
 /** Only current, enabled project members are offered as human recipients. */
-export async function projectChatMembers(db: ProjectChatDb, projectId: string, emails?: string[]) {
+export async function projectChatMembers(db: TProjectChatDb, projectId: string, emails?: string[]) {
     return (
         await db.query<{ email: string; displayName: string; role: string }>(
             `SELECT lower(pm.principal_name) AS email,COALESCE(NULLIF(u.display_name,''),pm.display_name,pm.principal_name) AS "displayName",pm.role
@@ -42,7 +43,7 @@ export async function projectChatMembers(db: ProjectChatDb, projectId: string, e
 }
 
 /** The audience display includes an explicitly invited global administrator, never every administrator. */
-export async function projectChatPrivateMembers(db: ProjectChatDb, projectId: string, emails: string[]) {
+export async function projectChatPrivateMembers(db: TProjectChatDb, projectId: string, emails: string[]) {
     return (
         await db.query<{ email: string; displayName: string; role: string }>(
             `SELECT DISTINCT ON(u.email) u.email,COALESCE(NULLIF(u.display_name,''),u.email) AS "displayName",

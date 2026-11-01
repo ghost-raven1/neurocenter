@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { normalizeIndexProfile, type IIndexProfile } from '../../../shared/rag-index-contract.cjs';
 import { requireUsableVectors } from './rag-index-state';
 
-export interface ProjectSearchInput {
+export interface IProjectSearchInput {
     projectId: string;
     generation: string;
     revision: number;
@@ -13,7 +13,7 @@ export interface ProjectSearchInput {
     snapshot: string;
     embedding: number[];
 }
-export interface ProjectSearchSource {
+export interface IProjectSearchSource {
     id: string;
     path: string;
     title?: string;
@@ -22,14 +22,14 @@ export interface ProjectSearchSource {
     score: number;
     excerpt: string;
 }
-export interface ProjectSearchResult {
+export interface IProjectSearchResult {
     generation: string;
     snapshot: string;
-    sources: ProjectSearchSource[];
+    sources: IProjectSearchSource[];
 }
 
 /** Search accepts an exact catalog context, never a caller-selected foreign generation. */
-export function projectSearchInput(raw: unknown): ProjectSearchInput {
+export function projectSearchInput(raw: unknown): IProjectSearchInput {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
         throw new BadRequestException('Нужен контекст поиска проекта.');
     const v = raw as Record<string, unknown>;
@@ -55,7 +55,7 @@ export function projectSearchInput(raw: unknown): ProjectSearchInput {
     }
     if (!profile || profile.dimension > 16000) throw new BadRequestException('Выберите проверенный профиль поиска.');
     requireUsableVectors([{ embedding: v.embedding as number[] }], profile.dimension);
-    return { ...v, profile } as unknown as ProjectSearchInput;
+    return { ...v, profile } as unknown as IProjectSearchInput;
 }
 
 /** Bound UTF-8 bytes without splitting a code point; stored documents remain untouched. */
@@ -73,7 +73,7 @@ export function searchExcerpt(value: string, bytes = 3072): string {
 }
 
 /** Seal and rows share one snapshot; an uncertain rollback never returns a read-only transaction to the pool. */
-export async function searchProjectIndex(pool: Pool, input: ProjectSearchInput): Promise<ProjectSearchResult> {
+export async function searchProjectIndex(pool: Pool, input: IProjectSearchInput): Promise<IProjectSearchResult> {
     const db = await pool.connect();
     let discard = false;
     try {

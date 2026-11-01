@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 
-export interface UserCliExecutable {
+export interface IUserCliExecutable {
     file: string;
     identity: string;
 }
@@ -44,7 +44,7 @@ export async function findUserOpenCode(
     bridgeRoots: readonly string[],
     signal: AbortSignal,
     stopAtBundled = false,
-): Promise<UserCliExecutable | undefined> {
+): Promise<IUserCliExecutable | undefined> {
     const roots = await Promise.all(
         bridgeRoots.map(async (root) => {
             try {
@@ -88,7 +88,7 @@ export async function findUserOpenCode(
 
 /** Re-resolve PATH priority and symlinks after each asynchronous authorization barrier. */
 export async function assertUserCliCurrent(
-    executable: UserCliExecutable,
+    executable: IUserCliExecutable,
     directories: readonly string[],
     bridgeRoots: readonly string[],
     signal: AbortSignal,

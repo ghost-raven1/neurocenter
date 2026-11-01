@@ -5,16 +5,22 @@ import {
     releaseUndispatchedQuota,
     finishQuotaUsage,
 } from '../model-token-quotas/quota-ledger';
-import type { ModelTokenQuotaAdmission } from '../model-token-quotas/model-token-quotas.types';
+import type { IModelTokenQuotaAdmission } from '../model-token-quotas/model-token-quotas.interfaces';
 import { quotaCoverage } from '../model-token-quotas/model-token-quotas.model';
 import { ForbiddenException } from '@nestjs/common';
 import { readModelUsageReport } from './model-usage-report';
-import type { UsageFilter, UsageInsert, UsagePrivateRoom, UsageScope, UsageTerminal } from './model-usage.types';
+import type {
+    IUsageFilter,
+    IUsageInsert,
+    IUsagePrivateRoom,
+    IUsageScope,
+    IUsageTerminal,
+} from './model-usage.interfaces';
 
 /** Receipts are independent of catalog deletion: historical model attribution is never silently removed. */
 export class ModelUsageRepository {
     constructor(readonly pool: Pool) {}
-    async begin(value: UsageInsert): Promise<void> {
+    async begin(value: IUsageInsert): Promise<void> {
         await this.pool.query(
             `INSERT INTO model_usage_calls(id,worker_id,model_id,model_name,provider,endpoint,purpose,actor_email,project_id,agent_id,turn_id,operation_id,private_project_chat_room_id,lease_until,dispatch_count)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now()+interval '2 minutes',$14)`,
@@ -36,7 +42,7 @@ export class ModelUsageRepository {
             ],
         );
     }
-    async reserveQuota(worker: string, input: ModelTokenQuotaAdmission, signal?: AbortSignal) {
+    async reserveQuota(worker: string, input: IModelTokenQuotaAdmission, signal?: AbortSignal) {
         return reserveUsageQuota(this.pool, worker, input, signal);
     }
     async claimQuota(worker: string, id: string, enforce: boolean, signal?: AbortSignal) {
@@ -45,7 +51,7 @@ export class ModelUsageRepository {
     async releaseQuota(worker: string, id: string) {
         return releaseUndispatchedQuota(this.pool, worker, id);
     }
-    async finish(id: string, worker: string, value: UsageTerminal): Promise<void> {
+    async finish(id: string, worker: string, value: IUsageTerminal): Promise<void> {
         if (value.quotaTracked && (await finishQuotaUsage(this.pool, worker, id, value))) return;
         await this.metadata(
             `UPDATE model_usage_calls SET status=$3,input_tokens=$4,output_tokens=$5,latency_ms=$6,dispatch_count=$7,dispatched_at=$8,rate_wait_ms=$9,provider_latency_ms=$10,failure_code=$11,finished_at=now(),lease_until=NULL
@@ -120,7 +126,7 @@ export class ModelUsageRepository {
         ).rows[0];
         return row?.id ?? idOrName;
     }
-    async report(scope: UsageScope, filter: UsageFilter) {
+    async report(scope: IUsageScope, filter: IUsageFilter) {
         const db = await this.pool.connect();
         try {
             await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
@@ -135,7 +141,7 @@ export class ModelUsageRepository {
         }
     }
     /** Recheck the entire report audience after its snapshot, including facets and aggregates outside the history page. */
-    async assertPrivateAudience(viewerEmail: string, rooms: UsagePrivateRoom[]): Promise<void> {
+    async assertPrivateAudience(viewerEmail: string, rooms: IUsagePrivateRoom[]): Promise<void> {
         if (!rooms.length) return;
         const row = (
             await this.pool.query<{ revoked: boolean }>(

@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
-import { validConfigurationRevisions, type ConfigurationRevision } from './mcp-config-reports';
+import { validConfigurationRevisions, type IConfigurationRevision } from './mcp-config-reports';
 
 export const RUNTIME_PROBE_CODES = [
     'verified',
@@ -27,7 +27,7 @@ export const RUNTIME_PROBE_CODES = [
     'probe-failed',
     'configuration-changed',
 ] as const;
-export interface RuntimeProbeResult {
+export interface IRuntimeProbeResult {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -51,20 +51,20 @@ export interface RuntimeProbeResult {
         prompts: number;
         pluginsInitialized: number;
     };
-    configurationRevisions?: ConfigurationRevision[];
+    configurationRevisions?: IConfigurationRevision[];
 }
-interface ProbePackage {
+interface IProbePackage {
     plugin: { id: string; kind?: string; version: number };
     manifest: { sha256: string };
     files?: unknown[];
 }
-interface Source {
+interface ISource {
     projectId: string | null;
     bindingId?: string;
     consentManifest?: string;
-    package?: ProbePackage;
-    installSet?: { packages: ProbePackage[] };
-    configurationRevisions?: ConfigurationRevision[];
+    package?: IProbePackage;
+    installSet?: { packages: IProbePackage[] };
+    configurationRevisions?: IConfigurationRevision[];
 }
 const fields = [
     'schemaVersion',
@@ -87,10 +87,10 @@ const countFields = ['packages', 'files', 'skills', 'mcp', 'tools', 'resources',
 /** Диагностика публикует только фиксированные статусы и счётчики, без stdout, секретов и путей. */
 export function assertRuntimeProbe(
     value: unknown,
-    source: Source,
+    source: ISource,
     failed = false,
-): asserts value is RuntimeProbeResult {
-    const result = value as RuntimeProbeResult | null;
+): asserts value is IRuntimeProbeResult {
+    const result = value as IRuntimeProbeResult | null;
     const expectedFields = source.configurationRevisions ? [...fields, 'configurationRevisions'] : fields;
     if (
         !result ||

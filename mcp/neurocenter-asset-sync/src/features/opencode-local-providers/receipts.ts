@@ -5,22 +5,22 @@ import { stateDir } from '../../bridge/state.js';
 import { atomicText, syncDirectory } from '../../bridge/atomic-file.js';
 import { readBoundedSnapshot } from '../../bridge/read-bounded.js';
 import { roleMcpProcessOwner, roleMcpOwnerAlive } from '../system-role-mcp/owned-process.js';
-import type { RoleMcpOwner } from '../system-role-mcp/session-journal.js';
-import type { Completion } from '../../bridge/completions.js';
+import type { IRoleMcpOwner } from '../system-role-mcp/session-journal.js';
+import type { ICompletion } from '../../bridge/completions.js';
 import { contract } from './contract.js';
-export interface GlobalJob {
+export interface IGlobalJob {
     id: string;
     lease: string;
     kind: string;
     project_id?: string | null;
     payload: unknown;
 }
-export interface GlobalReceipt {
+export interface IGlobalReceipt {
     schemaVersion: 1;
-    job: GlobalJob & { deviceId: string };
-    owner: RoleMcpOwner;
+    job: IGlobalJob & { deviceId: string };
+    owner: IRoleMcpOwner;
     phase: 'started' | 'closed';
-    completion?: Completion;
+    completion?: ICompletion;
     outboxed?: true;
 }
 const uuid = (value: unknown) =>
@@ -63,7 +63,7 @@ async function archiveDirectory() {
     await syncDirectory(parent);
     return root;
 }
-function validate(value: GlobalReceipt) {
+function validate(value: IGlobalReceipt) {
     if (
         !value ||
         Object.keys(value).some(
@@ -112,7 +112,7 @@ function validate(value: GlobalReceipt) {
     } else if (value.completion || value.outboxed) throw failure();
     return value;
 }
-async function readFile(file: string, id: string): Promise<GlobalReceipt | undefined> {
+async function readFile(file: string, id: string): Promise<IGlobalReceipt | undefined> {
     try {
         const info = await fs.lstat(file);
         if (
@@ -131,20 +131,20 @@ async function readFile(file: string, id: string): Promise<GlobalReceipt | undef
         throw error;
     }
 }
-export async function readGlobalReceipt(id: string): Promise<GlobalReceipt | undefined> {
+export async function readGlobalReceipt(id: string): Promise<IGlobalReceipt | undefined> {
     if (!uuid(id)) throw failure();
     return (
         (await readFile(path.join(await directory(), id + '.json'), id)) ??
         (await readFile(path.join(await archiveDirectory(), id + '.json'), id))
     );
 }
-export async function beginGlobalReceipt(job: GlobalReceipt['job']) {
+export async function beginGlobalReceipt(job: IGlobalReceipt['job']) {
     if (await readGlobalReceipt(job.id)) throw failure();
     const value = validate({ schemaVersion: 1, job, owner: await roleMcpProcessOwner(), phase: 'started' });
     await atomicText(path.join(await directory(), job.id + '.json'), JSON.stringify(value), 0o600);
     return value;
 }
-export async function completeGlobalReceipt(previous: GlobalReceipt, completion: Completion) {
+export async function completeGlobalReceipt(previous: IGlobalReceipt, completion: ICompletion) {
     if (previous.phase !== 'started' || !isDeepStrictEqual(await readGlobalReceipt(previous.job.id), previous))
         throw failure();
     const value = validate({ ...previous, phase: 'closed', completion });
@@ -152,7 +152,7 @@ export async function completeGlobalReceipt(previous: GlobalReceipt, completion:
     return value;
 }
 /** Delivery is repeated; browser opening and config changes never are. Closed receipts remain immutable. */
-export async function queueGlobalReceipt(value: GlobalReceipt, save: (completion: Completion) => Promise<void>) {
+export async function queueGlobalReceipt(value: IGlobalReceipt, save: (completion: ICompletion) => Promise<void>) {
     if (
         value.phase !== 'closed' ||
         !value.completion ||
@@ -195,7 +195,7 @@ export async function* globalReceipts() {
         yield (await readFile(path.join(root, name), name.slice(0, -5)))!;
     }
 }
-export async function globalReceiptRecoverable(value: GlobalReceipt) {
+export async function globalReceiptRecoverable(value: IGlobalReceipt) {
     const current = await roleMcpProcessOwner();
     return isDeepStrictEqual(current, value.owner) || !(await roleMcpOwnerAlive(value.owner));
 }

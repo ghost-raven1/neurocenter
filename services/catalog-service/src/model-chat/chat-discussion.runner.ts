@@ -1,38 +1,34 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type { Request } from 'express';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
 import { automaticModelOptions } from '../models/model-runtime-options';
 import { modelInferenceBody } from '../models/inference.controller';
 import { currentModelUsage, withModelUsage } from '../model-usage/model-usage.context';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import type { TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 import { chatContext, type IChatContextSettings } from './chat-context';
 import type { ChatGroup } from './chat-group';
-import type { ChatAgentSnapshot } from './chat-group.types';
-import { unknownGroupUsage } from './chat-group.types';
-import type { ChatRepository, ChatDb } from './chat.repository';
-import type { ChatRoundScope } from './chat-round';
+import type { IChatAgentSnapshot } from './chat-group.interfaces';
+import { unknownGroupUsage } from './chat-group.utils';
+import type { ChatRepository, TChatDb } from './chat.repository';
+import type { IChatRoundScope } from './chat-round';
 import type { ModelChatProjectContext } from './chat-project-context';
-import type { PreparedProjectContext } from './chat-project-context.types';
-import type { ChatMessage, TurnRow } from './chat.types';
+import type { IPreparedProjectContext } from './chat-project-context.interfaces';
+import type { IChatMessage, ITurnRow } from './chat.interfaces';
 import { discussGroup } from './chat-discussion';
 import { ChatDiscussionRepository } from './chat-discussion.repository';
-import {
-    DISCUSSION_LIMITS,
-    type DiscussionCall,
-    type DiscussionPhase,
-    type DiscussionRun,
-} from './chat-discussion.types';
+import { DISCUSSION_LIMITS } from './chat-discussion.constants';
+import { type IDiscussionCall, type TDiscussionPhase, type IDiscussionRun } from './chat-discussion.interfaces';
 
-interface Dependencies {
+interface IDependencies {
     chats: ChatRepository;
     steps: ChatDiscussionRepository;
     groups: ChatGroup;
     project: ModelChatProjectContext;
     runtime: IModelInferenceRuntime;
     settings(model: IModel): Promise<IChatContextSettings>;
-    history(model: IModel): Promise<ChatMessage[]>;
+    history(model: IModel): Promise<IChatMessage[]>;
 }
 
 /** Per-call deadlines race even an uncooperative provider; late output cannot become a saved answer. */
@@ -51,15 +47,15 @@ function bounded<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> {
 /** Discussion keeps its original personal owner and ordinary project-agent permissions throughout all five slots. */
 export async function runChatDiscussion(
     req: Request,
-    scope: ChatRoundScope,
-    turn: TurnRow,
-    run: DiscussionRun,
+    scope: IChatRoundScope,
+    turn: ITurnRow,
+    run: IDiscussionRun,
     signal: AbortSignal,
-    deps: Dependencies,
+    deps: IDependencies,
 ): Promise<void> {
     // eslint-disable-next-line prefer-const -- Checkpoint and context callbacks read undefined before prepare assigns the project; const would introduce a TDZ.
-    let project: PreparedProjectContext | undefined;
-    const authority = async (db?: ChatDb, snapshot?: ChatAgentSnapshot) => {
+    let project: IPreparedProjectContext | undefined;
+    const authority = async (db?: TChatDb, snapshot?: IChatAgentSnapshot) => {
         signal.throwIfAborted();
         if (scope.actorRole !== run.actor_role) throw new ForbiddenException('Роль автора обсуждения изменилась.');
         const model = await scope.authorize(true);
@@ -80,7 +76,7 @@ export async function runChatDiscussion(
         await project?.assertCurrent();
         signal.throwIfAborted();
     };
-    const checkpoint = async (db?: ChatDb, snapshot?: ChatAgentSnapshot) => {
+    const checkpoint = async (db?: TChatDb, snapshot?: IChatAgentSnapshot) => {
         await authority(db, snapshot);
         const pending = await (db ?? deps.chats.pool).query(
             `SELECT 1 FROM model_chat_turns WHERE id=$1 AND conversation_id=$2 AND request_id=$3
@@ -90,17 +86,17 @@ export async function runChatDiscussion(
         if (!pending.rowCount) throw new ConflictException('Обсуждение уже остановлено или завершено.');
     };
     const call = async (
-        phase: DiscussionPhase,
+        phase: TDiscussionPhase,
         key: string,
         model: IModel,
-        messages: ChatMessage[],
+        messages: IChatMessage[],
         remainingSteps: number,
-        snapshot: ChatAgentSnapshot | null = null,
+        snapshot: IChatAgentSnapshot | null = null,
         before?: () => Promise<void>,
-        required: readonly FeatureFlagKey[] = [],
+        required: readonly TFeatureFlagKey[] = [],
         body?: Record<string, unknown>,
     ) => {
-        const flags: FeatureFlagKey[] = [
+        const flags: TFeatureFlagKey[] = [
             'group_chat',
             'group_discussions',
             'model_hosting',
@@ -271,7 +267,7 @@ export async function runChatDiscussion(
         turn.input_text,
         run.roster,
         Math.min(DISCUSSION_LIMITS.contributions, DISCUSSION_LIMITS.calls - used - 2),
-        async (input: DiscussionCall) => {
+        async (input: IDiscussionCall) => {
             const agent = input.task
                 ? run.roster.find((item) => item.snapshot.agentId === input.task!.agentId)
                 : undefined;
@@ -280,7 +276,7 @@ export async function runChatDiscussion(
                 : await scope.authorize(true);
             let messages = input.messages,
                 before: (() => Promise<void>) | undefined,
-                required: readonly FeatureFlagKey[] = [];
+                required: readonly TFeatureFlagKey[] = [];
             if (agent) {
                 const learning = await deps.groups.learning.prepare(req, scope.row, agent.snapshot.agentId, signal);
                 before = learning.beforeInference;

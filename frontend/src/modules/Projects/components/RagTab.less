@@ -1,14 +1,41 @@
 .project-rag {
-    &__refresh {text-align:right;font-size:12px;color:#617387;summary {cursor:pointer;width:fit-content;margin-left:auto;} summary:focus-visible {outline:2px solid @brand-primary;outline-offset:3px;} }
+    &__refresh {
+        text-align: right;
+        font-size: 12px;
+        color: #617387;
+        summary {
+            cursor: pointer;
+            width: fit-content;
+            margin-left: auto;
+        }
+        summary:focus-visible {
+            outline: 2px solid @brand-primary;
+            outline-offset: 3px;
+        }
+    }
     display: flex;
     flex-direction: column;
     gap: 12px;
     min-width: 0;
-    &__advanced {margin-top:8px; padding-top:16px; border-top:1px solid #e1e8ee;
-        > summary {cursor:pointer; color:#617387; font-weight:500; margin-bottom:12px;}
-        > summary:focus-visible {outline:2px solid @brand-primary; outline-offset:3px;}}
+    &__advanced {
+        margin-top: 8px;
+        padding-top: 16px;
+        border-top: 1px solid #e1e8ee;
+        > summary {
+            cursor: pointer;
+            color: #617387;
+            font-weight: 500;
+            margin-bottom: 12px;
+        }
+        > summary:focus-visible {
+            outline: 2px solid @brand-primary;
+            outline-offset: 3px;
+        }
+    }
 
-    &__header { margin: 0; }
+    &__header {
+        margin: 0;
+    }
 
     &__content {
         display: flex;
@@ -16,15 +43,26 @@
         gap: 12px;
     }
 
-    &__stats > .ant-col { display: flex; }
+    &__stats > .ant-col {
+        display: flex;
+    }
 
     &__stat.ant-card {
         width: 100%;
         height: 100%;
 
-        .ant-card-body { padding: 12px; }
-        .ant-statistic-title { min-height: 22px; overflow-wrap: anywhere; }
-        .ant-statistic-content { display: flex; align-items: center; min-height: 30px; }
+        .ant-card-body {
+            padding: 12px;
+        }
+        .ant-statistic-title {
+            min-height: 22px;
+            overflow-wrap: anywhere;
+        }
+        .ant-statistic-content {
+            display: flex;
+            align-items: center;
+            min-height: 30px;
+        }
     }
 
     .rag-quota-card.ant-card-small > .ant-card-head > .ant-card-head-wrapper {
@@ -40,28 +78,83 @@
             white-space: normal;
         }
 
-        > .ant-card-extra { margin-left: 0; }
+        > .ant-card-extra {
+            margin-left: 0;
+        }
     }
 
     &__sync {
-        .ant-card-body { padding: 16px; }
-        .ant-space-item { min-width: 0; max-width: 100%; }
-        .ant-typography { overflow-wrap: anywhere; }
+        .ant-card-body {
+            padding: 16px;
+        }
+        .ant-space-item {
+            min-width: 0;
+            max-width: 100%;
+        }
+        .ant-typography {
+            overflow-wrap: anywhere;
+        }
     }
 
-    &__help.ant-typography { margin: 16px 0 0; }
-    &__setup {font-size:12px;color:#617387;summary{cursor:pointer;width:fit-content;}summary:focus-visible{outline:2px solid @brand-primary;outline-offset:3px;} > .ant-typography{margin:10px 0 0;} }
-    &__steps {display:grid;gap:6px;margin:10px 0 12px;padding-left:22px;color:#526779;}
-    &__help-details {margin-top:14px;font-size:12px;color:#617387;summary {cursor:pointer;width:fit-content;} summary:focus-visible {outline:2px solid @brand-primary;outline-offset:3px;} .ant-typography {margin:10px 0 0;line-height:1.6;}}
+    &__help.ant-typography {
+        margin: 16px 0 0;
+    }
+    &__setup {
+        font-size: 12px;
+        color: #617387;
+        summary {
+            cursor: pointer;
+            width: fit-content;
+        }
+        summary:focus-visible {
+            outline: 2px solid @brand-primary;
+            outline-offset: 3px;
+        }
+        > .ant-typography {
+            margin: 10px 0 0;
+        }
+    }
+    &__steps {
+        display: grid;
+        gap: 6px;
+        margin: 10px 0 12px;
+        padding-left: 22px;
+        color: #526779;
+    }
+    &__help-details {
+        margin-top: 14px;
+        font-size: 12px;
+        color: #617387;
+        summary {
+            cursor: pointer;
+            width: fit-content;
+        }
+        summary:focus-visible {
+            outline: 2px solid @brand-primary;
+            outline-offset: 3px;
+        }
+        .ant-typography {
+            margin: 10px 0 0;
+            line-height: 1.6;
+        }
+    }
 }
 
 @media (max-width: 575px) {
     .project-rag {
         gap: 16px;
 
-        &__content { gap: 16px; }
-        &__stat.ant-card .ant-card-body { padding: 12px; }
-        &__stat.ant-card .ant-statistic-title { min-height: 44px; }
-        &__sync .ant-card-body { padding: 12px; }
+        &__content {
+            gap: 16px;
+        }
+        &__stat.ant-card .ant-card-body {
+            padding: 12px;
+        }
+        &__stat.ant-card .ant-statistic-title {
+            min-height: 44px;
+        }
+        &__sync .ant-card-body {
+            padding: 12px;
+        }
     }
 }

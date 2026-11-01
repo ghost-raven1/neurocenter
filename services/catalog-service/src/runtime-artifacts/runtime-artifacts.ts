@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import {
     inspectRuntimeArchive,
     normalizeRuntimeArtifacts,
-    type RuntimeArtifact,
+    type IRuntimeArtifact,
 } from '../../../shared/runtime-artifacts.cjs';
 import { DeviceStore } from '../devices/device-store';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
@@ -22,7 +22,7 @@ export const runtimeArtifactDirectory = (): string =>
 export class RuntimeArtifacts {
     constructor(private readonly devices: DeviceStore) {}
 
-    async importArchive(source: string, input: unknown, signal?: AbortSignal): Promise<RuntimeArtifact> {
+    async importArchive(source: string, input: unknown, signal?: AbortSignal): Promise<IRuntimeArtifact> {
         signal?.throwIfAborted();
         const [descriptor] = normalizeRuntimeArtifacts([input]);
         await inspectRuntimeArchive(source, descriptor, { signal });
@@ -60,10 +60,10 @@ export class RuntimeArtifacts {
 
     private async importCheckedArchive(
         source: string,
-        descriptor: RuntimeArtifact,
+        descriptor: IRuntimeArtifact,
         root: string,
         signal?: AbortSignal,
-    ): Promise<RuntimeArtifact> {
+    ): Promise<IRuntimeArtifact> {
         const target = path.join(root, descriptor.sha256 + '.tar.gz');
         const temporary = path.join(root, '.' + randomUUID() + '.partial');
         const handle = await fs.open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -129,7 +129,7 @@ export class RuntimeArtifacts {
     }
 
     /** Квитанция принимает только точную опись ранее проверенного неизменяемого файла. */
-    private async registerArchive(descriptor: RuntimeArtifact, signal?: AbortSignal): Promise<RuntimeArtifact> {
+    private async registerArchive(descriptor: IRuntimeArtifact, signal?: AbortSignal): Promise<IRuntimeArtifact> {
         return withImportRegistryTransaction(this.devices.pool, signal, async (client) => {
             signal?.throwIfAborted();
             await client.query(

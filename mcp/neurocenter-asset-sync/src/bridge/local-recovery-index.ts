@@ -4,9 +4,9 @@ import { hash, stateDir } from './state.js';
 import { atomicText } from './atomic-file.js';
 import { recoveryDirectory } from './installation-space.js';
 import { readBoundedUtf8 } from './read-bounded.js';
-import type { Journal } from './installation-journal.js';
+import type { IJournal } from './installation-journal.js';
 
-export interface RecoveryIndex {
+export interface IRecoveryIndex {
     schemaVersion: 1;
     recoveryId: string;
     assetKey: string;
@@ -16,7 +16,7 @@ export interface RecoveryIndex {
 }
 export const variantIndexDirectory = (instanceId: string): string =>
     path.join(stateDir(), 'file-changes', hash('local-variants:' + instanceId), 'history');
-export function recoveryIndexRecord(journal: Journal): RecoveryIndex {
+export function recoveryIndexRecord(journal: IJournal): IRecoveryIndex {
     if (!journal.recovery) {
         throw new Error('Нет описания резервной копии.');
     }
@@ -31,7 +31,7 @@ export function recoveryIndexRecord(journal: Journal): RecoveryIndex {
 }
 
 /** Индекс не содержит исходников; его размер входит в существующую квоту истории. */
-export async function indexLocalRecovery(journal: Journal): Promise<void> {
+export async function indexLocalRecovery(journal: IJournal): Promise<void> {
     if (!journal.recovery || journal.state !== 'committed' || journal.action !== 'install') {
         return;
     }

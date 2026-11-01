@@ -5,7 +5,7 @@ import { roleDefinitionPin, roleHash, systemRole } from './system-role.definitio
 import type { SystemRolePolicy } from './system-role.policy';
 import type { SystemRoleRepository } from './system-role.repository';
 import type { SystemRoleTargets } from './system-role.targets';
-import type { RoleRunRow } from './system-role.types';
+import type { IRoleRunRow } from './system-role.interfaces';
 
 function ownerRequestKey(action: string, target: string): string {
     const hash = roleHash({ action, target });
@@ -21,11 +21,11 @@ export class SystemRoleApplication {
     ) {}
     async apply(
         req: Request,
-        input: RoleRunRow,
+        input: IRoleRunRow,
         revision: number,
         requestId: string,
         rollback = false,
-    ): Promise<RoleRunRow> {
+    ): Promise<IRoleRunRow> {
         const actor = await this.policy.actor(req, input.project_id);
         if (!rollback)
             await this.features([

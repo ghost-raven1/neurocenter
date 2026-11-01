@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
-import type { IModel } from '../models/model.types';
-import { isRemoteModel } from '../models/remote-model.types';
+import type { IModel } from '../models/model.interfaces';
+import { isRemoteModel } from '../models/remote-model.utils';
 import type { IRemoteConnectionRow } from '../models/remote-connection.repository';
 import { canStoreModelCredential } from '../models/remote-model-secret';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
@@ -15,15 +15,15 @@ import {
     sealUserCredential,
 } from './remote-provider.identity';
 import type {
-    RemoteProviderAccessView,
-    RemoteProviderActor,
-    RemoteProviderMutation,
-    RemoteProviderReceipt,
-    RemoteUserCredentialRow,
-} from './remote-provider.types';
+    IRemoteProviderAccessView,
+    IRemoteProviderActor,
+    IRemoteProviderMutation,
+    IRemoteProviderReceipt,
+    IRemoteUserCredentialRow,
+} from './remote-provider.interfaces';
 
-type Db = Pick<PoolClient, 'query'>;
-export async function providerConnection(db: Db, modelId: string, revision?: number): Promise<IRemoteConnectionRow> {
+type TDb = Pick<PoolClient, 'query'>;
+export async function providerConnection(db: TDb, modelId: string, revision?: number): Promise<IRemoteConnectionRow> {
     const row = (
         await db.query<IRemoteConnectionRow>(
             `SELECT * FROM model_remote_connections WHERE model_id=$1 ${revision === undefined ? 'ORDER BY revision DESC LIMIT 1' : 'AND revision=$2'} FOR SHARE`,
@@ -35,13 +35,13 @@ export async function providerConnection(db: Db, modelId: string, revision?: num
     return row;
 }
 export const readUserCredential = async (
-    db: Db,
+    db: TDb,
     modelId: string,
     providerId: string,
     email: string,
-): Promise<RemoteUserCredentialRow | undefined> =>
+): Promise<IRemoteUserCredentialRow | undefined> =>
     (
-        await db.query<RemoteUserCredentialRow>(
+        await db.query<IRemoteUserCredentialRow>(
             'SELECT * FROM remote_provider_user_credentials WHERE model_id=$1 AND provider_id=$2 AND owner_email=$3 FOR SHARE',
             [modelId, providerId, email],
         )
@@ -53,7 +53,7 @@ export class RemoteProviderRepository {
         private readonly pool: Pool,
         private readonly environment: NodeJS.ProcessEnv = process.env,
     ) {}
-    async view(model: IModel, actor: RemoteProviderActor): Promise<RemoteProviderAccessView> {
+    async view(model: IModel, actor: IRemoteProviderActor): Promise<IRemoteProviderAccessView> {
         return this.transaction(async (db) => {
             await remoteProviderAuthority(db, actor, model.id);
             if (!isRemoteModel(model))
@@ -75,11 +75,11 @@ export class RemoteProviderRepository {
             };
         });
     }
-    async receipt(modelId: string, actor: RemoteProviderActor, key: string): Promise<RemoteProviderReceipt | null> {
+    async receipt(modelId: string, actor: IRemoteProviderActor, key: string): Promise<IRemoteProviderReceipt | null> {
         return this.transaction(async (db) => {
             await remoteProviderAuthority(db, actor, modelId);
             const row = (
-                await db.query<{ model_id: string; result: RemoteProviderReceipt }>(
+                await db.query<{ model_id: string; result: IRemoteProviderReceipt }>(
                     'SELECT model_id,result FROM remote_provider_user_requests WHERE owner_email=$1 AND request_key=$2',
                     [actor.email, key],
                 )
@@ -89,10 +89,10 @@ export class RemoteProviderRepository {
     }
     async mutate(
         model: IModel,
-        actor: RemoteProviderActor,
-        input: RemoteProviderMutation,
+        actor: IRemoteProviderActor,
+        input: IRemoteProviderMutation,
         action: 'save' | 'delete',
-    ): Promise<RemoteProviderReceipt> {
+    ): Promise<IRemoteProviderReceipt> {
         if (!isRemoteModel(model)) throw new BadRequestException('Выберите удалённую модель.');
         const hash = remoteMutationHash(model.id, actor.email, action, input, this.environment);
         return this.transaction(async (db) => {
@@ -101,7 +101,7 @@ export class RemoteProviderRepository {
                 credentialFence(actor.email, input.providerId),
             ]);
             const prior = (
-                await db.query<{ model_id: string; request_hash: string; result: RemoteProviderReceipt }>(
+                await db.query<{ model_id: string; request_hash: string; result: IRemoteProviderReceipt }>(
                     'SELECT model_id,request_hash,result FROM remote_provider_user_requests WHERE owner_email=$1 AND request_key=$2',
                     [actor.email, input.requestKey],
                 )
@@ -135,7 +135,7 @@ export class RemoteProviderRepository {
                     [model.id, input.providerId, actor.email, revision, secret ? JSON.stringify(secret) : null],
                 )
             ).rows[0];
-            const result: RemoteProviderReceipt = {
+            const result: IRemoteProviderReceipt = {
                 modelId: model.id,
                 providerId: input.providerId,
                 requestKey: input.requestKey,

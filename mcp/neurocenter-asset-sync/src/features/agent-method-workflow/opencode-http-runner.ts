@@ -3,23 +3,23 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 
 const limit = 1024 * 1024;
-type JsonObject = Record<string, unknown>;
-const object = (value: unknown): value is JsonObject => !!value && typeof value === 'object' && !Array.isArray(value);
+type TJsonObject = Record<string, unknown>;
+const object = (value: unknown): value is TJsonObject => !!value && typeof value === 'object' && !Array.isArray(value);
 const finite = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0;
-type RuntimeFailureCode = 'EXECUTION_FAILED' | 'OUTPUT_LIMIT' | 'TIMEOUT' | 'SELECTED_AGENT_NOT_READY';
+type TRuntimeFailureCode = 'EXECUTION_FAILED' | 'OUTPUT_LIMIT' | 'TIMEOUT' | 'SELECTED_AGENT_NOT_READY';
 class RuntimeFailure extends Error {
-    code: RuntimeFailureCode;
-    constructor(code: RuntimeFailureCode = 'EXECUTION_FAILED') {
+    code: TRuntimeFailureCode;
+    constructor(code: TRuntimeFailureCode = 'EXECUTION_FAILED') {
         super(code);
         this.code = code;
     }
 }
-interface SelectedRuntimeAgent {
+interface ISelectedRuntimeAgent {
     slug: string;
     mode: 'primary' | 'all';
     model: { providerID: string; modelID: string };
 }
-function selectedRuntimeAgent(raw: string | undefined): SelectedRuntimeAgent | undefined {
+function selectedRuntimeAgent(raw: string | undefined): ISelectedRuntimeAgent | undefined {
     if (raw === undefined) return;
     let value: unknown;
     try {
@@ -41,10 +41,10 @@ function selectedRuntimeAgent(raw: string | undefined): SelectedRuntimeAgent | u
         !value.model.modelID
     )
         throw new RuntimeFailure('SELECTED_AGENT_NOT_READY');
-    return value as unknown as SelectedRuntimeAgent;
+    return value as unknown as ISelectedRuntimeAgent;
 }
 /** Runtime introspection must resolve the explicitly selected primary agent and its compiled model before any inference. */
-export function assertRuntimeAgent(value: unknown, selected: SelectedRuntimeAgent): void {
+export function assertRuntimeAgent(value: unknown, selected: ISelectedRuntimeAgent): void {
     if (!Array.isArray(value)) throw new RuntimeFailure('SELECTED_AGENT_NOT_READY');
     const matches = value.filter((agent) => object(agent) && agent.name === selected.slug),
         agent = matches[0];
@@ -60,7 +60,7 @@ export function assertRuntimeAgent(value: unknown, selected: SelectedRuntimeAgen
 }
 
 /** A successful HTTP response must contain the final completed assistant turn, not a tool-call or partial response. */
-export function assertCompletedAssistant(value: unknown, session: string, selected?: SelectedRuntimeAgent): void {
+export function assertCompletedAssistant(value: unknown, session: string, selected?: ISelectedRuntimeAgent): void {
     if (!object(value) || !object(value.info) || !Array.isArray(value.parts)) throw new RuntimeFailure();
     const info = value.info;
     if (

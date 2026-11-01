@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { safeTarget } from '../../bridge/workspace-paths.js';
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
 import { stateDir } from '../../bridge/state.js';
-import { managedRagMcpEmbedding, type ManagedRagEmbedding } from '../rag-ui/managed-installation.js';
+import { managedRagMcpEmbedding, type IManagedRagEmbedding } from '../rag-ui/managed-installation.js';
 import type { IStoreLocateResult } from '../../lib/store.js';
 import {
     normalizeIndexProfile,
@@ -101,7 +101,7 @@ export async function assertIndexIdle(storePath: string, restore = false, ownedL
     }
     return JSON.stringify([status, manifest, provenance]);
 }
-async function managedNative(root: string): Promise<{ embedding: ManagedRagEmbedding; hosted?: boolean } | undefined> {
+async function managedNative(root: string): Promise<{ embedding: IManagedRagEmbedding; hosted?: boolean } | undefined> {
     const hosted = await readHostedRagEmbedding(root);
     if (hosted) return { embedding: hosted, hosted: true };
     const directory = await safeTarget(root, '.opencode/neurocenter/receipts');

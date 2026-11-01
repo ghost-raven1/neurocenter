@@ -2,10 +2,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv-provider.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { ProbeScope } from '../runtime-probe/process.js';
 import { OwnedRoleMcpTransport } from './owned-transport.js';
-import { RoleMcpCleanupError, type RoleMcpProcessJournal } from './owned-process.js';
+import { RoleMcpCleanupError, type IRoleMcpProcessJournal } from './owned-process.js';
 import {
     SYSTEM_ROLE_MCP_LIMITS as limits,
     normalizeRoleMcpDiscovery,
@@ -15,16 +15,16 @@ import {
     type RoleMcpOutput,
 } from './contract.js';
 
-export interface RoleMcpLaunch {
-    pkg: Package;
+export interface IRoleMcpLaunch {
+    pkg: IPackage;
     command?: string;
     args?: string[];
     cwd: string;
     env: NodeJS.ProcessEnv;
     headers?: Record<string, string>;
-    ownership?: RoleMcpProcessJournal;
+    ownership?: IRoleMcpProcessJournal;
 }
-export interface RoleMcpPort {
+export interface IRoleMcpPort {
     list(): Promise<RoleMcpTool[]>;
     call(
         name: string,
@@ -38,10 +38,10 @@ export const roleMcpOutput = normalizeRoleMcpOutput;
 
 /** A run owns one transport. Existing process-group primitives close all descendants on cancellation or loss of authority. */
 export async function connectRoleMcp(
-    launch: RoleMcpLaunch,
+    launch: IRoleMcpLaunch,
     signal: AbortSignal,
     authorize: () => Promise<void>,
-): Promise<RoleMcpPort> {
+): Promise<IRoleMcpPort> {
     signal.throwIfAborted();
     const scope = new ProbeScope(limits.sessionMs),
         client = new Client({ name: 'neurocenter-system-role', version: '1' }, { capabilities: {} });

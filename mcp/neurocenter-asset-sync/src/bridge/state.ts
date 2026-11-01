@@ -27,12 +27,12 @@ export const stateDir = (): string =>
         process.env.NEUROCENTER_BRIDGE_HOME || path.join(os.homedir(), '.config', 'neurocenter', 'bridge'),
         hash(hub()).slice(0, 20),
     );
-export interface Credentials {
+export interface ICredentials {
     token: string;
     deviceId: string;
     email: string;
 }
-export interface Workspace {
+export interface IWorkspace {
     root?: string;
     bindings: Record<string, string>;
 }
@@ -88,7 +88,7 @@ function apiTransportError(origin: string, cause: unknown): Error {
 /** Caller cancellation supplements the existing transport deadline without changing other requests. */
 export async function api<T>(route: string, input?: unknown, tokenOverride?: string, signal?: AbortSignal): Promise<T> {
     signal?.throwIfAborted();
-    const credentials = await readState<Credentials>('credentials');
+    const credentials = await readState<ICredentials>('credentials');
     signal?.throwIfAborted();
     const origin = apiHub();
     const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000);
@@ -134,7 +134,7 @@ export async function api<T>(route: string, input?: unknown, tokenOverride?: str
 
 /** Старые MCP-инструменты используют ту же отзываемую личную привязку через gateway. */
 export async function authorizedFetch(route: string, options: RequestInit = {}): Promise<Response> {
-    const credentials = await readState<Credentials>('credentials');
+    const credentials = await readState<ICredentials>('credentials');
     if (!credentials) {
         throw new Error('Сначала выполните connect_neurocenter и подтвердите подключение на сайте.');
     }

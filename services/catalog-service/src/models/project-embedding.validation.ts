@@ -1,12 +1,12 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { IModel } from './model.types';
+import type { IModel } from './model.interfaces';
 import { validateModelId } from './model-validation';
 import type {
     IDeviceEmbeddingContext,
     IDeviceEmbeddingInput,
     IProjectEmbeddingUpdate,
-} from './project-embedding.types';
+} from './project-embedding.interfaces';
 
 const sha = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const uuid = (value: unknown): value is string =>

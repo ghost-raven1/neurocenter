@@ -7,7 +7,7 @@ import { modelPlanningOptions } from '../models/model-planning-options';
 import { readFeatures } from '../../../shared/feature-client.cjs';
 import { ChatDiscussionRepository, discussionResponses } from './chat-discussion.repository';
 import { runChatDiscussion } from './chat-discussion.runner';
-import { DISCUSSION_LIMITS } from './chat-discussion.types';
+import { DISCUSSION_LIMITS } from './chat-discussion.constants';
 import { MODEL_CHAT_ROUND_TIMEOUT_MS } from '../../../shared/model-chat-deadline.cjs';
 import { automaticModelOptions } from '../models/model-runtime-options';
 import {
@@ -25,7 +25,7 @@ import type { Request } from 'express';
 import { createPool } from '../database/pool';
 import { ModelsService } from '../models/models.service';
 import { ModelRuntime } from '../models/model-runtime';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { modelInferenceBody } from '../models/inference.controller';
 import { requireFeatureEnabled, requireFeaturesEnabled } from '../features/require-feature-enabled';
@@ -51,7 +51,8 @@ import {
 } from './chat-compaction';
 import { ChatAttachmentStorage } from './chat-attachment-storage';
 import { ChatGroup, chatAgentIds } from './chat-group';
-import { unknownGroupUsage, type ChatRoundBudget } from './chat-group.types';
+import { unknownGroupUsage } from './chat-group.utils';
+import { type IChatRoundBudget } from './chat-group.interfaces';
 import { executeChatRound, finishChatRound } from './chat-round';
 import { prepareChatRound } from './chat-round-preflight';
 import { ModelChatProjectContext } from './chat-project-context';
@@ -59,19 +60,17 @@ import { ChatResearchExecutor } from './chat-research';
 import { ChatResearchRepository } from './chat-research.repository';
 import { ChatResearchTools } from './chat-research-tools';
 import { researchRequest as chatResearchInput } from './chat-research-input';
-import type { ChatResearchRequest } from './chat-research.types';
+import type { IChatResearchRequest } from './chat-research.interfaces';
 import { researchEvidence } from './chat-research-evidence';
-import { ChatRepository, type ChatDb, type ChatRows } from './chat.repository';
+import { ChatRepository, type TChatDb, type IChatRows } from './chat.repository';
+import { attachmentView, conversationView, turnView } from './chat.utils';
 import {
-    attachmentView,
-    conversationView,
-    turnView,
-    type AttachmentRow,
-    type ChatDetail,
-    type ChatMessage,
-    type TurnRow,
-    type ConversationRow,
-} from './chat.types';
+    type IAttachmentRow,
+    type IChatDetail,
+    type IChatMessage,
+    type ITurnRow,
+    type IConversationRow,
+} from './chat.interfaces';
 import {
     CHAT_TEXT_BYTES,
     chatAttachmentIds,
@@ -170,7 +169,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         if (modelId !== undefined) await this.models.getUsable(modelId, req, projectId);
         return { items: rows.filter((row) => visible.has(row.model_id)).map(conversationView) };
     }
-    async create(req: Request, raw: unknown): Promise<ChatDetail> {
+    async create(req: Request, raw: unknown): Promise<IChatDetail> {
         if (req.headers['x-neurocenter-device-id'])
             throw new ForbiddenException('Личные диалоги доступны пользователю в интерфейсе.');
         const body = chatBody(raw, ['modelId', 'projectId', 'expectedModelPin', 'title', 'mode', 'agentIds']);
@@ -202,7 +201,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         };
         const model = await authorize();
         await requireFeaturesEnabled([mode === 'group' ? 'group_chat' : 'model_chat']);
-        const groupRow = { mode, agent_ids: agentIds, project_id: projectId } as ConversationRow;
+        const groupRow = { mode, agent_ids: agentIds, project_id: projectId } as IConversationRow;
         if (mode === 'group') await this.groups.plan(req, groupRow, model);
         const row = await this.repository.create(
             actor.email,
@@ -231,7 +230,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         const scope = await this.scope(req, id);
         return this.agents(req, scope.row.model_id, scope.row.project_id ?? undefined);
     }
-    async participants(req: Request, id: string, raw: unknown): Promise<ChatDetail> {
+    async participants(req: Request, id: string, raw: unknown): Promise<IChatDetail> {
         const body = chatBody(raw, ['expectedRevision', 'agentIds']),
             revision = chatRevision(body.expectedRevision),
             ids = chatAgentIds(body.agentIds, true),
@@ -266,7 +265,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         );
         return this.read(req, id);
     }
-    async read(req: Request, id: string): Promise<ChatDetail> {
+    async read(req: Request, id: string): Promise<IChatDetail> {
         const scope = await this.scope(req, id);
         return this.repository.owned(
             scope.owner,
@@ -304,7 +303,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             model = await this.models.getUsable(modelId, req, project.id);
         if (model.capability === 'embedding')
             throw new BadRequestException('Embedding-модель не поддерживает исследование в диалоге.');
-        const result = await this.researchTools.choices(req, { project_id: project.id } as ConversationRow);
+        const result = await this.researchTools.choices(req, { project_id: project.id } as IConversationRow);
         await this.models.getUsable(modelId, req, project.id);
         return result;
     }
@@ -343,9 +342,9 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
     }
     private async researchAllowed(
         req: Request,
-        row: ConversationRow,
-        request: ChatResearchRequest | null | undefined,
-        db?: ChatDb,
+        row: IConversationRow,
+        request: IChatResearchRequest | null | undefined,
+        db?: TChatDb,
     ): Promise<void> {
         if (!request) return;
         await requireFeaturesEnabled([
@@ -359,7 +358,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         }
         if (request.external) await this.researchTools.resolve(req, row, request.external, db);
     }
-    private async viewTurns(db: ChatDb, id: string, turns: TurnRow[]) {
+    private async viewTurns(db: TChatDb, id: string, turns: ITurnRow[]) {
         const steps = turns.some((turn) => turn.research_request)
             ? await this.researchReceipts.list(
                   db,
@@ -404,7 +403,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             };
         });
     }
-    async rename(req: Request, id: string, raw: unknown): Promise<ChatDetail> {
+    async rename(req: Request, id: string, raw: unknown): Promise<IChatDetail> {
         const body = chatBody(raw, ['expectedRevision', 'title']),
             revision = chatRevision(body.expectedRevision),
             title = chatTitle(body.title),
@@ -437,7 +436,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         for (const value of this.active.values()) if (value.conversationId === id) value.abort.abort();
         return { deleted: true };
     }
-    async upload(req: Request, id: string, raw: unknown, signal?: AbortSignal): Promise<ChatDetail> {
+    async upload(req: Request, id: string, raw: unknown, signal?: AbortSignal): Promise<IChatDetail> {
         const input = chatUpload(raw),
             scope = await this.scope(req, id);
         const prior = await this.repository.owned(
@@ -493,7 +492,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         }
         return this.read(req, id);
     }
-    private sameUpload(row: AttachmentRow, hash: string): void {
+    private sameUpload(row: IAttachmentRow, hash: string): void {
         if (row.request_hash !== hash || row.deleted_at)
             throw new ConflictException('Этот запрос загрузки уже использован. Выберите файл повторно.');
     }
@@ -510,7 +509,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             },
         );
     }
-    async removeAttachment(req: Request, id: string, attachmentId: string, raw: unknown): Promise<ChatDetail> {
+    async removeAttachment(req: Request, id: string, attachmentId: string, raw: unknown): Promise<IChatDetail> {
         const body = chatBody(raw, ['expectedRevision']),
             revision = chatRevision(body.expectedRevision),
             scope = await this.scope(req, id);
@@ -561,7 +560,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             },
         );
     }
-    async send(req: Request, id: string, raw: unknown, signal: AbortSignal): Promise<ChatDetail> {
+    async send(req: Request, id: string, raw: unknown, signal: AbortSignal): Promise<IChatDetail> {
         const body = chatBody(raw, [
                 'expectedRevision',
                 'requestId',
@@ -681,7 +680,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         return this.execute(req, scope, prepared.turn);
     }
 
-    async retry(req: Request, id: string, turnId: string, raw: unknown, signal: AbortSignal): Promise<ChatDetail> {
+    async retry(req: Request, id: string, turnId: string, raw: unknown, signal: AbortSignal): Promise<IChatDetail> {
         chatUuid(turnId);
         const body = chatBody(raw, ['expectedRevision', 'expectedModelPin', 'requestId']),
             revision = chatRevision(body.expectedRevision),
@@ -735,7 +734,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
                 if (context.exceeded)
                     throw new BadRequestException(context.reason || 'Сообщение не помещается в доступный контекст.');
                 const turn = (
-                    await db.query<TurnRow>(
+                    await db.query<ITurnRow>(
                         "UPDATE model_chat_turns SET request_id=$3,request_ids=array_append(request_ids,$3::uuid),status='pending',error=NULL,lease_until=now()+interval '20 minutes' WHERE conversation_id=$1 AND id=$2 RETURNING *",
                         [id, turnId, requestId],
                     )
@@ -754,7 +753,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         });
         return this.execute(req, scope, prepared.turn);
     }
-    async cancel(req: Request, id: string, turnId: string, raw: unknown): Promise<ChatDetail> {
+    async cancel(req: Request, id: string, turnId: string, raw: unknown): Promise<IChatDetail> {
         chatUuid(turnId);
         const body = chatBody(raw, ['expectedRevision']),
             revision = chatRevision(body.expectedRevision),
@@ -784,7 +783,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         if (active?.requestId === cancelledRequest) active.abort.abort();
         return this.read(req, id);
     }
-    async removeTurn(req: Request, id: string, turnId: string, raw: unknown): Promise<ChatDetail> {
+    async removeTurn(req: Request, id: string, turnId: string, raw: unknown): Promise<IChatDetail> {
         chatUuid(turnId);
         const body = chatBody(raw, ['expectedRevision']),
             revision = chatRevision(body.expectedRevision),
@@ -820,7 +819,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         );
         return this.read(req, id);
     }
-    async complete(req: Request, id: string, turnId: string, raw: unknown): Promise<ChatDetail> {
+    async complete(req: Request, id: string, turnId: string, raw: unknown): Promise<IChatDetail> {
         chatUuid(turnId);
         const body = chatBody(raw, ['expectedRevision']),
             revision = chatRevision(body.expectedRevision),
@@ -866,8 +865,8 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
     private async execute(
         req: Request,
         scope: Awaited<ReturnType<ModelChatService['scope']>>,
-        turn: TurnRow,
-    ): Promise<ChatDetail> {
+        turn: ITurnRow,
+    ): Promise<IChatDetail> {
         // Durable acceptance transfers cancellation to the server owner; hiding a browser is not Stop.
         const abort = new AbortController(),
             combined = AbortSignal.any([abort.signal, AbortSignal.timeout(MODEL_CHAT_ROUND_TIMEOUT_MS)]);
@@ -932,7 +931,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             };
             if (scope.row.project_id && !turn.text_context) {
                 const saved = (
-                    await this.pool.query<NonNullable<TurnRow['text_context']>>(
+                    await this.pool.query<NonNullable<ITurnRow['text_context']>>(
                         'SELECT selection,evidence FROM model_chat_text_contexts WHERE turn_id=$1 AND project_id=$2',
                         [turn.id, scope.row.project_id],
                     )
@@ -1188,22 +1187,22 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         }
         return this.read(req, scope.row.id);
     }
-    private requireResolved(turns: TurnRow[]): void {
+    private requireResolved(turns: ITurnRow[]): void {
         if (turns.some((turn) => turn.status !== 'done'))
             throw new ConflictException('Повторите, измените или остановите последнее сообщение.');
     }
     /** Summarization and answer share the pending request lease; each paid batch has an immutable receipt. */
     private async compact(
         scope: Awaited<ReturnType<ModelChatService['scope']>>,
-        turn: TurnRow,
+        turn: ITurnRow,
         signal: AbortSignal,
         selectedModel?: IModel,
-        overhead: ChatMessage[] = [],
-        assertCurrent: (db?: ChatDb) => Promise<void> = async () => undefined,
-        budget: ChatRoundBudget = { summaries: 0 },
+        overhead: IChatMessage[] = [],
+        assertCurrent: (db?: TChatDb) => Promise<void> = async () => undefined,
+        budget: IChatRoundBudget = { summaries: 0 },
         responseId?: string,
         beforeInference?: () => Promise<void>,
-    ): Promise<ChatMessage[]> {
+    ): Promise<IChatMessage[]> {
         for (;;) {
             signal.throwIfAborted();
             const state = await this.repository.owned(
@@ -1368,11 +1367,11 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
     }
     /** Automatic discussion never pays for an omitted prefix or silently starts compaction outside its call budget. */
     private async discussionHistory(
-        db: ChatDb,
-        row: ConversationRow,
+        db: TChatDb,
+        row: IConversationRow,
         model: IModel,
         draft?: string,
-    ): Promise<ChatMessage[]> {
+    ): Promise<IChatMessage[]> {
         const state = await this.state(db, row, model, draft, [], projectEmbeddingPin(model));
         if (state.context.exceeded || state.context.compactionNeeded)
             throw new BadRequestException(
@@ -1382,11 +1381,11 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         return state.messages;
     }
     private async state(
-        db: ChatDb,
-        row: ConversationRow,
+        db: TChatDb,
+        row: IConversationRow,
         model: IModel,
         draft?: string,
-        overhead: ChatMessage[] = [],
+        overhead: IChatMessage[] = [],
         modelPin = row.model_pin,
     ) {
         const checkpoint = await this.repository.checkpoint(db, row.id, modelPin),
@@ -1445,7 +1444,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         // A large new message alone may use >80% safely; there is no old material to squeeze further.
         return { checkpoint, sources, messages, settings, context };
     }
-    private async inputText(db: ChatDb, id: string, prompt: string, ids: string[]): Promise<string> {
+    private async inputText(db: TChatDb, id: string, prompt: string, ids: string[]): Promise<string> {
         const files: string[] = [];
         for (const aid of ids) {
             const file = await this.repository.attachment(db, id, aid);
@@ -1458,7 +1457,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
             );
         return text;
     }
-    private async settings(db: ChatDb, model: IModel): Promise<IChatContextSettings> {
+    private async settings(db: TChatDb, model: IModel): Promise<IChatContextSettings> {
         if (model.runtime === 'ollama') return { contextWindowTokens: this.localContextWindow };
         const options = await modelPlanningOptions(db, model);
         return {
@@ -1468,8 +1467,8 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
     }
     private async contextFor(
         req: Request,
-        db: ChatDb,
-        row: ConversationRow,
+        db: TChatDb,
+        row: IConversationRow,
         model: IModel,
         draft?: string,
         targets?: string[],
@@ -1519,7 +1518,7 @@ export class ModelChatService implements OnModuleInit, OnApplicationShutdown {
         else delete context.reason;
         return context;
     }
-    private async detail(req: Request, rows: ChatRows, model: IModel, db: ChatDb): Promise<ChatDetail> {
+    private async detail(req: Request, rows: IChatRows, model: IModel, db: TChatDb): Promise<IChatDetail> {
         const state = await this.state(db, rows.conversation, model),
             pending = rows.turns.find((turn) => turn.status === 'pending'),
             checkpoint =

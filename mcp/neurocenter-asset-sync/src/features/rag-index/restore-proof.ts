@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileFingerprint, readBoundedUtf8 } from '../../bridge/read-bounded.js';
 import { syncDirectory } from '../../bridge/atomic-file.js';
 
-export interface RestoreDirectoryProof {
+export interface IRestoreDirectoryProof {
     physical: string;
     entries: Record<string, string>;
 }
@@ -13,7 +13,7 @@ export async function restoreDirectoryProof(
     directory: string,
     lock: string,
     sync = false,
-): Promise<RestoreDirectoryProof | undefined> {
+): Promise<IRestoreDirectoryProof | undefined> {
     const root = await fs.lstat(directory, { bigint: true }).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') {
             return undefined;
@@ -79,8 +79,8 @@ export async function restoreDirectoryProof(
 
 /** Частичная очистка допускает только оставшееся неизменённое подмножество собственного дерева. */
 export function matchesRestoreProof(
-    current: RestoreDirectoryProof | undefined,
-    expected: RestoreDirectoryProof,
+    current: IRestoreDirectoryProof | undefined,
+    expected: IRestoreDirectoryProof,
     partial = false,
 ): boolean {
     return (

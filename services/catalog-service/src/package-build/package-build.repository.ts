@@ -1,12 +1,12 @@
-import { parseBuildDiagnostic, type BuildDiagnostic } from '../../../shared/package-build-diagnostics.cjs';
+import { parseBuildDiagnostic, type IBuildDiagnostic } from '../../../shared/package-build-diagnostics.cjs';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import type { Pool, PoolClient } from 'pg';
-import type { BuildConfiguration, BuildResult, BuildRow, BuildState } from './package-build.model';
+import type { IBuildConfiguration, IBuildResult, IBuildRow, TBuildState } from './package-build.model';
 import { BuildCancelledError } from './build-cancellation';
 import { configureBuildPublicationTransaction } from './publication-deadline';
-import type { BuildRuntimeReport } from './build-runtime';
+import type { IBuildRuntimeReport } from './build-runtime';
 
 /** Очередь сборки и её проекция в «Операциях» фиксируются одной транзакцией. */
 export class PackageBuildRepository {
@@ -16,7 +16,7 @@ export class PackageBuildRepository {
     ) {}
     /** Bounded public history remains readable when creation/inference flags are disabled. */
     async evidence(id: string) {
-        const runtime = await this.pool.query<{ attempt: number; report: BuildRuntimeReport }>(
+        const runtime = await this.pool.query<{ attempt: number; report: IBuildRuntimeReport }>(
             'SELECT attempt,report FROM tool_build_runtime_checks WHERE build_id=$1 ORDER BY attempt DESC LIMIT 1',
             [id],
         );
@@ -37,7 +37,7 @@ export class PackageBuildRepository {
     /** A new attempt cannot inherit the previous supervisor's reap proof. */
     async nextAttempt(id: string, nonce: string, lease: PoolClient): Promise<string> {
         return this.transaction(async (client) => {
-            const row = (await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]))
+            const row = (await client.query<IBuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]))
                 .rows[0];
             if (row?.state === 'CANCELLING' || row?.state === 'CANCELLED') throw new BuildCancelledError();
             if (row?.state !== 'RUNNING' || row.execution_nonce !== nonce || row.publication_started_at)
@@ -54,11 +54,11 @@ export class PackageBuildRepository {
         id: string,
         nonce: string,
         attempt: number,
-        report: BuildRuntimeReport,
+        report: IBuildRuntimeReport,
         lease: PoolClient,
     ): Promise<void> {
         await this.transaction(async (client) => {
-            const row = (await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]))
+            const row = (await client.query<IBuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]))
                 .rows[0];
             if (row?.state === 'CANCELLING' || row?.state === 'CANCELLED') throw new BuildCancelledError();
             if (row?.state !== 'RUNNING' || row.execution_nonce !== nonce || row.publication_started_at)
@@ -74,11 +74,11 @@ export class PackageBuildRepository {
         id: string,
         nonce: string,
         attempt: number,
-        report: BuildDiagnostic,
+        report: IBuildDiagnostic,
         lease: PoolClient,
     ): Promise<void> {
         await this.transaction(async (client) => {
-            const row = (await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]))
+            const row = (await client.query<IBuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]))
                 .rows[0];
             if (row?.state === 'CANCELLING' || row?.state === 'CANCELLED') throw new BuildCancelledError();
             if (row?.state !== 'RUNNING' || row.execution_nonce !== nonce || row.publication_started_at)
@@ -93,8 +93,8 @@ export class PackageBuildRepository {
             );
         }, lease);
     }
-    async existing(actor: string, key: string, fingerprint: string): Promise<BuildRow | undefined> {
-        const { rows } = await this.pool.query<BuildRow>(
+    async existing(actor: string, key: string, fingerprint: string): Promise<IBuildRow | undefined> {
+        const { rows } = await this.pool.query<IBuildRow>(
             'SELECT * FROM tool_build_jobs WHERE actor=$1 AND request_key=$2',
             [actor, key],
         );
@@ -104,15 +104,15 @@ export class PackageBuildRepository {
         if (!rows[0]) await this.assertNotCancelled(this.pool, actor, key);
         return rows[0];
     }
-    async get(id: string): Promise<BuildRow> {
-        const { rows } = await this.pool.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1', [id]);
+    async get(id: string): Promise<IBuildRow> {
+        const { rows } = await this.pool.query<IBuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1', [id]);
         if (!rows[0]) {
             throw new NotFoundException('Сборка не найдена.');
         }
         return rows[0];
     }
-    async findByRequest(actor: string, key: string): Promise<BuildRow> {
-        const { rows } = await this.pool.query<BuildRow>(
+    async findByRequest(actor: string, key: string): Promise<IBuildRow> {
+        const { rows } = await this.pool.query<IBuildRow>(
             'SELECT * FROM tool_build_jobs WHERE actor=$1 AND request_key=$2',
             [actor, key],
         );
@@ -125,13 +125,13 @@ export class PackageBuildRepository {
         actor: string,
         key: string,
         fingerprint: string,
-        config: BuildConfiguration,
+        config: IBuildConfiguration,
         lease?: PoolClient,
         retain?: (client: PoolClient) => Promise<void>,
-    ): Promise<BuildRow> {
+    ): Promise<IBuildRow> {
         return this.transaction(async (client) => {
             await client.query('SELECT pg_advisory_xact_lock(72465396)');
-            const previous = await client.query<BuildRow>(
+            const previous = await client.query<IBuildRow>(
                 'SELECT * FROM tool_build_jobs WHERE actor=$1 AND request_key=$2',
                 [actor, key],
             );
@@ -151,7 +151,7 @@ export class PackageBuildRepository {
                     'В очереди уже 10 сборок. Дождитесь освобождения места в «Операциях» и повторите запрос.',
                 );
             }
-            const { rows } = await client.query<BuildRow>(
+            const { rows } = await client.query<IBuildRow>(
                 `INSERT INTO tool_build_jobs(id,actor,request_key,request_hash,config,state,message)
                 VALUES($1,$2,$3,$4,$5,'QUEUED','В очереди сборки. Начнём после предыдущих инструментов.') RETURNING *`,
                 [randomUUID(), actor, key, fingerprint, config],
@@ -161,9 +161,9 @@ export class PackageBuildRepository {
         }, lease);
     }
     /** Единственный владелец запускает задания по порядку, сохраняя ожидающие при перезапуске. */
-    async takeQueued(lease: PoolClient): Promise<BuildRow | undefined> {
+    async takeQueued(lease: PoolClient): Promise<IBuildRow | undefined> {
         return this.transaction(async (client) => {
-            const { rows } = await client.query<BuildRow>(
+            const { rows } = await client.query<IBuildRow>(
                 "SELECT * FROM tool_build_jobs WHERE state='QUEUED' ORDER BY created_at,id LIMIT 1 FOR UPDATE",
             );
             if (!rows[0]) {
@@ -171,7 +171,7 @@ export class PackageBuildRepository {
             }
             await this.saveProgress(client, rows[0].id, 'RUNNING', 0, 'Подготовка сборки');
             return (
-                await client.query<BuildRow>(
+                await client.query<IBuildRow>(
                     'UPDATE tool_build_jobs SET execution_nonce=$2,execution_host=$3,execution_pid=$4,execution_started=false WHERE id=$1 RETURNING *',
                     [rows[0].id, randomUUID(), hostname(), process.pid],
                 )
@@ -180,12 +180,12 @@ export class PackageBuildRepository {
     }
     async progress(
         id: string,
-        state: BuildState,
+        state: TBuildState,
         percent: number,
         message: string,
-        result?: BuildResult,
+        result?: IBuildResult,
         error?: string,
-    ): Promise<BuildRow> {
+    ): Promise<IBuildRow> {
         return this.transaction((client) => this.saveProgress(client, id, state, percent, message, result, error));
     }
     private async assertNotCancelled(db: Pick<Pool, 'query'>, actor: string, key: string): Promise<void> {
@@ -198,10 +198,10 @@ export class PackageBuildRepository {
             );
     }
     /** The same short queue lock fences a lost POST against its durable cancellation intent. */
-    async cancelRequest(actor: string, key: string, authorize: () => Promise<void>): Promise<BuildRow | undefined> {
+    async cancelRequest(actor: string, key: string, authorize: () => Promise<void>): Promise<IBuildRow | undefined> {
         return this.transaction(async (client) => {
             await client.query('SELECT pg_advisory_xact_lock(72465396)');
-            const { rows } = await client.query<BuildRow>(
+            const { rows } = await client.query<IBuildRow>(
                 'SELECT * FROM tool_build_jobs WHERE actor=$1 AND request_key=$2 FOR UPDATE',
                 [actor, key],
             );
@@ -213,10 +213,10 @@ export class PackageBuildRepository {
             return rows[0] ? this.cancelLocked(client, rows[0]) : undefined;
         });
     }
-    async cancel(actor: string, id: string, authorize: () => Promise<void>): Promise<BuildRow> {
+    async cancel(actor: string, id: string, authorize: () => Promise<void>): Promise<IBuildRow> {
         return this.transaction(async (client) => {
             await client.query('SELECT pg_advisory_xact_lock(72465396)');
-            const { rows } = await client.query<BuildRow>(
+            const { rows } = await client.query<IBuildRow>(
                 'SELECT * FROM tool_build_jobs WHERE id=$1 AND actor=$2 FOR UPDATE',
                 [id, actor],
             );
@@ -229,14 +229,14 @@ export class PackageBuildRepository {
             return this.cancelLocked(client, rows[0]);
         });
     }
-    private async cancelLocked(client: PoolClient, row: BuildRow): Promise<BuildRow> {
+    private async cancelLocked(client: PoolClient, row: IBuildRow): Promise<IBuildRow> {
         if (row.publication_started_at || !['QUEUED', 'RUNNING'].includes(row.state)) return row;
         const state = row.state === 'QUEUED' ? 'CANCELLED' : 'CANCELLING';
         const message =
             state === 'CANCELLED'
                 ? 'Сборка отменена до запуска. Исходники сохранены.'
                 : 'Останавливаем сборку и очищаем её временные файлы.';
-        const { rows } = await client.query<BuildRow>(
+        const { rows } = await client.query<IBuildRow>(
             'UPDATE tool_build_jobs SET state=$2,message=$3,error=NULL,updated_at=now() WHERE id=$1 RETURNING *',
             [row.id, state, message],
         );
@@ -246,7 +246,9 @@ export class PackageBuildRepository {
     /** This committed row fence must precede even a non-transactional native skill write. */
     async beginPublication(id: string, lease: PoolClient, authorize: () => Promise<void>): Promise<void> {
         await this.transaction(async (client) => {
-            const { rows } = await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]);
+            const { rows } = await client.query<IBuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [
+                id,
+            ]);
             await authorize();
             if (rows[0]?.state === 'CANCELLING' || rows[0]?.state === 'CANCELLED') throw new BuildCancelledError();
             if (rows[0]?.state !== 'RUNNING') throw new ConflictException('Сборка уже завершена.');
@@ -259,7 +261,7 @@ export class PackageBuildRepository {
     /** A terminal trace needs the existing transition's committed acknowledgment. */
     async completeCancellation(id: string): Promise<boolean> {
         return this.transaction(async (client) => {
-            const { rows, rowCount } = await client.query<BuildRow>(
+            const { rows, rowCount } = await client.query<IBuildRow>(
                 `UPDATE tool_build_jobs SET state='CANCELLED',message='Сборка отменена. Исходники и опубликованные версии сохранены.',error=NULL,updated_at=now() WHERE id=$1 AND state='CANCELLING' AND publication_started_at IS NULL RETURNING *`,
                 [id],
             );
@@ -270,7 +272,7 @@ export class PackageBuildRepository {
     /** A passive supervisor may start its builder only after this durable, lease-bound acknowledgment. */
     async markExecutionStarted(id: string, nonce: string, lease: PoolClient): Promise<void> {
         await this.transaction(async (client) => {
-            const row = (await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]))
+            const row = (await client.query<IBuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1 FOR UPDATE', [id]))
                 .rows[0];
             if (row?.state === 'CANCELLING' || row?.state === 'CANCELLED') throw new BuildCancelledError();
             if (row?.state !== 'RUNNING' || row.execution_nonce !== nonce)
@@ -280,7 +282,7 @@ export class PackageBuildRepository {
     }
     async cancellationCleanupFailed(id: string): Promise<void> {
         await this.transaction(async (client) => {
-            const { rows } = await client.query<BuildRow>(
+            const { rows } = await client.query<IBuildRow>(
                 `UPDATE tool_build_jobs SET message='Сборщик остановлен; очистка временных файлов будет повторена.',error='Не удалось очистить временные файлы. Отмена ещё не завершена.',updated_at=now() WHERE id=$1 AND state='CANCELLING' RETURNING *`,
                 [id],
             );
@@ -291,32 +293,32 @@ export class PackageBuildRepository {
         await this.transaction(async (client) => {
             const message =
                 'Ожидаем подтверждение остановки прежнего сборщика. Можно продолжить работу и запустить другую сборку.';
-            const { rows } = await client.query<BuildRow>(
+            const { rows } = await client.query<IBuildRow>(
                 `UPDATE tool_build_jobs SET message=$2,updated_at=now() WHERE id=$1 AND state='CANCELLING' AND error IS NULL AND message<>$2 RETURNING *`,
                 [id, message],
             );
             if (rows[0]) await this.operation(client, rows[0]);
         });
     }
-    async stagesToClean(ids: string[]): Promise<BuildRow[]> {
+    async stagesToClean(ids: string[]): Promise<IBuildRow[]> {
         if (!ids.length) return [];
         return (
-            await this.pool.query<BuildRow>(
+            await this.pool.query<IBuildRow>(
                 "SELECT * FROM tool_build_jobs WHERE id=ANY($1::uuid[]) AND state IN ('FAILED','SUCCEEDED','CANCELLED','CANCELLING')",
                 [ids],
             )
         ).rows;
     }
-    async cancellationsWithoutStage(ids: string[]): Promise<BuildRow[]> {
+    async cancellationsWithoutStage(ids: string[]): Promise<IBuildRow[]> {
         return (
-            await this.pool.query<BuildRow>(
+            await this.pool.query<IBuildRow>(
                 "SELECT * FROM tool_build_jobs WHERE state='CANCELLING' AND NOT(id=ANY($1::uuid[]))",
                 [ids],
             )
         ).rows;
     }
     /** Карточка, аудит публикации и успешная сборка используют один внешний COMMIT. */
-    async completeWithPublication(client: PoolClient, id: string, result: BuildResult): Promise<void> {
+    async completeWithPublication(client: PoolClient, id: string, result: IBuildResult): Promise<void> {
         await this.saveProgress(
             client,
             id,
@@ -329,19 +331,19 @@ export class PackageBuildRepository {
     private async saveProgress(
         client: PoolClient,
         id: string,
-        state: BuildState,
+        state: TBuildState,
         percent: number,
         message: string,
-        result?: BuildResult,
+        result?: IBuildResult,
         error?: string,
-    ): Promise<BuildRow> {
-        const { rows } = await client.query<BuildRow>(
+    ): Promise<IBuildRow> {
+        const { rows } = await client.query<IBuildRow>(
             `UPDATE tool_build_jobs SET state=$2,percent=$3,message=$4,result=$5,error=$6,updated_at=now()
                 WHERE id=$1 AND state IN ('QUEUED','RUNNING') RETURNING *`,
             [id, state, percent, message, result ?? null, error ?? null],
         );
         if (!rows[0]) {
-            const current = await client.query<BuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1', [id]);
+            const current = await client.query<IBuildRow>('SELECT * FROM tool_build_jobs WHERE id=$1', [id]);
             if (['CANCELLING', 'CANCELLED'].includes(current.rows[0]?.state)) throw new BuildCancelledError();
             throw new ConflictException('Сборка уже завершена или её прервал перезапуск сервера.');
         }
@@ -352,7 +354,7 @@ export class PackageBuildRepository {
     async failInterrupted(lease?: PoolClient): Promise<void> {
         await this.transaction(async (client) => {
             const { rows } =
-                await client.query<BuildRow>(`UPDATE tool_build_jobs SET state='FAILED',message='Сборка прервана перезапуском сервера',
+                await client.query<IBuildRow>(`UPDATE tool_build_jobs SET state='FAILED',message='Сборка прервана перезапуском сервера',
                 error='Сервер перезапустился. Повторите сборку новым запросом; уже опубликованные карточки сохранены.',updated_at=now()
                 WHERE state='RUNNING' RETURNING *`);
             for (const row of rows) {
@@ -360,7 +362,7 @@ export class PackageBuildRepository {
             }
         }, lease);
     }
-    private async operation(client: PoolClient, row: BuildRow): Promise<void> {
+    private async operation(client: PoolClient, row: IBuildRow): Promise<void> {
         const entry = JSON.stringify([
             { at: new Date().toISOString(), level: row.state === 'FAILED' ? 'ERROR' : 'INFO', message: row.message },
         ]);

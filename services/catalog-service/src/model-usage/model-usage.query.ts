@@ -1,10 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { normalizeEmail } from '../access/access.model';
 import { MODEL_USAGE_PURPOSES } from './model-usage.context';
-import { MODEL_USAGE_STATUSES, type ModelUsageQuery, type UsageFilter } from './model-usage.types';
+import { MODEL_USAGE_STATUSES } from './model-usage.constants';
+import { type IModelUsageQuery, type IUsageFilter } from './model-usage.interfaces';
 
 /** Every public filter is explicit; none changes the authoritative actor/project scope. */
-export function modelUsageFilter(query: ModelUsageQuery): UsageFilter {
+export function modelUsageFilter(query: IModelUsageQuery): IUsageFilter {
     if (
         Object.keys(query).some(
             (key) =>
@@ -30,7 +31,7 @@ export function modelUsageFilter(query: ModelUsageQuery): UsageFilter {
         limit = query.limit === undefined ? 50 : Number(query.limit);
     if (![1, 7, 30].includes(days) || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
         throw new BadRequestException('Период: 1, 7 или 30 дней; страница: до 100 операций.');
-    const filter: UsageFilter = { days, limit };
+    const filter: IUsageFilter = { days, limit };
     for (const key of ['projectId', 'modelId', 'agentId'] as const)
         if (query[key] !== undefined) {
             if (
@@ -51,7 +52,7 @@ export function modelUsageFilter(query: ModelUsageQuery): UsageFilter {
     }
     if (query.endpoint !== undefined) {
         if (!['chat', 'embed'].includes(query.endpoint)) throw new BadRequestException('Неизвестный API модели.');
-        filter.endpoint = query.endpoint as UsageFilter['endpoint'];
+        filter.endpoint = query.endpoint as IUsageFilter['endpoint'];
     }
     if (query.provider !== undefined) {
         if (!['ollama', 'remote-openai', 'remote-ollama', 'device-codex'].includes(query.provider))
@@ -61,12 +62,12 @@ export function modelUsageFilter(query: ModelUsageQuery): UsageFilter {
     if (query.purpose !== undefined) {
         if (!MODEL_USAGE_PURPOSES.includes(query.purpose as never))
             throw new BadRequestException('Неизвестное назначение вызова.');
-        filter.purpose = query.purpose as UsageFilter['purpose'];
+        filter.purpose = query.purpose as IUsageFilter['purpose'];
     }
     if (query.status !== undefined) {
         if (!MODEL_USAGE_STATUSES.includes(query.status as never))
             throw new BadRequestException('Неизвестное состояние вызова.');
-        filter.status = query.status as UsageFilter['status'];
+        filter.status = query.status as IUsageFilter['status'];
     }
     if (query.cursor !== undefined) {
         try {

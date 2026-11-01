@@ -14,16 +14,7 @@ export type TRoleName = 'Наблюдатель' | 'Разработчик' | '�
 
 /** Набор действий RBAC-матрицы. */
 export type TAction =
-    | 'read'
-    | 'content'
-    | 'ops'
-    | 'install'
-    | 'member'
-    | 'role'
-    | 'quota'
-    | 'delete'
-    | 'assign_admin'
-    | 'maintenance';
+    'read' | 'content' | 'ops' | 'install' | 'member' | 'role' | 'quota' | 'delete' | 'assign_admin' | 'maintenance';
 
 const ROLE_LEVELS: Record<TRoleName, number> = {
     Наблюдатель: 1,
@@ -95,9 +86,22 @@ export function isMainAdminRole(role: string | null | undefined): boolean {
 }
 
 /** Возвращает права в выбранном проекте с учётом назначенной и активной роли. */
-export function projectRoleLevel(user: {activeRole:string;userRoles:string[];projectRoles?:Array<{projectId:string;projectName:string;role:string}>} | null, project: string | null | undefined): number {
-    if (!user || !user.userRoles.includes(user.activeRole)) { return 0; }
-    if (isMainAdminRole(user.activeRole)) { return 4; }
-    const grant=user.projectRoles?.find(item=>item.projectId===project || !project?.startsWith('prj-')&&item.projectName===project);
-    return grant ? Math.min(roleLevel(user.activeRole),roleLevel(grant.role)) : 0;
+export function projectRoleLevel(
+    user: {
+        activeRole: string;
+        userRoles: string[];
+        projectRoles?: Array<{ projectId: string; projectName: string; role: string }>;
+    } | null,
+    project: string | null | undefined,
+): number {
+    if (!user || !user.userRoles.includes(user.activeRole)) {
+        return 0;
+    }
+    if (isMainAdminRole(user.activeRole)) {
+        return 4;
+    }
+    const grant = user.projectRoles?.find(
+        (item) => item.projectId === project || (!project?.startsWith('prj-') && item.projectName === project),
+    );
+    return grant ? Math.min(roleLevel(user.activeRole), roleLevel(grant.role)) : 0;
 }

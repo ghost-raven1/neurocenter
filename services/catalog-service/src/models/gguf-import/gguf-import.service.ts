@@ -16,7 +16,7 @@ import {
     DEFAULT_GGUF_IMPORT_POLICY,
     configuredGgufImportPolicy,
     ggufImportPolicy,
-    type GgufImportPolicy,
+    type IGgufImportPolicy,
 } from '../../../../shared/gguf-import-policy.cjs';
 import { CapacityError, reserveCapacity } from '../../../../shared/capacity.cjs';
 import { AccessDb } from '../../access/access-db';
@@ -30,8 +30,8 @@ import { RuntimeLimitsService } from '../../runtime-limits/runtime-limits.servic
 import { RUNTIME_LIMIT_CEILINGS } from '../../../../shared/runtime-limits.cjs';
 import { assertGgufCapacity } from './gguf-import.capacity';
 import { GgufImportFiles } from './gguf-import.files';
-import { GgufImportRepository, ggufFingerprint, ggufRequestHash, type GgufDatabase } from './gguf-import.repository';
-import { ggufAcceptance, ggufImportId, ggufIntent, ggufReceipt, type GgufUploadRow } from './gguf-import.model';
+import { GgufImportRepository, ggufFingerprint, ggufRequestHash, type TGgufDatabase } from './gguf-import.repository';
+import { ggufAcceptance, ggufImportId, ggufIntent, ggufReceipt, type IGgufUploadRow } from './gguf-import.model';
 import { inspectGguf } from './gguf-inspection';
 
 /** Durable GGUF admission; the policy is frozen per request while authorization stays fresh. */
@@ -43,7 +43,7 @@ export class GgufImports {
     constructor(
         readonly pool: Pool,
         root: string,
-        private readonly policy: () => Promise<Readonly<GgufImportPolicy>> = async () => configuredGgufImportPolicy(),
+        private readonly policy: () => Promise<Readonly<IGgufImportPolicy>> = async () => configuredGgufImportPolicy(),
         private readonly flags = () => requireFeaturesEnabled(['gguf_import']),
         private readonly streamPool: Pool = pool,
     ) {
@@ -58,7 +58,7 @@ export class GgufImports {
         await this.files.setup();
     }
     protected requireFiles(): void {}
-    async authorize(actor: IAccessActor, epoch?: string, db: GgufDatabase = this.pool, lock = false): Promise<string> {
+    async authorize(actor: IAccessActor, epoch?: string, db: TGgufDatabase = this.pool, lock = false): Promise<string> {
         if (!actor || actor.activeRole !== 'Главный админ')
             throw new ForbiddenException('Импортировать GGUF может главный администратор.');
         let email: string;
@@ -114,12 +114,12 @@ export class GgufImports {
         if (!row) throw new NotFoundException('Импорт ещё не создан.');
         return ggufReceipt(row);
     }
-    private usable(row: GgufUploadRow) {
+    private usable(row: IGgufUploadRow) {
         if (row.state === 'CANCELLED') throw new ConflictException('Импорт отменён. Выберите GGUF заново.');
         if (row.state !== 'ACCEPTED' && new Date(row.expires_at).getTime() <= Date.now())
             throw new ConflictException('Срок импорта истёк. Выберите GGUF заново.');
     }
-    private async capacity(limits: GgufImportPolicy, bytes = 0) {
+    private async capacity(limits: IGgufImportPolicy, bytes = 0) {
         try {
             return await reserveCapacity({
                 resource: 'runtime-artifacts',
@@ -150,7 +150,7 @@ export class GgufImports {
     }
     private async receive(
         actor: IAccessActor,
-        initial: GgufUploadRow,
+        initial: IGgufUploadRow,
         input: Readable,
         declared: unknown,
         signal?: AbortSignal,
@@ -272,7 +272,7 @@ export class GgufImports {
                 await this.flags();
                 await this.repository.quota(email, row.limits, db);
                 return (
-                    await db.query<GgufUploadRow>(
+                    await db.query<IGgufUploadRow>(
                         "UPDATE model_gguf_uploads SET state='READY',sha256=$2,metadata=$3::jsonb,lease_token=NULL,updated_at=now() WHERE id=$1 RETURNING *",
                         [id, sha256, JSON.stringify(metadata)],
                     )
@@ -373,7 +373,7 @@ export class GgufImports {
             if (row.state === 'ACCEPTED')
                 throw new ConflictException('Файл уже принят в модель. Источник модели сохранён.');
             return (
-                await db.query<GgufUploadRow>(
+                await db.query<IGgufUploadRow>(
                     "UPDATE model_gguf_uploads SET state='CANCELLED',lease_token=NULL,updated_at=now() WHERE id=$1 RETURNING *",
                     [id],
                 )
@@ -393,8 +393,9 @@ export class GgufImports {
                 )
             ).rows[0];
             if (!lease?.locked) return;
-            const row = (await db.query<GgufUploadRow>('SELECT * FROM model_gguf_uploads WHERE id=$1 FOR UPDATE', [id]))
-                .rows[0];
+            const row = (
+                await db.query<IGgufUploadRow>('SELECT * FROM model_gguf_uploads WHERE id=$1 FOR UPDATE', [id])
+            ).rows[0];
             if (row?.state !== 'CANCELLED') return;
             await this.files.remove(id);
             await db.query("UPDATE model_gguf_uploads SET cleaned_at=now() WHERE id=$1 AND state='CANCELLED'", [id]);

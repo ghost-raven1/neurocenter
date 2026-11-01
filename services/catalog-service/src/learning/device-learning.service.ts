@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DeviceStore, type Device } from '../devices/device-store';
+import { DeviceStore, type IDevice } from '../devices/device-store';
 import { LearningService } from './learning.service';
 import { authorizeDeviceLearning, currentLearningDevice, deviceLearningEnvelope } from './device-learning-auth';
 
@@ -10,7 +10,7 @@ export class DeviceLearningService {
         private readonly devices: DeviceStore,
         private readonly learning: LearningService,
     ) {}
-    async context(original: Device, value: unknown) {
+    async context(original: IDevice, value: unknown) {
         const target = deviceLearningEnvelope(value),
             device = await currentLearningDevice(this.devices, original, target, 1);
         const result = await this.learning.deviceContext(
@@ -21,7 +21,7 @@ export class DeviceLearningService {
         await currentLearningDevice(this.devices, device, target, 1);
         return result;
     }
-    async record(original: Device, value: unknown) {
+    async record(original: IDevice, value: unknown) {
         const target = deviceLearningEnvelope(value, true),
             device = await currentLearningDevice(this.devices, original, target, 2);
         return this.learning.recordDeviceExperience(
@@ -32,7 +32,7 @@ export class DeviceLearningService {
             (db) => authorizeDeviceLearning(db, device, target),
         );
     }
-    async observe(original: Device, value: unknown) {
+    async observe(original: IDevice, value: unknown) {
         const target = deviceLearningEnvelope(value, true),
             device = await currentLearningDevice(this.devices, original, target, 2);
         return this.learning.appendDeviceExperience(
@@ -43,7 +43,7 @@ export class DeviceLearningService {
             (db) => authorizeDeviceLearning(db, device, target),
         );
     }
-    async propose(original: Device, value: unknown) {
+    async propose(original: IDevice, value: unknown) {
         const target = deviceLearningEnvelope(value, true),
             device = await currentLearningDevice(this.devices, original, target, 2);
         return this.learning.proposeDeviceHypothesis(

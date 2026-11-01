@@ -1,6 +1,6 @@
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { GgufRuntimeService } from './gguf-runtime/gguf-runtime.service';
-import type { GgufImportPolicy } from '../../../shared/gguf-import-policy.cjs';
+import type { IGgufImportPolicy } from '../../../shared/gguf-import-policy.cjs';
 import { DeviceCodexService } from './device-codex.service';
 import {
     BadRequestException,
@@ -16,16 +16,16 @@ import { AccessDb } from '../access/access-db';
 import { ModelsService } from './models.service';
 import { OllamaClient } from './ollama-client';
 import { ModelHostingRepository } from './hosting.repository';
+import { hostingOperation } from './hosting.utils';
 import {
-    hostingOperation,
-    type HostingAction,
+    type THostingAction,
     type IHostingJobRow,
     type IHostingProgress,
     type IModelHosting,
-} from './hosting.types';
-import type { IModel } from './model.types';
+} from './hosting.interfaces';
+import type { IModel } from './model.interfaces';
 import { RemoteConnectionService } from './remote-connection.service';
-import { isRemoteModel } from './remote-model.types';
+import { isRemoteModel } from './remote-model.utils';
 import { ModelBundleRuntime } from './model-bundle-runtime';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { projectEmbeddingPin } from './project-embedding.validation';
@@ -212,7 +212,7 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         if (this.stopping) {
             throw new ConflictException('Сервис перезапускается. Повторите действие после запуска.');
         }
-        const action = input.action as HostingAction;
+        const action = input.action as THostingAction;
         const model = await this.models.get(id);
         if (model.revision !== input.expectedRevision) {
             throw new ConflictException('Карточка модели изменилась. Обновите каталог.');
@@ -329,7 +329,7 @@ export class ModelHostingService implements OnModuleInit, BeforeApplicationShutd
         model: IModel,
         row: IHostingJobRow,
         abort: AbortController,
-        ggufLimits?: GgufImportPolicy,
+        ggufLimits?: IGgufImportPolicy,
     ): Promise<void> {
         let connectionLost = false,
             checkingAccess = false;

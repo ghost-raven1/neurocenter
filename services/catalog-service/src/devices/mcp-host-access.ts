@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import type { IPackage } from '../catalog/bundle-package';
 import { verifyPackage } from '../catalog/bundle-package';
 import { projectAssetColumns, checkedProjectPackage, type IProjectPinRow } from '../catalog/project-asset-pins';
@@ -11,14 +11,14 @@ import { normalizeRuntimeArtifacts } from '../../../shared/runtime-artifacts.cjs
 import { runtimeArtifactTarget } from './runtime-host-target';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 
-export interface HostedMcpSession {
+export interface IHostedMcpSession {
     deviceId: string;
     projectId: string;
     assetId: string;
     version: number;
     manifest: string;
 }
-interface SessionInput extends HostedMcpSession {
+interface ISessionInput extends IHostedMcpSession {
     artifactSha256: string;
 }
 const uuid = (value: unknown): value is string =>
@@ -31,8 +31,8 @@ const mismatch = () =>
         'Пакет хоста изменился или больше не назначен проекту. Повторите установку актуальной версии.',
     );
 /** The ticket carries identifiers only; credentials and arbitrary package bytes cannot extend its access. */
-export function hostedMcpSessionInput(value: unknown): SessionInput {
-    const body = value as Partial<SessionInput> | null;
+export function hostedMcpSessionInput(value: unknown): ISessionInput {
+    const body = value as Partial<ISessionInput> | null;
     if (
         !body ||
         typeof body !== 'object' ||
@@ -47,11 +47,11 @@ export function hostedMcpSessionInput(value: unknown): SessionInput {
         !sha(body.artifactSha256)
     )
         throw new BadRequestException('Нужна точная сессия управляемого MCP. Повторите установку.');
-    return body as SessionInput;
+    return body as ISessionInput;
 }
-async function deviceProject(db: PoolClient, id: string, projectId: string): Promise<Device> {
+async function deviceProject(db: PoolClient, id: string, projectId: string): Promise<IDevice> {
     const device = (
-        await db.query<Device>(
+        await db.query<IDevice>(
             'SELECT * FROM bridge_devices WHERE id=$1 AND NOT revoked AND expires_at>now() FOR SHARE',
             [id],
         )
@@ -153,7 +153,7 @@ async function transaction<T>(store: DeviceStore, action: (db: PoolClient) => Pr
     }
 }
 /** New installation admits only the current project pin and an explicitly server-hosted, parameter-free runtime. */
-export async function authorizeHostedMcp(store: DeviceStore, device: Device, value: unknown) {
+export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, value: unknown) {
     const body = value as { projectId?: unknown; pkg?: IPackage } | null;
     if (
         !body ||
@@ -182,7 +182,7 @@ export async function authorizeHostedMcp(store: DeviceStore, device: Device, val
                 body.pkg!.manifest.sha256,
             ),
             artifact = await hostArtifact(db, pkg);
-        const session: HostedMcpSession = {
+        const session: IHostedMcpSession = {
             deviceId: device.id,
             projectId: body.projectId as string,
             assetId: pkg.plugin.id,

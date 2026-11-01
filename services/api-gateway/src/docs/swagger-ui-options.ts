@@ -1,4 +1,4 @@
-interface SwaggerRequest {
+interface ISwaggerRequest {
     url: string;
     method?: string;
     headers?: Record<string, string>;
@@ -6,7 +6,7 @@ interface SwaggerRequest {
 }
 
 /** Swagger executes requests as the current browser user, only against this site's origin. */
-export function swaggerRequestInterceptor(request: SwaggerRequest): SwaggerRequest {
+export function swaggerRequestInterceptor(request: ISwaggerRequest): ISwaggerRequest {
     const target = new URL(request.url, window.location.href);
     if (
         !['http:', 'https:'].includes(target.protocol) ||

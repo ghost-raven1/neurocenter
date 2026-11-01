@@ -3,22 +3,22 @@ import { cleanBuildReason } from '../../../shared/package-build-diagnostics.cjs'
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { BadRequestException } from '@nestjs/common';
-import type { BuildSourceInventory } from '../../../shared/package-build-plan.cjs';
+import type { IBuildSourceInventory } from '../../../shared/package-build-plan.cjs';
 import { builderScript, stagingLimit } from './build-process';
-import type { BuildConfiguration } from './package-build.model';
+import type { IBuildConfiguration } from './package-build.model';
 
 const { loadBuildInspector: loadInspector } = createRequire(__filename)('../../../shared/package-build-loader.cjs') as {
     loadBuildInspector: (
         url: string,
-    ) => Promise<{ inspectBuildSource: (config: BuildConfiguration, root: string) => Promise<BuildSourceInventory> }>;
+    ) => Promise<{ inspectBuildSource: (config: IBuildConfiguration, root: string) => Promise<IBuildSourceInventory> }>;
 };
 
 /** Called once for new accepted v2 work; old/replayed jobs keep their original interpretation. */
 export async function pinBuildRecipe(
-    config: BuildConfiguration,
+    config: IBuildConfiguration,
     root: string,
     enabled: boolean,
-): Promise<BuildConfiguration> {
+): Promise<IBuildConfiguration> {
     if (!enabled || !config.agent) return config;
     const { inspectBuildSource } = await loadInspector(
         path.join(path.dirname(builderScript()), 'inspect-build-source.mjs'),

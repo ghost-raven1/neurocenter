@@ -4,7 +4,7 @@ import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
-import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.types';
+import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.interfaces';
 
 const SHA = /^[a-f0-9]{64}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;

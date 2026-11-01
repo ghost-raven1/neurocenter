@@ -20,19 +20,21 @@ const userBlockSlice = createSlice({
         setProcessing: (state, action: { payload: boolean }) => {
             state.processing = action.payload;
         },
-        clearError: state => {
+        clearError: (state) => {
             state.error = '';
         },
         signOut: () => ({ ...initialState }),
     },
-    extraReducers: builder => {
+    extraReducers: (builder) => {
         builder
             .addCase(authInit.pending, (state, action) => {
                 state.processing = true;
                 state.request = { id: action.meta.requestId, kind: 'init' };
             })
             .addCase(authInit.fulfilled, (state, action) => {
-                if (state.request?.id !== action.meta.requestId) { return; }
+                if (state.request?.id !== action.meta.requestId) {
+                    return;
+                }
                 state.request = null;
                 state.processing = false;
                 state.isAuth = true;
@@ -42,9 +44,17 @@ const userBlockSlice = createSlice({
                 state.authorizationUnconfirmed = false;
             })
             .addCase(authInit.rejected, (state, action) => {
-                if (state.request?.id !== action.meta.requestId) { return; }
+                if (state.request?.id !== action.meta.requestId) {
+                    return;
+                }
                 if (action.payload === 'unauthorized' || action.payload === 'forbidden') {
-                    return { ...initialState, error: action.payload === 'forbidden' ? 'Доступ к рабочему пространству не подтверждён. Обратитесь к администратору.' : '' };
+                    return {
+                        ...initialState,
+                        error:
+                            action.payload === 'forbidden'
+                                ? 'Доступ к рабочему пространству не подтверждён. Обратитесь к администратору.'
+                                : '',
+                    };
                 }
                 state.request = null;
                 state.processing = false;
@@ -59,14 +69,20 @@ const userBlockSlice = createSlice({
                 state.request = { id: action.meta.requestId, kind: 'switchRole' };
             })
             .addCase(authSwitchRole.rejected, (state, action) => {
-                if (state.request?.id !== action.meta.requestId) { return; }
-                if (action.payload === 'unauthorized') { return initialState; }
+                if (state.request?.id !== action.meta.requestId) {
+                    return;
+                }
+                if (action.payload === 'unauthorized') {
+                    return initialState;
+                }
                 state.request = null;
                 state.processing = false;
                 state.error = 'Не удалось сменить роль.';
             })
             .addCase(authSwitchRole.fulfilled, (state, action) => {
-                if (state.request?.id !== action.meta.requestId) { return; }
+                if (state.request?.id !== action.meta.requestId) {
+                    return;
+                }
                 state.request = null;
                 state.processing = false;
                 state.error = '';
@@ -80,13 +96,19 @@ const userBlockSlice = createSlice({
                 state.request = { id: action.meta.requestId, kind: 'logout' };
             })
             .addCase(authLogout.rejected, (state, action) => {
-                if (state.request?.id !== action.meta.requestId) { return; }
-                if (action.payload === 'unauthorized') { return initialState; }
+                if (state.request?.id !== action.meta.requestId) {
+                    return;
+                }
+                if (action.payload === 'unauthorized') {
+                    return initialState;
+                }
                 state.request = null;
                 state.processing = false;
             })
             .addCase(authLogout.fulfilled, (state, action) => {
-                if (state.request?.id === action.meta.requestId) { return initialState; }
+                if (state.request?.id === action.meta.requestId) {
+                    return initialState;
+                }
             });
     },
 });

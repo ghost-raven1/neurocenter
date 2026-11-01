@@ -1,11 +1,11 @@
 import { ConflictException } from '@nestjs/common';
-import type { ProjectChatDb } from '../project-chat/project-chat.types';
+import type { TProjectChatDb } from '../project-chat/project-chat.interfaces';
 
-type SessionTable = 'chat_presence_sessions' | 'project_chat_typing_sessions';
+type TSessionTable = 'chat_presence_sessions' | 'project_chat_typing_sessions';
 /** Keep a short tombstone after closing a tab so its earlier requests cannot restore activity. */
 export async function prepareChatActivitySession(
-    db: ProjectChatDb,
-    table: SessionTable,
+    db: TProjectChatDb,
+    table: TSessionTable,
     email: string,
     sessionId: string,
 ): Promise<void> {

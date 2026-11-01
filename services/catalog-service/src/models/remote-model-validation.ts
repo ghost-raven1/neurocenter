@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
-import type { IModel } from './model.types';
-import type { IRemoteConnectionInput, IRemoteModelConnection } from './remote-model.types';
+import type { IModel } from './model.interfaces';
+import type { IRemoteConnectionInput, IRemoteModelConnection } from './remote-model.interfaces';
 import { remoteModelOptions, remoteModelTimeout } from './remote-model-options';
 
 /** Адрес разрешает явный self-hosted API, но не credentials, redirects и metadata endpoints. */

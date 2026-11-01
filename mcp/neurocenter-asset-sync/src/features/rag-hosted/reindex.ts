@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { jobContext } from '../../bridge/state.js';
-import { verify, type Package } from '../../bridge/package.js';
+import { verify, type IPackage } from '../../bridge/package.js';
 import { projectFolder, projectBindingId, projectInstanceId } from '../../bridge/workspace.js';
 import { inspectInstallation } from '../../bridge/installation-inspection.js';
 import { assertInspectionIdentity } from '../../bridge/inspection-identity.js';
@@ -29,7 +29,7 @@ import type { IHostedConnectionTransaction, IHostedReindexResult } from './index
 
 /** A single selected installation builds in isolation; old data/config switch together under the existing journal. */
 export async function reindexHostedRag(
-    input: { projectId: string; bindingId: string; instanceId: string; pkg: Package },
+    input: { projectId: string; bindingId: string; instanceId: string; pkg: IPackage },
     publication: IHostedConnectionTransaction,
     authorize: () => Promise<void>,
     progress: (percent: number, message: string) => Promise<unknown>,

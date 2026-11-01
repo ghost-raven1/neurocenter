@@ -1,11 +1,11 @@
 import type {
-    LearningExperience,
-    LearningHypothesis,
-    LearningCheck,
-    LearningCandidate,
-    LearningHistoryEntry,
-    LearningDeviceContext,
-    LearningModelProvenance,
+    ILearningExperience,
+    ILearningHypothesis,
+    ILearningCheck,
+    ILearningCandidate,
+    ILearningHistoryEntry,
+    ILearningDeviceContext,
+    ILearningModelProvenance,
 } from '../../../shared/project-learning.cjs';
 import {
     normalizeLearningExperienceInput,
@@ -13,7 +13,7 @@ import {
     normalizeLearningCheckInput,
     normalizeLearningCandidateInput,
 } from '../../../shared/project-learning.cjs';
-export type LearningDbRow = {
+export type TLearningDbRow = {
     id: string;
     project_id: string;
     data: Record<string, unknown>;
@@ -23,14 +23,14 @@ export type LearningDbRow = {
     [key: string]: unknown;
 };
 const timestamp = (value: Date | string) => new Date(value).toISOString();
-const base = (row: LearningDbRow) => ({
+const base = (row: TLearningDbRow) => ({
     id: row.id,
     projectId: row.project_id,
     createdBy: row.created_by,
     createdAt: timestamp(row.created_at),
 });
 const emptyRequest = { requestKey: '00000000-0000-4000-8000-000000000000', expectedRevision: 0 };
-export function experienceRow(row: LearningDbRow): LearningExperience {
+export function experienceRow(row: TLearningDbRow): ILearningExperience {
     const { origin, device, ...data } = row.data;
     const {
         requestKey: _key,
@@ -41,11 +41,11 @@ export function experienceRow(row: LearningDbRow): LearningExperience {
         ...base(row),
         ...input,
         context: input.context ?? {},
-        origin: origin as LearningExperience['origin'],
-        device: device as LearningDeviceContext | null,
+        origin: origin as ILearningExperience['origin'],
+        device: device as ILearningDeviceContext | null,
     };
 }
-export function checkRow(row: LearningDbRow): LearningCheck {
+export function checkRow(row: TLearningDbRow): ILearningCheck {
     const {
         requestKey: _key,
         expectedRevision: _rev,
@@ -54,25 +54,25 @@ export function checkRow(row: LearningDbRow): LearningCheck {
     return { ...base(row), ...input, hypothesisId: String(row.hypothesis_id), revision: Number(row.revision) };
 }
 export function hypothesisRow(
-    row: LearningDbRow,
-    checks: LearningCheck[],
+    row: TLearningDbRow,
+    checks: ILearningCheck[],
     checkCount = checks.length,
-): LearningHypothesis {
+): ILearningHypothesis {
     const { origin, device, ...draft } = row.data;
     return {
         ...base(row),
         ...normalizeLearningHypothesisDraft(draft),
-        origin: origin as LearningHypothesis['origin'],
-        device: device as LearningDeviceContext | null,
-        model: row.model as LearningModelProvenance | null,
-        status: row.status as LearningHypothesis['status'],
+        origin: origin as ILearningHypothesis['origin'],
+        device: device as ILearningDeviceContext | null,
+        model: row.model as ILearningModelProvenance | null,
+        status: row.status as ILearningHypothesis['status'],
         revision: Number(row.revision),
         checks,
         checkCount,
         checksNextCursor: checkCount > checks.length ? (checks[0]?.id ?? null) : null,
     };
 }
-export function candidateRow(row: LearningDbRow): LearningCandidate {
+export function candidateRow(row: TLearningDbRow): ILearningCandidate {
     const input = normalizeLearningCandidateInput({
         ...row.data,
         ...emptyRequest,
@@ -90,7 +90,7 @@ export function candidateRow(row: LearningDbRow): LearningCandidate {
         title: input.title,
         content: input.content,
         targetAgentId: input.targetAgentId ?? null,
-        status: row.status as LearningCandidate['status'],
+        status: row.status as ILearningCandidate['status'],
         active: row.active === true,
         revision: Number(row.revision),
         approvedBy: row.approved_by as string | null,
@@ -98,7 +98,7 @@ export function candidateRow(row: LearningDbRow): LearningCandidate {
         reason: row.reason as string | null,
     };
 }
-export function historyRow(row: Record<string, unknown>): LearningHistoryEntry {
+export function historyRow(row: Record<string, unknown>): ILearningHistoryEntry {
     return {
         id: String(row.id),
         projectId: String(row.project_id),

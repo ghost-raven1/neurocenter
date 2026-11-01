@@ -1,53 +1,53 @@
 import { BadRequestException, ConflictException, HttpException } from '@nestjs/common';
 import type { Request } from 'express';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { modelInferenceBody } from '../models/inference.controller';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
 import { automaticModelOptions } from '../models/model-runtime-options';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import type { TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 import { chatContext, type IChatContextSettings } from './chat-context';
-import type { ChatRepository, ChatDb } from './chat.repository';
-import type { ChatMessage, ConversationRow, TurnRow } from './chat.types';
+import type { ChatRepository, TChatDb } from './chat.repository';
+import type { IChatMessage, IConversationRow, ITurnRow } from './chat.interfaces';
 import type { ModelChatProjectContext } from './chat-project-context';
-import type { ChatProjectSource } from './chat-project-context.types';
-import { ChatResearchMcpClient, type ResearchExternalSource } from './chat-research-client';
-import { researchCommand, researchPlannerPrompt, type ResearchCommand } from './chat-research-planner';
+import type { IChatProjectSource } from './chat-project-context.interfaces';
+import { ChatResearchMcpClient, type IResearchExternalSource } from './chat-research-client';
+import { researchCommand, researchPlannerPrompt, type TResearchCommand } from './chat-research-planner';
 import { ChatResearchRepository } from './chat-research.repository';
-import type { ChatResearchRequest, ChatResearchStep } from './chat-research.types';
+import type { IChatResearchRequest, IChatResearchStep } from './chat-research.interfaces';
 import { ChatResearchTools, RESEARCH_LIMITS } from './chat-research-tools';
 
-export interface ResearchRoundBudget {
+export interface IResearchRoundBudget {
     externalCalls: number;
     validatedManifest?: string;
 }
-export interface ResearchResult {
-    messages: ChatMessage[];
-    projectSources: ChatProjectSource[];
-    externalSources: ResearchExternalSource[];
-    assertCurrent: (db?: ChatDb) => Promise<void>;
+export interface IResearchResult {
+    messages: IChatMessage[];
+    projectSources: IChatProjectSource[];
+    externalSources: IResearchExternalSource[];
+    assertCurrent: (db?: TChatDb) => Promise<void>;
     limitReached?: boolean;
 }
-export interface ResearchScope {
+export interface IResearchScope {
     req: Request;
     owner: string;
     actorRole?: string;
-    row: ConversationRow;
-    turn: TurnRow;
+    row: IConversationRow;
+    turn: ITurnRow;
     responseId?: string;
     agentId?: string;
     model: IModel;
-    messages: ChatMessage[];
-    initialProjectSources?: ChatProjectSource[];
+    messages: IChatMessage[];
+    initialProjectSources?: IChatProjectSource[];
     settings: IChatContextSettings;
     signal: AbortSignal;
     options?: Record<string, unknown>;
-    budget: ResearchRoundBudget;
-    assertCurrent(db?: ChatDb): Promise<void>;
+    budget: IResearchRoundBudget;
+    assertCurrent(db?: TChatDb): Promise<void>;
     beforeInference?(): Promise<void>;
-    requiredFeatures?: readonly FeatureFlagKey[];
+    requiredFeatures?: readonly TFeatureFlagKey[];
 }
 const failed = (error: unknown): string =>
     error instanceof HttpException
@@ -57,7 +57,7 @@ const plannerSettings = (settings: IChatContextSettings): IChatContextSettings =
     ...settings,
     reservedOutputTokens: Math.min(512, settings.reservedOutputTokens ?? 512),
 });
-const finalInstruction = (limited: boolean): ChatMessage => ({
+const finalInstruction = (limited: boolean): IChatMessage => ({
     role: 'user',
     content:
         (limited ? 'Достигнут предел шагов исследования; при неполных данных явно укажи ограничения. ' : '') +
@@ -77,7 +77,7 @@ export class ChatResearchExecutor {
         this.receipts = new ChatResearchRepository(repository.pool);
     }
 
-    overhead(request: ChatResearchRequest | null | undefined): ChatMessage[] {
+    overhead(request: IChatResearchRequest | null | undefined): IChatMessage[] {
         return request
             ? [
                   {
@@ -89,9 +89,9 @@ export class ChatResearchExecutor {
     }
     /** Check the mandatory planner and answer envelopes before shared retrieval can spend an embedding call. */
     assertFits(
-        messages: ChatMessage[],
+        messages: IChatMessage[],
         settings: IChatContextSettings,
-        request: ChatResearchRequest | null | undefined,
+        request: IChatResearchRequest | null | undefined,
     ): void {
         if (
             request &&
@@ -102,7 +102,7 @@ export class ChatResearchExecutor {
                 'Сообщение, одобренные знания и обязательный контекст исследования не помещаются в окно модели этого агента.',
             );
     }
-    async run(scope: ResearchScope): Promise<ResearchResult> {
+    async run(scope: IResearchScope): Promise<IResearchResult> {
         const request = scope.turn.research_request;
         if (!request)
             return {
@@ -111,24 +111,24 @@ export class ChatResearchExecutor {
                 externalSources: [],
                 assertCurrent: (db) => scope.assertCurrent(db),
             };
-        const evidence: ChatMessage[] = [],
-            projectSources = new Map<string, ChatProjectSource>(),
-            externalSources = new Map<string, ResearchExternalSource>();
-        const found = new Map<string, ChatProjectSource>(
+        const evidence: IChatMessage[] = [],
+            projectSources = new Map<string, IChatProjectSource>(),
+            externalSources = new Map<string, IResearchExternalSource>();
+        const found = new Map<string, IChatProjectSource>(
                 (request.project ? (scope.initialProjectSources ?? []) : []).map((source) => [source.id, source]),
             ),
             checks: Array<() => Promise<void>> = [];
         let gathered = 0,
             sequence = 0;
-        const flags = (...extra: FeatureFlagKey[]) =>
+        const flags = (...extra: TFeatureFlagKey[]) =>
             [
                 scope.row.mode === 'group' ? 'group_chat' : 'model_chat',
                 'research_tools',
                 ...(scope.requiredFeatures ?? []),
                 ...(request.project ? ['project_search' as const] : []),
                 ...extra,
-            ] as FeatureFlagKey[];
-        const current = async (db?: ChatDb) => {
+            ] as TFeatureFlagKey[];
+        const current = async (db?: TChatDb) => {
             scope.signal.throwIfAborted();
             await scope.assertCurrent(db);
             for (const check of checks) await check();
@@ -158,7 +158,7 @@ export class ChatResearchExecutor {
             )
                 throw new ConflictException('Ответ агента уже остановлен или завершён.');
         };
-        const owned = <T>(action: (db: ChatDb, row: ConversationRow) => Promise<T>) =>
+        const owned = <T>(action: (db: TChatDb, row: IConversationRow) => Promise<T>) =>
             this.repository.owned(scope.owner, scope.row.id, current, action);
         const stage = async () =>
             owned(async (db, row) => {
@@ -169,7 +169,7 @@ export class ChatResearchExecutor {
                         [scope.responseId, scope.turn.id, scope.turn.request_id],
                     );
             });
-        const start = (kind: ChatResearchStep['kind'], input: Record<string, unknown>) =>
+        const start = (kind: IChatResearchStep['kind'], input: Record<string, unknown>) =>
             owned(async (db, row) => {
                 const step = await this.receipts.start(db, {
                     conversationId: row.id,
@@ -184,7 +184,7 @@ export class ChatResearchExecutor {
                 return step;
             });
         const finish = (
-            step: ChatResearchStep,
+            step: IChatResearchStep,
             status: 'done' | 'failed',
             output = '',
             sources: unknown[] = [],
@@ -202,7 +202,7 @@ export class ChatResearchExecutor {
                 await this.repository.bump(db, row);
                 return result;
             });
-        const append = (step: ChatResearchStep) => {
+        const append = (step: IChatResearchStep) => {
             if (step.status !== 'done')
                 throw new ConflictException(step.error || 'Предыдущий шаг не завершён. Повторите сообщение.');
             gathered += Buffer.byteLength(step.output);
@@ -235,7 +235,7 @@ export class ChatResearchExecutor {
                 throw new BadRequestException(
                     'История и материалы исследования не помещаются в окно этой модели. Уточните запрос или выберите модель с большим окном.',
                 );
-            let command: ResearchCommand;
+            let command: TResearchCommand;
             try {
                 await scope.beforeInference?.();
                 const result = await withModelUsage(

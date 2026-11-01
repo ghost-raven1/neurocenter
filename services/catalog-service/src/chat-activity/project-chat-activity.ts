@@ -2,16 +2,13 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { IAccessActor } from '../access/access.model';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import type { ProjectChatRepository } from '../project-chat/project-chat.repository';
-import {
-    DEFAULT_PROJECT_CHAT_ROOM,
-    projectChatRoomId,
-    type ProjectChatDb,
-    type ProjectChatRoomRow,
-} from '../project-chat/project-chat.types';
+import { DEFAULT_PROJECT_CHAT_ROOM } from '../project-chat/project-chat.constants';
+import { projectChatRoomId } from '../project-chat/project-chat.utils';
+import { type TProjectChatDb, type IProjectChatRoomRow } from '../project-chat/project-chat.interfaces';
 import { projectChatUuid } from '../project-chat/project-chat.validation';
 import { chatActivitySession, chatActivityWatch } from './chat-activity.validation';
 import { prepareChatActivitySession } from './chat-activity.sessions';
-import type { ProjectChatActivity } from './chat-activity.types';
+import type { IProjectChatActivity } from './chat-activity.interfaces';
 
 const audience = `SELECT u.email FROM platform_users u WHERE u.enabled
     AND (u.is_main_admin OR EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=$1 AND lower(pm.principal_name)=u.email AND pm.role IN ('Наблюдатель','Разработчик','Админ проекта')))
@@ -21,11 +18,11 @@ const audience = `SELECT u.email FROM platform_users u WHERE u.enabled
 export class ProjectChatActivityService {
     constructor(private readonly repository: ProjectChatRepository) {}
     private async snapshot(
-        db: ProjectChatDb,
-        room: ProjectChatRoomRow,
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
         viewerEmail: string,
         ids: string[],
-    ): Promise<ProjectChatActivity> {
+    ): Promise<IProjectChatActivity> {
         const args = [
             room.project_id,
             projectChatRoomId(room),
@@ -65,7 +62,7 @@ export class ProjectChatActivityService {
         actor: IAccessActor,
         rawIds?: string,
         roomId = DEFAULT_PROJECT_CHAT_ROOM,
-    ): Promise<ProjectChatActivity> {
+    ): Promise<IProjectChatActivity> {
         projectChatUuid(roomId);
         const ids = chatActivityWatch(rawIds);
         return this.repository.scoped(

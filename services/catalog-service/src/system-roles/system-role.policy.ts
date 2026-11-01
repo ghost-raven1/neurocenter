@@ -9,8 +9,8 @@ import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { roleDefinitionPin } from './system-role.definitions';
 import { acceptedLegacyDefinition } from './system-role.legacy-contract';
 import { acceptedPreviousDefinition } from './system-role.previous-contract';
-import type { RoleDb } from './system-role.repository';
-import type { RoleRunRow, StartRoleRun, SystemRoleId } from './system-role.types';
+import type { TRoleDb } from './system-role.repository';
+import type { IRoleRunRow, IStartRoleRun, TSystemRoleId } from './system-role.interfaces';
 
 /** Current human authority and exact model identity are checked again after admission/rate waits. */
 export class SystemRolePolicy {
@@ -26,7 +26,7 @@ export class SystemRolePolicy {
             throw new ForbiddenException('Диагностика площадки доступна главному администратору.');
         return actor;
     }
-    async authorize(db: RoleDb, actor: IModelActor, project: string | null): Promise<void> {
+    async authorize(db: TRoleDb, actor: IModelActor, project: string | null): Promise<void> {
         await authorizeAgentWrite(db, actor, project ?? undefined);
         if (project && !(await db.query('SELECT id FROM projects WHERE id=$1 FOR SHARE', [project])).rowCount)
             throw new ConflictException('Проект недоступен.');
@@ -50,7 +50,7 @@ export class SystemRolePolicy {
         )
             throw new ConflictException('Выберите актуальную проверенную модель диалога с точным pin.');
     }
-    async current(req: Request, row: RoleRunRow, db: RoleDb) {
+    async current(req: Request, row: IRoleRunRow, db: TRoleDb) {
         const actor = await this.actor(req, row.project_id);
         if (actor.email !== row.actor || actor.activeRole !== row.actor_role)
             throw new ForbiddenException('Исполнитель задания изменился.');
@@ -67,7 +67,7 @@ export class SystemRolePolicy {
         return this.modelInTransaction(db, actor, row.project_id, row.request.modelId, row.request.expectedModelPin);
     }
     /** A chat turn is an immutable accepted intent, never a second queue. Cancellation fences the physical request. */
-    async source(db: RoleDb, actor: string, id: SystemRoleId, input: StartRoleRun, hash: string): Promise<void> {
+    async source(db: TRoleDb, actor: string, id: TSystemRoleId, input: IStartRoleRun, hash: string): Promise<void> {
         if (!input.source) return;
         const source = input.source;
         const accepted = await db.query(
@@ -79,7 +79,7 @@ export class SystemRolePolicy {
         if (!accepted.rowCount) throw new ConflictException('Сообщение системного чата отменено или изменилось.');
         await assertChatSystemRoleOrigin(db, source.dialogId, actor, input.projectId);
     }
-    async modelInTransaction(db: RoleDb, actor: IModelActor, project: string | null, id: string, pin: string) {
+    async modelInTransaction(db: TRoleDb, actor: IModelActor, project: string | null, id: string, pin: string) {
         if (
             project &&
             actor.activeRole !== 'Главный админ' &&
@@ -97,7 +97,7 @@ export class SystemRolePolicy {
         this.validModel(model, pin);
         return model;
     }
-    async read(req: Request, row: RoleRunRow): Promise<IModelActor> {
+    async read(req: Request, row: IRoleRunRow): Promise<IModelActor> {
         const actor = await this.actor(req, row.project_id, 1);
         if (row.request.source?.kind === 'system-role-chat' && actor.email !== row.actor)
             throw new NotFoundException('Личный запуск сервисного чата недоступен.');

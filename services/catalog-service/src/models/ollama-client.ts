@@ -1,10 +1,10 @@
 import { estimateModelTokens } from '../model-token-quotas/quota-estimate';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { visionFixture } from '../../../shared/vision-fixture.cjs';
-import type { IModel, IModelVerification } from './model.types';
+import type { IModel, IModelVerification } from './model.interfaces';
 import { localModelAlias } from './local-model-alias';
 import { withModelUsage } from '../model-usage/model-usage.context';
-import type { ModelUsageRecorder } from '../model-usage/model-usage.types';
+import type { IModelUsageRecorder } from '../model-usage/model-usage.interfaces';
 import type { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 import { markModelProviderUnavailable } from './model-provider-availability';
 
@@ -18,10 +18,10 @@ export interface IRuntimeModelStatus {
     message: string;
     checkedAt: string | null;
 }
-type JsonObject = Record<string, unknown>;
-type Progress = (value: IModelProgress) => void | Promise<void>;
+type TJsonObject = Record<string, unknown>;
+type TProgress = (value: IModelProgress) => void | Promise<void>;
 const modelName = /^(?:[a-z0-9_-]+\/)?[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*$/i;
-const object = (value: unknown): value is JsonObject => !!value && typeof value === 'object' && !Array.isArray(value);
+const object = (value: unknown): value is TJsonObject => !!value && typeof value === 'object' && !Array.isArray(value);
 const unavailable = () =>
     markModelProviderUnavailable(new Error('Хостинг моделей недоступен. Проверьте запуск проектного runtime.'));
 
@@ -58,13 +58,13 @@ export function modelRuntimeUrl(env: NodeJS.ProcessEnv = process.env): string {
 export class OllamaClient {
     private readonly fetch: typeof globalThis.fetch;
     private readonly environment: NodeJS.ProcessEnv;
-    private readonly usage?: ModelUsageRecorder;
+    private readonly usage?: IModelUsageRecorder;
     private readonly admission?: Pick<ModelApiAdmission, 'run'>;
     constructor(
         options: {
             fetch?: typeof globalThis.fetch;
             env?: NodeJS.ProcessEnv;
-            usage?: ModelUsageRecorder;
+            usage?: IModelUsageRecorder;
             admission?: Pick<ModelApiAdmission, 'run'>;
         } = {},
     ) {
@@ -114,7 +114,7 @@ export class OllamaClient {
         }
     }
 
-    async start(model: IModel, onProgress: Progress = () => {}, signal?: AbortSignal): Promise<IModelVerification> {
+    async start(model: IModel, onProgress: TProgress = () => {}, signal?: AbortSignal): Promise<IModelVerification> {
         this.assertModel(model);
         model = { ...model, model: localModelAlias(model) };
         await onProgress({ stage: 'preparing', message: 'Проверяем сохранённую модель.', progress: 0 });
@@ -182,9 +182,9 @@ export class OllamaClient {
     async infer(
         model: IModel,
         endpoint: 'embed' | 'chat',
-        body: JsonObject,
+        body: TJsonObject,
         signal?: AbortSignal,
-    ): Promise<JsonObject> {
+    ): Promise<TJsonObject> {
         this.assertModel(model);
         const publicModel = model.model;
         model = { ...model, model: localModelAlias(model) };
@@ -232,12 +232,12 @@ export class OllamaClient {
             throw new Error('Некорректная модель управляемого хостинга.');
     }
 
-    private entry(value: JsonObject, model: IModel): JsonObject | undefined {
+    private entry(value: TJsonObject, model: IModel): TJsonObject | undefined {
         if (!Array.isArray(value.models) || value.models.length > 5000 || value.models.some((item) => !object(item)))
             throw new Error('Runtime вернул некорректный список моделей.');
-        return (value.models as JsonObject[]).find((item) => item.name === model.model || item.model === model.model);
+        return (value.models as TJsonObject[]).find((item) => item.name === model.model || item.model === model.model);
     }
-    private digestMatches(model: IModel, entry: JsonObject): boolean {
+    private digestMatches(model: IModel, entry: TJsonObject): boolean {
         return !model.manifestSha256 || entry.digest === model.manifestSha256;
     }
 
@@ -346,10 +346,10 @@ export class OllamaClient {
     private async verifyInfer(
         model: IModel,
         endpoint: 'chat' | 'embed',
-        body: JsonObject,
+        body: TJsonObject,
         signal: AbortSignal | undefined,
-        validate: (value: JsonObject) => void,
-    ): Promise<JsonObject> {
+        validate: (value: TJsonObject) => void,
+    ): Promise<TJsonObject> {
         await requireFeaturesEnabled(['model_hosting']);
         signal?.throwIfAborted();
         const action = async (signal?: AbortSignal) => {
@@ -367,7 +367,7 @@ export class OllamaClient {
 
     private async response(
         endpoint: string,
-        body: JsonObject | undefined,
+        body: TJsonObject | undefined,
         signal: AbortSignal | undefined,
         timeout: number,
     ): Promise<Response> {
@@ -392,11 +392,11 @@ export class OllamaClient {
 
     private async request(
         endpoint: string,
-        body?: JsonObject,
+        body?: TJsonObject,
         signal?: AbortSignal,
         timeout = 5000,
         limit = 1024 * 1024,
-    ): Promise<JsonObject> {
+    ): Promise<TJsonObject> {
         const response = await this.response(endpoint, body, signal, timeout);
         if (!response.ok || !response.body) {
             await response.body?.cancel();

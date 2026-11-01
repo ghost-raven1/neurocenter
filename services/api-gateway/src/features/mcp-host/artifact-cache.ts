@@ -7,9 +7,9 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { inspectRuntimeArchive, portablePath, type RuntimeArtifact } from '../../../../shared/runtime-artifacts.cjs';
+import { inspectRuntimeArchive, portablePath, type IRuntimeArtifact } from '../../../../shared/runtime-artifacts.cjs';
 import { hostRuntimeTarget } from './host-target';
-import type { HostedMcpClaim } from './ticket';
+import type { IHostedMcpClaim } from './ticket';
 
 const cacheRoot = (): string =>
     path.resolve(process.env.NEUROCENTER_MCP_HOST_DIR || path.join(os.tmpdir(), 'neurocenter-mcp-host'));
@@ -17,7 +17,7 @@ const inflight = new Map<string, Promise<string>>();
 
 /** Одна развёртка на SHA-256: скачивание с каталога по внутреннему токену, TAR без чужих флагов, копия только своих файлов. */
 export async function materializeArtifact(
-    claim: HostedMcpClaim,
+    claim: IHostedMcpClaim,
     catalogUrl: string,
     internalToken: string,
 ): Promise<string> {
@@ -37,7 +37,7 @@ export async function materializeArtifact(
 }
 
 async function build(
-    claim: HostedMcpClaim,
+    claim: IHostedMcpClaim,
     finalRoot: string,
     catalogUrl: string,
     internalToken: string,
@@ -85,7 +85,7 @@ async function build(
         if (bytes !== claim.compressedBytes || hash.digest('hex') !== claim.artifactSha256) {
             throw new Error('Размер или SHA комплекта хоста не совпадает с описью.');
         }
-        const descriptor: RuntimeArtifact = {
+        const descriptor: IRuntimeArtifact = {
             target: hostRuntimeTarget(),
             sha256: claim.artifactSha256,
             compressedBytes: claim.compressedBytes,

@@ -8,7 +8,12 @@ import {
     type ResolvedAsset,
 } from '@neurocenter/asset-contract';
 import type { Pool, PoolClient } from 'pg';
-import { AssetSourceClient, validateSourcePin, type IAssetSourcePin, type AssetSourceTransport } from './source-client';
+import {
+    AssetSourceClient,
+    validateSourcePin,
+    type IAssetSourcePin,
+    type TAssetSourceTransport,
+} from './source-client';
 import { assetSourceTransport } from './source-cache';
 
 export interface ISourceSnapshot {
@@ -29,7 +34,7 @@ export class AssetSourceSnapshots {
         private readonly pool: Pool,
         private readonly initialPin: unknown,
         private readonly request: typeof fetch = fetch,
-        private readonly transport: AssetSourceTransport = assetSourceTransport(),
+        private readonly transport: TAssetSourceTransport = assetSourceTransport(),
     ) {}
     private async configuredPin(): Promise<IAssetSourcePin> {
         return validateSourcePin(

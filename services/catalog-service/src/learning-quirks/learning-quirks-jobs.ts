@@ -6,10 +6,10 @@ import {
     normalizeQuirksLimits,
     normalizeQuirksReceipt,
 } from '../../../shared/project-learning-quirks.cjs';
-import type { DeviceStore, Device } from '../devices/device-store';
+import type { DeviceStore, IDevice } from '../devices/device-store';
 import type { DeviceInstallations } from '../devices/device-installations';
 import type { InstallPlans } from '../devices/install-plans';
-import type { Job, JobInput } from '../devices/device-job.model';
+import type { IJob, IJobInput } from '../devices/device-job.model';
 import { ragInstallationJobPayload, assertRagInstallation } from '../devices/rag-installation-authority';
 import { assertLocalFeature } from '../devices/local-change-jobs';
 import { configurationRevisionsForProbe } from '../devices/mcp-config-status';
@@ -18,7 +18,7 @@ import type { IPackage } from '../catalog/bundle-package';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 
 export const LEARNING_QUIRKS_KIND = 'import-learning-quirks';
-export interface LearningQuirksOwners {
+export interface ILearningQuirksOwners {
     store: DeviceStore;
     installations: DeviceInstallations;
     plans: InstallPlans;
@@ -37,7 +37,7 @@ const fields = [
     'expectedConfigurationRevisions',
 ];
 /** Public input selects an exact installation, never a source path or quirk text. */
-export async function quirksJobPayload(owners: LearningQuirksOwners, device: Device, input: JobInput) {
+export async function quirksJobPayload(owners: ILearningQuirksOwners, device: IDevice, input: IJobInput) {
     if (input.kind !== LEARNING_QUIRKS_KIND) return undefined;
     if (
         Object.keys(input).some((key) => !fields.includes(key)) ||
@@ -63,9 +63,9 @@ export async function quirksJobPayload(owners: LearningQuirksOwners, device: Dev
 }
 /** Claim, pre-read authorization and each append recheck the current package, approval and configuration. */
 export async function assertQuirksJob(
-    owners: LearningQuirksOwners,
-    device: Device,
-    job: Pick<Job, 'kind' | 'payload' | 'project_id'>,
+    owners: ILearningQuirksOwners,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id'>,
     db?: Pick<PoolClient, 'query'>,
 ) {
     if (job.kind !== LEARNING_QUIRKS_KIND) return;

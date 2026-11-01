@@ -1,11 +1,11 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import type { Request } from 'express';
-import type { RoleDb } from '../system-roles/system-role.repository';
+import type { TRoleDb } from '../system-roles/system-role.repository';
 import { ModelsService } from '../models/models.service';
 import { SystemRoleService } from '../system-roles/system-role.service';
-import type { SystemDialog, SystemDialogRow } from '../system-role-chat/system-role-chat.types';
+import type { ISystemDialog, ISystemDialogRow } from '../system-role-chat/system-role-chat.interfaces';
 import { chatSystemRoleOrigin } from './chat-system-roles.validation';
-import type { ChatSystemRoleOrigin } from './chat-system-roles.types';
+import type { IChatSystemRoleOrigin } from './chat-system-roles.interfaces';
 
 /** A single private system dialog belongs to each human and saved origin; shared chats receive no posts. */
 @Injectable()
@@ -14,16 +14,20 @@ export class ChatSystemRolesService {
         private readonly models: ModelsService,
         private readonly roles: SystemRoleService,
     ) {}
-    private async saved(db: RoleDb, owner: string, origin: ChatSystemRoleOrigin): Promise<SystemDialogRow | undefined> {
+    private async saved(
+        db: TRoleDb,
+        owner: string,
+        origin: IChatSystemRoleOrigin,
+    ): Promise<ISystemDialogRow | undefined> {
         return (
-            await db.query<SystemDialogRow>(
+            await db.query<ISystemDialogRow>(
                 `SELECT d.* FROM chat_system_role_origins o JOIN system_role_dialogs d ON d.id=o.dialog_id AND d.owner_email=o.owner_email
             WHERE o.owner_email=$1 AND o.origin_kind=$2 AND o.origin_id=$3 AND o.project_id IS NOT DISTINCT FROM $4`,
                 [owner, origin.kind, origin.originId, origin.projectId],
             )
         ).rows[0];
     }
-    private view(row: SystemDialogRow): SystemDialog {
+    private view(row: ISystemDialogRow): ISystemDialog {
         return {
             id: row.id,
             projectId: row.project_id,
@@ -32,7 +36,7 @@ export class ChatSystemRolesService {
             updatedAt: new Date(row.updated_at).toISOString(),
         };
     }
-    async read(req: Request, raw: unknown): Promise<SystemDialog | null> {
+    async read(req: Request, raw: unknown): Promise<ISystemDialog | null> {
         await this.models.ready();
         const origin = chatSystemRoleOrigin(raw),
             actor = await this.models.actor(req);
@@ -41,7 +45,7 @@ export class ChatSystemRolesService {
         await this.roles.policy.actor(req, row?.project_id ?? origin.projectId, 1);
         return row ? this.view(row) : null;
     }
-    async bind(req: Request, raw: unknown): Promise<SystemDialog> {
+    async bind(req: Request, raw: unknown): Promise<ISystemDialog> {
         await this.models.ready();
         const origin = chatSystemRoleOrigin(raw),
             actor = await this.models.actor(req);

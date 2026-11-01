@@ -10,9 +10,9 @@ import {
     normalizeRuntimeCachePolicyPayload,
     normalizeRuntimeCachePolicyResult,
 } from '../../../shared/runtime-cache-policy.cjs';
-import type { Device } from './device-store';
-import type { Job, JobInput } from './device-job.model';
-import type { DeviceCompletion } from './device-completion';
+import type { IDevice } from './device-store';
+import type { IJob, IJobInput } from './device-job.model';
+import type { IDeviceCompletion } from './device-completion';
 import { recordDeviceOperation } from './device-operations';
 
 export const runtimeCacheWorkRole = (role: string): boolean =>
@@ -23,8 +23,8 @@ const currentOnlyCleanup = (payload: ReturnType<typeof normalizeRuntimeCachePoli
 
 /** Cache policy belongs to the selected personal device and affects every project in its site profile. */
 export function assertRuntimeCacheJob(
-    device: Device,
-    job: Pick<Job, 'kind' | 'payload' | 'project_id' | 'device_id' | 'email' | 'role'>,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id' | 'device_id' | 'email' | 'role'>,
 ): void {
     if (job.kind !== RUNTIME_CACHE_POLICY_JOB) return;
     if (job.project_id !== null || job.device_id !== device.id || job.email !== device.email)
@@ -58,7 +58,7 @@ export function assertRuntimeCacheJob(
 }
 
 /** Browser input supplies one bounded budget; paths, credentials and project authority are never accepted. */
-export function runtimeCacheJobPayload(device: Device, input: JobInput, role: string) {
+export function runtimeCacheJobPayload(device: IDevice, input: IJobInput, role: string) {
     if (input.kind !== RUNTIME_CACHE_POLICY_JOB) return;
     const allowed = ['deviceId', 'kind', 'requestKey', 'runtimeCachePolicy'];
     if (Object.keys(input).some((key) => !allowed.includes(key)))
@@ -83,8 +83,8 @@ export function runtimeCacheJobPayload(device: Device, input: JobInput, role: st
 /** The last device/job read fences revocation or rebinding while fresh roles and feature flags were awaited. */
 export async function assertRuntimeCacheAuthority(
     db: Pick<PoolClient, 'query'>,
-    device: Device,
-    job: Pick<Job, 'id' | 'kind' | 'role' | 'payload' | 'lease'>,
+    device: IDevice,
+    job: Pick<IJob, 'id' | 'kind' | 'role' | 'payload' | 'lease'>,
 ): Promise<void> {
     if (job.kind !== RUNTIME_CACHE_POLICY_JOB) return;
     const payload = normalizeRuntimeCachePolicyPayload(job.payload);
@@ -132,7 +132,7 @@ export async function completeRuntimeCachePolicy(
         payload: Record<string, unknown>;
         result: unknown;
     },
-    input: DeviceCompletion,
+    input: IDeviceCompletion,
 ) {
     if (job.kind !== RUNTIME_CACHE_POLICY_JOB) return;
     let payload, result: Record<string, unknown>;

@@ -3,15 +3,15 @@ import { ProjectTextKnowledge } from '../project-text/project-text.service';
 import {
     normalizeTextContext,
     textKnowledgeAdmission,
-    type TextContext,
-    type TextAdmission,
+    type ITextContext,
+    type ITextAdmission,
 } from '../../../shared/project-text-knowledge.cjs';
 import { RuntimeLimitsService } from '../runtime-limits/runtime-limits.service';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
 import type { ModelsService } from '../models/models.service';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { ProjectEmbeddingRepository } from '../models/project-embedding.repository';
 import { ProjectRagClient, ProjectRagUnavailable } from '../models/project-rag-client';
 import { isModelProviderUnavailable } from '../models/model-provider-availability';
@@ -20,15 +20,15 @@ import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { withModelUsage, currentModelUsage } from '../model-usage/model-usage.context';
 import { readFeatures, FeatureFlagError } from '../../../shared/feature-client.cjs';
 import { chatContext } from './chat-context';
-import type { ChatMessage } from './chat.types';
+import type { IChatMessage } from './chat.interfaces';
 import type {
-    ChatProjectEvidence,
-    ChatProjectSource,
-    PreparedProjectContext,
-    ProjectContextCapture,
-} from './chat-project-context.types';
+    IChatProjectEvidence,
+    IChatProjectSource,
+    IPreparedProjectContext,
+    IProjectContextCapture,
+} from './chat-project-context.interfaces';
 
-const NONE: ChatProjectEvidence = { status: 'none', sources: [] };
+const NONE: IChatProjectEvidence = { status: 'none', sources: [] };
 const text = (value: unknown, max: number): value is string =>
     typeof value === 'string' && Buffer.byteLength(value) <= max && !value.includes('\0');
 const integer = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v) >= 0;
@@ -47,7 +47,7 @@ export class ModelChatProjectContext {
         this.text = new ProjectTextKnowledge(models);
     }
 
-    async captureText(req: Request, projectId: string, selection: TextContext): Promise<ProjectContextCapture> {
+    async captureText(req: Request, projectId: string, selection: ITextContext): Promise<IProjectContextCapture> {
         await requireFeatureEnabled('project_text_knowledge');
         const policy = await new RuntimeLimitsService(this.models).effective(),
             admission = { revision: policy.revision, limits: policy.policy.textKnowledge };
@@ -77,7 +77,12 @@ export class ModelChatProjectContext {
             },
         };
     }
-    async assertTextIdentity(req: Request, projectId: string, selection: TextContext, identity: string): Promise<void> {
+    async assertTextIdentity(
+        req: Request,
+        projectId: string,
+        selection: ITextContext,
+        identity: string,
+    ): Promise<void> {
         const checked = await this.text.assertContext(req, projectId, selection);
         if (ragRequestHash({ projectId, textContext: checked }) !== identity)
             throw new ConflictException('Разрешение текстового контекста изменилось. Подготовьте запуск заново.');
@@ -87,11 +92,11 @@ export class ModelChatProjectContext {
     async prepareText(
         req: Request,
         projectId: string,
-        selection: TextContext,
+        selection: ITextContext,
         signal: AbortSignal,
-        accepted?: ChatProjectEvidence,
-        retained?: TextAdmission,
-    ): Promise<PreparedProjectContext> {
+        accepted?: IChatProjectEvidence,
+        retained?: ITextAdmission,
+    ): Promise<IPreparedProjectContext> {
         signal.throwIfAborted();
         await requireFeatureEnabled('project_text_knowledge');
         const current = await this.text.assertContext(req, projectId, selection),
@@ -146,7 +151,7 @@ export class ModelChatProjectContext {
     private async state(req: Request, projectId: string, db?: Pick<PoolClient, 'query'>) {
         const project = await this.models.resolveProject(req, projectId, 2),
             selected = await this.selections.read(project.id, db);
-        const evidence: ChatProjectEvidence = {
+        const evidence: IChatProjectEvidence = {
             status: selected.blocker ? 'metadata' : selected.activeSnapshot ? 'ready' : 'unavailable',
             project: { id: project.id, name: project.name, state: project.state, headRevision: project.headRevision },
             generation: selected.activeGeneration,
@@ -172,11 +177,11 @@ export class ModelChatProjectContext {
             }),
         };
     }
-    async overview(req: Request, projectId: string | null): Promise<ChatProjectEvidence> {
+    async overview(req: Request, projectId: string | null): Promise<IChatProjectEvidence> {
         return projectId ? (await this.state(req, projectId)).evidence : { ...NONE };
     }
     /** Free consent capture: metadata and canonical identity, never an embedding or retrieval. */
-    async capture(req: Request, projectId: string, signal?: AbortSignal): Promise<ProjectContextCapture> {
+    async capture(req: Request, projectId: string, signal?: AbortSignal): Promise<IProjectContextCapture> {
         signal?.throwIfAborted();
         const state = await this.state(req, projectId);
         try {
@@ -237,7 +242,7 @@ export class ModelChatProjectContext {
             signal: AbortSignal,
         ) => Promise<Record<string, unknown>>,
         expectedIdentity?: string,
-    ): Promise<PreparedProjectContext> {
+    ): Promise<IPreparedProjectContext> {
         signal.throwIfAborted();
         if (!projectId)
             return this.prepared({ ...NONE }, async () => {
@@ -403,7 +408,7 @@ export class ModelChatProjectContext {
             ['project_search'],
         );
     }
-    private sources(raw: unknown, generation: string, snapshot: string): ChatProjectSource[] {
+    private sources(raw: unknown, generation: string, snapshot: string): IChatProjectSource[] {
         const v = raw as { generation?: unknown; snapshot?: unknown; sources?: unknown } | null;
         if (
             !v ||
@@ -414,7 +419,7 @@ export class ModelChatProjectContext {
         )
             throw new ServiceUnavailableException('Результаты поиска проекта не подтверждены.');
         const ids = new Set<string>(),
-            checked: ChatProjectSource[] = [];
+            checked: IChatProjectSource[] = [];
         for (const source of v.sources) {
             if (
                 !source ||
@@ -459,7 +464,7 @@ export class ModelChatProjectContext {
                 return true;
             });
     }
-    private messages(evidence: ChatProjectEvidence): ChatMessage[] {
+    private messages(evidence: IChatProjectEvidence): IChatMessage[] {
         if (evidence.status === 'none') return [];
         return [
             {
@@ -472,11 +477,11 @@ export class ModelChatProjectContext {
         ];
     }
     private prepared(
-        evidence: ChatProjectEvidence,
-        assertCurrent: PreparedProjectContext['assertCurrent'],
+        evidence: IChatProjectEvidence,
+        assertCurrent: IPreparedProjectContext['assertCurrent'],
         beforeInference = assertCurrent,
-        requiredFeatures: PreparedProjectContext['requiredFeatures'] = [],
-    ): PreparedProjectContext {
+        requiredFeatures: IPreparedProjectContext['requiredFeatures'] = [],
+    ): IPreparedProjectContext {
         return {
             evidence,
             messages: this.messages(evidence),
@@ -497,7 +502,7 @@ export class ModelChatProjectContext {
                         status: 'metadata',
                         message: 'Фрагменты проекта не переданы: превышен предел безопасных сведений об источниках.',
                     };
-                const exceeded = (messages: ChatMessage[]) =>
+                const exceeded = (messages: IChatMessage[]) =>
                     chatContext(messages, settings).exceeded ||
                     (limits?.maxBytes !== undefined &&
                         messages.reduce((size, message) => size + Buffer.byteLength(message.content), 0) >

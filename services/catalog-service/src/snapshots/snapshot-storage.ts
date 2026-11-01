@@ -12,20 +12,20 @@ import { SNAPSHOT_CHUNK_BYTES } from '../../../shared/project-snapshot.cjs';
 import { assertPrivateS3Bucket } from '../../../shared/s3-bucket-privacy.cjs';
 
 const digest = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
-export interface SnapshotBlob {
+export interface ISnapshotBlob {
     bytes: string;
     storage_id: string;
     version_id: string | null;
     state: 'LIVE' | 'DELETING';
 }
-interface WriteIntent {
+interface IWriteIntent {
     project_id: string;
     sha256: string;
     write_id: string;
     bytes: string;
     storage_id: string;
 }
-export interface SnapshotStorageOptions {
+export interface ISnapshotStorageOptions {
     directory?: string;
     s3?: { endpoint: string; bucket: string; region: string; accessKey: string; secretKey: string };
 }
@@ -39,7 +39,7 @@ export class SnapshotStorage {
     readonly directory: string;
     constructor(
         private readonly pool: Pool,
-        options: SnapshotStorageOptions = {},
+        options: ISnapshotStorageOptions = {},
     ) {
         this.directory = path.resolve(
             options.directory ||
@@ -179,7 +179,7 @@ export class SnapshotStorage {
         this.key(project, sha);
         await this.privateBucket();
         const row = (
-            await this.pool.query<SnapshotBlob>(
+            await this.pool.query<ISnapshotBlob>(
                 'SELECT bytes,storage_id,version_id,state FROM project_snapshot_blobs WHERE project_id=$1 AND sha256=$2',
                 [project, sha],
             )
@@ -198,7 +198,7 @@ export class SnapshotStorage {
         try {
             await connection.query('SELECT pg_advisory_lock(hashtextextended($1,0))', ['neurocenter:snapshot-storage']);
             const existing = (
-                await connection.query<SnapshotBlob>(
+                await connection.query<ISnapshotBlob>(
                     'SELECT bytes,storage_id,version_id,state FROM project_snapshot_blobs WHERE project_id=$1 AND sha256=$2',
                     [project, sha],
                 )
@@ -217,7 +217,7 @@ export class SnapshotStorage {
             }
             await this.privateBucket();
             let intent = (
-                await connection.query<WriteIntent>(
+                await connection.query<IWriteIntent>(
                     'SELECT * FROM project_snapshot_blob_writes WHERE project_id=$1 AND sha256=$2',
                     [project, sha],
                 )
@@ -317,11 +317,11 @@ export class SnapshotStorage {
             connection.release(discard);
         }
     }
-    private assertIntent(intent: WriteIntent, size: number): void {
+    private assertIntent(intent: IWriteIntent, size: number): void {
         if (intent.storage_id !== this.storageId || Number(intent.bytes) !== size)
             throw new ConflictException('Незавершённая запись относится к другой конфигурации хранилища.');
     }
-    private async registerWrite(client: PoolClient, intent: WriteIntent, version: string | null): Promise<void> {
+    private async registerWrite(client: PoolClient, intent: IWriteIntent, version: string | null): Promise<void> {
         try {
             await client.query('BEGIN');
             await client.query(
@@ -343,7 +343,7 @@ export class SnapshotStorage {
     /** The nonce is durable before PUT/link; a lost response never creates an unaccounted object. */
     private async settleWrite(
         client: PoolClient,
-        intent: WriteIntent,
+        intent: IWriteIntent,
         confirmedVersion?: string,
     ): Promise<'missing' | 'pending' | 'complete'> {
         this.assertIntent(intent, Number(intent.bytes));
@@ -432,7 +432,7 @@ export class SnapshotStorage {
             }
             if (!locked) return false;
             const intent = (
-                await client.query<WriteIntent>(
+                await client.query<IWriteIntent>(
                     'SELECT * FROM project_snapshot_blob_writes ORDER BY created_at LIMIT 1',
                 )
             ).rows[0];
@@ -456,7 +456,7 @@ export class SnapshotStorage {
         }
     }
     /** Caller holds the global storage fence and has durably marked this exact version DELETING. */
-    async remove(project: string, sha: string, row: SnapshotBlob): Promise<void> {
+    async remove(project: string, sha: string, row: ISnapshotBlob): Promise<void> {
         this.key(project, sha);
         if (row.state !== 'DELETING' || row.storage_id !== this.storageId)
             throw new ConflictException('Хранилище очищаемого блока изменилось.');

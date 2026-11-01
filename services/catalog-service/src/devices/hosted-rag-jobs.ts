@@ -1,11 +1,11 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { ProjectEmbeddingService } from '../models/project-embedding.service';
-import type { IConfiguredProjectEmbedding } from '../models/project-embedding.types';
-import type { Device } from './device-store';
+import type { IConfiguredProjectEmbedding } from '../models/project-embedding.interfaces';
+import type { IDevice } from './device-store';
 import type { DeviceInstallations } from './device-installations';
 import type { InstallPlans } from './install-plans';
-import type { Job, JobInput } from './device-job.model';
+import type { IJob, IJobInput } from './device-job.model';
 import { assertLocalFeature } from './local-change-jobs';
 import { ragInstallationJobPayload, assertRagInstallation } from './rag-installation-authority';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
@@ -46,8 +46,8 @@ export async function hostedRagJobPayload(
     embedding: ProjectEmbeddingService,
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
-    input: JobInput,
+    device: IDevice,
+    input: IJobInput,
 ) {
     if (input.kind !== HOSTED_RAG_KIND) return undefined;
     if (
@@ -91,8 +91,8 @@ export async function assertHostedRagJob(
     embedding: ProjectEmbeddingService,
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
-    job: Pick<Job, 'kind' | 'payload' | 'project_id'>,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id'>,
 ): Promise<void> {
     if (job.kind !== HOSTED_RAG_KIND) return;
     if (job.payload.reindex !== true)

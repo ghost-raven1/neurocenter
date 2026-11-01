@@ -2,8 +2,8 @@ import { ForbiddenException, NotFoundException, ServiceUnavailableException } fr
 import type { Request } from 'express';
 import { assertInternal } from '../access/access.controller';
 import { normalizeEmail, roleLevel, type IAccessActor } from '../access/access.model';
-import type { ProjectChatDb } from './project-chat.types';
-export interface ProjectChatActor extends IAccessActor {
+import type { TProjectChatDb } from './project-chat.interfaces';
+export interface IProjectChatActor extends IAccessActor {
     level: number;
     displayName: string;
     writable: boolean;
@@ -30,13 +30,13 @@ export class ProjectChatPolicy {
         }
     }
     async authorize(
-        db: ProjectChatDb,
+        db: TProjectChatDb,
         projectId: string,
         actor: IAccessActor,
         minimum = 1,
         lock = false,
         recovery = false,
-    ): Promise<ProjectChatActor> {
+    ): Promise<IProjectChatActor> {
         const suffix = lock ? ' FOR SHARE' : '';
         const account = (
             await db.query<{ enabled: boolean; is_main_admin: boolean; display_name: string }>(

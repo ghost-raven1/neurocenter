@@ -22,11 +22,11 @@ import {
     textKnowledgeLimits,
     textKnowledgeAdmission,
     textBytes,
-    type TextCorpusState,
-    type TextUploadReceipt,
-    type TextSearchResult,
-    type TextContext,
-    type TextAdmission,
+    type ITextCorpusState,
+    type ITextUploadReceipt,
+    type ITextSearchResult,
+    type ITextContext,
+    type ITextAdmission,
 } from '../../../shared/project-text-knowledge.cjs';
 
 const sha = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -35,7 +35,7 @@ const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 export const textRequestHash = (value: unknown) =>
     createHash('sha256').update(textUploadCanonical(value)).digest('hex');
-export function requireTextState(value: unknown, projectId: string): TextCorpusState {
+export function requireTextState(value: unknown, projectId: string): ITextCorpusState {
     if (
         !object(value) ||
         value.mode !== 'text' ||
@@ -53,9 +53,9 @@ export function requireTextState(value: unknown, projectId: string): TextCorpusS
             'Состояние текстовой базы знаний не подтверждено. Повторите загрузку сведений.',
         );
     }
-    return value as unknown as TextCorpusState;
+    return value as unknown as ITextCorpusState;
 }
-export function requireTextResult(value: unknown, projectId: string): TextSearchResult {
+export function requireTextResult(value: unknown, projectId: string): ITextSearchResult {
     if (
         !object(value) ||
         value.mode !== 'text' ||
@@ -67,7 +67,7 @@ export function requireTextResult(value: unknown, projectId: string): TextSearch
     )
         throw new ServiceUnavailableException('Результаты текстового поиска не подтверждены.');
     const ids = new Set<string>();
-    let admission: TextAdmission | undefined;
+    let admission: ITextAdmission | undefined;
     if (value.admission !== undefined) {
         try {
             admission = textKnowledgeAdmission(value.admission);
@@ -103,7 +103,7 @@ export function requireTextResult(value: unknown, projectId: string): TextSearch
             throw new ServiceUnavailableException('Цитата превышает принятые лимиты.');
         ids.add(source.id);
     }
-    return value as unknown as TextSearchResult;
+    return value as unknown as ITextSearchResult;
 }
 
 /** Catalog owns fresh project authority; text bytes and committed receipts belong to RAG. */
@@ -111,18 +111,18 @@ export function requireTextResult(value: unknown, projectId: string): TextSearch
 export class ProjectTextKnowledge {
     readonly client = new ProjectRagClient();
     constructor(private readonly models: ModelsService) {}
-    async state(req: Request, id: string): Promise<TextCorpusState> {
+    async state(req: Request, id: string): Promise<ITextCorpusState> {
         const project = await this.models.resolveProject(req, id, 1);
         const result = requireTextState(await this.client.call('text/state', { projectId: project.id }), project.id);
         await this.models.resolveProject(req, project.id, 1);
         return result;
     }
-    async receipt(req: Request, id: string, key: string): Promise<TextUploadReceipt | null> {
+    async receipt(req: Request, id: string, key: string): Promise<ITextUploadReceipt | null> {
         if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(key))
             throw new BadRequestException('Некорректный ключ загрузки.');
         const actor = await this.models.actor(req),
             project = await this.models.resolveProject(req, id, 1, actor);
-        const result = await this.client.call<TextUploadReceipt | null>('text/receipt', {
+        const result = await this.client.call<ITextUploadReceipt | null>('text/receipt', {
             projectId: project.id,
             requestKey: key,
             actor: { email: actor.email, activeRole: actor.activeRole },
@@ -142,7 +142,7 @@ export class ProjectTextKnowledge {
         }
         return result;
     }
-    async upload(req: Request, id: string, raw: unknown): Promise<TextUploadReceipt> {
+    async upload(req: Request, id: string, raw: unknown): Promise<ITextUploadReceipt> {
         let input;
         try {
             input = normalizeTextUpload(raw, TEXT_KNOWLEDGE_CEILINGS);
@@ -160,7 +160,7 @@ export class ProjectTextKnowledge {
         }
         await requireFeatureEnabled('project_text_knowledge');
         await this.models.resolveProject(req, project.id, 2);
-        const value = await this.client.call<TextUploadReceipt>('text/upload', {
+        const value = await this.client.call<ITextUploadReceipt>('text/upload', {
             projectId: project.id,
             input,
             requestHash,
@@ -183,8 +183,8 @@ export class ProjectTextKnowledge {
         id: string,
         raw: unknown,
         signal?: AbortSignal,
-        admission?: TextAdmission,
-    ): Promise<TextSearchResult> {
+        admission?: ITextAdmission,
+    ): Promise<ITextSearchResult> {
         let input;
         try {
             input = normalizeTextSearch(raw, TEXT_KNOWLEDGE_CEILINGS);
@@ -206,7 +206,7 @@ export class ProjectTextKnowledge {
             throw new ConflictException('Текстовая база изменилась. Обновите поиск.');
         return found;
     }
-    async assertContext(req: Request, id: string, raw: unknown): Promise<TextContext> {
+    async assertContext(req: Request, id: string, raw: unknown): Promise<ITextContext> {
         let selection;
         try {
             selection = normalizeTextContext(raw, TEXT_KNOWLEDGE_CEILINGS);

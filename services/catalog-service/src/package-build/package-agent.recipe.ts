@@ -4,8 +4,8 @@ import { ConflictException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { portablePath, TARGETS } from '../../../shared/runtime-artifacts.cjs';
 import { isSourceEntrypoint } from '../../../shared/source-entrypoint.cjs';
-import type { BuildConfiguration } from './package-build.model';
-import type { PackageAgentContext, PackageAgentRecipe, PackageAgentRuntimeReport } from './package-agent.model';
+import type { IBuildConfiguration } from './package-build.model';
+import type { IPackageAgentContext, TPackageAgentRecipe, IPackageAgentRuntimeReport } from './package-agent.model';
 
 export const agentObject = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -25,18 +25,18 @@ export const agentHash = (value: unknown): string =>
         .digest('hex');
 
 /** Recipe choices may vary; source, inventory, model and publication pins remain immutable. */
-export function packageAgentSourceHash(config: BuildConfiguration): string {
+export function packageAgentSourceHash(config: IBuildConfiguration): string {
     const {
         entrypoint: _entrypoint,
         args: _args,
         ...source
-    } = config.source as BuildConfiguration['source'] & { args?: string[]; entrypoint?: string };
+    } = config.source as IBuildConfiguration['source'] & { args?: string[]; entrypoint?: string };
     const { buildDiagnostics: _diagnostics, buildPlan: _plan, ...identity } = config;
     return agentHash({ ...identity, source });
 }
-const argsOf = (config: BuildConfiguration): string[] =>
+const argsOf = (config: IBuildConfiguration): string[] =>
     config.source.type === 'files' ? [...(config.source.args ?? [])] : [];
-export function packageAgentRecipe(config: BuildConfiguration): PackageAgentRecipe {
+export function packageAgentRecipe(config: IBuildConfiguration): TPackageAgentRecipe {
     if (config.source.type === 'bundled')
         throw new ConflictException('Закреплённый рецепт каталога не меняется агентом.');
     if (config.recipeVersion === 2 && config.recipeInventory) return config.buildPlan ?? { schemaVersion: 2 };
@@ -45,11 +45,11 @@ export function packageAgentRecipe(config: BuildConfiguration): PackageAgentReci
         ...(config.source.type === 'files' ? { args: argsOf(config) } : {}),
     };
 }
-interface RecipeChoices {
+interface IRecipeChoices {
     entrypoints: string[];
     arguments: string[][];
 }
-export function packageAgentChoices(original: BuildConfiguration, context: PackageAgentContext): RecipeChoices {
+export function packageAgentChoices(original: IBuildConfiguration, context: IPackageAgentContext): IRecipeChoices {
     if (original.source.type === 'bundled')
         throw new ConflictException('Закреплённый рецепт каталога не меняется агентом.');
     if (original.kind === 'skill') throw new ConflictException('Агент «Упаковщик» пока работает с MCP и плагинами.');
@@ -108,10 +108,10 @@ export function packageAgentChoices(original: BuildConfiguration, context: Packa
 /** Model text is data: exact JSON keys and trusted choices replace executable tools. */
 export function parsePackageAgentRecipe(
     value: unknown,
-    current: BuildConfiguration,
-    original: BuildConfiguration,
-    context: PackageAgentContext,
-): BuildConfiguration {
+    current: IBuildConfiguration,
+    original: IBuildConfiguration,
+    context: IPackageAgentContext,
+): IBuildConfiguration {
     if (current.source.type === 'bundled' || original.source.type === 'bundled')
         throw new ConflictException('Закреплённый рецепт каталога не меняется агентом.');
     if (original.recipeVersion === 2 && original.recipeInventory) {
@@ -145,11 +145,11 @@ export function parsePackageAgentRecipe(
             entrypoint: value.entrypoint,
             ...(current.source.type === 'files' ? { args: [...(args as string[])] } : {}),
         },
-    } as BuildConfiguration;
+    } as IBuildConfiguration;
 }
 
 /** Runtime diagnostics are bounded and redacted before being sent back to a model. */
-export function packageAgentReport(report: PackageAgentRuntimeReport): PackageAgentRuntimeReport {
+export function packageAgentReport(report: IPackageAgentRuntimeReport): IPackageAgentRuntimeReport {
     if (
         typeof report.passed !== 'boolean' ||
         (report.diagnostics !== undefined &&
@@ -166,7 +166,7 @@ export function packageAgentReport(report: PackageAgentRuntimeReport): PackageAg
         ...(report.diagnostics ? { diagnostics: report.diagnostics.slice(0, 6).map(cleanBuildReason) } : {}),
     };
 }
-export function packageAgentRecipeAudit(config: BuildConfiguration): Record<string, unknown> {
+export function packageAgentRecipeAudit(config: IBuildConfiguration): Record<string, unknown> {
     if (config.source.type === 'bundled') return { sourceRevision: config.source.revision };
     const recipe = { entrypoint: config.source.entrypoint, args: argsOf(config) };
     if (config.recipeVersion === 2)
@@ -186,7 +186,7 @@ export function packageAgentRecipeAudit(config: BuildConfiguration): Record<stri
         argsSha256: agentHash(recipe.args ?? []),
     };
 }
-export function packageAgentReportAudit(report?: PackageAgentRuntimeReport): Record<string, unknown> {
+export function packageAgentReportAudit(report?: IPackageAgentRuntimeReport): Record<string, unknown> {
     return report
         ? {
               passed: report.passed,

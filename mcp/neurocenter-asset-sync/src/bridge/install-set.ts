@@ -1,31 +1,31 @@
-import { canonicalV4, verify, type Package } from './package.js';
+import { canonicalV4, verify, type IPackage } from './package.js';
 import { hash } from './state.js';
 
-export interface PackageRef {
+export interface IPackageRef {
     kind: string;
     id: string;
     version: number;
     manifest: string;
 }
-export interface InstallSet {
+export interface IInstallSet {
     schemaVersion: 1;
-    root: PackageRef;
-    packages: Package[];
+    root: IPackageRef;
+    packages: IPackage[];
     manifest: string;
 }
 const ordinal = (a: string, b: string): number => (a === b ? 0 : a < b ? -1 : 1);
-export const referenceKey = (ref: Pick<PackageRef, 'kind' | 'id'>): string => ref.kind + ':' + ref.id;
-export const packageRef = (pkg: Package): PackageRef => ({
+export const referenceKey = (ref: Pick<IPackageRef, 'kind' | 'id'>): string => ref.kind + ':' + ref.id;
+export const packageRef = (pkg: IPackage): IPackageRef => ({
     kind: pkg.plugin.kind,
     id: pkg.plugin.id,
     version: pkg.plugin.version,
     manifest: pkg.manifest.sha256,
 });
-export const sortedRefs = (packages: Package[]): PackageRef[] =>
+export const sortedRefs = (packages: IPackage[]): IPackageRef[] =>
     packages.map(packageRef).sort((a, b) => ordinal(a.kind, b.kind) || ordinal(a.id, b.id));
-export const installSetManifest = (root: PackageRef, packages: Package[]): string =>
+export const installSetManifest = (root: IPackageRef, packages: IPackage[]): string =>
     hash(JSON.stringify(canonicalV4({ schemaVersion: 1, root, packages: sortedRefs(packages) })));
-function validRef(ref: PackageRef, dependency = false): boolean {
+function validRef(ref: IPackageRef, dependency = false): boolean {
     return (
         !!ref &&
         typeof ref === 'object' &&
@@ -39,7 +39,7 @@ function validRef(ref: PackageRef, dependency = false): boolean {
         /^[a-f0-9]{64}$/.test(ref.manifest)
     );
 }
-export function packageDependencies(pkg: Package): PackageRef[] {
+export function packageDependencies(pkg: IPackage): IPackageRef[] {
     const requirements = pkg.config?.extra?.requirements;
     if (!requirements) {
         return [];
@@ -61,7 +61,7 @@ export function packageDependencies(pkg: Package): PackageRef[] {
 }
 
 /** Проверяет точное замыкание и общий бюджет набора до доступа к локальному проекту. */
-export function verifyInstallSet(set: InstallSet): PackageRef[] {
+export function verifyInstallSet(set: IInstallSet): IPackageRef[] {
     if (
         !set ||
         set.schemaVersion !== 1 ||
@@ -73,7 +73,7 @@ export function verifyInstallSet(set: InstallSet): PackageRef[] {
     ) {
         throw new Error('Некорректный набор установки.');
     }
-    const packages = new Map<string, Package>();
+    const packages = new Map<string, IPackage>();
     let files = 0;
     let bytes = 0;
     for (const pkg of set.packages) {
@@ -94,7 +94,7 @@ export function verifyInstallSet(set: InstallSet): PackageRef[] {
     }
     const visiting = new Set<string>();
     const visited = new Set<string>();
-    const walk = (ref: PackageRef, depth: number): void => {
+    const walk = (ref: IPackageRef, depth: number): void => {
         if (depth > 20) {
             throw new Error('Слишком глубокий граф зависимостей.');
         }

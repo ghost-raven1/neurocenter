@@ -1,5 +1,5 @@
-import type { Package } from './package.js';
-import type { InstallSet } from './install-set.js';
+import type { IPackage } from './package.js';
+import type { IInstallSet } from './install-set.js';
 import {
     prepareMcpConfiguration,
     openMcpConfiguration,
@@ -13,17 +13,17 @@ export const CONFIGURATION_KINDS = [
     'open-mcp-configuration',
     'get-mcp-configuration-status',
 ];
-export interface ConfigurationPayload {
-    package?: Package;
-    installSet?: InstallSet;
+export interface IConfigurationPayload {
+    package?: IPackage;
+    installSet?: IInstallSet;
     schemaDigest?: string;
     configurationPreparationId?: string;
 }
 /** Только инертные дескрипторы до commit: ошибка не может превратить успешную установку в ложный rollback. */
 export async function prepareJobMcpLaunchers(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
+    pkg: IPackage,
+    set: IInstallSet | undefined,
     authorize: () => Promise<unknown>,
 ): Promise<void> {
     for (const member of set?.packages ?? [pkg])
@@ -34,7 +34,7 @@ export async function prepareJobMcpLaunchers(
 }
 /** Очередь передаёт только закреплённую версию; значения вводятся непосредственно на компьютере. */
 export async function runMcpConfigurationJob(
-    job: { kind: string; project_id?: string; payload: ConfigurationPayload },
+    job: { kind: string; project_id?: string; payload: IConfigurationPayload },
     authorize: () => Promise<unknown>,
     authorizeSave: () => Promise<unknown>,
 ): Promise<unknown> {

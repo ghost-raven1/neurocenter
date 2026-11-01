@@ -6,44 +6,44 @@ import { securityEvent } from '../access/security-events';
 import { publicationHash } from '../publication/publication-validation';
 import { createLearningContext } from '../../../shared/project-learning.cjs';
 import type {
-    LearningCandidate,
-    LearningCandidateInput,
-    LearningCheck,
-    LearningCheckInput,
-    LearningContext,
-    LearningExperience,
-    LearningExperienceInput,
-    LearningHypothesisDraft,
-    LearningHypothesis,
-    LearningMutationInput,
-    LearningMutationResult,
-    LearningDeviceContext,
-    LearningModelProvenance,
-    LearningObservedExperienceInput,
-    LearningPage,
+    ILearningCandidate,
+    ILearningCandidateInput,
+    ILearningCheck,
+    ILearningCheckInput,
+    ILearningContext,
+    ILearningExperience,
+    ILearningExperienceInput,
+    ILearningHypothesisDraft,
+    ILearningHypothesis,
+    ILearningMutationInput,
+    ILearningMutationResult,
+    ILearningDeviceContext,
+    ILearningModelProvenance,
+    TLearningObservedExperienceInput,
+    ILearningPage,
 } from '../../../shared/project-learning.cjs';
 import { authorizeLearning } from './learning-access';
 import { rollbackLearningTransaction } from './learning-transaction';
-import { candidateRow, checkRow, experienceRow, historyRow, hypothesisRow, type LearningDbRow } from './learning-rows';
-type Db = Pick<PoolClient, 'query'>;
-export type LearningDeviceAuthorization = (db: PoolClient) => Promise<void>;
-interface MutationWork<T> {
+import { candidateRow, checkRow, experienceRow, historyRow, hypothesisRow, type TLearningDbRow } from './learning-rows';
+type TDb = Pick<PoolClient, 'query'>;
+export type TLearningDeviceAuthorization = (db: PoolClient) => Promise<void>;
+interface IMutationWork<T> {
     result: T;
     resourceId: string;
     details: Record<string, unknown>;
 }
-type Origin = { origin: 'human' | 'device' | 'llm'; device: LearningDeviceContext | null };
-interface LearningCollections {
-    experiences: LearningExperience;
-    hypotheses: LearningHypothesis;
-    candidates: LearningCandidate;
+type TOrigin = { origin: 'human' | 'device' | 'llm'; device: ILearningDeviceContext | null };
+interface ILearningCollections {
+    experiences: ILearningExperience;
+    hypotheses: ILearningHypothesis;
+    candidates: ILearningCandidate;
 }
 const summaryHash = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** Learning mutations are serialized per project and leave a durable exact-request receipt. */
 export class LearningRepository {
     constructor(readonly pool: Pool) {}
-    async revision(projectId: string, db: Db = this.pool): Promise<number> {
+    async revision(projectId: string, db: TDb = this.pool): Promise<number> {
         return Number(
             (
                 await db.query<{ revision: string }>(
@@ -57,7 +57,7 @@ export class LearningRepository {
         actor: IAccessActor,
         projectId: string,
         work: (db: PoolClient) => Promise<T>,
-        authorizeDevice?: LearningDeviceAuthorization,
+        authorizeDevice?: TLearningDeviceAuthorization,
     ): Promise<T> {
         const db = await this.pool.connect();
         let discard = false;
@@ -81,10 +81,10 @@ export class LearningRepository {
         input: { requestKey: string; expectedRevision?: number; hypothesisId?: string; id?: string },
         action: string,
         minimum: number,
-        work: (db: PoolClient, revision: number) => Promise<MutationWork<T>>,
-        authorizeDevice?: LearningDeviceAuthorization,
+        work: (db: PoolClient, revision: number) => Promise<IMutationWork<T>>,
+        authorizeDevice?: TLearningDeviceAuthorization,
         append = false,
-    ): Promise<LearningMutationResult<T>> {
+    ): Promise<ILearningMutationResult<T>> {
         const requestHash = publicationHash({ projectId, role: actor.activeRole, action, input }),
             db = await this.pool.connect();
         let discard = false;
@@ -96,7 +96,7 @@ export class LearningRepository {
                 'learning-request:' + actor.email + ':' + input.requestKey,
             ]);
             const old = (
-                await db.query<{ request_hash: string; result: LearningMutationResult<T> }>(
+                await db.query<{ request_hash: string; result: ILearningMutationResult<T> }>(
                     'SELECT request_hash,result FROM project_learning_requests WHERE actor=$1 AND request_key=$2',
                     [actor.email, input.requestKey],
                 )
@@ -128,7 +128,7 @@ export class LearningRepository {
                 next,
             ]);
             const change = await work(db, next),
-                result: LearningMutationResult<T> = {
+                result: ILearningMutationResult<T> = {
                     schemaVersion: 1,
                     projectId,
                     revision: next,
@@ -161,9 +161,9 @@ export class LearningRepository {
             db.release(discard);
         }
     }
-    async experiences(db: Db, projectId: string, ids?: string[]) {
+    async experiences(db: TDb, projectId: string, ids?: string[]) {
         const rows = (
-            await db.query<LearningDbRow>(
+            await db.query<TLearningDbRow>(
                 'SELECT * FROM project_learning_experiences WHERE project_id=$1' +
                     (ids ? ' AND id=ANY($2::uuid[])' : '') +
                     ' ORDER BY created_at DESC,id',
@@ -174,9 +174,9 @@ export class LearningRepository {
             throw new BadRequestException('Источник опыта отсутствует или относится к другому проекту.');
         return rows.map(experienceRow);
     }
-    async hypotheses(db: Db, projectId: string, id?: string) {
+    async hypotheses(db: TDb, projectId: string, id?: string) {
         const rows = (
-            await db.query<LearningDbRow>(
+            await db.query<TLearningDbRow>(
                 'SELECT * FROM project_learning_hypotheses WHERE project_id=$1' +
                     (id ? ' AND id=$2' : '') +
                     ' ORDER BY created_at DESC,id',
@@ -186,10 +186,10 @@ export class LearningRepository {
         if (id && !rows.length) throw new NotFoundException('Гипотеза отсутствует в проекте.');
         return this.hypothesisRows(db, projectId, rows);
     }
-    private async hypothesisRows(db: Db, projectId: string, rows: LearningDbRow[]) {
+    private async hypothesisRows(db: TDb, projectId: string, rows: TLearningDbRow[]) {
         if (!rows.length) return [];
         const checks = (
-            await db.query<LearningDbRow>(
+            await db.query<TLearningDbRow>(
                 `SELECT * FROM (SELECT c.*,row_number() OVER(PARTITION BY hypothesis_id ORDER BY created_at DESC,id DESC) AS position,
             count(*) OVER(PARTITION BY hypothesis_id) AS total FROM project_learning_checks c WHERE project_id=$1 AND hypothesis_id=ANY($2::uuid[])) bounded WHERE position<=20 ORDER BY created_at,id`,
                 [projectId, rows.map((row) => row.id)],
@@ -203,12 +203,12 @@ export class LearningRepository {
     private table(collection: 'experiences' | 'hypotheses' | 'candidates' | 'checks') {
         return 'project_learning_' + collection;
     }
-    async page<C extends keyof LearningCollections>(
-        db: Db,
+    async page<C extends keyof ILearningCollections>(
+        db: TDb,
         projectId: string,
         collection: C,
         before?: string,
-    ): Promise<LearningPage<LearningCollections[C]>> {
+    ): Promise<ILearningPage<ILearningCollections[C]>> {
         const table = this.table(collection),
             rows = await this.pageRows(db, projectId, table, before),
             ids = rows.items.map((row) => row.id);
@@ -220,13 +220,13 @@ export class LearningRepository {
                   : (await this.candidateRows(db, projectId, ids)).sort(
                         (a, b) => ids.indexOf(a.id) - ids.indexOf(b.id),
                     );
-        return { ...rows, items } as LearningPage<LearningCollections[C]>;
+        return { ...rows, items } as ILearningPage<ILearningCollections[C]>;
     }
-    async detail(db: Db, projectId: string, collection: keyof LearningCollections, id: string) {
+    async detail(db: TDb, projectId: string, collection: keyof ILearningCollections, id: string) {
         if (collection === 'hypotheses') return (await this.hypotheses(db, projectId, id))[0];
         if (collection === 'candidates') return (await this.candidates(db, projectId, id))[0];
         const row = (
-            await db.query<LearningDbRow>('SELECT * FROM project_learning_experiences WHERE project_id=$1 AND id=$2', [
+            await db.query<TLearningDbRow>('SELECT * FROM project_learning_experiences WHERE project_id=$1 AND id=$2', [
                 projectId,
                 id,
             ])
@@ -235,12 +235,12 @@ export class LearningRepository {
         return experienceRow(row);
     }
     private async pageRows(
-        db: Db,
+        db: TDb,
         projectId: string,
         table: string,
         before?: string,
         hypothesisId?: string,
-    ): Promise<LearningPage<LearningDbRow>> {
+    ): Promise<ILearningPage<TLearningDbRow>> {
         const values: unknown[] = [projectId];
         let predicate = 'project_id=$1';
         if (hypothesisId) {
@@ -259,7 +259,7 @@ export class LearningRepository {
             predicate += ` AND (created_at,id)<(SELECT created_at,id FROM ${table} WHERE project_id=$1 AND id=$${values.length})`;
         }
         const items = (
-            await db.query<LearningDbRow>(
+            await db.query<TLearningDbRow>(
                 `SELECT * FROM ${table} WHERE ${predicate} ORDER BY created_at DESC,id DESC LIMIT 101`,
                 values,
             )
@@ -277,7 +277,7 @@ export class LearningRepository {
         if (hasMore) items.pop();
         return { items, total, nextCursor: hasMore ? items[items.length - 1].id : null };
     }
-    async checkPage(db: Db, projectId: string, hypothesisId: string, before?: string) {
+    async checkPage(db: TDb, projectId: string, hypothesisId: string, before?: string) {
         const exists = (
             await db.query('SELECT 1 FROM project_learning_hypotheses WHERE project_id=$1 AND id=$2', [
                 projectId,
@@ -288,9 +288,9 @@ export class LearningRepository {
         const page = await this.pageRows(db, projectId, this.table('checks'), before, hypothesisId);
         return { ...page, items: page.items.map(checkRow) };
     }
-    async checkDetail(db: Db, projectId: string, hypothesisId: string, id: string) {
+    async checkDetail(db: TDb, projectId: string, hypothesisId: string, id: string) {
         const row = (
-            await db.query<LearningDbRow>(
+            await db.query<TLearningDbRow>(
                 'SELECT * FROM project_learning_checks WHERE project_id=$1 AND hypothesis_id=$2 AND id=$3',
                 [projectId, hypothesisId, id],
             )
@@ -298,18 +298,18 @@ export class LearningRepository {
         if (!row) throw new NotFoundException('Проверка отсутствует у выбранной гипотезы проекта.');
         return checkRow(row);
     }
-    private async candidateRows(db: Db, projectId: string, ids?: string[], active = false) {
+    private async candidateRows(db: TDb, projectId: string, ids?: string[], active = false) {
         if (ids && !ids.length) return [];
         if (active)
             return (
-                await db.query<LearningDbRow>(
+                await db.query<TLearningDbRow>(
                     `SELECT c.*,true AS active FROM project_learning_heads h JOIN project_learning_candidates c
             ON c.project_id=h.project_id AND c.id=h.candidate_id WHERE h.project_id=$1 ORDER BY h.key LIMIT 33`,
                     [projectId],
                 )
             ).rows.map(candidateRow);
         const rows = (
-            await db.query<LearningDbRow>(
+            await db.query<TLearningDbRow>(
                 `SELECT c.*,EXISTS(SELECT 1 FROM project_learning_heads h WHERE h.project_id=c.project_id AND h.candidate_id=c.id) AS active
             FROM project_learning_candidates c WHERE c.project_id=$1` +
                     (ids ? ' AND c.id=ANY($2::uuid[])' : '') +
@@ -319,15 +319,15 @@ export class LearningRepository {
         ).rows;
         return rows.map(candidateRow);
     }
-    async candidates(db: Db, projectId: string, id?: string): Promise<LearningCandidate[]> {
+    async candidates(db: TDb, projectId: string, id?: string): Promise<ILearningCandidate[]> {
         const rows = await this.candidateRows(db, projectId, id ? [id] : undefined);
         if (id && !rows.length) throw new NotFoundException('Кандидат отсутствует в проекте.');
         return rows;
     }
-    async activeCandidates(db: Db, projectId: string) {
+    async activeCandidates(db: TDb, projectId: string) {
         return this.candidateRows(db, projectId, undefined, true);
     }
-    async history(db: Db, projectId: string, beforeRevision?: number) {
+    async history(db: TDb, projectId: string, beforeRevision?: number) {
         return (
             await db.query(
                 'SELECT * FROM project_learning_history WHERE project_id=$1' +
@@ -337,17 +337,17 @@ export class LearningRepository {
             )
         ).rows.map(historyRow);
     }
-    async receipt(db: Db, actor: IAccessActor, projectId: string, key: string) {
+    async receipt(db: TDb, actor: IAccessActor, projectId: string, key: string) {
         return (
             (
-                await db.query<{ result: LearningMutationResult }>(
+                await db.query<{ result: ILearningMutationResult }>(
                     'SELECT result FROM project_learning_requests WHERE actor=$1 AND project_id=$2 AND request_key=$3',
                     [actor.email, projectId, key],
                 )
             ).rows[0]?.result ?? null
         );
     }
-    async context(db: Db, projectId: string): Promise<LearningContext> {
+    async context(db: TDb, projectId: string): Promise<ILearningContext> {
         const active = await this.activeCandidates(db, projectId);
         if (active.some((candidate) => candidate.status !== 'approved' || !candidate.approvedAt))
             throw new ConflictException('Активный контекст не имеет действующего одобрения.');
@@ -371,9 +371,9 @@ export class LearningRepository {
     async addExperience(
         actor: IAccessActor,
         projectId: string,
-        input: LearningExperienceInput | LearningObservedExperienceInput,
-        source: Origin,
-        authorizeDevice?: LearningDeviceAuthorization,
+        input: ILearningExperienceInput | TLearningObservedExperienceInput,
+        source: TOrigin,
+        authorizeDevice?: TLearningDeviceAuthorization,
         append = false,
     ) {
         return this.mutation(
@@ -384,7 +384,7 @@ export class LearningRepository {
             2,
             async (db) => {
                 const { requestKey: _key, ...rest } = input,
-                    { expectedRevision: _rev, ...data } = rest as Omit<LearningExperienceInput, 'requestKey'>,
+                    { expectedRevision: _rev, ...data } = rest as Omit<ILearningExperienceInput, 'requestKey'>,
                     id = randomUUID();
                 await this.checkAgentContext(
                     db,
@@ -416,9 +416,9 @@ export class LearningRepository {
     async addHypotheses(
         actor: IAccessActor,
         projectId: string,
-        input: LearningMutationInput & { hypotheses: LearningHypothesisDraft[]; model?: LearningModelProvenance },
-        source: Origin,
-        authorizeDevice?: LearningDeviceAuthorization,
+        input: ILearningMutationInput & { hypotheses: ILearningHypothesisDraft[]; model?: ILearningModelProvenance },
+        source: TOrigin,
+        authorizeDevice?: TLearningDeviceAuthorization,
         append = false,
     ) {
         return this.mutation(
@@ -428,7 +428,7 @@ export class LearningRepository {
             'hypothesis.propose',
             2,
             async (db, revision) => {
-                const hypotheses: LearningHypothesis[] = [];
+                const hypotheses: ILearningHypothesis[] = [];
                 for (const draft of input.hypotheses) {
                     await this.experiences(db, projectId, draft.experienceIds);
                     const id = randomUUID();
@@ -460,7 +460,7 @@ export class LearningRepository {
             append,
         );
     }
-    async addCheck(actor: IAccessActor, projectId: string, hypothesisId: string, input: LearningCheckInput) {
+    async addCheck(actor: IAccessActor, projectId: string, hypothesisId: string, input: ILearningCheckInput) {
         return this.mutation(
             actor,
             projectId,
@@ -473,7 +473,7 @@ export class LearningRepository {
                 const { requestKey: _key, expectedRevision: _rev, ...data } = input,
                     id = randomUUID();
                 const checked = (
-                    await db.query<LearningDbRow>(
+                    await db.query<TLearningDbRow>(
                         'INSERT INTO project_learning_checks(id,project_id,hypothesis_id,data,revision,created_by) VALUES($1,$2,$3,$4::jsonb,$5,$6) RETURNING *',
                         [id, projectId, hypothesisId, JSON.stringify(data), revision, actor.email],
                     )
@@ -515,20 +515,20 @@ export class LearningRepository {
         );
     }
     private async supportingCheck(
-        db: Db,
+        db: TDb,
         projectId: string,
         hypothesisId: string,
         checkId: string,
-    ): Promise<LearningCheck> {
+    ): Promise<ILearningCheck> {
         const hypothesis = (await this.hypotheses(db, projectId, hypothesisId))[0];
         const latestRow = (
-            await db.query<LearningDbRow>(
+            await db.query<TLearningDbRow>(
                 "SELECT * FROM project_learning_checks WHERE project_id=$1 AND hypothesis_id=$2 AND data->>'method'='human_review' ORDER BY revision DESC LIMIT 1",
                 [projectId, hypothesisId],
             )
         ).rows[0];
         const proofRow = (
-            await db.query<LearningDbRow>(
+            await db.query<TLearningDbRow>(
                 'SELECT * FROM project_learning_checks WHERE project_id=$1 AND hypothesis_id=$2 AND id=$3',
                 [projectId, hypothesisId, checkId],
             )
@@ -549,7 +549,7 @@ export class LearningRepository {
         await this.experiences(db, projectId, proof.experienceIds);
         return proof;
     }
-    async addCandidate(actor: IAccessActor, projectId: string, input: LearningCandidateInput) {
+    async addCandidate(actor: IAccessActor, projectId: string, input: ILearningCandidateInput) {
         return this.mutation(actor, projectId, input, 'candidate.propose', 2, async (db, revision) => {
             await this.supportingCheck(db, projectId, input.hypothesisId, input.checkId);
             await this.checkAgentContext(db, projectId, input.targetAgentId);
@@ -600,7 +600,7 @@ export class LearningRepository {
         actor: IAccessActor,
         projectId: string,
         id: string,
-        input: LearningMutationInput & { reason?: string },
+        input: ILearningMutationInput & { reason?: string },
         action: 'approve' | 'reject' | 'revoke' | 'activate',
     ) {
         return this.mutation(actor, projectId, { ...input, id }, 'candidate.' + action, 3, async (db, revision) => {
@@ -656,7 +656,7 @@ export class LearningRepository {
         });
     }
     private async checkAgentContext(
-        db: Db,
+        db: TDb,
         projectId: string,
         agentId?: string,
         version?: number,

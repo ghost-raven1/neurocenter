@@ -9,13 +9,13 @@ const configPaths = ['opencode-rag.json', '.opencode/opencode-rag.json', '.openc
 const changed = () =>
     new Error('Источник кварков или конфигурация RAG изменились. Дождитесь окончания записи и повторите сбор.');
 const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex');
-interface Configuration {
+interface IConfiguration {
     file: string | null;
     sha256: string | null;
     store: string;
 }
 /** This reader deliberately avoids locateStore: recovery and LanceDB are outside a read-only import. */
-async function configuration(root: string): Promise<Configuration> {
+async function configuration(root: string): Promise<IConfiguration> {
     for (const relative of configPaths) {
         const file = await safeTarget(root, relative);
         try {

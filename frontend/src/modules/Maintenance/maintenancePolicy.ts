@@ -64,13 +64,15 @@ export function copyMaintenancePolicy(policy: IMaintenancePolicy): IMaintenanceP
     return {
         ...policy,
         schedule: { ...policy.schedule, days: [...policy.schedule.days] },
-        windows: policy.windows.map(window => ({ ...window, days: [...window.days] })),
+        windows: policy.windows.map((window) => ({ ...window, days: [...window.days] })),
     };
 }
 
 /** Возраст относится к точке данных копии, а не к моменту последней передачи. */
 export function formatBackupAge(seconds: number | null): string {
-    if (seconds === null) { return 'Нет проверенной внешней копии'; }
+    if (seconds === null) {
+        return 'Нет проверенной внешней копии';
+    }
     const minutes = Math.floor(seconds / 60);
     return minutes < 60 ? `${minutes} мин` : `${Math.floor(minutes / 60)} ч ${minutes % 60} мин`;
 }

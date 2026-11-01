@@ -1,19 +1,19 @@
 import { missingLaunchFields } from './launch-fields.js';
 import { randomUUID } from 'node:crypto';
 import { readPrivateConfiguration, writePrivateConfiguration } from './private-store.js';
-import type { ConfigurationContext } from './context.js';
-import { validateConfigurationValues, type ConfigurationValues } from './schema.js';
+import type { TConfigurationContext } from './context.js';
+import { validateConfigurationValues, type TConfigurationValues } from './schema.js';
 
-interface StoredConfiguration {
+interface IStoredConfiguration {
     schemaVersion: 1;
-    scope: ConfigurationContext['scope'];
+    scope: TConfigurationContext['scope'];
     revision: string;
-    values: ConfigurationValues;
+    values: TConfigurationValues;
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const pendingWrites = new Map<string, Promise<void>>();
-export async function readConfiguration(context: ConfigurationContext): Promise<StoredConfiguration | undefined> {
-    const stored = await readPrivateConfiguration<StoredConfiguration>(context.key);
+export async function readConfiguration(context: TConfigurationContext): Promise<IStoredConfiguration | undefined> {
+    const stored = await readPrivateConfiguration<IStoredConfiguration>(context.key);
     if (
         stored &&
         (stored.schemaVersion !== 1 ||
@@ -28,7 +28,7 @@ export async function readConfiguration(context: ConfigurationContext): Promise<
     }
     return stored;
 }
-export async function configurationStatus(context: ConfigurationContext) {
+export async function configurationStatus(context: TConfigurationContext) {
     await pendingWrites.get(context.key);
     const stored = await readConfiguration(context);
     const missingFieldIds = missingLaunchFields(context.pkg, context.schema, stored?.values ?? {});
@@ -42,7 +42,7 @@ export async function configurationStatus(context: ConfigurationContext) {
 }
 /** CAS защищает две открытые формы; новая ревизия аннулирует прежнюю диагностику. */
 export async function saveConfiguration(
-    context: ConfigurationContext,
+    context: TConfigurationContext,
     input: unknown,
     expectedRevision: string | null,
     authorize: () => Promise<void>,

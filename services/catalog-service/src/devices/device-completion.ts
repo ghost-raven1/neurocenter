@@ -38,13 +38,13 @@ import { validModelScan } from '../../../shared/opencode-model-scan.cjs';
 import { OPENCODE_PROVIDER_JOBS, normalizeProviderReport } from '../../../shared/opencode-providers.cjs';
 import { continueRagInstallationInspection } from './rag-install-inspection';
 
-export interface DeviceCompletion {
+export interface IDeviceCompletion {
     lease: string;
     state: 'succeeded' | 'failed';
     message: string;
     result: Record<string, unknown>;
 }
-interface Job {
+interface IJob {
     id: string;
     device_id: string;
     email: string;
@@ -63,7 +63,7 @@ interface Job {
 }
 
 /** Подтверждение идемпотентно и атомарно с журналом; истёкшая аренда не требует повторной записи файлов. */
-export async function completeDeviceJob(pool: Pool, deviceId: string, id: string, input: DeviceCompletion) {
+export async function completeDeviceJob(pool: Pool, deviceId: string, id: string, input: IDeviceCompletion) {
     if (
         !input ||
         !['succeeded', 'failed'].includes(input.state) ||
@@ -83,7 +83,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         await client.query('BEGIN');
         await lockComputerSetupCompletionDevice(client, deviceId, id, input.lease);
         await lockGlobalProvidersCompletionDevice(client, deviceId, id, input.lease);
-        const { rows } = await client.query<Job>(
+        const { rows } = await client.query<IJob>(
             'SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3 FOR UPDATE',
             [id, deviceId, input.lease],
         );

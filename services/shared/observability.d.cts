@@ -1,7 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 interface IObservabilityOptions {
-    service: 'oauth2-bridge' | 'api-gateway' | 'catalog-service' | 'skills-service' | 'rag-sync-service' | 'feature-flags-service';
+    service:
+        | 'oauth2-bridge'
+        | 'api-gateway'
+        | 'catalog-service'
+        | 'skills-service'
+        | 'rag-sync-service'
+        | 'feature-flags-service';
     token?: () => string | undefined;
     now?: () => bigint;
 }

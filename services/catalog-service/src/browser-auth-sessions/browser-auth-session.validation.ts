@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { BrowserSessionIdentity, CreateBrowserSession } from './browser-auth-session.types';
+import type { IBrowserSessionIdentity, ICreateBrowserSession } from './browser-auth-session.interfaces';
 
 const invalid = () => new BadRequestException('Некорректные данные браузерной сессии.');
 function object(value: unknown, keys: string[]): Record<string, unknown> {
@@ -22,7 +22,7 @@ export function sessionHash(value: unknown): string {
     if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw invalid();
     return value;
 }
-export function sessionIdentity(value: unknown): BrowserSessionIdentity {
+export function sessionIdentity(value: unknown): IBrowserSessionIdentity {
     const input = object(value, ['id', 'principalName', 'email', 'displayName']);
     const identity = {
         id: text(input.id, 512),
@@ -38,7 +38,7 @@ export function sessionRole(value: unknown): string {
     return text(object(value, ['selectedRole']).selectedRole, 128);
 }
 /** Reject unknown properties rather than persisting a wider user/profile payload. */
-export function createSessionInput(value: unknown): CreateBrowserSession {
+export function createSessionInput(value: unknown): ICreateBrowserSession {
     const input = object(value, ['tokenHash', 'identity', 'selectedRole', 'ttlSeconds']);
     if (
         typeof input.ttlSeconds !== 'number' ||

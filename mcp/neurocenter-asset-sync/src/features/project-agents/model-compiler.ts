@@ -7,7 +7,7 @@ import {
     type ProjectAgentModelMapping,
     type ProjectAgentsCompilation,
 } from './contract.js';
-export type ApproveAgentCompilation = (mappings: ProjectAgentModelMapping[]) => Promise<unknown>;
+export type TApproveAgentCompilation = (mappings: ProjectAgentModelMapping[]) => Promise<unknown>;
 const setup = (agentId: string, modelId?: string) =>
     Object.assign(new Error('Настройте модель агента в OpenCode выбранного компьютера и повторите применение.'), {
         code: 'OPENCODE_AGENT_MODEL_SETUP_REQUIRED',
@@ -87,7 +87,7 @@ export async function approveProjectAgents(
     payload: ProjectAgentsPayload,
     root: string,
     authorize: () => Promise<unknown>,
-    approve: ApproveAgentCompilation,
+    approve: TApproveAgentCompilation,
 ): Promise<ProjectAgentsCompilation> {
     const mappings = await projectAgentMappings(payload, root, authorize),
         expected = compileProjectAgents(payload, mappings),

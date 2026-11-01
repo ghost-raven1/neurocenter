@@ -2,7 +2,7 @@
   "name": "oauth2-bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "SSO/Blitz login bridge (dev/prod) — отдельный microservice",
+  "description": "SSO/Blitz login bridge (dev/prod) \u2014 \u043e\u0442\u0434\u0435\u043b\u044c\u043d\u044b\u0439 microservice",
   "scripts": {
     "build": "nest build",
     "start": "nest start",
@@ -11,10 +11,10 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src integration --no-error-on-unmatched-pattern --max-warnings=0",
     "lint:fix": "npm run lint -- --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\"",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\""
   },
   "dependencies": {
     "@nestjs/common": "11.2.7",

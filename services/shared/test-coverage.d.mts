@@ -1,1 +1,10 @@
-export function packageCoverage(packageRoot:string):{provider:'v8';allowExternal:boolean;include:string[];exclude:string[];reportOnFailure:boolean;skipFull:boolean;reporter:('text-summary'|'json'|'json-summary'|'lcov'|'html')[];reportsDirectory:string};
+export function packageCoverage(packageRoot: string): {
+    provider: 'v8';
+    allowExternal: boolean;
+    include: string[];
+    exclude: string[];
+    reportOnFailure: boolean;
+    skipFull: boolean;
+    reporter: ('text-summary' | 'json' | 'json-summary' | 'lcov' | 'html')[];
+    reportsDirectory: string;
+};

@@ -7,13 +7,13 @@ import { journalDirectory, parseJournal } from '../../bridge/installation-journa
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
 import { safeTarget } from '../../bridge/workspace.js';
 import type { InstallationPlan } from '../../bridge/installation-plan.js';
-import type { Receipt } from '../../bridge/installation-receipt.js';
+import type { IReceipt } from '../../bridge/installation-receipt.js';
 import { readPrivateConfiguration } from '../local-configuration/private-store.js';
 import { profileKey } from '../rag-hosted/profile.js';
-import type { ConfigurationContext } from './context.js';
+import type { TConfigurationContext } from './context.js';
 import { configurationObject, object } from './json.js';
 import { OPEN_CODE_CONFIGS } from './discovery.js';
-interface Protection {
+interface IProtection {
     mcp: Set<string>;
     provider: Set<string>;
     plugins: Set<unknown>;
@@ -22,7 +22,7 @@ interface Protection {
 const damaged = () => Error('Управляемая установка не подтверждена. Проверьте или восстановите её через сайт.');
 const receiptPath = (key: string) => '.opencode/neurocenter/receipts/' + key + '.json';
 /** Local RAG access requires the frozen server reference AND the bridge-private committed receipt. */
-export async function provenRag(context: ConfigurationContext, plan: InstallationPlan): Promise<boolean> {
+export async function provenRag(context: TConfigurationContext, plan: InstallationPlan): Promise<boolean> {
     const refs = context.descriptor.ragInstallations;
     if (!refs.length) return false;
     await InstallationLedger.load(plan);
@@ -51,9 +51,9 @@ export async function provenRag(context: ConfigurationContext, plan: Installatio
             )
         )
             throw damaged();
-        let receipt: Receipt;
+        let receipt: IReceipt;
         try {
-            receipt = JSON.parse(raw) as Receipt;
+            receipt = JSON.parse(raw) as IReceipt;
             if (receipt.version !== ref.version || receipt.manifest !== ref.manifest || !object(receipt.files))
                 throw damaged();
         } catch {
@@ -96,8 +96,8 @@ export async function provenRag(context: ConfigurationContext, plan: Installatio
     return true;
 }
 /** Protect canonical connection entries while allowing unrelated manual JSONC changes. */
-export async function managedProtection(context: ConfigurationContext, plan: InstallationPlan): Promise<Protection> {
-    const protection: Protection = { mcp: new Set(), provider: new Set(), plugins: new Set(), files: new Set() };
+export async function managedProtection(context: TConfigurationContext, plan: InstallationPlan): Promise<IProtection> {
+    const protection: IProtection = { mcp: new Set(), provider: new Set(), plugins: new Set(), files: new Set() };
     const directory = await safeTarget(context.root, '.opencode/neurocenter/receipts');
     const names = await fs.readdir(directory).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') return [];
@@ -108,7 +108,7 @@ export async function managedProtection(context: ConfigurationContext, plan: Ins
     for (const name of names.filter((name) => /^[a-f0-9]{24}\.json$/.test(name))) {
         const raw = await plan.read('.opencode/neurocenter/receipts/' + name);
         if (raw === null || (receiptBytes += Buffer.byteLength(raw)) > 4 * 1024 * 1024) throw damaged();
-        const receipt = JSON.parse(raw) as Receipt;
+        const receipt = JSON.parse(raw) as IReceipt;
         if (receipt.config?.key === 'plugin') protection.plugins.add(receipt.config.value);
         else if (receipt.config?.key) protection.mcp.add(receipt.config.key);
         for (const file of Object.keys(receipt.files ?? {})) protection.files.add(file);
@@ -134,13 +134,13 @@ export async function managedProtection(context: ConfigurationContext, plan: Ins
     }
     return protection;
 }
-export async function hasManagedRagProfile(context: ConfigurationContext): Promise<boolean> {
+export async function hasManagedRagProfile(context: TConfigurationContext): Promise<boolean> {
     return (
         (await readPrivateConfiguration(profileKey(context.site, context.root, context.descriptor.instanceId))) !==
         undefined
     );
 }
-export function assertManualFile(relative: string, protection: Protection) {
+export function assertManualFile(relative: string, protection: IProtection) {
     if (
         protection.files.has(relative) ||
         /^\.opencode\/(agents?|modes?)\/(?:[^/]+\/)*nc-[^/]+\.md$/i.test(relative) ||
@@ -153,7 +153,7 @@ export async function preserveConnections(
     relative: string,
     before: string | null,
     after: string,
-    protection: Protection,
+    protection: IProtection,
 ) {
     const previous = configurationObject(before),
         next = configurationObject(after);

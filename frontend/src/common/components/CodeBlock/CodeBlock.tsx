@@ -1,5 +1,4 @@
-import { useEffect, useRef } from 'react';
-import { FC } from 'react';
+import { FC, useEffect, useRef } from 'react';
 import { ICodeBlockProps } from './interfaces';
 
 import hljs from 'highlight.js/lib/core';
@@ -21,11 +20,7 @@ hljs.registerLanguage('markdown', markdown);
  * @returns { string } экранированный текст.
  */
 function escapeHtml(value: string): string {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /**
@@ -41,22 +36,17 @@ const CodeBlock: FC<ICodeBlockProps> = ({ code, language, theme = 'light', style
             return;
         }
 
-        const highlighted = language !== undefined && hljs.getLanguage(language) !== undefined
-            ? hljs.highlight(code, { language, ignoreIllegals: true })
-            : null;
+        const highlighted =
+            language !== undefined && hljs.getLanguage(language) !== undefined
+                ? hljs.highlight(code, { language, ignoreIllegals: true })
+                : null;
 
         node.innerHTML = highlighted !== null ? highlighted.value : escapeHtml(code);
     }, [code, language]);
 
     const themeClass = theme === 'dark' ? 'codeblock-dark' : 'codeblock-light';
 
-    return (
-        <pre
-            ref={preRef}
-            className={`hljs ${themeClass} ${className ?? ''}`}
-            style={style}
-        />
-    );
+    return <pre ref={preRef} className={`hljs ${themeClass} ${className ?? ''}`} style={style} />;
 };
 
 export default CodeBlock;

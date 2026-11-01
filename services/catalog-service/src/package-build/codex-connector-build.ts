@@ -1,9 +1,9 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { isPreparedCodexRepository } from '../../../shared/codex-connector-source.cjs';
 import { requiredAssetFeatures } from '../../../shared/feature-policy.cjs';
-import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import type { TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 import type { IAiPluginCreate } from '../catalog/dto';
-import type { BuildConfiguration } from './package-build.model';
+import type { IBuildConfiguration } from './package-build.model';
 import type { Pool } from 'pg';
 
 /** Publication provenance is a successful server build of this exact immutable repository, never a client label. */
@@ -27,11 +27,11 @@ export async function publishedCodexConnectors(
 
 /** The immutable repository layout alone selects this adapter; arbitrary extra metadata grants no capability. */
 export function buildFeatures(config: {
-    kind: BuildConfiguration['kind'];
+    kind: IBuildConfiguration['kind'];
     source: unknown;
     agent?: unknown;
     recipeVersion?: number;
-}): FeatureFlagKey[] {
+}): TFeatureFlagKey[] {
     return [
         'tool_builds',
         ...requiredAssetFeatures(config.kind),
@@ -42,13 +42,13 @@ export function buildFeatures(config: {
         ...(isPreparedCodexRepository(config.source) ? ['codex_connector' as const] : []),
     ];
 }
-export function assertCodexBuildKind(config: Pick<BuildConfiguration, 'kind' | 'source'>): void {
+export function assertCodexBuildKind(config: Pick<IBuildConfiguration, 'kind' | 'source'>): void {
     if (isPreparedCodexRepository(config.source) && config.kind !== 'plugin')
         throw new BadRequestException('Коннектор Codex устанавливается как плагин провайдера моделей.');
 }
 /** Publication validates the built package against trusted source pins before importing any runtime bytes. */
 export function assertCodexBuildPublication(
-    config: Pick<BuildConfiguration, 'kind' | 'source'>,
+    config: Pick<IBuildConfiguration, 'kind' | 'source'>,
     publication: IAiPluginCreate,
 ): void {
     const metadata = publication.config?.extra?.codexConnector as Record<string, unknown> | undefined;

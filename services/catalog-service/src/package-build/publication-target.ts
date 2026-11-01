@@ -6,18 +6,18 @@ import { publicationHash } from '../publication/publication-validation';
 import { SkillAssetClient } from '../asset-sources/skill-adapter';
 import type { IAiPlugin } from '../catalog/dto';
 
-export interface BuildPublicationTarget {
+export interface IBuildPublicationTarget {
     catalogId: string;
     expectedVersion: number;
     expectedSourceHash: string;
 }
-export interface BuildPublicationConflict {
+export interface IBuildPublicationConflict {
     catalogId: string;
     kind: 'mcp' | 'plugin';
     name: string;
     archived: boolean;
 }
-export interface BuildSourceOrigin {
+export interface IBuildSourceOrigin {
     repository: string;
     externalId: string;
     revision: number;
@@ -26,13 +26,13 @@ export interface BuildSourceOrigin {
     nativeVersion: number;
     nativeHash: string;
 }
-export interface PinnedBuildPublication extends BuildPublicationTarget {
+export interface IPinnedBuildPublication extends IBuildPublicationTarget {
     kind: 'mcp' | 'plugin';
     name: string;
     nativeHash: string;
-    origins: BuildSourceOrigin[];
+    origins: IBuildSourceOrigin[];
 }
-export interface BuildPublicationTargetPreview extends BuildPublicationTarget {
+export interface IBuildPublicationTargetPreview extends IBuildPublicationTarget {
     name: string;
     description: string;
     kind: 'mcp' | 'plugin' | 'skill';
@@ -48,7 +48,7 @@ const validCatalogId = (value: unknown): value is string =>
     typeof value === 'string' && value.length > 0 && value.length <= 240 && !/[\x00-\x1f\x7f]/.test(value);
 
 /** Exact name discovery proposes a target; only a later preview and consent authorize replacement. */
-export async function publicationNameConflict(pool: Pool, name: unknown): Promise<BuildPublicationConflict | null> {
+export async function publicationNameConflict(pool: Pool, name: unknown): Promise<IBuildPublicationConflict | null> {
     if (typeof name !== 'string' || !name.trim() || name.length > 240 || /[\x00-\x1f\x7f]/.test(name))
         throw new BadRequestException('Укажите название инструмента.');
     const { rows } = await pool.query('SELECT id,kind,name,archived_at FROM ai_plugins WHERE lower(name)=lower($1)', [
@@ -61,7 +61,7 @@ export async function publicationNameConflict(pool: Pool, name: unknown): Promis
 }
 
 /** The public consent contains no caller-controlled origin replacement instructions. */
-export function validateBuildPublication(value: unknown): BuildPublicationTarget | undefined {
+export function validateBuildPublication(value: unknown): IBuildPublicationTarget | undefined {
     if (value === undefined) return;
     if (
         !object(value) ||
@@ -83,7 +83,7 @@ export function validateBuildPublication(value: unknown): BuildPublicationTarget
 /** A create intent never implicitly approves replacement of an existing native card. */
 export async function assertBuildCreateName(
     pool: Pool,
-    input: { kind: string; name: string; publication?: BuildPublicationTarget },
+    input: { kind: string; name: string; publication?: IBuildPublicationTarget },
 ): Promise<void> {
     if (input.publication || input.kind === 'skill') return;
     if ((await pool.query('SELECT id FROM ai_plugins WHERE lower(name)=lower($1)', [input.name])).rows.length)
@@ -97,7 +97,7 @@ async function origins(
     kind: string,
     id: string,
     lock = false,
-): Promise<BuildSourceOrigin[]> {
+): Promise<IBuildSourceOrigin[]> {
     const { rows } = await db.query(
         `SELECT repository,external_id,revision,asset_version,descriptor_sha256,native_version,native_hash FROM asset_source_receipts WHERE asset_kind=$1 AND native_id=$2 AND active ORDER BY repository,external_id${lock ? ' FOR UPDATE' : ''}`,
         [kind, id],
@@ -112,7 +112,7 @@ async function origins(
         nativeHash: String(row.native_hash),
     }));
 }
-const sourceHash = (nativeHash: string, owners: BuildSourceOrigin[]) =>
+const sourceHash = (nativeHash: string, owners: IBuildSourceOrigin[]) =>
     publicationHash({ nativeHash, origins: owners });
 
 /** Caller holds the asset lock before the dependency graph and native row locks. */
@@ -121,7 +121,7 @@ async function toolSnapshot(
     kind: 'mcp' | 'plugin',
     id: string,
     lock = false,
-): Promise<{ card: IAiPlugin; pin: PinnedBuildPublication }> {
+): Promise<{ card: IAiPlugin; pin: IPinnedBuildPublication }> {
     const { rows } = await db.query('SELECT * FROM ai_plugins WHERE id=$1 AND kind=$2' + (lock ? ' FOR UPDATE' : ''), [
         id,
         kind,
@@ -172,7 +172,7 @@ export async function managedRebuildPublication(
     kind: 'mcp' | 'plugin',
     id: string,
     sourceId: string,
-): Promise<{ name: string; publication: BuildPublicationTarget }> {
+): Promise<{ name: string; publication: IBuildPublicationTarget }> {
     const { card, pin } = await readToolSnapshot(pool, kind, id);
     if (
         !pin.origins.some((origin) => origin.externalId === sourceId) ||
@@ -194,7 +194,7 @@ export async function publicationTargetPreview(
     pool: Pool,
     kind: unknown,
     id: unknown,
-): Promise<BuildPublicationTargetPreview> {
+): Promise<IBuildPublicationTargetPreview> {
     if (!['mcp', 'plugin', 'skill'].includes(String(kind)) || !validCatalogId(id))
         throw new BadRequestException('Выберите карточку общего каталога.');
     if (kind === 'skill') {
@@ -237,8 +237,8 @@ export async function publicationTargetPreview(
 /** Pins are prepared by the server, then checked again inside enqueue and publication. */
 export async function pinBuildPublication(
     pool: Pool,
-    input: { publication?: BuildPublicationTarget; kind: string; name: string },
-): Promise<PinnedBuildPublication | undefined> {
+    input: { publication?: IBuildPublicationTarget; kind: string; name: string },
+): Promise<IPinnedBuildPublication | undefined> {
     if (!input.publication) return;
     if (input.kind === 'skill') throw new BadRequestException(unsupportedSkillUpdate);
     const { pin } = await readToolSnapshot(pool, input.kind as 'mcp' | 'plugin', input.publication.catalogId);
@@ -253,7 +253,7 @@ export async function pinBuildPublication(
     return pin;
 }
 
-export async function lockBuildPublication(client: PoolClient, pin: PinnedBuildPublication): Promise<void> {
+export async function lockBuildPublication(client: PoolClient, pin: IPinnedBuildPublication): Promise<void> {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
         'asset-management:' + pin.kind + ':' + pin.catalogId,
     ]);

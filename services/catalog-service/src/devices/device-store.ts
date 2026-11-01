@@ -17,7 +17,7 @@ import { recordDeviceOperation, notifyDeviceOperations } from './device-operatio
 import { workspaceReport, bridgePresence } from './device-report';
 
 export const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
-export interface Device {
+export interface IDevice {
     id: string;
     email: string;
     role: string;
@@ -210,7 +210,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             client.release();
         }
     }
-    async identity(token: unknown): Promise<Device> {
+    async identity(token: unknown): Promise<IDevice> {
         if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) {
             throw new UnauthorizedException('MCP не подключён.');
         }
@@ -218,7 +218,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
             'SELECT id,email,role,name,fingerprint,last_seen,report,revoked FROM bridge_devices WHERE token_hash=$1 AND NOT revoked AND expires_at>now()',
             [digest(token)],
         );
-        const device = rows[0] as Device | undefined;
+        const device = rows[0] as IDevice | undefined;
         if (!device) {
             throw new UnauthorizedException('Доступ MCP истёк или отозван.');
         }
@@ -233,7 +233,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         id: string,
         allowExpired = false,
         db: Pick<PoolClient, 'query'> = this.pool,
-    ): Promise<Device> {
+    ): Promise<IDevice> {
         const { rows } = await db.query(
             'SELECT id,email,role,name,fingerprint,last_seen,report,revoked FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND ($3::boolean OR expires_at>now())',
             [id, actor.email, allowExpired],
@@ -241,7 +241,7 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         if (!rows[0]) {
             throw new ForbiddenException('Этот MCP не подключён к вашему профилю.');
         }
-        return rows[0] as Device;
+        return rows[0] as IDevice;
     }
     async list(actor: IAccessActor) {
         return (
@@ -290,13 +290,13 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         await notifyDeviceOperations();
         return { ok: true };
     }
-    async heartbeat(device: Device, report: unknown) {
+    async heartbeat(device: IDevice, report: unknown) {
         const checked = workspaceReport(report);
         await this.pool.query('UPDATE bridge_devices SET last_seen=now(),report=$2 WHERE id=$1', [device.id, checked]);
         return { ok: true };
     }
     /** Preserve authoritative project data when only the worker's runtime identity is available. */
-    async presence(device: Device, report: unknown) {
+    async presence(device: IDevice, report: unknown) {
         const checked = bridgePresence(report);
         await this.pool.query(
             `UPDATE bridge_devices SET last_seen=now(),report=CASE WHEN jsonb_typeof(report)='object' THEN report || $2::jsonb ELSE report END WHERE id=$1`,

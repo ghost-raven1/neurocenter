@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { stateDir } from './state.js';
 import { readBoundedUtf8 } from './read-bounded.js';
 import { DISK_RESERVE_BYTES, LOCK_BYTES_LIMIT, RECOVERY_BYTES_LIMIT } from './installation-limits.js';
-import type { FileChange } from './installation-journal.js';
+import type { IFileChange } from './installation-journal.js';
 
 /** Создаёт только настоящие каталоги: приватный журнал не может уйти через симлинк. */
 export async function recoveryDirectory(directory: string, create = true): Promise<void> {
@@ -65,7 +65,7 @@ async function existingDirectory(target: string): Promise<string> {
 export async function assertInstallationSpace(
     root: string,
     encodedJournalBytes = 0,
-    changes: FileChange[] = [],
+    changes: IFileChange[] = [],
 ): Promise<void> {
     const state = await existingDirectory(stateDir());
     const targets = [
@@ -222,7 +222,7 @@ async function budgetLock(): Promise<() => Promise<void>> {
 export async function withRecoveryBudget<T>(
     root: string,
     encodedJournalBytes: number,
-    changes: FileChange[],
+    changes: IFileChange[],
     creating: boolean,
     action: () => Promise<T>,
 ): Promise<T> {

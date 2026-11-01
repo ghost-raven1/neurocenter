@@ -1,3 +1,6 @@
-import { ReactNode } from "react";
+import { ReactNode } from 'react';
 
-export interface IBoundaryProps { children: ReactNode; reload: () => void; }
+export interface IBoundaryProps {
+    children: ReactNode;
+    reload: () => void;
+}

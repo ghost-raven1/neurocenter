@@ -1,13 +1,13 @@
 import { projectFolder, projectBindingId, projectInstanceId } from '../../bridge/workspace.js';
-import { readState, hub, type Credentials } from '../../bridge/state.js';
-import { verify, type Package } from '../../bridge/package.js';
+import { readState, hub, type ICredentials } from '../../bridge/state.js';
+import { verify, type IPackage } from '../../bridge/package.js';
 import { inspectInstallation } from '../../bridge/installation-inspection.js';
 import { assertInspectionIdentity } from '../../bridge/inspection-identity.js';
 import { resolvePreparedRuntimeArtifact } from '../runtime-artifacts/cache.js';
 import { memoryRecipeSupported, type MemorySyncPayload } from './contract.js';
 
 /** Reuse the installed, inspected runtime; never run an arbitrary command from OpenCode configuration. */
-export async function memoryTarget(payload: MemorySyncPayload, pkg: Package, deviceId: string) {
+export async function memoryTarget(payload: MemorySyncPayload, pkg: IPackage, deviceId: string) {
     verify(pkg);
     if (
         !memoryRecipeSupported(pkg) ||
@@ -21,7 +21,7 @@ export async function memoryTarget(payload: MemorySyncPayload, pkg: Package, dev
     const assertCurrent = async () => {
         if (
             hub() !== site ||
-            (await readState<Credentials>('credentials'))?.deviceId !== deviceId ||
+            (await readState<ICredentials>('credentials'))?.deviceId !== deviceId ||
             (await projectFolder(payload.projectId)) !== root ||
             (await projectBindingId(payload.projectId)) !== payload.bindingId ||
             (await projectInstanceId(payload.projectId)) !== payload.instanceId

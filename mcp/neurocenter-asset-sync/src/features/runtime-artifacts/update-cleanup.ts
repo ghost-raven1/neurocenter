@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { api, hub, readState, type Credentials } from '../../bridge/state.js';
+import { api, hub, readState, type ICredentials } from '../../bridge/state.js';
 
 export const updateCleanup = createRequire(import.meta.url)(
     fileURLToPath(
@@ -16,7 +16,7 @@ export const updateCleanup = createRequire(import.meta.url)(
 
 /** Offline or disabled maintenance leaves backups intact and never blocks the worker. */
 export async function cleanupInstalledBridge(
-    policy: import('../../../../../services/shared/runtime-cache-policy.cjs').BridgeUpdateCleanupPolicy,
+    policy: import('../../../../../services/shared/runtime-cache-policy.cjs').IBridgeUpdateCleanupPolicy,
     { signal }: { signal?: AbortSignal } = {},
 ) {
     signal?.throwIfAborted();
@@ -35,7 +35,7 @@ export async function cleanupInstalledBridge(
     )
         return;
     const site = hub(),
-        deviceId = (await readState<Credentials>('credentials'))?.deviceId;
+        deviceId = (await readState<ICredentials>('credentials'))?.deviceId;
     if (!deviceId) return;
     const beforeDelete = async () => {
         signal?.throwIfAborted();
@@ -43,7 +43,7 @@ export async function cleanupInstalledBridge(
         const current = await readBridgeCleanupPolicy();
         if (
             hub() !== site ||
-            (await readState<Credentials>('credentials'))?.deviceId !== deviceId ||
+            (await readState<ICredentials>('credentials'))?.deviceId !== deviceId ||
             JSON.stringify(current) !== JSON.stringify(policy)
         )
             throw new Error('Настройки или подключение изменились; копия сохранена.');
@@ -52,7 +52,7 @@ export async function cleanupInstalledBridge(
         if (
             grant?.ok !== true ||
             hub() !== site ||
-            (await readState<Credentials>('credentials'))?.deviceId !== deviceId ||
+            (await readState<ICredentials>('credentials'))?.deviceId !== deviceId ||
             JSON.stringify(await readBridgeCleanupPolicy()) !== JSON.stringify(policy)
         )
             throw new Error('Очистка обновлений не разрешена.');

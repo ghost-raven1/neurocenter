@@ -2,7 +2,7 @@ import { ForbiddenException, HttpException, Injectable, OnApplicationShutdown, O
 import type { Request } from 'express';
 import { createPool } from '../database/pool';
 import { ModelsService } from '../models/models.service';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { validateModelId } from '../models/model-validation';
 import { canReadCommon } from '../access/access.model';
 import { readFeatures } from '../../../shared/feature-client.cjs';
@@ -13,7 +13,7 @@ import {
 } from './model-rate-limits.repository';
 import { modelRateLimitInput } from './model-rate-limits.validation';
 import { modelRateWait } from './model-rate-limits.wait';
-import type { ModelRateLimitPolicy, ModelRateLimitView } from './model-rate-limits.types';
+import type { IModelRateLimitPolicy, IModelRateLimitView } from './model-rate-limits.interfaces';
 
 /** Catalog-wide policy uses a separate pool so fresh authorization never waits on its own client. */
 @Injectable()
@@ -47,10 +47,10 @@ export class ModelRateLimitsService implements OnModuleInit, OnApplicationShutdo
             throw rateStoreUnavailable();
         }
     }
-    async read(req: Request, id: string): Promise<ModelRateLimitView> {
+    async read(req: Request, id: string): Promise<IModelRateLimitView> {
         validateModelId(id);
         await this.authorizeRead(req, id);
-        let value: ModelRateLimitPolicy;
+        let value: IModelRateLimitPolicy;
         try {
             value = await this.repository.read(id);
         } catch {
@@ -59,7 +59,7 @@ export class ModelRateLimitsService implements OnModuleInit, OnApplicationShutdo
         const featureEnabled = await this.featureEnabled();
         return { ...value, canManage: await this.authorizeRead(req, id), featureEnabled };
     }
-    async save(req: Request, id: string, raw: unknown): Promise<ModelRateLimitView> {
+    async save(req: Request, id: string, raw: unknown): Promise<IModelRateLimitView> {
         validateModelId(id);
         const input = modelRateLimitInput(raw),
             actor = await this.models.requireMain(req);

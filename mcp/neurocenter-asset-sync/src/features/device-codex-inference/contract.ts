@@ -1,10 +1,10 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 export type {
-    DeviceCodexPayload,
-    DeviceCodexContext,
-    DeviceCodexResult,
-    DeviceCodexResponse,
+    IDeviceCodexPayload as DeviceCodexPayload,
+    IDeviceCodexContext as DeviceCodexContext,
+    TDeviceCodexResult as DeviceCodexResult,
+    IDeviceCodexResponse as DeviceCodexResponse,
 } from '../../../../../services/shared/device-codex-inference.cjs';
 const shared = createRequire(import.meta.url)(
     fileURLToPath(

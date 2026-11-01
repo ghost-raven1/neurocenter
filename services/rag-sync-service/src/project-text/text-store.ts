@@ -9,10 +9,10 @@ import {
     textKnowledgeAdmission,
 } from '../../../shared/project-text-knowledge.cjs';
 import type {
-    TextCorpusState,
-    TextUploadReceipt,
-    TextSearchResult,
-    TextAdmission,
+    ITextCorpusState,
+    ITextUploadReceipt,
+    ITextSearchResult,
+    ITextAdmission,
 } from '../../../shared/project-text-knowledge.cjs';
 import { mapRagQuotaError } from '../rag/quota/rag-quota';
 import { requireRagFeatures } from '../rag/rag-features';
@@ -26,7 +26,7 @@ import {
     textState,
     textHash,
     textExcerpt,
-    type TextActor,
+    type ITextActor,
 } from './text-values';
 import { readTextAdmission } from './text-policy';
 
@@ -34,10 +34,10 @@ import { readTextAdmission } from './text-policy';
 export class ProjectTextStore {
     constructor(
         private readonly pool: Pool,
-        private readonly policy: () => Promise<TextAdmission> = readTextAdmission,
+        private readonly policy: () => Promise<ITextAdmission> = readTextAdmission,
     ) {}
 
-    async state(project: string): Promise<TextCorpusState> {
+    async state(project: string): Promise<ITextCorpusState> {
         const projectId = textProject(project);
         return textState(
             projectId,
@@ -45,7 +45,7 @@ export class ProjectTextStore {
         );
     }
 
-    async receipt(project: string, key: string, who: TextActor): Promise<TextUploadReceipt | null> {
+    async receipt(project: string, key: string, who: ITextActor): Promise<ITextUploadReceipt | null> {
         const projectId = textProject(project),
             requestKey = textRequestKey(key),
             actor = textActor(who);
@@ -58,7 +58,7 @@ export class ProjectTextStore {
         key: string,
         email: string,
         hash?: string,
-    ): Promise<TextUploadReceipt | null> {
+    ): Promise<ITextUploadReceipt | null> {
         const row = (
             await db.query(
                 'SELECT request_hash,result FROM project_text_receipts WHERE project_key=$1 AND actor_email=$2 AND request_key=$3',
@@ -68,11 +68,11 @@ export class ProjectTextStore {
         if (!row) return null;
         if (hash !== undefined && row.request_hash !== hash)
             throw new ConflictException('Ключ повтора уже закреплён за другим содержимым.');
-        return row.result as TextUploadReceipt;
+        return row.result as ITextUploadReceipt;
     }
 
     /** Exact committed recovery precedes flags and authorization for admission of a new write. */
-    async upload(project: string, raw: unknown, requestHash: string, who: TextActor): Promise<TextUploadReceipt> {
+    async upload(project: string, raw: unknown, requestHash: string, who: ITextActor): Promise<ITextUploadReceipt> {
         const projectId = textProject(project),
             actor = textActor(who),
             input = textInput((value) => normalizeTextUpload(value, TEXT_KNOWLEDGE_CEILINGS), raw);
@@ -146,7 +146,7 @@ export class ProjectTextStore {
                     ],
                 )
             ).rows[0];
-            const result: TextUploadReceipt = {
+            const result: ITextUploadReceipt = {
                 ...textState(projectId, state),
                 requestKey: input.requestKey,
                 requestHash,
@@ -171,7 +171,7 @@ export class ProjectTextStore {
     }
 
     /** One repeatable-read snapshot binds citations to a complete old or new corpus revision. */
-    async search(project: string, raw: unknown, retained?: TextAdmission): Promise<TextSearchResult> {
+    async search(project: string, raw: unknown, retained?: ITextAdmission): Promise<ITextSearchResult> {
         const projectId = textProject(project),
             input = textInput((value) => normalizeTextSearch(value, TEXT_KNOWLEDGE_CEILINGS), raw);
         await requireRagFeatures(['project_text_knowledge']);

@@ -2,7 +2,7 @@ import { FC } from 'react';
 import { useSelector } from 'react-redux';
 import { IPermissionProps } from './interfaces';
 
-import { RootState } from '../../../store';
+import { TRootState } from '../../../store';
 
 /**
  * Обёртка-гейт ABAC: рендерит children только при наличии `permissionKey`
@@ -11,14 +11,12 @@ import { RootState } from '../../../store';
  * @component
  */
 const Permission: FC<IPermissionProps> = ({ permissionKey, politic, isLocalAllowed, children }) => {
-    const permissions = useSelector((state: RootState) => state.userBlock.policies[politic.politicName]) as
+    const permissions = useSelector((state: TRootState) => state.userBlock.policies[politic.politicName]) as
         string[] | undefined;
 
     const hasMainPermission = (permissions ?? []).includes(permissionKey);
 
-    const isAllowed = typeof isLocalAllowed === 'boolean'
-        ? hasMainPermission && isLocalAllowed
-        : hasMainPermission;
+    const isAllowed = typeof isLocalAllowed === 'boolean' ? hasMainPermission && isLocalAllowed : hasMainPermission;
 
     if (!isAllowed) {
         return null;

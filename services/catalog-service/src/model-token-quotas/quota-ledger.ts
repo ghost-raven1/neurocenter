@@ -1,31 +1,31 @@
 import { ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import type { UsageTerminal } from '../model-usage/model-usage.types';
+import type { IUsageTerminal } from '../model-usage/model-usage.interfaces';
 import { quotaPolicyRow } from './model-token-quotas.repository';
 import { quotaCounters } from './quota-counters';
 import { quotaTransaction, quotaPairLock, quotaUnavailable } from './quota-database';
 import type {
-    ModelTokenQuotaAdmission,
-    ModelTokenQuotaEstimate,
-    ModelTokenQuotaState,
-} from './model-token-quotas.types';
+    IModelTokenQuotaAdmission,
+    IModelTokenQuotaEstimate,
+    TModelTokenQuotaState,
+} from './model-token-quotas.interfaces';
 
-interface QuotaUsageRow {
+interface IQuotaUsageRow {
     id: string;
     worker_id: string;
     actor_email: string | null;
     model_id: string;
     status: string;
     dispatch_count: number | null;
-    quota_state: ModelTokenQuotaState | null;
+    quota_state: TModelTokenQuotaState | null;
     quota_reserved_tokens: string | null;
     quota_debit_tokens: string | null;
     quota_metadata: Record<string, unknown> | null;
     quota_settlement_digest: string | null;
     active_lease: boolean | null;
 }
-const positiveEstimate = (estimate: ModelTokenQuotaEstimate): boolean =>
+const positiveEstimate = (estimate: IModelTokenQuotaEstimate): boolean =>
     [estimate.inputTokens, estimate.outputTokens, estimate.totalTokens].every(
         (n) => Number.isSafeInteger(n) && n >= 0,
     ) &&
@@ -34,20 +34,20 @@ const positiveEstimate = (estimate: ModelTokenQuotaEstimate): boolean =>
     estimate.totalTokens === estimate.inputTokens + estimate.outputTokens;
 const clock = async (db: Pick<PoolClient, 'query'>): Promise<string> =>
     (await db.query<{ at: string }>('SELECT clock_timestamp()::text AS at')).rows[0].at;
-const row = async (db: Pick<PoolClient, 'query'>, id: string, lock = false): Promise<QuotaUsageRow | undefined> =>
+const row = async (db: Pick<PoolClient, 'query'>, id: string, lock = false): Promise<IQuotaUsageRow | undefined> =>
     (
-        await db.query<QuotaUsageRow>(
+        await db.query<IQuotaUsageRow>(
             'SELECT id,worker_id,actor_email,model_id,status,dispatch_count,quota_state,quota_reserved_tokens,quota_debit_tokens,quota_metadata,quota_settlement_digest,lease_until>clock_timestamp() AS active_lease FROM model_usage_calls WHERE id=$1' +
                 (lock ? ' FOR UPDATE' : ''),
             [id],
         )
     ).rows[0];
 const assertOwned = (
-    receipt: QuotaUsageRow | undefined,
+    receipt: IQuotaUsageRow | undefined,
     worker: string,
     email?: string,
     modelId?: string,
-): QuotaUsageRow => {
+): IQuotaUsageRow => {
     if (
         !receipt ||
         receipt.worker_id !== worker ||
@@ -107,7 +107,7 @@ async function checkBalance(
 export async function reserveUsageQuota(
     pool: Pool,
     worker: string,
-    input: ModelTokenQuotaAdmission,
+    input: IModelTokenQuotaAdmission,
     signal?: AbortSignal,
 ): Promise<boolean> {
     if (!positiveEstimate(input.estimate)) throw quotaUnavailable();
@@ -124,7 +124,7 @@ export async function reserveUsageQuota(
             const receipt = assertOwned(await row(db, input.usageId, true), worker, input.userEmail, input.model.id);
             if (receipt.status !== 'pending' || receipt.active_lease !== true) throw quotaUnavailable();
             if (receipt.quota_state === 'reserved') {
-                const saved = receipt.quota_metadata?.estimate as ModelTokenQuotaEstimate | undefined;
+                const saved = receipt.quota_metadata?.estimate as IModelTokenQuotaEstimate | undefined;
                 if (
                     saved?.requestDigest !== input.estimate.requestDigest ||
                     saved?.totalTokens !== input.estimate.totalTokens ||
@@ -243,7 +243,12 @@ export async function releaseUndispatchedQuota(pool: Pool, worker: string, id: s
 const actual = (n: number | null): bigint | null =>
     n !== null && Number.isSafeInteger(n) && n >= 0 ? BigInt(n) : null;
 /** Settlement modifies the same usage receipt, preserves nullable actuals and never repeats paid work. */
-export async function finishQuotaUsage(pool: Pool, worker: string, id: string, value: UsageTerminal): Promise<boolean> {
+export async function finishQuotaUsage(
+    pool: Pool,
+    worker: string,
+    id: string,
+    value: IUsageTerminal,
+): Promise<boolean> {
     return transaction(pool, async (db) => {
         const found = assertOwned(await row(db, id), worker);
         if (!found.actor_email) return false;
@@ -274,7 +279,7 @@ export async function finishQuotaUsage(pool: Pool, worker: string, id: string, v
         const reserve = BigInt(receipt.quota_reserved_tokens ?? 0),
             previous = BigInt(receipt.quota_debit_tokens ?? 0),
             basis = reserve > previous ? reserve : previous;
-        const state: ModelTokenQuotaState = undispatched ? 'released' : complete ? 'settled' : 'unknown';
+        const state: TModelTokenQuotaState = undispatched ? 'released' : complete ? 'settled' : 'unknown';
         const debit = undispatched ? 0n : complete ? known : known > basis ? known : basis;
         await db.query(
             `UPDATE model_usage_calls SET status=$3,input_tokens=$4,output_tokens=$5,latency_ms=$6,dispatch_count=$7,dispatched_at=$8,rate_wait_ms=$9,provider_latency_ms=$10,failure_code=$11,

@@ -8,10 +8,10 @@ import {
     type DeviceCodexPayload,
     type DeviceCodexResult,
 } from './contract.js';
-import type { Completion } from '../../bridge/completions.js';
-import { sanitizeCodexDiagnostic, type CodexDiagnostic } from './diagnostics.js';
+import type { ICompletion } from '../../bridge/completions.js';
+import { sanitizeCodexDiagnostic, type ICodexDiagnostic } from './diagnostics/diagnostics.js';
 
-export interface CodexReceipt {
+export interface ICodexReceipt {
     schemaVersion: 1;
     jobId: string;
     lease: string;
@@ -20,21 +20,21 @@ export interface CodexReceipt {
     payloadHash: string;
     state: 'started' | 'completed';
     result?: DeviceCodexResult;
-    diagnostic?: CodexDiagnostic;
+    diagnostic?: ICodexDiagnostic;
 }
-type ReceiptPointer = Pick<CodexReceipt, 'jobId' | 'lease' | 'deviceId' | 'callId' | 'payloadHash'>;
+type TReceiptPointer = Pick<ICodexReceipt, 'jobId' | 'lease' | 'deviceId' | 'callId' | 'payloadHash'>;
 const indexName = 'device-codex-pending',
     uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const key = (callId: string) => hash('device-codex-receipt:' + callId);
 /** Generic completion records carry delivery metadata; the answer stays in its private receipt. */
-export function codexCompletionSummary(result: DeviceCodexResult): Pick<Completion, 'state' | 'result'> {
+export function codexCompletionSummary(result: DeviceCodexResult): Pick<ICompletion, 'state' | 'result'> {
     return {
         state: 'response' in result ? 'succeeded' : 'failed',
         result: { protocol: DEVICE_CODEX_PROTOCOL, callId: result.callId },
     };
 }
-async function pointers(): Promise<ReceiptPointer[]> {
-    const value = (await readState<ReceiptPointer[]>(indexName)) ?? [];
+async function pointers(): Promise<TReceiptPointer[]> {
+    const value = (await readState<TReceiptPointer[]>(indexName)) ?? [];
     if (
         !Array.isArray(value) ||
         value.length > 1024 ||
@@ -57,8 +57,8 @@ export async function readCodexReceipt(
     jobId: string,
     deviceId: string,
     payload: DeviceCodexPayload,
-): Promise<CodexReceipt | undefined> {
-    const receipt = await readPrivateConfiguration<CodexReceipt>(key(payload.callId));
+): Promise<ICodexReceipt | undefined> {
+    const receipt = await readPrivateConfiguration<ICodexReceipt>(key(payload.callId));
     if (
         receipt &&
         (receipt.schemaVersion !== 1 ||
@@ -74,7 +74,7 @@ export async function readCodexReceipt(
     return receipt;
 }
 /** The directory fsync makes the no-retry marker durable before the external send is admitted. */
-export async function writeCodexReceipt(receipt: CodexReceipt, expected: CodexReceipt | undefined): Promise<void> {
+export async function writeCodexReceipt(receipt: ICodexReceipt, expected: ICodexReceipt | undefined): Promise<void> {
     if (receipt.result) normalizeDeviceCodexResult(receipt.result);
     const pending = await pointers(),
         previous = pending.find((item) => item.callId === receipt.callId);
@@ -98,9 +98,9 @@ export async function writeCodexReceipt(receipt: CodexReceipt, expected: CodexRe
     await syncDirectory(path.join(stateDir(), 'local-configuration'));
 }
 /** A crash between private completion and generic ACK creation restores delivery without recovering a prompt. */
-export async function recoverCodexCompletions(save: (completion: Completion) => Promise<void>): Promise<void> {
+export async function recoverCodexCompletions(save: (completion: ICompletion) => Promise<void>): Promise<void> {
     for (const pointer of await pointers()) {
-        let receipt = await readPrivateConfiguration<CodexReceipt>(key(pointer.callId));
+        let receipt = await readPrivateConfiguration<ICodexReceipt>(key(pointer.callId));
         if (
             receipt &&
             (receipt.jobId !== pointer.jobId ||
@@ -111,7 +111,7 @@ export async function recoverCodexCompletions(save: (completion: Completion) => 
             throw new Error('Квитанция Codex изменилась.');
         if (receipt?.state !== 'completed') {
             const diagnostic = sanitizeCodexDiagnostic(receipt?.diagnostic);
-            const completed: CodexReceipt = {
+            const completed: ICodexReceipt = {
                 schemaVersion: 1,
                 ...pointer,
                 state: 'completed',
@@ -149,7 +149,7 @@ export async function codexDeliveryResult(
     deviceId: string | undefined,
     callId: string,
 ): Promise<DeviceCodexResult> {
-    const receipt = await readPrivateConfiguration<CodexReceipt>(key(callId));
+    const receipt = await readPrivateConfiguration<ICodexReceipt>(key(callId));
     if (
         !receipt ||
         receipt.schemaVersion !== 1 ||

@@ -4,28 +4,32 @@ import {
     normalizeAgentMethodWorkflowResult,
 } from '../../../shared/agent-method-workflow.cjs';
 import type { IAccessActor } from '../access/access.model';
-import type { Job, JobInput } from '../devices/device-job.model';
+import type { IJob, IJobInput } from '../devices/device-job.model';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ProjectChatPolicy } from '../project-chat/project-chat.policy';
 import { assertProjectChatRoomAccess } from '../project-chat/project-chat-room-access';
 import { projectChatUuid } from '../project-chat/project-chat.validation';
-import type { ProjectChatDb, ProjectChatMessageRow, ProjectChatRoomRow } from '../project-chat/project-chat.types';
-import type { MethodChatOrigin, MethodChatPublication } from './chat-workflows.types';
+import type {
+    TProjectChatDb,
+    IProjectChatMessageRow,
+    IProjectChatRoomRow,
+} from '../project-chat/project-chat.interfaces';
+import type { IMethodChatOrigin, TMethodChatPublication } from './chat-workflows.interfaces';
 
-interface Link {
+interface ILink {
     job_id: string;
     project_id: string;
     room_id: string;
     source_message_id: string;
     owner_email: string;
     owner_role: string;
-    publication_state: MethodChatPublication;
+    publication_state: TMethodChatPublication;
 }
-type LinkedJob = Pick<Job, 'id' | 'kind'> & { payload?: unknown };
+type TLinkedJob = Pick<IJob, 'id' | 'kind'> & { payload?: unknown };
 const policy = new ProjectChatPolicy();
 
 /** Origin is server metadata. It never enters the bridge protocol or changes a legacy job. */
-export function methodChatOrigin(input: JobInput): MethodChatOrigin | undefined {
+export function methodChatOrigin(input: IJobInput): IMethodChatOrigin | undefined {
     if (
         input.kind !== AGENT_METHOD_WORKFLOW_JOB ||
         !Object.prototype.hasOwnProperty.call(input.workflow ?? {}, 'origin')
@@ -62,16 +66,16 @@ export function methodChatOrigin(input: JobInput): MethodChatOrigin | undefined 
 
 /** Caller owns the transaction: membership, source and private-room audience stay locked until commit. */
 export async function assertMethodChatOrigin(
-    db: ProjectChatDb,
+    db: TProjectChatDb,
     projectId: string,
     actor: IAccessActor,
-    origin: MethodChatOrigin,
+    origin: IMethodChatOrigin,
     recovery = false,
     write = false,
 ): Promise<void> {
     await policy.authorize(db, projectId, actor, 2, true, recovery);
     const room = (
-        await db.query<ProjectChatRoomRow>(
+        await db.query<IProjectChatRoomRow>(
             'SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2 ' + (write ? 'FOR UPDATE' : 'FOR SHARE'),
             [projectId, origin.roomId],
         )
@@ -79,7 +83,7 @@ export async function assertMethodChatOrigin(
     if (!room) throw new NotFoundException('Исходный диалог не найден.');
     await assertProjectChatRoomAccess(db, room, actor.email);
     const source = (
-        await db.query<Pick<ProjectChatMessageRow, 'kind'>>(
+        await db.query<Pick<IProjectChatMessageRow, 'kind'>>(
             'SELECT kind FROM project_chat_messages WHERE project_id=$1 AND room_id=$2 AND id=$3 FOR SHARE',
             [projectId, origin.roomId, origin.messageId],
         )
@@ -90,11 +94,11 @@ export async function assertMethodChatOrigin(
 
 /** New linked jobs and their durable origin commit together; receipt replay never calls this again. */
 export async function saveMethodChatOrigin(
-    db: ProjectChatDb,
+    db: TProjectChatDb,
     jobId: string,
     projectId: string,
     actor: IAccessActor,
-    origin: MethodChatOrigin,
+    origin: IMethodChatOrigin,
 ): Promise<void> {
     await requireFeaturesEnabled(['project_agent_chat_workflows']);
     await assertMethodChatOrigin(db, projectId, actor, origin, false, true);
@@ -110,10 +114,10 @@ export async function saveMethodChatOrigin(
 }
 
 /** Poll fences keep optional origin authority independent from the immutable native-agent proof. */
-export async function assertMethodChatJob(db: ProjectChatDb, job: Pick<LinkedJob, 'id' | 'kind'>): Promise<void> {
+export async function assertMethodChatJob(db: TProjectChatDb, job: Pick<TLinkedJob, 'id' | 'kind'>): Promise<void> {
     if (job.kind !== AGENT_METHOD_WORKFLOW_JOB) return;
     const link = (
-        await db.query<Link>('SELECT * FROM project_chat_method_workflows WHERE job_id=$1 FOR SHARE', [job.id])
+        await db.query<ILink>('SELECT * FROM project_chat_method_workflows WHERE job_id=$1 FOR SHARE', [job.id])
     ).rows[0];
     if (!link) return;
     await requireFeaturesEnabled(['project_agent_chat_workflows']);
@@ -126,13 +130,13 @@ export async function assertMethodChatJob(db: ProjectChatDb, job: Pick<LinkedJob
 }
 
 /** Publication failure never discards observed work or asks a bridge to execute it again. */
-export async function publishMethodChatResult(db: ProjectChatDb, job: LinkedJob, result?: unknown): Promise<void> {
+export async function publishMethodChatResult(db: TProjectChatDb, job: TLinkedJob, result?: unknown): Promise<void> {
     if (job.kind !== AGENT_METHOD_WORKFLOW_JOB) return;
     const link = (
-        await db.query<Link>('SELECT * FROM project_chat_method_workflows WHERE job_id=$1 FOR UPDATE', [job.id])
+        await db.query<ILink>('SELECT * FROM project_chat_method_workflows WHERE job_id=$1 FOR UPDATE', [job.id])
     ).rows[0];
     if (!link || link.publication_state !== 'pending') return;
-    let state: MethodChatPublication = 'published',
+    let state: TMethodChatPublication = 'published',
         publicResult: unknown = null;
     try {
         await assertMethodChatOrigin(

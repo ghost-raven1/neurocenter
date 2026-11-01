@@ -4,18 +4,18 @@ import type { Request } from 'express';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
 import type { ModelChatProjectContext } from '../model-chat/chat-project-context';
 import type {
-    ChatProjectEvidence,
-    ChatProjectSource,
-    PreparedProjectContext,
-} from '../model-chat/chat-project-context.types';
+    IChatProjectEvidence,
+    IChatProjectSource,
+    IPreparedProjectContext,
+} from '../model-chat/chat-project-context.interfaces';
 import type { IChatContextSettings } from '../model-chat/chat-context';
-import type { ChatMessage } from '../model-chat/chat.types';
+import type { IChatMessage } from '../model-chat/chat.interfaces';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { requireFeatureEnabled, requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ROLE_BUDGET, ROLE_RAG_POLICY, SYSTEM_ROLE_DEFINITIONS, systemRole } from './system-role.definitions';
-import type { RoleDb } from './system-role.repository';
+import type { TRoleDb } from './system-role.repository';
 import { roleProjection } from './system-role.privacy';
-import type { RoleProjectEvidence, RoleProjectGrant, RoleRunRow, SystemRoleId } from './system-role.types';
+import type { IRoleProjectEvidence, IRoleProjectGrant, IRoleRunRow, TSystemRoleId } from './system-role.interfaces';
 
 // Three 4096-byte child answers plus their receipts and the 8192-byte summary fit the existing 32KiB result row.
 const RECEIPT_BYTES = ROLE_RAG_POLICY.receiptBytes;
@@ -26,7 +26,7 @@ const sourceReceipt = ({
     title,
     startLine,
     endLine,
-}: ChatProjectSource): RoleProjectEvidence['sources'][number] => ({
+}: IChatProjectSource): IRoleProjectEvidence['sources'][number] => ({
     id,
     path,
     ...(title === undefined ? {} : { title }),
@@ -36,12 +36,12 @@ const sourceReceipt = ({
 
 /** One accepted grant and one memoized retrieval serve the whole durable run, including tools and delegates. */
 export class SystemRoleRagContext {
-    private retrieval?: Promise<PreparedProjectContext>;
+    private retrieval?: Promise<IPreparedProjectContext>;
     readonly requiredFeatures: readonly ('project_search' | 'project_text_knowledge')[];
     constructor(
         private readonly context: ModelChatProjectContext | undefined,
         private readonly req: Request,
-        private readonly row: RoleRunRow,
+        private readonly row: IRoleRunRow,
         private readonly signal: AbortSignal,
         private readonly checkpoint: () => Promise<unknown>,
         private readonly embed: IModelInferenceRuntime['infer'],
@@ -50,7 +50,7 @@ export class SystemRoleRagContext {
             ? [row.snapshot.projectContext.scope === 'project-text' ? 'project_text_knowledge' : 'project_search']
             : [];
     }
-    private grant(): RoleProjectGrant | undefined {
+    private grant(): IRoleProjectGrant | undefined {
         const grant = this.row.snapshot.projectContext;
         if (grant?.textAdmission) {
             try {
@@ -74,7 +74,7 @@ export class SystemRoleRagContext {
         }
         return grant;
     }
-    async assertCurrent(db?: RoleDb): Promise<void> {
+    async assertCurrent(db?: TRoleDb): Promise<void> {
         this.signal.throwIfAborted();
         const grant = this.grant();
         if (grant) {
@@ -90,7 +90,7 @@ export class SystemRoleRagContext {
             await this.assertCurrent();
         }
     }
-    private load(grant: RoleProjectGrant, callSignal: AbortSignal): Promise<PreparedProjectContext> {
+    private load(grant: IRoleProjectGrant, callSignal: AbortSignal): Promise<IPreparedProjectContext> {
         return (this.retrieval ??= withModelUsage(
             {
                 purpose: 'agent',
@@ -144,16 +144,16 @@ export class SystemRoleRagContext {
     }
     /** No target/path ACL is inferred: only explicitly approved project-index recipients receive this channel. */
     async fit(
-        id: SystemRoleId,
-        messages: ChatMessage[],
+        id: TSystemRoleId,
+        messages: IChatMessage[],
         settings: IChatContextSettings,
         planning = false,
         callSignal = this.signal,
-    ): Promise<{ messages: ChatMessage[]; projectContext?: RoleProjectEvidence }> {
+    ): Promise<{ messages: IChatMessage[]; projectContext?: IRoleProjectEvidence }> {
         const grant = this.grant();
         if (!grant || planning || !grant.recipients.includes(id)) return { messages };
         const prepared = await this.load(grant, callSignal);
-        const allowed = new Map<string, ChatProjectSource>();
+        const allowed = new Map<string, IChatProjectSource>();
         for (const source of prepared.evidence.sources) {
             // Paths/IDs are provenance, never executable URLs. Credential-bearing metadata is omitted, not relabelled.
             if ([source.id, source.path, source.title ?? ''].some((text) => roleProjection(text).content !== text))
@@ -168,7 +168,7 @@ export class SystemRoleRagContext {
         });
         return { messages: fit.messages, projectContext: this.receipt(grant, fit.evidence) };
     }
-    private receipt(grant: RoleProjectGrant, evidence: ChatProjectEvidence): RoleProjectEvidence {
+    private receipt(grant: IRoleProjectGrant, evidence: IChatProjectEvidence): IRoleProjectEvidence {
         return {
             status: evidence.status === 'none' ? 'metadata' : evidence.status,
             project: { id: grant.projectId, name: grant.projectName },
@@ -186,12 +186,12 @@ export class SystemRoleRagContext {
 
 /** Synthesis may cite only metadata actually carried in its own prompt or validated completed child answers. */
 export function synthesisProjectEvidence(
-    own: RoleProjectEvidence | undefined,
-    children: Array<RoleProjectEvidence | undefined>,
-): RoleProjectEvidence | undefined {
-    const receipts = [own, ...children].filter((value): value is RoleProjectEvidence => !!value);
+    own: IRoleProjectEvidence | undefined,
+    children: Array<IRoleProjectEvidence | undefined>,
+): IRoleProjectEvidence | undefined {
+    const receipts = [own, ...children].filter((value): value is IRoleProjectEvidence => !!value);
     if (!receipts.length) return undefined;
-    const result: RoleProjectEvidence = { ...receipts[0], sources: [] };
+    const result: IRoleProjectEvidence = { ...receipts[0], sources: [] };
     for (const receipt of receipts) {
         if (
             receipt.project.id !== result.project.id ||

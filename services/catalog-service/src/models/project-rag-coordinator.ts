@@ -12,7 +12,7 @@ import type { Request } from 'express';
 import type { PoolClient } from 'pg';
 import { ModelsService } from './models.service';
 import { initialGeneration } from './project-embedding.repository';
-import type { IProjectRagContext } from './project-embedding.types';
+import type { IProjectRagContext } from './project-embedding.interfaces';
 import { ProjectRagClient } from './project-rag-client';
 import { ragRequestHash } from '../../../shared/rag-index-contract.cjs';
 import {
@@ -20,7 +20,7 @@ import {
     RAG_WRITE_POLICY,
     ragWriteAdmissionUncertain,
     type IRagWriteGrant,
-    type RagWriteAuthorizationPhase,
+    type TRagWriteAuthorizationPhase,
 } from '../../../shared/rag-write-authorization.cjs';
 import { authorizeRagIntentAuthor, type IRagIntentAuthor } from './project-rag-authorization';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
@@ -109,7 +109,7 @@ export class ProjectRagCoordinator implements OnModuleInit, OnModuleDestroy {
         id: string;
         payloadHash: string;
         context: IProjectRagContext;
-        phase: RagWriteAuthorizationPhase;
+        phase: TRagWriteAuthorizationPhase;
     }): Promise<IRagWriteGrant> {
         if (typeof value?.id !== 'string' || !sha(value.payloadHash) || !['receipt', 'write'].includes(value.phase))
             throw new BadRequestException('Некорректная фаза разрешения записи. Обновите RAG и Catalog.');

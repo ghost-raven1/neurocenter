@@ -13,23 +13,23 @@ import { createHash } from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import * as tar from 'tar';
-import type { ISourceReceipt } from '../asset-sources/import-types';
+import type { ISourceReceipt } from '../asset-sources/import-interfaces';
 import type { AssetBlobStore } from '../asset-sources/asset-blob-store';
 import { runtimeArtifactDirectory } from '../runtime-artifacts/runtime-artifacts';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
 import { cleanStaleSupplyStages, markSupplyStage } from './supply-staging';
 
 export const maximumSupplyBytes = 4 * 1024 ** 3;
-interface SupplyFile {
+interface ISupplyFile {
     sha256: string;
     bytes: number;
     name: string;
     roles: string[];
 }
-export interface ToolSupplyPlan {
+export interface IToolSupplyPlan {
     asset: ToolAsset | SkillAsset;
     descriptor: Buffer;
-    files: SupplyFile[];
+    files: ISupplyFile[];
     filename: string;
     inputBytes: number;
 }
@@ -37,7 +37,7 @@ const missing = () =>
     new ConflictException('Точная поставка этой сборки недоступна. Восстановите исходные проверенные файлы ассета.');
 
 /** Transport is a tar container around the existing envelope, never another asset schema. */
-export function toolSupplyPlan(receipt: ISourceReceipt): ToolSupplyPlan {
+export function toolSupplyPlan(receipt: ISourceReceipt): IToolSupplyPlan {
     let asset: ToolAsset | SkillAsset, descriptor: Buffer;
     try {
         const checked = validateAsset(receipt.descriptor);
@@ -68,7 +68,7 @@ export function toolSupplyPlan(receipt: ISourceReceipt): ToolSupplyPlan {
             throw missing();
         retained.set(blob.sha256, blob.bytes);
     }
-    const unique = new Map<string, SupplyFile>(),
+    const unique = new Map<string, ISupplyFile>(),
         names = new Set(['asset.json', 'readme.md']);
     const add = (sha256: string, bytes: number, name: string, role: string, exactPath = false) => {
         if (retained.get(sha256) !== bytes) throw missing();
@@ -112,7 +112,7 @@ export function toolSupplyPlan(receipt: ISourceReceipt): ToolSupplyPlan {
     return { asset, descriptor, files, inputBytes, filename: asset.id + '-' + asset.version + '-supply.tar.gz' };
 }
 
-function readme(plan: ToolSupplyPlan): string {
+function readme(plan: IToolSupplyPlan): string {
     return (
         `# Поставка ${plan.asset.id} ${plan.asset.version}\n\nasset.json — исходный дескриптор без изменения байтов и public URL. SHA-256: ${assetDigest(plan.descriptor)}.\n\n` +
         'Файлы поставки (SHA-256, число байтов, путь):\n\n' +
@@ -125,7 +125,11 @@ function readme(plan: ToolSupplyPlan): string {
 }
 
 /** Copies verified handles with backpressure; cancellation never changes retained source bytes. */
-export async function createToolSupply(plan: ToolSupplyPlan, blobs: Pick<AssetBlobStore, 'open'>, signal: AbortSignal) {
+export async function createToolSupply(
+    plan: IToolSupplyPlan,
+    blobs: Pick<AssetBlobStore, 'open'>,
+    signal: AbortSignal,
+) {
     signal.throwIfAborted();
     const artifactRoot = runtimeArtifactDirectory();
     await fs.mkdir(artifactRoot, { recursive: true, mode: 0o700 });

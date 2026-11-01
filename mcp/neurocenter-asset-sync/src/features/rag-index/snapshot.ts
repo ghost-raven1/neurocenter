@@ -2,10 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { connectStore, ROW_COLUMNS, mapRow } from '../../lib/lancedb.js';
 
-type NativeHandle = { close(): void };
+type TNativeHandle = { close(): void };
 
 /** Both acquired handles are released; a table-close error has priority over connection cleanup. */
-function closeHandles(db: NativeHandle, table?: NativeHandle): void {
+function closeHandles(db: TNativeHandle, table?: TNativeHandle): void {
     let failure: { error: unknown } | undefined;
     try {
         table?.close();
@@ -22,7 +22,7 @@ function closeHandles(db: NativeHandle, table?: NativeHandle): void {
     }
 }
 
-function failSnapshot(error: unknown, db: NativeHandle, table?: NativeHandle): never {
+function failSnapshot(error: unknown, db: TNativeHandle, table?: TNativeHandle): never {
     try {
         closeHandles(db, table);
     } catch {

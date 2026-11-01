@@ -1,8 +1,8 @@
 import { scanProjectInventory } from './project-inventory.js';
 import { prepareAdoptInstallation, applyAdoptInstallation } from './adopt-installation.js';
 import { listLocalVariants, prepareLocalRestore, applyLocalRestore } from './local-recovery.js';
-import type { Package } from './package.js';
-import type { InstallSet } from './install-set.js';
+import type { IPackage } from './package.js';
+import type { IInstallSet } from './install-set.js';
 import { scanOpenCodeModels, scanGlobalOpenCodeModels } from './opencode-model-scan.js';
 
 export const PROJECT_LOCAL_KINDS = [
@@ -16,11 +16,11 @@ export const PROJECT_LOCAL_KINDS = [
 ];
 export const PROJECT_LOCAL_APPLIES = ['apply-adopt-installation', 'apply-local-restore'];
 
-export interface ProjectLocalPayload {
+export interface IProjectLocalPayload {
     scope?: 'global' | 'project';
     deviceId?: string;
-    package?: Package;
-    installSet?: InstallSet;
+    package?: IPackage;
+    installSet?: IInstallSet;
     bindingId?: string;
     instanceId?: string;
     scanId?: string;
@@ -35,7 +35,7 @@ export interface ProjectLocalPayload {
 
 /** Диспетчер не выбирает пакет или путь самостоятельно: они закреплены серверным заданием. */
 export async function runProjectLocalJob(
-    job: { kind: string; project_id?: string; payload: ProjectLocalPayload },
+    job: { kind: string; project_id?: string; payload: IProjectLocalPayload },
     authorize: () => Promise<unknown>,
     progress: (percent: number, message: string) => Promise<unknown>,
 ): Promise<unknown> {

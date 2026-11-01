@@ -13,7 +13,13 @@ const { Title } = Typography;
  * @returns JSX-элемент глобального списка операций
  */
 const Operations: FC = () => (
-    <Card title={<Title level={4} style={{ margin: 0 }}>Передачи и проверки</Title>}>
+    <Card
+        title={
+            <Title level={4} style={{ margin: 0 }}>
+                Передачи и проверки
+            </Title>
+        }
+    >
         <OperationsQueue />
     </Card>
 );

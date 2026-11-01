@@ -5,37 +5,37 @@ import { projectBindingId, projectFolder, projectInstanceId, safeTarget } from '
 import { hash, stateDir } from './state.js';
 import { CONFIG_PATHS } from './installation-files.js';
 import { LEDGER_PATH } from './installation-ledger.js';
-import { sameValue, type Receipt } from './installation-receipt.js';
+import { sameValue, type IReceipt } from './installation-receipt.js';
 import { InventoryReader, InventoryReadError, inventoryRelative } from './project-inventory-reader.js';
 import { parseProjectConfig } from './project-inventory-config.js';
 import { inventoryDigest, saveInventoryScan } from './project-inventory-storage.js';
 import type {
-    InventoryEntry,
-    InventoryKind,
-    PrivateInventoryScan,
-    ProjectInventory,
+    IInventoryEntry,
+    TInventoryKind,
+    IPrivateInventoryScan,
+    IProjectInventory,
 } from './project-inventory.model.js';
 import { agentsPrivateProof, AGENTS_RECEIPT } from '../features/project-agents/receipt.js';
 import { LEARNING_COLLECTOR_FILE } from '../features/project-learning/collector-plugin.js';
-export type { ProjectInventory, InventoryEntry } from './project-inventory.model.js';
+export type { IProjectInventory, IInventoryEntry } from './project-inventory.model.js';
 
 const SHA = /^[a-f0-9]{64}$/;
 const receiptDirectory = '.opencode/neurocenter/receipts';
-interface KnownReceipt {
+interface IKnownReceipt {
     key: string;
-    receipt: Receipt;
+    receipt: IReceipt;
 }
 /** Только проектные каталоги и JSONC: глобальный профиль и исполняемый код не читаются. */
 export async function scanProjectInventory(
     projectId: string,
     authorize: () => Promise<unknown>,
-): Promise<ProjectInventory> {
+): Promise<IProjectInventory> {
     await authorize();
     const root = await projectFolder(projectId);
     const bindingId = await projectBindingId(projectId);
     const instanceId = await projectInstanceId(projectId);
     const now = new Date();
-    const summary: ProjectInventory = {
+    const summary: IProjectInventory = {
         schemaVersion: 1,
         projectId,
         bindingId,
@@ -57,12 +57,12 @@ export async function scanProjectInventory(
         }
     };
     const add = (
-        kind: InventoryKind,
+        kind: TInventoryKind,
         relative: string,
-        state: InventoryEntry['state'],
+        state: IInventoryEntry['state'],
         reason: string,
         selector?: string,
-    ): InventoryEntry | undefined => {
+    ): IInventoryEntry | undefined => {
         if (summary.entries.length >= 200) {
             issue('entry-limit');
             return;
@@ -74,12 +74,12 @@ export async function scanProjectInventory(
         }
         return entry;
     };
-    const problem = (kind: InventoryKind, relative: string, error: unknown): void => {
+    const problem = (kind: TInventoryKind, relative: string, error: unknown): void => {
         const reason = error instanceof InventoryReadError ? error.reason : 'read-failed';
         issue(reason);
         add(kind, relative, reason === 'unsafe-path' ? 'unsafe' : 'unreadable', reason);
     };
-    const receipts: KnownReceipt[] = [];
+    const receipts: IKnownReceipt[] = [];
     let receiptInvalid = false;
     let ledgerInvalid = false;
     let ledgerRefs: Array<{ key: string; version: number; manifest: string }> = [];
@@ -110,7 +110,7 @@ export async function scanProjectInventory(
                     continue;
                 }
                 const raw = await reader.read(receiptDirectory + '/' + name, 256 * 1024);
-                const receipt = JSON.parse(raw!.toString('utf8')) as Receipt;
+                const receipt = JSON.parse(raw!.toString('utf8')) as IReceipt;
                 if (
                     !receipt ||
                     !Number.isSafeInteger(receipt.version) ||
@@ -182,9 +182,9 @@ export async function scanProjectInventory(
             }
         }
         const stateFor = (
-            known: KnownReceipt | undefined,
+            known: IKnownReceipt | undefined,
             files: string[],
-        ): Pick<InventoryEntry, 'state' | 'reason'> => {
+        ): Pick<IInventoryEntry, 'state' | 'reason'> => {
             if (!known) {
                 return receiptInvalid
                     ? { state: 'damaged', reason: 'receipt-invalid' }
@@ -384,7 +384,7 @@ export async function scanProjectInventory(
         issue('binding-changed');
     }
     summary.issues.sort();
-    const scan: PrivateInventoryScan = { schemaVersion: 1, root, summary, snapshots: reader.values(), selectors };
+    const scan: IPrivateInventoryScan = { schemaVersion: 1, root, summary, snapshots: reader.values(), selectors };
     summary.digest = inventoryDigest(scan);
     await saveInventoryScan(scan);
     return summary;

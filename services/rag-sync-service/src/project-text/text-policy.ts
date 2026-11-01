@@ -1,9 +1,9 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { runtimeLimitPolicy } from '../../../shared/runtime-limits.cjs';
-import type { TextAdmission } from '../../../shared/project-text-knowledge.cjs';
+import type { ITextAdmission } from '../../../shared/project-text-knowledge.cjs';
 
 /** A new operation reads current Catalog policy; state and committed receipt reads do not depend on it. */
-export async function readTextAdmission(): Promise<TextAdmission> {
+export async function readTextAdmission(): Promise<ITextAdmission> {
     try {
         const base = new URL(process.env.CATALOG_SERVICE_URL || 'http://localhost:4100');
         if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password)

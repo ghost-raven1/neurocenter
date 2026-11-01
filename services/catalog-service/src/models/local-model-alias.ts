@@ -1,4 +1,4 @@
-import type { IModel } from './model.types';
+import type { IModel } from './model.interfaces';
 
 /** Один локальный runtime tag навсегда соответствует одному manifest SHA, независимо от public name/head. */
 export function localModelAlias(model: Pick<IModel, 'runtime' | 'manifestSha256' | 'fileImport'>): string {

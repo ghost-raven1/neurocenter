@@ -10,8 +10,8 @@ import { readBoundedSnapshot } from './read-bounded.js';
 
 const directory = fileURLToPath(new URL('../../', import.meta.url));
 const entryName = 'neurocenter-asset-sync';
-type Json = Record<string, unknown>;
-const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
+type TJson = Record<string, unknown>;
+const object = (value: unknown): value is TJson => !!value && typeof value === 'object' && !Array.isArray(value);
 const invalid = () =>
     Error('Сохранённый профиль моста в OpenCode повреждён. Проверьте регистрацию или повторите установку.');
 const properties = (node: Node | undefined, key: string) =>

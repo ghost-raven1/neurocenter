@@ -1,10 +1,10 @@
-import { parseBuildDiagnostic, type BuildDiagnostic } from '../../../shared/package-build-diagnostics.cjs';
+import { parseBuildDiagnostic, type IBuildDiagnostic } from '../../../shared/package-build-diagnostics.cjs';
 import { stageUploadSource } from '../source-upload/stage-upload';
 import { createHash } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { BuildConfiguration } from './package-build.model';
+import type { IBuildConfiguration } from './package-build.model';
 import { hasBuildReapProof } from './build-cleanup';
 import { stageBundledBuild } from './bundled-source';
 
@@ -13,7 +13,7 @@ export const builderScript = (): string =>
         process.env.TOOL_BUILD_SCRIPT || path.join(__dirname, '../../../../scripts/catalog-plugins/build.mjs'),
     );
 export const stagingLimit = 4 * 1024 ** 3;
-interface BuildProgress {
+interface IBuildProgress {
     type: 'build-progress';
     target: string;
     completed: number;
@@ -42,7 +42,7 @@ const buildFailures: Record<string, string> = {
 export class BuildDiagnosticError extends Error {
     constructor(
         message: string,
-        readonly report: BuildDiagnostic,
+        readonly report: IBuildDiagnostic,
     ) {
         super(message);
         this.name = 'BuildDiagnosticError';
@@ -158,10 +158,10 @@ const supervised = new WeakSet<ChildProcess>();
 
 /** Исполняется только наш builder; исходники задают декларацию, а не shell-команду. */
 export async function runPackageBuilder(
-    config: BuildConfiguration,
+    config: IBuildConfiguration,
     stage: string,
     observe: (child: ChildProcess | undefined) => void,
-    onProgress?: (event: BuildProgress) => Promise<void>,
+    onProgress?: (event: IBuildProgress) => Promise<void>,
     signal?: AbortSignal,
     execution?: { nonce: string; markStarted: () => Promise<void>; reaped?: () => void },
 ): Promise<string> {
@@ -311,7 +311,7 @@ export async function runPackageBuilder(
             stdoutBytes = 0,
             completed = 0,
             ready = false;
-        let diagnostic: BuildDiagnostic | undefined;
+        let diagnostic: IBuildDiagnostic | undefined;
         let startupFailure: unknown,
             startAdmitted = false,
             reaped = false;
@@ -391,7 +391,7 @@ export async function runPackageBuilder(
             const lines = pending.split('\n');
             pending = lines.pop() ?? '';
             for (const line of lines) {
-                let event: BuildProgress | { type: 'build-error'; code?: unknown };
+                let event: IBuildProgress | { type: 'build-error'; code?: unknown };
                 try {
                     event = JSON.parse(line) as typeof event;
                 } catch {

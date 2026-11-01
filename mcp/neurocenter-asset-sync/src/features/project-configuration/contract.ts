@@ -12,4 +12,4 @@ export const {
     normalizeProjectConfigurationSession,
     normalizeProjectConfigurationReport,
 } = shared;
-export type { ProjectConfigurationSession } from '../../../../../services/shared/project-configuration.cjs';
+export type { IProjectConfigurationSession as ProjectConfigurationSession } from '../../../../../services/shared/project-configuration.cjs';

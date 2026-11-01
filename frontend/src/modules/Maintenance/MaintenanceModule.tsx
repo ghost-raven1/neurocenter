@@ -24,7 +24,12 @@ export default class MaintenanceModule extends ModuleBase {
      */
     public getRoute(): ReactNode[] {
         return [
-            <ProtectedRoute key="maintenance" name={MAINTENANCE_ROUTE} path={baseRoutes.maintenance} render={() => <Maintenance />} />,
+            <ProtectedRoute
+                key="maintenance"
+                name={MAINTENANCE_ROUTE}
+                path={baseRoutes.maintenance}
+                render={() => <Maintenance />}
+            />,
         ];
     }
 }

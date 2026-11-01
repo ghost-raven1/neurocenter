@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 
-type Db = Pick<PoolClient, 'query'>;
+type TDb = Pick<PoolClient, 'query'>;
 const checks = [
     ['project_learning_analyses', "state IN ('queued','running')", 'Анализ проектного обучения ещё не завершён.'],
     ['bridge_jobs', "state IN ('queued','running','reconciling')", 'Есть незавершённое задание компьютера.'],
@@ -20,7 +20,7 @@ const checks = [
 ] as const;
 
 /** Схемы фич запускаются независимо; отсутствие таблицы означает, что её refs ещё не существуют. */
-export async function retirementBlockers(db: Db, projectId: string, includeGrants = true): Promise<string[]> {
+export async function retirementBlockers(db: TDb, projectId: string, includeGrants = true): Promise<string[]> {
     const blockers: string[] = [];
     for (const [table, condition, message] of checks) {
         if (!(await db.query('SELECT to_regclass($1) AS name', [table])).rows[0]?.name) continue;
@@ -44,7 +44,7 @@ export async function retirementBlockers(db: Db, projectId: string, includeGrant
     return blockers;
 }
 /** The project FOR UPDATE lock already fences new claims through their authority check. */
-export async function requireRetirementIdle(db: Db, projectId: string): Promise<void> {
+export async function requireRetirementIdle(db: TDb, projectId: string): Promise<void> {
     const blockers = await retirementBlockers(db, projectId, false);
     if (blockers.length) throw new ConflictException(blockers.join(' '));
 }

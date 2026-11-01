@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { researchPublicUrl } from './chat-research-client';
 
-export type ResearchCommand =
+export type TResearchCommand =
     | { kind: 'finish' }
     | { kind: 'project_search'; query: string }
     | { kind: 'project_read'; sourceId: string }
@@ -15,7 +15,7 @@ const fields = (value: Record<string, unknown>, names: string[]) =>
     Object.keys(value).every((key) => names.includes(key));
 
 /** Model JSON is data: only one validated readonly command can reach the executor. */
-export function researchCommand(content: string, enabled: { project: boolean; external: boolean }): ResearchCommand {
+export function researchCommand(content: string, enabled: { project: boolean; external: boolean }): TResearchCommand {
     const fail = (): never => {
         throw new BadRequestException(
             'Модель не подготовила допустимый шаг исследования. Повторите сообщение или выключите исследование.',

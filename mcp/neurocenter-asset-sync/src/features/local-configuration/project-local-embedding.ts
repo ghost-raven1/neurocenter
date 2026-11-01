@@ -1,8 +1,8 @@
-import type { LocalConfigurationSchema } from './schema.js';
+import type { ILocalConfigurationSchema } from './schema.js';
 
 /** Только идентификаторы известных полей RAG: значения и секреты сюда не входят. */
 export function projectLocalEmbeddingFields(
-    schema: LocalConfigurationSchema,
+    schema: ILocalConfigurationSchema,
 ): { url: string; model: string; provider: string } | undefined {
     const field = (name: string, type: 'url' | 'string') =>
         schema.fields.find(

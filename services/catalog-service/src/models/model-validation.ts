@@ -1,11 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import type {
-    IModelDescriptor,
+    TModelDescriptor,
     IModelUpdate,
     IValidatedModelCreate,
     TModelCapability,
     TModelRuntime,
-} from './model.types';
+} from './model.interfaces';
 
 const capabilities: readonly TModelCapability[] = ['embedding', 'vision', 'chat'];
 const modelName = /^(?:[a-z0-9_-]+\/)?[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*$/i;
@@ -109,7 +109,7 @@ export function validateModelCreate(value: unknown): IValidatedModelCreate {
 }
 
 /** Проверяет нативный descriptor ассета без deployment URL, ключей и чужого результата probe. */
-export function validateModelDescriptor(value: unknown): IModelDescriptor {
+export function validateModelDescriptor(value: unknown): TModelDescriptor {
     const body = record(value);
     fields(body, [
         'description',
@@ -149,7 +149,7 @@ export function validateModelDescriptor(value: unknown): IModelDescriptor {
     return {
         ...validated,
         manifestSha256: manifest,
-        source: body.source as IModelDescriptor['source'],
+        source: body.source as TModelDescriptor['source'],
         ...(validated.runtime === 'ollama' ? {} : { verificationSha256: null }),
     };
 }

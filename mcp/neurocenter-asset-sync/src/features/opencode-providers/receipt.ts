@@ -3,11 +3,11 @@ import { hash } from '../../bridge/state.js';
 import { journalDirectory, parseJournal } from '../../bridge/installation-journal.js';
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
 import { JOURNAL_BYTES_LIMIT } from '../../bridge/installation-limits.js';
-import type { ProviderContext } from './context.js';
+import type { TProviderContext } from './context.js';
 export const providerConfig = '.opencode/opencode.jsonc';
 export const receiptFile = (id: string) => '.opencode/neurocenter/providers/' + id + '.json';
-export const journalKey = (context: ProviderContext) => hash('opencode-provider:' + context.key).slice(0, 24);
-export interface ProviderReceipt {
+export const journalKey = (context: TProviderContext) => hash('opencode-provider:' + context.key).slice(0, 24);
+export interface IProviderReceipt {
     schemaVersion: 1;
     revision: string;
     schemaDigest: string;
@@ -36,8 +36,8 @@ async function optional(file: string, max: number) {
 }
 /** The private committed journal, rather than a copyable project receipt, establishes ownership. */
 export async function providerProof(
-    context: ProviderContext,
-): Promise<{ raw: string; receipt: ProviderReceipt } | null> {
+    context: TProviderContext,
+): Promise<{ raw: string; receipt: IProviderReceipt } | null> {
     const directory = journalDirectory(context.root),
         key = journalKey(context),
         raw = await optional(path.join(directory, 'assets', key + '.json'), 4096);
@@ -57,7 +57,7 @@ export async function providerProof(
         throw conflict();
     const stored = journal.changes.find((change) => change.relative === receiptFile(context.descriptor.providerId));
     if (!stored?.after || stored.encoding) throw conflict();
-    const receipt = JSON.parse(stored.after) as ProviderReceipt,
+    const receipt = JSON.parse(stored.after) as IProviderReceipt,
         d = context.descriptor;
     if (
         receipt.schemaVersion !== 1 ||

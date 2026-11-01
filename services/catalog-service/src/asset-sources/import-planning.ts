@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { buildPackage } from '../catalog/bundle-package';
-import type { IImportItem } from './import-types';
+import type { IImportItem } from './import-interfaces';
 
 /** Native install graph budget проверяется по virtual plan до первого binary fetch или native write. */
 export function validateImportPlan(items: IImportItem[]): void {

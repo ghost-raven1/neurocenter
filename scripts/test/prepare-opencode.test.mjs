@@ -11,14 +11,24 @@ const repository = fileURLToPath(new URL('../../', import.meta.url));
 const version = '1.14.48';
 const registry = 'https://opencode-registry.invalid';
 const variants = [
-    'darwin-arm64', 'darwin-x64', 'darwin-x64-baseline',
-    'linux-arm64', 'linux-arm64-musl', 'linux-x64', 'linux-x64-baseline',
-    'linux-x64-musl', 'linux-x64-baseline-musl',
-    'windows-arm64', 'windows-x64', 'windows-x64-baseline',
+    'darwin-arm64',
+    'darwin-x64',
+    'darwin-x64-baseline',
+    'linux-arm64',
+    'linux-arm64-musl',
+    'linux-x64',
+    'linux-x64-baseline',
+    'linux-x64-musl',
+    'linux-x64-baseline-musl',
+    'windows-arm64',
+    'windows-x64',
+    'windows-x64-baseline',
 ];
 const roots = [];
-const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 /** Копирует установщик в отдельное дерево; все сетевые ответы принадлежат тесту. */
 async function fixture() {
@@ -42,7 +52,9 @@ async function fixture() {
     const fixtureFile = path.join(root, 'responses.json');
     const requestsFile = path.join(root, 'requests.log');
     const hook = path.join(root, 'fetch-fixture.mjs');
-    await writeFile(hook, `
+    await writeFile(
+        hook,
+        `
 import { appendFileSync, readFileSync } from 'node:fs';
 const responses = JSON.parse(readFileSync(process.env.TEST_RESPONSES, 'utf8'));
 globalThis.fetch = async input => {
@@ -53,20 +65,33 @@ globalThis.fetch = async input => {
     if (!response) throw new Error('Непредусмотренный запрос: ' + url);
     return new Response(response.body, { status: response.status ?? 200 });
 };
-`);
-    const env = { ...process.env, OPENCODE_REGISTRY: registry, TEST_RESPONSES: fixtureFile, TEST_REQUESTS: requestsFile };
+`,
+    );
+    const env = {
+        ...process.env,
+        OPENCODE_REGISTRY: registry,
+        TEST_RESPONSES: fixtureFile,
+        TEST_REQUESTS: requestsFile,
+    };
     delete env.OPENCODE_VERSION;
     delete env.OPENCODE_TARGETS;
     delete env.TEST_OFFLINE;
     const run = async (overrides = {}) => {
         await writeFile(fixtureFile, JSON.stringify(responses));
         return spawnSync(process.execPath, ['--import', hook, path.join(root, 'scripts/prepare-opencode.mjs')], {
-            cwd: root, env: { ...env, ...overrides }, encoding: 'utf8', timeout: 30_000,
+            cwd: root,
+            env: { ...env, ...overrides },
+            encoding: 'utf8',
+            timeout: 30_000,
         });
     };
     const requests = async () => {
-        try { return (await readFile(requestsFile, 'utf8')).trim().split('\n').filter(Boolean); }
-        catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+        try {
+            return (await readFile(requestsFile, 'utf8')).trim().split('\n').filter(Boolean);
+        } catch (error) {
+            if (error.code === 'ENOENT') return [];
+            throw error;
+        }
     };
     return { root, directory: path.join(root, 'bridge-dist/opencode'), responses, requestsFile, requests, run };
 }
@@ -75,8 +100,8 @@ test('Подготовка сохраняет все двенадцать офи
     const f = await fixture();
     const result = await f.run();
     assert.equal(result.status, 0, result.stderr);
-    const archives = variants.map(variant => `opencode-${variant}-${version}.tgz`);
-    assert.deepEqual((await readdir(f.directory)).sort(), archives.flatMap(file => [file, `${file}.sha256`]).sort());
+    const archives = variants.map((variant) => `opencode-${variant}-${version}.tgz`);
+    assert.deepEqual((await readdir(f.directory)).sort(), archives.flatMap((file) => [file, `${file}.sha256`]).sort());
     for (const file of archives) {
         const bytes = await readFile(path.join(f.directory, file));
         assert.equal(bytes.toString(), f.responses[`${registry}/archives/${file}`].body);
@@ -132,5 +157,5 @@ test('Неверная контрольная сумма загрузки сох
     assert.match(result.stderr, /Не совпала контрольная сумма opencode-darwin-arm64/);
     assert.equal(await readFile(path.join(f.directory, archive), 'utf8'), previous);
     assert.equal(await readFile(path.join(f.directory, `${archive}.sha256`), 'utf8'), previousChecksum);
-    assert.ok((await readdir(f.directory)).every(file => !file.endsWith('.tmp')));
+    assert.ok((await readdir(f.directory)).every((file) => !file.endsWith('.tmp')));
 });

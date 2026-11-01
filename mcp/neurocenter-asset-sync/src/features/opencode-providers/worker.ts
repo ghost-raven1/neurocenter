@@ -1,22 +1,22 @@
 import { OPENCODE_PROVIDER_JOBS, type OpenCodeProviderDescriptor } from './contract.js';
 import { prepareOpenCodeProvider, openOpenCodeProvider, getOpenCodeProviderStatus } from './index.js';
-import type { Authorize } from './context.js';
-import type { Package } from '../../bridge/package.js';
+import type { TAuthorize } from './context.js';
+import type { IPackage } from '../../bridge/package.js';
 import { prepareJobRuntimeArtifacts } from '../../bridge/job-runtime-artifacts.js';
 import { connectorPackage } from './connector.js';
 export { OPENCODE_PROVIDER_JOBS };
-export interface ProviderPayload {
+export interface IProviderPayload {
     descriptor?: OpenCodeProviderDescriptor;
     preparationJobId?: string;
     preparationId?: string;
     expiresAt?: string;
-    connectorPackage?: Package;
+    connectorPackage?: IPackage;
 }
 /** A completed open lease never authorizes a later local form save. */
 export async function runProviderJob(
-    job: { id: string; kind: string; project_id?: string; payload: ProviderPayload },
-    authorize: Authorize,
-    authorizeSave: Authorize,
+    job: { id: string; kind: string; project_id?: string; payload: IProviderPayload },
+    authorize: TAuthorize,
+    authorizeSave: TAuthorize,
 ) {
     const descriptor = job.payload.descriptor;
     if (!descriptor || descriptor.projectId !== job.project_id)

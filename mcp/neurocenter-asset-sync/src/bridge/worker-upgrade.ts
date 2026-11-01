@@ -3,7 +3,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { api, readState, stateDir, type Credentials } from './state.js';
+import { api, readState, stateDir, type ICredentials } from './state.js';
 import { BRIDGE_VERSION, bridgeBuildId } from './protocol.js';
 import { readBoundedUtf8 } from './read-bounded.js';
 import { recoverComputerSetupJobs } from '../features/computer-setup/executor.js';
@@ -99,7 +99,7 @@ async function stopWorker(index: string, force: boolean): Promise<boolean> {
             pid = undefined;
         }
     }
-    if (!pid && (!force || !(await readState<Credentials>('credentials')))) {
+    if (!pid && (!force || !(await readState<ICredentials>('credentials')))) {
         await recoverComputerSetupJobs();
         return false;
     }
@@ -193,7 +193,7 @@ export async function prepareWorkerUpgrade(installedEntry: string): Promise<{ pa
 }
 /** Завершаем паузу после размещения файлов либо после отката установщика. */
 export async function finishWorkerUpgrade(): Promise<void> {
-    if (await readState<Credentials>('credentials')) {
+    if (await readState<ICredentials>('credentials')) {
         await api('worker/resume');
     }
 }

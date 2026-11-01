@@ -1,8 +1,8 @@
-import type { InstallSet, PackageRef } from '../../bridge/install-set.js';
+import type { IInstallSet, IPackageRef } from '../../bridge/install-set.js';
 
-export type RuntimeProbeStatus =
+export type TRuntimeProbeStatus =
     'not_checked' | 'passed' | 'needs_configuration' | 'failed' | 'unsupported' | 'stale' | 'busy';
-export type RuntimeProbeCode =
+export type TRuntimeProbeCode =
     | 'verified'
     | 'not-approved'
     | 'invalid-package'
@@ -27,26 +27,26 @@ export type RuntimeProbeCode =
     | 'probe-failed'
     | 'configuration-changed';
 
-export interface ConfigurationRevision {
+export interface IConfigurationRevision {
     assetId: string;
     manifest: string;
     revision: string | null;
 }
 
-export interface RuntimeProbeInput {
+export interface IRuntimeProbeInput {
     projectId: string;
     bindingId: string;
-    target: PackageRef;
+    target: IPackageRef;
     /** У одиночного пакета manifest равен SHA пакета, у графа — SHA всего набора. */
-    frozenSet: InstallSet;
+    frozenSet: IInstallSet;
     consentManifest: string;
     openCode: { path: string; version: '1.14.48'; sha256: string };
     /** Повторная серверная авторизация непосредственно перед каждым запуском процесса. */
     authorize: () => Promise<void>;
     /** Ревизии настроенных MCP всего frozen-графа, без значений или хэшей секретов. */
-    configurationRevisions?: ConfigurationRevision[];
+    configurationRevisions?: IConfigurationRevision[];
 }
-export interface RuntimeProbeResult {
+export interface IRuntimeProbeResult {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -58,9 +58,9 @@ export interface RuntimeProbeResult {
     checkedAt: string;
     engineVersion: '1.14.48';
     engineSha256: string;
-    status: RuntimeProbeStatus;
-    code: RuntimeProbeCode;
-    configurationRevisions?: ConfigurationRevision[];
+    status: TRuntimeProbeStatus;
+    code: TRuntimeProbeCode;
+    configurationRevisions?: IConfigurationRevision[];
     /** passed описывает эти проверки, а не выполнение произвольных hooks или tools. */
     counts: {
         packages: number;
@@ -77,8 +77,8 @@ export interface RuntimeProbeResult {
 /** Внутреннее исключение содержит только фиксированный код, без вывода проверяемого кода. */
 export class ProbeError extends Error {
     constructor(
-        readonly status: RuntimeProbeStatus,
-        readonly code: RuntimeProbeCode,
+        readonly status: TRuntimeProbeStatus,
+        readonly code: TRuntimeProbeCode,
     ) {
         super(code);
     }

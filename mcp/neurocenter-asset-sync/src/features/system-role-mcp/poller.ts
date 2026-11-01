@@ -1,7 +1,7 @@
-import { readState, type Credentials } from '../../bridge/state.js';
-import { roleMcpApi, captureRoleMcpIdentity, type RoleMcpIdentity } from './api.js';
+import { readState, type ICredentials } from '../../bridge/state.js';
+import { roleMcpApi, captureRoleMcpIdentity, type IRoleMcpIdentity } from './api.js';
 import { deliverRoleMcpResults } from './receipts.js';
-import { runSystemRoleMcpJob, type SessionJob } from './worker.js';
+import { runSystemRoleMcpJob, type ISessionJob } from './worker.js';
 import {
     beginRoleMcpIntent,
     retainRoleMcpClaim,
@@ -14,22 +14,26 @@ import {
     assertRoleMcpClaim,
     recoverRoleMcpSessions,
     acknowledgeRoleMcpCompletion,
-    type RoleMcpClaimRequest,
+    type IRoleMcpClaimRequest,
 } from './session-recovery.js';
 
-interface PollerDependencies {
-    claim: (signal: AbortSignal, request: RoleMcpClaimRequest, identity: RoleMcpIdentity) => Promise<SessionJob | null>;
-    authorize: (job: SessionJob, signal: AbortSignal, identity: RoleMcpIdentity) => Promise<unknown>;
+interface IPollerDependencies {
+    claim: (
+        signal: AbortSignal,
+        request: IRoleMcpClaimRequest,
+        identity: IRoleMcpIdentity,
+    ) => Promise<ISessionJob | null>;
+    authorize: (job: ISessionJob, signal: AbortSignal, identity: IRoleMcpIdentity) => Promise<unknown>;
     run: typeof runSystemRoleMcpJob;
-    complete: (job: SessionJob, value: unknown, identity: RoleMcpIdentity) => Promise<unknown>;
+    complete: (job: ISessionJob, value: unknown, identity: IRoleMcpIdentity) => Promise<unknown>;
     recover: (deviceId: string, signal: AbortSignal) => Promise<void>;
-    credentials: () => Promise<Credentials | undefined>;
-    identity: () => Promise<RoleMcpIdentity>;
+    credentials: () => Promise<ICredentials | undefined>;
+    identity: () => Promise<IRoleMcpIdentity>;
     canClaim: () => boolean;
 }
 /** MCP transport leases run beside ordinary jobs, so browser sessions never starve a local Codex model or another role. */
-export function startRoleMcpPoller(dependencies: Partial<PollerDependencies> = {}) {
-    const deps: PollerDependencies = {
+export function startRoleMcpPoller(dependencies: Partial<IPollerDependencies> = {}) {
+    const deps: IPollerDependencies = {
         claim: (signal, request, identity) => roleMcpApi('claim', request, signal, identity),
         authorize: (job, signal, identity) =>
             roleMcpApi('authorize', { jobId: job.id, lease: job.lease }, signal, identity),
@@ -37,7 +41,7 @@ export function startRoleMcpPoller(dependencies: Partial<PollerDependencies> = {
         complete: (job, value, identity) =>
             roleMcpApi('complete', { jobId: job.id, lease: job.lease, ...(value as object) }, undefined, identity),
         recover: deliverRoleMcpResults,
-        credentials: () => readState<Credentials>('credentials'),
+        credentials: () => readState<ICredentials>('credentials'),
         identity: captureRoleMcpIdentity,
         canClaim: () => true,
         ...dependencies,

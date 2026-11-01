@@ -11,14 +11,15 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
-import { normalizeLearningAnalysisInput, type LearningAnalysisInput } from '../../../shared/project-learning.cjs';
+import { normalizeLearningAnalysisInput, type ILearningAnalysisInput } from '../../../shared/project-learning.cjs';
 import { ModelsService } from '../models/models.service';
 import { ModelRuntime, type IModelInferenceRuntime } from '../models/model-runtime';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { createPool } from '../database/pool';
 import { LearningService } from './learning.service';
 import { requireLearningHuman } from './learning-access';
-import { analysisView, type AnalysisRow, type LearningAnalysis } from './learning-analysis.types';
+import { analysisView } from './learning-analysis.utils';
+import { type IAnalysisRow, type ILearningAnalysis } from './learning-analysis.interfaces';
 import { analysisRequestHash, LearningAnalysisRepository } from './learning-analysis.repository';
 import { learningAnalysisHypotheses, learningAnalysisMessages } from './learning-analysis-prompt';
 import { withModelUsage } from '../model-usage/model-usage.context';
@@ -79,19 +80,19 @@ export class LearningAnalysisService implements OnModuleInit, OnApplicationShutd
             project = await this.models.resolveProject(req, id, level, actor);
         return { actor, projectId: project.id };
     }
-    async get(req: Request, id: string, analysisId: string): Promise<LearningAnalysis> {
+    async get(req: Request, id: string, analysisId: string): Promise<ILearningAnalysis> {
         const scope = await this.scope(req, id);
         return analysisView(await this.repository.get(scope.projectId, uuid(analysisId)));
     }
-    async byKey(req: Request, id: string, key: string): Promise<LearningAnalysis> {
+    async byKey(req: Request, id: string, key: string): Promise<ILearningAnalysis> {
         const scope = await this.scope(req, id),
             row = await this.repository.byKey(scope.projectId, scope.actor.email, uuid(key));
         if (!row) throw new NotFoundException('Запрос анализа ещё не зарегистрирован.');
         return analysisView(row);
     }
-    async create(req: Request, id: string, raw: unknown): Promise<LearningAnalysis> {
+    async create(req: Request, id: string, raw: unknown): Promise<ILearningAnalysis> {
         requireLearningHuman(req);
-        let input: LearningAnalysisInput;
+        let input: ILearningAnalysisInput;
         try {
             input = normalizeLearningAnalysisInput(raw);
         } catch {
@@ -120,7 +121,7 @@ export class LearningAnalysisService implements OnModuleInit, OnApplicationShutd
             throw new BadRequestException('Нужна доступная диалоговая модель, назначенная этому проекту.');
         return model;
     }
-    private workerRequest(row: AnalysisRow): Request {
+    private workerRequest(row: IAnalysisRow): Request {
         return {
             headers: {
                 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',

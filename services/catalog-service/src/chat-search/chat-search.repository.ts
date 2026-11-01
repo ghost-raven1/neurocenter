@@ -3,16 +3,16 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { IAccessActor } from '../access/access.model';
 import { ProjectChatRepository } from '../project-chat/project-chat.repository';
+import { CHAT_SEARCH_CHUNK } from './chat-search.constants';
 import {
-    CHAT_SEARCH_CHUNK,
-    type ChatSearchInput,
-    type ChatSearchJobRow,
-    type ChatSearchSource,
-    type ChatSearchStoredHit,
-    type ChatSearchHit,
-} from './chat-search.types';
+    type IChatSearchInput,
+    type IChatSearchJobRow,
+    type IChatSearchSource,
+    type IChatSearchStoredHit,
+    type IChatSearchHit,
+} from './chat-search.interfaces';
 import { chatSearchHash } from './chat-search.math';
-type Db = Pick<PoolClient, 'query'>;
+type TDb = Pick<PoolClient, 'query'>;
 const live = `JOIN project_chat_messages m ON m.project_id=v.project_id AND m.id=v.message_id
  JOIN chat_search_revisions r ON r.project_id=m.project_id AND r.message_id=m.id AND r.revision=v.revision AND NOT r.tombstone
  JOIN project_chat_rooms room ON room.project_id=m.project_id AND room.id=m.room_id
@@ -33,7 +33,7 @@ export class ChatSearchRepository {
             return result;
         });
     }
-    async projection(db: Db, row: ChatSearchJobRow): Promise<void> {
+    async projection(db: TDb, row: IChatSearchJobRow): Promise<void> {
         const message =
             row.state === 'RUNNING'
                 ? 'Семантическая обработка публичного чата'
@@ -55,9 +55,9 @@ export class ChatSearchRepository {
             ],
         );
     }
-    async expire(db: Db, project: string, actor: string): Promise<void> {
+    async expire(db: TDb, project: string, actor: string): Promise<void> {
         const rows = (
-            await db.query<ChatSearchJobRow>(
+            await db.query<IChatSearchJobRow>(
                 `UPDATE chat_search_jobs SET state='FAILED',error='Обработка прервана или превысила время. Новый платный запрос автоматически не отправлен.',finished_at=now()
           WHERE project_id=$1 AND actor=$2 AND state='RUNNING' AND deadline<now() RETURNING *`,
                 [project, actor],
@@ -66,14 +66,14 @@ export class ChatSearchRepository {
         for (const row of rows) await this.projection(db, row);
     }
     async prior(
-        db: Db,
+        db: TDb,
         project: string,
         actor: string,
-        input: ChatSearchInput,
+        input: IChatSearchInput,
         kind: 'index' | 'search',
-    ): Promise<ChatSearchJobRow | undefined> {
+    ): Promise<IChatSearchJobRow | undefined> {
         const row = (
-            await db.query<ChatSearchJobRow>(
+            await db.query<IChatSearchJobRow>(
                 'SELECT * FROM chat_search_jobs WHERE project_id=$1 AND actor=$2 AND request_key=$3',
                 [project, actor, input.requestKey],
             )
@@ -83,15 +83,15 @@ export class ChatSearchRepository {
         return row;
     }
     async create(
-        db: Db,
+        db: TDb,
         project: string,
         actor: IAccessActor,
-        input: ChatSearchInput,
+        input: IChatSearchInput,
         kind: 'index' | 'search',
         dimension: number,
-    ): Promise<ChatSearchJobRow> {
+    ): Promise<IChatSearchJobRow> {
         const row = (
-            await db.query<ChatSearchJobRow>(
+            await db.query<IChatSearchJobRow>(
                 `INSERT INTO chat_search_jobs(id,project_id,actor,active_role,request_key,request_hash,kind,state,model_id,model_pin,dimension,deadline)
           VALUES($1,$2,$3,$4,$5,$6,$7,'RUNNING',$8,$9,$10,now()+interval '120 seconds') RETURNING *`,
                 [
@@ -111,9 +111,9 @@ export class ChatSearchRepository {
         await this.projection(db, row);
         return row;
     }
-    async get(db: Db, project: string, actor: string, id: string, lock = false): Promise<ChatSearchJobRow> {
+    async get(db: TDb, project: string, actor: string, id: string, lock = false): Promise<IChatSearchJobRow> {
         const row = (
-            await db.query<ChatSearchJobRow>(
+            await db.query<IChatSearchJobRow>(
                 'SELECT * FROM chat_search_jobs WHERE project_id=$1 AND actor=$2 AND id=$3' +
                     (lock ? ' FOR UPDATE' : ''),
                 [project, actor, id],
@@ -122,20 +122,20 @@ export class ChatSearchRepository {
         if (!row) throw new NotFoundException('Запрос семантического поиска не найден.');
         return row;
     }
-    async active(db: Db, row: ChatSearchJobRow): Promise<void> {
+    async active(db: TDb, row: IChatSearchJobRow): Promise<void> {
         const current = await this.get(db, row.project_id, row.actor, row.id, true);
         if (current.state !== 'RUNNING' || new Date(current.deadline).getTime() <= Date.now())
             throw new ConflictException('Запрос остановлен или его срок истёк. Автоматического платного повтора нет.');
     }
     async finish(
-        db: Db,
-        row: ChatSearchJobRow,
-        state: ChatSearchJobRow['state'],
-        result: ChatSearchJobRow['result'] = {},
+        db: TDb,
+        row: IChatSearchJobRow,
+        state: IChatSearchJobRow['state'],
+        result: IChatSearchJobRow['result'] = {},
         error: string | null = null,
-    ): Promise<ChatSearchJobRow> {
+    ): Promise<IChatSearchJobRow> {
         const updated = (
-            await db.query<ChatSearchJobRow>(
+            await db.query<IChatSearchJobRow>(
                 `UPDATE chat_search_jobs SET state=$2,result=$3::jsonb,error=$4,finished_at=now()
           WHERE id=$1 AND state='RUNNING' RETURNING *`,
                 [row.id, state, JSON.stringify(result), error],
@@ -144,9 +144,14 @@ export class ChatSearchRepository {
         if (updated) await this.projection(db, updated);
         return updated ?? row;
     }
-    async pending(db: Db, row: ChatSearchJobRow, roomId?: string, limit = 32): Promise<ChatSearchSource | undefined> {
+    async pending(
+        db: TDb,
+        row: IChatSearchJobRow,
+        roomId?: string,
+        limit = 32,
+    ): Promise<IChatSearchSource | undefined> {
         const source = (
-            await db.query<Omit<ChatSearchSource, 'chunks'>>(
+            await db.query<Omit<IChatSearchSource, 'chunks'>>(
                 `SELECT m.id,m.room_id,r.revision::text,m.content,m.position::text,room.title AS room_title,m.author_name
           FROM project_chat_messages m JOIN chat_search_revisions r ON r.project_id=m.project_id AND r.message_id=m.id AND NOT r.tombstone
           JOIN project_chat_rooms room ON room.project_id=m.project_id AND room.id=m.room_id
@@ -170,7 +175,7 @@ export class ChatSearchRepository {
         for (let i = 0; i < count && chunks.length < limit; i++) if (!existing.has(i)) chunks.push(i);
         return { ...source, chunks };
     }
-    async sourceCurrent(db: Db, row: ChatSearchJobRow, source: ChatSearchSource): Promise<boolean> {
+    async sourceCurrent(db: TDb, row: IChatSearchJobRow, source: IChatSearchSource): Promise<boolean> {
         return !!(
             await db.query(
                 `SELECT m.id FROM project_chat_messages m JOIN chat_search_revisions r ON r.project_id=m.project_id AND r.message_id=m.id
@@ -179,7 +184,12 @@ export class ChatSearchRepository {
             )
         ).rowCount;
     }
-    async saveVectors(db: Db, row: ChatSearchJobRow, source: ChatSearchSource, vectors: number[][]): Promise<number> {
+    async saveVectors(
+        db: TDb,
+        row: IChatSearchJobRow,
+        source: IChatSearchSource,
+        vectors: number[][],
+    ): Promise<number> {
         if (!(await this.sourceCurrent(db, row, source))) return 0;
         for (let i = 0; i < vectors.length; i++)
             await db.query(
@@ -198,7 +208,7 @@ export class ChatSearchRepository {
             );
         return vectors.length;
     }
-    async count(db: Db, row: ChatSearchJobRow, roomId?: string): Promise<number> {
+    async count(db: TDb, row: IChatSearchJobRow, roomId?: string): Promise<number> {
         return Number(
             (
                 await db.query<{ count: string }>(
@@ -209,8 +219,8 @@ export class ChatSearchRepository {
         );
     }
     async page(
-        db: Db,
-        row: ChatSearchJobRow,
+        db: TDb,
+        row: IChatSearchJobRow,
         roomId: string | undefined,
         cursor: { id: string; chunk: number } | undefined,
         limit: number,
@@ -232,10 +242,15 @@ export class ChatSearchRepository {
             )
         ).rows;
     }
-    async hydrate(db: Db, row: ChatSearchJobRow, hits: ChatSearchStoredHit[], lock = false): Promise<ChatSearchHit[]> {
+    async hydrate(
+        db: TDb,
+        row: IChatSearchJobRow,
+        hits: IChatSearchStoredHit[],
+        lock = false,
+    ): Promise<IChatSearchHit[]> {
         if (!hits.length) return [];
         return (
-            await db.query<ChatSearchHit>(
+            await db.query<IChatSearchHit>(
                 `SELECT m.id AS "messageId",m.room_id AS "roomId",room.title AS "roomTitle",r.revision::text AS revision,h.chunk AS chunk,h.score,
           substring(m.content FROM h.chunk*${CHAT_SEARCH_CHUNK}+1 FOR ${CHAT_SEARCH_CHUNK}) AS content,m.position::text,m.author_name AS "authorName"
           FROM jsonb_to_recordset($4::jsonb) AS h("messageId" uuid,revision bigint,chunk integer,score double precision)

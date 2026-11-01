@@ -22,12 +22,12 @@ export const {
     normalizeProjectAgentModelMapping,
 } = shared;
 export type {
-    AgentDefinition,
-    ProjectAgent,
-    ProjectAgentsPayload,
-    ProjectAgentReceipt,
-    ProjectAgentsResult,
-    ProjectAgentsCompilation,
-    ProjectAgentModelRequirement,
-    ProjectAgentModelMapping,
+    IAgentDefinition as AgentDefinition,
+    IProjectAgent as ProjectAgent,
+    IProjectAgentsPayload as ProjectAgentsPayload,
+    IProjectAgentReceipt as ProjectAgentReceipt,
+    IProjectAgentsResult as ProjectAgentsResult,
+    IProjectAgentsCompilation as ProjectAgentsCompilation,
+    TProjectAgentModelRequirement as ProjectAgentModelRequirement,
+    IProjectAgentModelMapping as ProjectAgentModelMapping,
 } from '../../../../../services/shared/project-agents.cjs';

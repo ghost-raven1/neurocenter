@@ -2,13 +2,13 @@ import { ConflictException, HttpException, Injectable, type OnApplicationShutdow
 import type { Pool, PoolClient } from 'pg';
 import path from 'node:path';
 import { CapacityError, reserveCapacity } from '../../../../shared/capacity.cjs';
-import { ggufImportPolicy, type GgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
+import { ggufImportPolicy, type IGgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
 import { ModelsService } from '../models.service';
-import type { IModel } from '../model.types';
+import type { IModel } from '../model.interfaces';
 import { modelFromRow, type IModelRow } from '../model-history';
 import { projectEmbeddingPin } from '../project-embedding.validation';
 import { GgufImportService, type GgufImports } from '../gguf-import/gguf-import.service';
-import { ggufImportId, type GgufUploadRow } from '../gguf-import/gguf-import.model';
+import { ggufImportId, type IGgufUploadRow } from '../gguf-import/gguf-import.model';
 import { requireFeaturesEnabled } from '../../features/require-feature-enabled';
 import { localModelAlias } from '../local-model-alias';
 import type { IModelProgress } from '../ollama-client';
@@ -17,7 +17,7 @@ import { ggufRuntimeManifest } from './gguf-runtime.manifest';
 import { RUNTIME_LIMIT_CEILINGS } from '../../../../shared/runtime-limits.cjs';
 import { createPool } from '../../database/pool';
 
-interface RuntimeIntent {
+interface IRuntimeIntent {
     model_id: string;
     upload_id: string;
     alias: string;
@@ -25,11 +25,11 @@ interface RuntimeIntent {
     bytes: string;
     state: 'RESERVED' | 'CREATE_SENT' | 'CREATED';
     manifest_sha256: string | null;
-    limits: GgufImportPolicy;
+    limits: IGgufImportPolicy;
 }
-type Database = Pick<Pool, 'query'>;
-type Progress = (value: IModelProgress) => Promise<void>;
-export interface GgufRuntimeProof {
+type TDatabase = Pick<Pool, 'query'>;
+type TProgress = (value: IModelProgress) => Promise<void>;
+export interface IGgufRuntimeProof {
     manifestSha256: string;
     alias: string;
 }
@@ -44,12 +44,12 @@ export class GgufModelRuntime {
         private readonly flags = () => requireFeaturesEnabled(['model_hosting']),
         private readonly leasePool: Pool = pool,
     ) {}
-    private async source(model: IModel): Promise<GgufUploadRow> {
+    private async source(model: IModel): Promise<IGgufUploadRow> {
         const file = model.fileImport;
         if (model.runtime !== 'ollama' || model.source !== 'custom' || !file || !ggufImportId(file.uploadId))
             throw new ConflictException('Модель не содержит принятого GGUF.');
         const row = (
-            await this.pool.query<GgufUploadRow>('SELECT * FROM model_gguf_uploads WHERE model_id=$1', [model.id])
+            await this.pool.query<IGgufUploadRow>('SELECT * FROM model_gguf_uploads WHERE model_id=$1', [model.id])
         ).rows[0];
         if (
             !row ||
@@ -67,7 +67,7 @@ export class GgufModelRuntime {
     async limits(model: IModel) {
         return (await this.source(model)).limits;
     }
-    private async authorize(actor: string, model: IModel, db: Database = this.pool, lock = false) {
+    private async authorize(actor: string, model: IModel, db: TDatabase = this.pool, lock = false) {
         await this.imports.authorize({ email: actor, activeRole: 'Главный админ' }, undefined, db, lock);
         const row = (
             await db.query<IModelRow>('SELECT * FROM model_catalog WHERE id=$1' + (lock ? ' FOR SHARE' : ''), [
@@ -96,11 +96,11 @@ export class GgufModelRuntime {
             db.release();
         }
     }
-    private async intent(id: string, db: Database = this.pool) {
-        return (await db.query<RuntimeIntent>('SELECT * FROM model_gguf_runtime_intents WHERE model_id=$1', [id]))
+    private async intent(id: string, db: TDatabase = this.pool) {
+        return (await db.query<IRuntimeIntent>('SELECT * FROM model_gguf_runtime_intents WHERE model_id=$1', [id]))
             .rows[0];
     }
-    private identity(intent: RuntimeIntent, source: GgufUploadRow, alias: string) {
+    private identity(intent: IRuntimeIntent, source: IGgufUploadRow, alias: string) {
         if (
             intent.upload_id !== source.id ||
             intent.alias !== alias ||
@@ -111,11 +111,11 @@ export class GgufModelRuntime {
     }
     private async proof(
         model: IModel,
-        source: GgufUploadRow,
-        intent: RuntimeIntent,
+        source: IGgufUploadRow,
+        intent: IRuntimeIntent,
         actor: string,
         signal: AbortSignal,
-    ): Promise<GgufRuntimeProof> {
+    ): Promise<IGgufRuntimeProof> {
         signal.throwIfAborted();
         const before = await this.provider.tag(intent.alias, intent.limits, signal);
         if (!before)
@@ -163,7 +163,7 @@ export class GgufModelRuntime {
         });
         return { manifestSha256: digest, alias: intent.alias };
     }
-    private async capacity(source: GgufUploadRow, bytes: number) {
+    private async capacity(source: IGgufUploadRow, bytes: number) {
         try {
             return await reserveCapacity({
                 resource: 'runtime-artifacts',
@@ -178,10 +178,10 @@ export class GgufModelRuntime {
     async prepare(
         model: IModel,
         actor: string,
-        progress: Progress,
+        progress: TProgress,
         signal: AbortSignal,
         allowCreate = true,
-    ): Promise<GgufRuntimeProof> {
+    ): Promise<IGgufRuntimeProof> {
         const source = await this.source(model),
             alias = localModelAlias(model),
             lease = await this.leasePool.connect();
@@ -237,7 +237,7 @@ export class GgufModelRuntime {
                     signal.throwIfAborted();
                     await this.flags();
                     return (
-                        await db.query<RuntimeIntent>(
+                        await db.query<IRuntimeIntent>(
                             `INSERT INTO model_gguf_runtime_intents(model_id,upload_id,alias,file_sha256,bytes,state,limits) VALUES($1,$2,$3,$4,$5,'RESERVED',$6::jsonb) RETURNING *`,
                             [model.id, source.id, alias, source.sha256, source.bytes, JSON.stringify(source.limits)],
                         )

@@ -1,0 +1,124 @@
+.agent-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 16px;
+    border: 1px solid #d9e3ed;
+    border-radius: 12px;
+    background: #fff;
+    min-width: 0;
+
+    &_assigned {
+        border-color: #a7bdd2;
+    }
+
+    &__heading {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    &__icon {
+        display: grid;
+        flex: 0 0 40px;
+        height: 40px;
+        place-items: center;
+        border-radius: 10px;
+        color: #3d6082;
+        background: #edf3f8;
+        font-size: 22px;
+    }
+
+    &__title {
+        flex: 1;
+        min-width: 0;
+
+        .ant-btn-link {
+            display: block;
+            padding: 0;
+            height: auto;
+            font-size: 17px;
+            font-weight: 600;
+            white-space: normal;
+            text-align: left;
+        }
+
+        > span {
+            color: #657b92;
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+    }
+
+    &__management {
+        display: flex;
+        flex-shrink: 0;
+    }
+
+    &__description {
+        margin: 0 0 10px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    &__identity {
+        margin-bottom: 4px;
+
+        .ant-tag {
+            margin-bottom: 4px;
+            white-space: normal;
+        }
+    }
+
+    &__status {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        padding: 12px 0;
+        border-top: 1px solid #edf1f5;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+    }
+
+    &__actions {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: auto;
+        padding-top: 8px;
+    }
+
+    &__update {
+        display: flex;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+        border-top: 1px solid #edf1f5;
+        margin-top: 16px;
+        padding-top: 12px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 600px) {
+    .agent-card {
+        padding: 16px;
+
+        &__heading {
+            gap: 8px;
+        }
+
+        &__icon {
+            flex-basis: 32px;
+            height: 32px;
+            font-size: 19px;
+        }
+
+        &__management {
+            flex-direction: column;
+        }
+    }
+}

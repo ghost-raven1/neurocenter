@@ -13,7 +13,7 @@ import { ToolAssetAdapter } from './tool-adapter';
 import { SkillAssetAdapter } from './skill-adapter';
 import { ModelAssetAdapter } from './asset-model-adapter';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
-import type { IImportItem, IImportJob, ISourceReceipt } from './import-types';
+import type { IImportItem, IImportJob, ISourceReceipt } from './import-interfaces';
 import { publicationHash } from '../publication/publication-validation';
 import { assertBridgeHead } from './bridge-source-head';
 import { normalizeEmail } from '../access/access.model';

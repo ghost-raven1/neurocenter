@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { normalizeAgentDefinition, type AgentDefinition } from '../../../shared/project-agents.cjs';
+import { normalizeAgentDefinition, type IAgentDefinition } from '../../../shared/project-agents.cjs';
 import { publicationHash } from '../publication/publication-validation';
-import type { AgentOverrides, AgentCard, AgentHeadRow } from './agent.types';
+import type { TAgentOverrides, IAgentCard, IAgentHeadRow } from './agent.interfaces';
 export const uuid = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
 export const sha = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -26,7 +26,7 @@ export function revision(value: unknown): asserts value is number {
     if (!Number.isSafeInteger(value) || Number(value) < 0)
         throw new BadRequestException('Передайте актуальную ревизию проекта.');
 }
-export function normalizeDefinition(value: unknown): AgentDefinition {
+export function normalizeDefinition(value: unknown): IAgentDefinition {
     try {
         return normalizeAgentDefinition(value);
     } catch (error) {
@@ -35,7 +35,7 @@ export function normalizeDefinition(value: unknown): AgentDefinition {
         );
     }
 }
-export function normalizeCard(raw: unknown): { slug: string; name: string; definition: AgentDefinition } {
+export function normalizeCard(raw: unknown): { slug: string; name: string; definition: IAgentDefinition } {
     const input = object(raw, ['slug', 'name', 'description', 'definition']);
     if (typeof input.slug !== 'string' || input.slug.length > 64 || !/^nc-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug))
         throw new BadRequestException(
@@ -76,19 +76,19 @@ export function normalizeCard(raw: unknown): { slug: string; name: string; defin
 }
 /** Omission inherits the pinned template; explicit null removes a model parameter. */
 export function effectiveDefinition(
-    base: AgentDefinition,
+    base: IAgentDefinition,
     raw: unknown,
-): { overrides: AgentOverrides; effective: AgentDefinition } {
+): { overrides: TAgentOverrides; effective: IAgentDefinition } {
     const input = object(raw, ['description', 'prompt', 'mode', 'model', 'temperature', 'topP', 'steps', 'permission']),
         merged: Record<string, unknown> = { ...base, ...input };
     for (const key of ['model', 'temperature', 'topP', 'steps']) if (merged[key] === null) delete merged[key];
-    return { overrides: structuredClone(input) as AgentOverrides, effective: normalizeDefinition(merged) };
+    return { overrides: structuredClone(input) as TAgentOverrides, effective: normalizeDefinition(merged) };
 }
 export const agentManifest = (card: {
     id: string;
     slug: string;
     name: string;
-    definition: AgentDefinition;
+    definition: IAgentDefinition;
     version: number;
 }): string =>
     publicationHash({
@@ -98,7 +98,7 @@ export const agentManifest = (card: {
         definition: card.definition,
         version: card.version,
     });
-export const agentNativeHash = (card: AgentCard): string =>
+export const agentNativeHash = (card: IAgentCard): string =>
     publicationHash({
         id: card.id,
         slug: card.slug,
@@ -108,7 +108,7 @@ export const agentNativeHash = (card: AgentCard): string =>
         archived: !!card.archivedAt,
     });
 const date = (value: string | Date) => (value instanceof Date ? value.toISOString() : new Date(value).toISOString());
-export function agentCard(row: AgentHeadRow): AgentCard {
+export function agentCard(row: IAgentHeadRow): IAgentCard {
     return {
         id: row.id,
         slug: row.slug,

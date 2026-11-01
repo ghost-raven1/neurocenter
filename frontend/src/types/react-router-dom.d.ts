@@ -23,7 +23,7 @@ declare module 'react-router-dom' {
     export function BrowserRouter(props: { children?: ReactNode }): ReactElement;
     export function Switch(props: { children?: ReactNode }): ReactElement;
     export function Redirect(props: { to: string }): ReactElement | null;
-    export function Link(props:Omit<AnchorHTMLAttributes<HTMLAnchorElement>,'href'>&{to:string}):ReactElement;
+    export function Link(props: Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & { to: string }): ReactElement;
     export function Route(props: {
         path?: string;
         exact?: boolean;

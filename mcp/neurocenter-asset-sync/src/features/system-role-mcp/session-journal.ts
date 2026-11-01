@@ -5,40 +5,40 @@ import { hash } from '../../bridge/state.js';
 import { atomicText, syncDirectory } from '../../bridge/atomic-file.js';
 import { readBoundedSnapshot } from '../../bridge/read-bounded.js';
 import { assertPrivateWindowsAcl, enforcePrivateWindowsAcl } from '../local-configuration/private-store.js';
-import type { RoleMcpIdentity } from './api.js';
-import type { SessionJob } from './worker.js';
+import type { IRoleMcpIdentity } from './api.js';
+import type { ISessionJob } from './worker.js';
 
-export interface RoleMcpOwner {
+export interface IRoleMcpOwner {
     pid: number;
     uid: number;
     birth: string;
     entry: string;
 }
-export interface RoleMcpCompletion {
+export interface IRoleMcpCompletion {
     jobId: string;
     lease: string;
     state: 'succeeded' | 'failed';
     message: string;
     result: { schemaVersion: 1; sessionId: string; closed: true };
 }
-type Scope = Omit<RoleMcpIdentity, 'profile'>;
-export interface RoleMcpSessionIntent {
+type TScope = Omit<IRoleMcpIdentity, 'profile'>;
+export interface IRoleMcpSessionIntent {
     schemaVersion: 1;
     requestId: string;
     nonce: string;
-    identity: Scope;
-    owner: RoleMcpOwner;
+    identity: TScope;
+    owner: IRoleMcpOwner;
     phase: 'pending' | 'claimed' | 'closed';
-    job?: SessionJob;
-    stdio?: RoleMcpOwner;
-    completion?: RoleMcpCompletion;
+    job?: ISessionJob;
+    stdio?: IRoleMcpOwner;
+    completion?: IRoleMcpCompletion;
 }
 const uuid = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
 const digest = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const maximum = 200;
-const scope = ({ profile: _, ...identity }: RoleMcpIdentity) => identity;
-const owner = (value: RoleMcpOwner) =>
+const scope = ({ profile: _, ...identity }: IRoleMcpIdentity) => identity;
+const owner = (value: IRoleMcpOwner) =>
     value &&
     Number.isSafeInteger(value.pid) &&
     value.pid > 1 &&
@@ -52,7 +52,7 @@ const owner = (value: RoleMcpOwner) =>
 
 /** Only this admitted physical profile can contain or retire its session ownership records. */
 export async function sessionDirectory(
-    identity: RoleMcpIdentity,
+    identity: IRoleMcpIdentity,
     kind:
         | 'system-role-mcp-sessions'
         | 'system-role-mcp-work'
@@ -86,8 +86,8 @@ export async function sessionDirectory(
     await assertPrivateWindowsAcl(directory);
     return directory;
 }
-function validate(value: unknown): RoleMcpSessionIntent {
-    const item = value as RoleMcpSessionIntent,
+function validate(value: unknown): IRoleMcpSessionIntent {
+    const item = value as IRoleMcpSessionIntent,
         keys = [
             'schemaVersion',
             'requestId',
@@ -137,8 +137,8 @@ function validate(value: unknown): RoleMcpSessionIntent {
     if (item.completion) completion(item.job!, item.completion);
     return item;
 }
-function completion(job: SessionJob, value: unknown): RoleMcpCompletion {
-    const result = value as RoleMcpCompletion;
+function completion(job: ISessionJob, value: unknown): IRoleMcpCompletion {
+    const result = value as IRoleMcpCompletion;
     if (
         !result ||
         Object.keys(result).sort().join(',') !== 'jobId,lease,message,result,state' ||
@@ -157,10 +157,10 @@ function completion(job: SessionJob, value: unknown): RoleMcpCompletion {
         throw new Error('Нужно точное подтверждение очистки этой сессии MCP.');
     return structuredClone(result);
 }
-function sameScope(identity: RoleMcpIdentity, item: RoleMcpSessionIntent) {
-    return Object.entries(scope(identity)).every(([key, value]) => item.identity[key as keyof Scope] === value);
+function sameScope(identity: IRoleMcpIdentity, item: IRoleMcpSessionIntent) {
+    return Object.entries(scope(identity)).every(([key, value]) => item.identity[key as keyof TScope] === value);
 }
-async function snapshot(identity: RoleMcpIdentity, requestId: string) {
+async function snapshot(identity: IRoleMcpIdentity, requestId: string) {
     if (!uuid(requestId)) throw new Error('Некорректный запрос сессии MCP.');
     const file = path.join(await sessionDirectory(identity), requestId + '.json');
     const info = await fs.lstat(file);
@@ -177,9 +177,9 @@ async function snapshot(identity: RoleMcpIdentity, requestId: string) {
     if (item.requestId !== requestId) throw new Error('Запрос журнала MCP изменился.');
     return { file, before, item };
 }
-export async function readRoleMcpIntents(identity: RoleMcpIdentity): Promise<RoleMcpSessionIntent[]> {
+export async function readRoleMcpIntents(identity: IRoleMcpIdentity): Promise<IRoleMcpSessionIntent[]> {
     const directory = await sessionDirectory(identity),
-        items: RoleMcpSessionIntent[] = [];
+        items: IRoleMcpSessionIntent[] = [];
     let count = 0;
     for await (const entry of await fs.opendir(directory)) {
         if (!entry.name.endsWith('.json')) continue;
@@ -198,7 +198,7 @@ export async function readRoleMcpIntents(identity: RoleMcpIdentity): Promise<Rol
     return items;
 }
 /** A lost ACK followed by token renewal preserves the closed proof without sending it with the new token. */
-async function archiveClosed(identity: RoleMcpIdentity, item: RoleMcpSessionIntent) {
+async function archiveClosed(identity: IRoleMcpIdentity, item: IRoleMcpSessionIntent) {
     const current = await snapshot(identity, item.requestId),
         directory = await sessionDirectory(identity, 'system-role-mcp-closed-archive'),
         destination = path.join(directory, item.requestId + '.json');
@@ -217,7 +217,7 @@ async function archiveClosed(identity: RoleMcpIdentity, item: RoleMcpSessionInte
     await syncDirectory(path.dirname(current.file));
 }
 /** Persist before the first claim request; a recovery request must never allocate a new tool session. */
-export async function beginRoleMcpIntent(identity: RoleMcpIdentity, worker: RoleMcpOwner) {
+export async function beginRoleMcpIntent(identity: IRoleMcpIdentity, worker: IRoleMcpOwner) {
     if ((await readRoleMcpIntents(identity)).length >= maximum)
         throw new Error('Доставьте сохранённые завершения MCP перед новыми действиями.');
     const item = validate({
@@ -235,7 +235,7 @@ export async function beginRoleMcpIntent(identity: RoleMcpIdentity, worker: Role
     );
     return item;
 }
-async function change(identity: RoleMcpIdentity, item: RoleMcpSessionIntent, next: RoleMcpSessionIntent) {
+async function change(identity: IRoleMcpIdentity, item: IRoleMcpSessionIntent, next: IRoleMcpSessionIntent) {
     const current = await snapshot(identity, item.requestId);
     if (!sameScope(identity, current.item) || JSON.stringify(current.item) !== JSON.stringify(item))
         throw new Error('Журнал MCP изменился во время выполнения.');
@@ -243,10 +243,10 @@ async function change(identity: RoleMcpIdentity, item: RoleMcpSessionIntent, nex
     await atomicText(current.file, JSON.stringify(next), 0o600);
     return next;
 }
-export async function retainRoleMcpClaim(identity: RoleMcpIdentity, item: RoleMcpSessionIntent, job: SessionJob) {
+export async function retainRoleMcpClaim(identity: IRoleMcpIdentity, item: IRoleMcpSessionIntent, job: ISessionJob) {
     if (item.phase !== 'pending' || job.requestId !== item.requestId)
         throw new Error('Подтверждение относится к другому запросу MCP.');
-    const exact: SessionJob = {
+    const exact: ISessionJob = {
         id: job.id,
         lease: job.lease,
         project_id: job.project_id,
@@ -256,17 +256,21 @@ export async function retainRoleMcpClaim(identity: RoleMcpIdentity, item: RoleMc
     };
     return change(identity, item, { ...item, phase: 'claimed', job: exact });
 }
-export async function retainRoleMcpStdio(identity: RoleMcpIdentity, item: RoleMcpSessionIntent, process: RoleMcpOwner) {
+export async function retainRoleMcpStdio(
+    identity: IRoleMcpIdentity,
+    item: IRoleMcpSessionIntent,
+    process: IRoleMcpOwner,
+) {
     if (item.phase !== 'claimed' || item.stdio) throw new Error('Процесс MCP уже зафиксирован.');
     return change(identity, item, { ...item, stdio: process });
 }
 /** Called only after awaited local process, transport and private HOME cleanup. */
-export async function retainRoleMcpCompletion(identity: RoleMcpIdentity, item: RoleMcpSessionIntent, value: unknown) {
+export async function retainRoleMcpCompletion(identity: IRoleMcpIdentity, item: IRoleMcpSessionIntent, value: unknown) {
     if (!item.job || item.phase !== 'claimed') throw new Error('Сессия MCP не подтверждена.');
     return change(identity, item, { ...item, phase: 'closed', completion: completion(item.job, value) });
 }
 /** Confirmed success retires exactly these bytes; a conflicting replacement stays available for recovery. */
-export async function retireRoleMcpIntent(identity: RoleMcpIdentity, item: RoleMcpSessionIntent) {
+export async function retireRoleMcpIntent(identity: IRoleMcpIdentity, item: IRoleMcpSessionIntent) {
     const current = await snapshot(identity, item.requestId);
     if (!sameScope(identity, current.item) || JSON.stringify(current.item) !== JSON.stringify(item))
         throw new Error('Подтверждение MCP изменилось перед очисткой.');

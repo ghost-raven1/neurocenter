@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { GlobalProviderEditor, GlobalProviderInputError, type CompatibleCliProof } from './editor.js';
+import { GlobalProviderEditor, GlobalProviderInputError, type ICompatibleCliProof } from './editor.js';
 import { globalProvidersPage } from './page.js';
 import type { GlobalProvidersLimits } from './contract.js';
-interface Options {
+interface IOptions {
     id: string;
     home: string;
     environment: NodeJS.ProcessEnv;
@@ -11,7 +11,7 @@ interface Options {
     limits: Readonly<GlobalProvidersLimits>;
     authorize: (signal?: AbortSignal) => Promise<unknown>;
     assertCurrent: () => Promise<void>;
-    assertCompatibleCli: (signal?: AbortSignal) => Promise<CompatibleCliProof>;
+    assertCompatibleCli: (signal?: AbortSignal) => Promise<ICompatibleCliProof>;
     open: (url: string) => Promise<boolean>;
 }
 const active = new Map<string, () => Promise<void>>();
@@ -37,7 +37,7 @@ async function body(req: IncomingMessage, maximum: number) {
 }
 const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).every((key) => keys.includes(key));
 /** Single-use fragment, strict loopback Host/Origin, CSP and CSRF mirror the existing private configuration framework. */
-export async function startGlobalProvidersSession(options: Options) {
+export async function startGlobalProvidersSession(options: IOptions) {
     if (active.has(options.id) || active.size >= options.limits.sessions)
         throw Error('Локальная настройка уже открыта или достигнут лимит окон.');
     await options.authorize();

@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { assertInternal } from '../access/access.controller';
 import { RuntimeLimitsService } from './runtime-limits.service';
-import type { RuntimeLimitInput } from '../../../shared/runtime-limits.cjs';
+import type { IRuntimeLimitInput } from '../../../shared/runtime-limits.cjs';
 
 @Controller('api/runtime-limits')
 export class RuntimeLimitsController {
@@ -13,7 +13,7 @@ export class RuntimeLimitsController {
     @Get('admin') admin(@Req() req: Request) {
         return this.limits.admin(req);
     }
-    @Patch('admin') save(@Req() req: Request, @Body() input: RuntimeLimitInput) {
+    @Patch('admin') save(@Req() req: Request, @Body() input: IRuntimeLimitInput) {
         return this.limits.save(req, input);
     }
     @Get('admin/requests/:key') receipt(@Req() req: Request, @Param('key') key: string) {

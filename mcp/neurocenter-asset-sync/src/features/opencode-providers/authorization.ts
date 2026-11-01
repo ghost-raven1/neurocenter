@@ -3,7 +3,7 @@ import { readPrivateConfiguration } from '../local-configuration/private-store.j
 import { providerContext, stale } from './context.js';
 import { assertOwnedProvider } from './engine.js';
 import type { OpenCodeProviderDescriptor } from './contract.js';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { loadConnector } from './connector.js';
 /** A managed auth-only connector may start a new request only for the exact committed local profile. */
 export async function authorizeManagedProvider(
@@ -30,7 +30,7 @@ export async function authorizeManagedProvider(
         site: string;
         preparationId: string;
         openJobId?: string;
-        connectorPackage?: Package;
+        connectorPackage?: IPackage;
     }>(hash('opencode-provider-preparation:' + value.preparationId));
     if (
         !prepared ||

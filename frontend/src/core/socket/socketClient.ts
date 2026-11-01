@@ -1,6 +1,5 @@
+import type { ISocketHandlers } from './socketClient.interfaces';
 import { io } from 'socket.io-client';
-
-import type { TSocketHandlers } from './interfaces';
 
 /* Минимальный контракт «сырого» сокета, чтобы не тащить в подписки типы socket.io. */
 interface IRawSocket {
@@ -31,11 +30,17 @@ export class SocketClient {
 
     /** Socket.IO сам повторяет transport loss, но отключённый namespace требует connect(). */
     private retryInactive(raw: IRawSocket): void {
-        if (this.socket !== raw || raw.active || raw.connected || this.retryTimer !== undefined) { return; }
+        if (this.socket !== raw || raw.active || raw.connected || this.retryTimer !== undefined) {
+            return;
+        }
         const timer = setTimeout(() => {
-            if (this.socket !== raw || this.retryTimer !== timer) { return; }
+            if (this.socket !== raw || this.retryTimer !== timer) {
+                return;
+            }
             this.retryTimer = undefined;
-            if (!raw.active && !raw.connected) { raw.connect(); }
+            if (!raw.active && !raw.connected) {
+                raw.connect();
+            }
         }, NAMESPACE_RETRY_MS);
         this.retryTimer = timer;
     }
@@ -48,7 +53,9 @@ export class SocketClient {
     public connect(): void {
         if (this.socket) {
             this.clearRetry();
-            if (!this.socket.active && !this.socket.connected) { this.socket.connect(); }
+            if (!this.socket.active && !this.socket.connected) {
+                this.socket.connect();
+            }
             return;
         }
 
@@ -62,28 +69,32 @@ export class SocketClient {
         this.socket = rawSocket;
         rawSocket.on('disconnect', () => this.retryInactive(rawSocket));
         rawSocket.on('connect_error', () => this.retryInactive(rawSocket));
-        rawSocket.on('connect', () => { if (this.socket === rawSocket) { this.clearRetry(); } });
+        rawSocket.on('connect', () => {
+            if (this.socket === rawSocket) {
+                this.clearRetry();
+            }
+        });
     }
 
     /**
      * Подписывается на событие.
      *
-     * @param {keyof TSocketHandlers} event - имя события
-     * @param {TSocketHandlers[keyof TSocketHandlers]} handler - обработчик
+     * @param {keyof ISocketHandlers} event - имя события
+     * @param {ISocketHandlers[keyof ISocketHandlers]} handler - обработчик
      * @returns void
      */
-    public on<K extends keyof TSocketHandlers>(event: K, handler: TSocketHandlers[K]): void {
+    public on<K extends keyof ISocketHandlers>(event: K, handler: ISocketHandlers[K]): void {
         this.socket?.on(event, handler as (...args: unknown[]) => void);
     }
 
     /**
      * Отписывается от события.
      *
-     * @param {keyof TSocketHandlers} event - имя события
-     * @param {TSocketHandlers[keyof TSocketHandlers]} handler - обработчик
+     * @param {keyof ISocketHandlers} event - имя события
+     * @param {ISocketHandlers[keyof ISocketHandlers]} handler - обработчик
      * @returns void
      */
-    public off<K extends keyof TSocketHandlers>(event: K, handler: TSocketHandlers[K]): void {
+    public off<K extends keyof ISocketHandlers>(event: K, handler: ISocketHandlers[K]): void {
         this.socket?.off(event, handler as (...args: unknown[]) => void);
     }
 

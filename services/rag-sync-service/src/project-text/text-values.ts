@@ -1,9 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { TEXT_KNOWLEDGE_LIMITS, textBytes } from '../../../shared/project-text-knowledge.cjs';
-import type { TextCorpusState, TextSource, TextKnowledgeLimits } from '../../../shared/project-text-knowledge.cjs';
+import type { ITextCorpusState, ITextSource, ITextKnowledgeLimits } from '../../../shared/project-text-knowledge.cjs';
 
-export interface TextActor {
+export interface ITextActor {
     email: string;
     activeRole: string;
 }
@@ -16,8 +16,8 @@ export function textProject(value: unknown): string {
         throw new BadRequestException('Нужен ID проекта.');
     return value;
 }
-export function textActor(value: unknown): TextActor {
-    const actor = value as Partial<TextActor> | null;
+export function textActor(value: unknown): ITextActor {
+    const actor = value as Partial<ITextActor> | null;
     if (
         !actor ||
         typeof actor.email !== 'string' ||
@@ -45,7 +45,7 @@ export function textInput<T>(normalize: (value: unknown) => T, value: unknown): 
 }
 
 /** No state row is inserted merely to render an empty project. */
-export function textState(projectId: string, row?: Record<string, unknown>): TextCorpusState {
+export function textState(projectId: string, row?: Record<string, unknown>): ITextCorpusState {
     const updated = row?.updated_at;
     return {
         mode: 'text',
@@ -61,8 +61,8 @@ export function textState(projectId: string, row?: Record<string, unknown>): Tex
 /** Excerpts are literal substrings; line numbers follow LF, CRLF and CR from the uploaded file. */
 export function textExcerpt(
     row: { id: string; path: string; content: string; score: number; query_lexemes?: string[] },
-    limits: Readonly<TextKnowledgeLimits> = TEXT_KNOWLEDGE_LIMITS,
-): TextSource {
+    limits: Readonly<ITextKnowledgeLimits> = TEXT_KNOWLEDGE_LIMITS,
+): ITextSource {
     const lexemes = (row.query_lexemes ?? []).map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const match = lexemes.length
         ? new RegExp('(^|[^\\p{L}\\p{N}_])(' + lexemes.join('|') + ')(?=$|[^\\p{L}\\p{N}_])', 'iu').exec(row.content)

@@ -2,11 +2,11 @@ import { modelPlanningOptions } from '../models/model-planning-options';
 import { automaticModelOptions } from '../models/model-runtime-options';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { Request } from 'express';
-import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import type { TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
 import { withModelUsage, ModelDispatchNotStarted } from '../model-usage/model-usage.context';
 import { chatContext, managedChatContextWindow } from '../model-chat/chat-context';
-import type { ChatMessage } from '../model-chat/chat.types';
+import type { IChatMessage } from '../model-chat/chat.interfaces';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { collectRoleDiagnostic } from './system-role.diagnostics';
 import { ROLE_BUDGET, roleCallBudget, systemRole } from './system-role.definitions';
@@ -17,23 +17,23 @@ import type { SystemRolePolicy } from './system-role.policy';
 import type { SystemRoleRepository } from './system-role.repository';
 import type { SystemRoleTargets } from './system-role.targets';
 import { roleResult } from './system-role.validation';
-import { coordinateRole, type CoordinatorStep } from './system-role.coordinator';
+import { coordinateRole, type ICoordinatorStep } from './system-role.coordinator';
 import type {
-    DiagnosticFact,
-    RoleInvocation,
-    RolePrepared,
-    RoleResult,
-    RoleRunRow,
-    SystemRoleId,
-} from './system-role.types';
+    IDiagnosticFact,
+    IRoleInvocation,
+    IRolePrepared,
+    IRoleResult,
+    IRoleRunRow,
+    TSystemRoleId,
+} from './system-role.interfaces';
 import type { ModelChatProjectContext } from '../model-chat/chat-project-context';
 import { SystemRoleRagContext } from './system-role.rag-context';
-import type { SystemRoleMcpAccess } from '../system-role-mcp/system-role-mcp.types';
+import type { ISystemRoleMcpAccess } from '../system-role-mcp/system-role-mcp.interfaces';
 import {
     withRoleMcpTools,
     roleMcpModelPreview,
     SystemRoleMcpFinishOnly,
-    type RoleMcpLoopBudget,
+    type IRoleMcpLoopBudget,
 } from '../system-role-mcp/system-role-mcp.loop';
 
 async function abortable<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> {
@@ -52,7 +52,7 @@ async function abortable<T>(work: () => Promise<T>, signal: AbortSignal): Promis
 
 /** Only this internal classification can produce an actionable timeout; raw provider errors stay private. */
 export class SystemRoleStepTimeout extends Error {
-    constructor(readonly phase: CoordinatorStep['phase']) {
+    constructor(readonly phase: ICoordinatorStep['phase']) {
         super('Шаг координатора не ответил вовремя.');
     }
 }
@@ -67,11 +67,11 @@ export class SystemRoleRunner {
         private readonly ready: () => Promise<unknown>,
         private readonly features = requireFeaturesEnabled,
         private readonly diagnostic = collectRoleDiagnostic,
-        private readonly mcp?: SystemRoleMcpAccess,
+        private readonly mcp?: ISystemRoleMcpAccess,
         private readonly projectContext?: ModelChatProjectContext,
         private readonly guidance?: SystemRoleGuidance,
     ) {}
-    async run(req: Request, row: RoleRunRow, signal: AbortSignal): Promise<void> {
+    async run(req: Request, row: IRoleRunRow, signal: AbortSignal): Promise<void> {
         try {
             const legacy = acceptedLegacyDefinition(row),
                 previous = acceptedPreviousDefinition(row),
@@ -79,7 +79,7 @@ export class SystemRoleRunner {
             const deadline = row.lease_until
                 ? new Date(row.lease_until).getTime()
                 : Date.now() + ROLE_BUDGET.deadlineMs;
-            const flags: FeatureFlagKey[] = [
+            const flags: TFeatureFlagKey[] = [
                 definition.flag,
                 ...(row.request.sourceFeature ? [row.request.sourceFeature] : []),
             ];
@@ -127,7 +127,7 @@ export class SystemRoleRunner {
             );
             await this.features(flags, process.env, globalThis.fetch, signal);
             await checkpoint();
-            const facts: DiagnosticFact[] = [];
+            const facts: IDiagnosticFact[] = [];
             for (const kind of row.request.diagnostics) {
                 await this.features(flags, process.env, globalThis.fetch, signal);
                 await checkpoint();
@@ -157,13 +157,13 @@ export class SystemRoleRunner {
                 row.snapshot.guidance && this.guidance
                     ? await this.guidance.collect(req, row.project_id, row.request.instruction, signal, checkpoint)
                     : undefined;
-            const mcpBudget: RoleMcpLoopBudget = { calls: 0, outputBytes: 0, stopped: false };
+            const mcpBudget: IRoleMcpLoopBudget = { calls: 0, outputBytes: 0, stopped: false };
             const invoke = async (
-                id: SystemRoleId,
-                messages: ChatMessage[],
-                step?: CoordinatorStep,
-                recipient: RolePrepared = row.snapshot,
-            ): Promise<RoleInvocation> => {
+                id: TSystemRoleId,
+                messages: IChatMessage[],
+                step?: ICoordinatorStep,
+                recipient: IRolePrepared = row.snapshot,
+            ): Promise<IRoleInvocation> => {
                 const child = row.agent_id === 'agent-coordinator' ? new AbortController() : undefined;
                 const remaining = deadline - Date.now() - ROLE_BUDGET.finalizationReserveMs;
                 // Planning carries native startup/queue work. Later calls divide the exact remaining workflow fairly.
@@ -179,7 +179,7 @@ export class SystemRoleRunner {
                     : undefined;
                 timeout?.unref();
                 const callSignal = child ? AbortSignal.any([signal, child.signal]) : signal;
-                let projectEvidence: RoleInvocation['projectContext'];
+                let projectEvidence: IRoleInvocation['projectContext'];
                 try {
                     const canContinueTools = async (): Promise<boolean> => {
                         callSignal.throwIfAborted();
@@ -190,7 +190,7 @@ export class SystemRoleRunner {
                     const requireToolPlanning = async () => {
                         if (!(await canContinueTools())) throw new SystemRoleMcpFinishOnly();
                     };
-                    const infer = async (callMessages: ChatMessage[], planning = false): Promise<string> => {
+                    const infer = async (callMessages: IChatMessage[], planning = false): Promise<string> => {
                         if (guidance && step?.phase !== 'planning')
                             callMessages = [
                                 ...callMessages,
@@ -202,7 +202,7 @@ export class SystemRoleRunner {
                                 },
                             ];
                         const requiredFeatures = [
-                            ...new Set<FeatureFlagKey>([...flags, systemRole(id).flag, ...rag.requiredFeatures]),
+                            ...new Set<TFeatureFlagKey>([...flags, systemRole(id).flag, ...rag.requiredFeatures]),
                         ];
                         if (
                             callMessages.reduce((bytes, message) => bytes + Buffer.byteLength(message.content), 0) >
@@ -257,7 +257,7 @@ export class SystemRoleRunner {
                                                       )
                                                           ? ['computer_connections' as const]
                                                           : []),
-                                                  ] as FeatureFlagKey[],
+                                                  ] as TFeatureFlagKey[],
                                               }
                                             : {}),
                                         beforeInference: async () => {
@@ -355,7 +355,7 @@ export class SystemRoleRunner {
                     if (timeout) clearTimeout(timeout);
                 }
             };
-            const messages: ChatMessage[] = [
+            const messages: IChatMessage[] = [
                 { role: 'system', content: definition.prompt },
                 {
                     role: 'user',
@@ -365,7 +365,7 @@ export class SystemRoleRunner {
                         JSON.stringify(facts),
                 },
             ];
-            let result: RoleResult | undefined;
+            let result: IRoleResult | undefined;
             if (row.agent_id === 'agent-coordinator') {
                 result = await coordinateRole(
                     row.snapshot,

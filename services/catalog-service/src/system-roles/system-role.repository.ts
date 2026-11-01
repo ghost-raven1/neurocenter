@@ -3,14 +3,14 @@ import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { projectRoleOperation } from './system-role.operations';
 import { ROLE_BUDGET, roleCallBudget } from './system-role.definitions';
-import type { RoleRunRow, RoleRunState, SystemRoleId } from './system-role.types';
+import type { IRoleRunRow, TRoleRunState, TSystemRoleId } from './system-role.interfaces';
 
-export type RoleDb = Pick<PoolClient, 'query'>;
-export type RoleExecutionLane = 'server' | 'device-codex';
+export type TRoleDb = Pick<PoolClient, 'query'>;
+export type TRoleExecutionLane = 'server' | 'device-codex';
 const lost = (): never => {
     throw new ConflictException('Задание изменилось, отменено или потеряло lease. Обновите состояние.');
 };
-type RolePatch = Partial<Pick<RoleRunRow, 'facts' | 'result' | 'applied'>>;
+type TRolePatch = Partial<Pick<IRoleRunRow, 'facts' | 'result' | 'applied'>>;
 /** One journal serves builtin roles; a new process never claims another process's paid work.
  * Identity is immutable, so NO KEY UPDATE serializes state while allowing a dialog's FK receipt attachment.
  */
@@ -33,29 +33,29 @@ export class SystemRoleRepository {
             db.release();
         }
     }
-    async get(id: string, db: RoleDb = this.pool, lock = false): Promise<RoleRunRow | null> {
+    async get(id: string, db: TRoleDb = this.pool, lock = false): Promise<IRoleRunRow | null> {
         return (
             (
-                await db.query<RoleRunRow>(
+                await db.query<IRoleRunRow>(
                     'SELECT * FROM system_role_runs WHERE id=$1' + (lock ? ' FOR NO KEY UPDATE' : ''),
                     [id],
                 )
             ).rows[0] ?? null
         );
     }
-    async existing(actor: string, request: string, db: RoleDb = this.pool): Promise<RoleRunRow | null> {
+    async existing(actor: string, request: string, db: TRoleDb = this.pool): Promise<IRoleRunRow | null> {
         return (
             (
-                await db.query<RoleRunRow>('SELECT * FROM system_role_runs WHERE actor=$1 AND request_id=$2', [
+                await db.query<IRoleRunRow>('SELECT * FROM system_role_runs WHERE actor=$1 AND request_id=$2', [
                     actor,
                     request,
                 ])
             ).rows[0] ?? null
         );
     }
-    async list(actor: string, agent: SystemRoleId, project: string | null): Promise<RoleRunRow[]> {
+    async list(actor: string, agent: TSystemRoleId, project: string | null): Promise<IRoleRunRow[]> {
         return (
-            await this.pool.query<RoleRunRow>(
+            await this.pool.query<IRoleRunRow>(
                 'SELECT * FROM system_role_runs WHERE actor=$1 AND agent_id=$2 AND project_id IS NOT DISTINCT FROM $3 ORDER BY created_at DESC,id DESC LIMIT 20',
                 [actor, agent, project],
             )
@@ -63,7 +63,7 @@ export class SystemRoleRepository {
     }
     async create(
         input: Pick<
-            RoleRunRow,
+            IRoleRunRow,
             | 'agent_id'
             | 'project_id'
             | 'actor'
@@ -74,9 +74,9 @@ export class SystemRoleRepository {
             | 'snapshot'
             | 'model'
         >,
-        authorize: (db: RoleDb) => Promise<void>,
-        accepted?: (db: RoleDb, row: RoleRunRow) => Promise<void>,
-    ): Promise<RoleRunRow> {
+        authorize: (db: TRoleDb) => Promise<void>,
+        accepted?: (db: TRoleDb, row: IRoleRunRow) => Promise<void>,
+    ): Promise<IRoleRunRow> {
         return this.transaction(async (db) => {
             await authorize(db);
             await db.query("SELECT pg_advisory_xact_lock(hashtextextended('system-role-create',0))");
@@ -96,7 +96,7 @@ export class SystemRoleRepository {
                 ).rowCount
             )
                 throw new ConflictException('Дождитесь или отмените предыдущий запуск этого агента.');
-            const lane: RoleExecutionLane = input.model.runtime === 'device-codex' ? 'device-codex' : 'server';
+            const lane: TRoleExecutionLane = input.model.runtime === 'device-codex' ? 'device-codex' : 'server';
             // Keep one place for the other transport within the shared eight-intent budget.
             const pending = (
                 await db.query<{ total: string; lane: string }>(
@@ -111,7 +111,7 @@ export class SystemRoleRepository {
             const now = new Date().toISOString(),
                 step = { at: now, phase: 'queued', message: 'Явный запуск системного агента принят.' };
             const row = (
-                await db.query<RoleRunRow>(
+                await db.query<IRoleRunRow>(
                     `INSERT INTO system_role_runs(id,agent_id,project_id,actor,actor_role,request_id,request_hash,request,snapshot,model,runner_instance,lease_token,lease_until,message,steps)
                 VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,now()+($13::int*interval '1 millisecond'),$14,$15::jsonb) RETURNING *`,
                     [
@@ -138,11 +138,11 @@ export class SystemRoleRepository {
             return row;
         });
     }
-    async claim(lanes: readonly RoleExecutionLane[] = ['server', 'device-codex']): Promise<RoleRunRow | null> {
+    async claim(lanes: readonly TRoleExecutionLane[] = ['server', 'device-codex']): Promise<IRoleRunRow | null> {
         if (!lanes.length) return null;
         return this.transaction(async (db) => {
             const row = (
-                await db.query<RoleRunRow>(
+                await db.query<IRoleRunRow>(
                     `SELECT * FROM system_role_runs WHERE runner_instance=$1 AND state='queued' AND lease_until>now()
                 AND CASE WHEN model->>'runtime'='device-codex' THEN 'device-codex' ELSE 'server' END=ANY($2::text[])
                 ORDER BY created_at,id LIMIT 1 FOR NO KEY UPDATE SKIP LOCKED`,
@@ -154,10 +154,10 @@ export class SystemRoleRepository {
                 : null;
         });
     }
-    async fenced<T>(id: string, lease: string, work: (db: RoleDb, row: RoleRunRow) => Promise<T>): Promise<T> {
+    async fenced<T>(id: string, lease: string, work: (db: TRoleDb, row: IRoleRunRow) => Promise<T>): Promise<T> {
         return this.transaction(async (db) => {
             const row = (
-                await db.query<RoleRunRow>(
+                await db.query<IRoleRunRow>(
                     "SELECT * FROM system_role_runs WHERE id=$1 AND state='running' AND lease_token=$2 AND lease_until>now() FOR NO KEY UPDATE",
                     [id, lease],
                 )
@@ -169,8 +169,8 @@ export class SystemRoleRepository {
     async reserveCall(
         id: string,
         lease: string,
-        authorize: (db: RoleDb, row: RoleRunRow) => Promise<void>,
-    ): Promise<RoleRunRow> {
+        authorize: (db: TRoleDb, row: IRoleRunRow) => Promise<void>,
+    ): Promise<IRoleRunRow> {
         return this.fenced(id, lease, async (db, row) => {
             await authorize(db, row);
             if (row.calls_started >= roleCallBudget(row.agent_id, !!row.request.mcp?.length)) return lost();
@@ -178,9 +178,9 @@ export class SystemRoleRepository {
             return this.change(db, row, 'running', 'model_step', 'Запускаем ограниченный вызов выбранной модели.');
         });
     }
-    async applying(id: string, phase: string, db: RoleDb): Promise<RoleRunRow> {
+    async applying(id: string, phase: string, db: TRoleDb): Promise<IRoleRunRow> {
         const row = (
-            await db.query<RoleRunRow>(
+            await db.query<IRoleRunRow>(
                 "SELECT * FROM system_role_runs WHERE id=$1 AND state='applying' AND phase=$2 AND lease_until>now() FOR NO KEY UPDATE",
                 [id, phase],
             )
@@ -189,18 +189,18 @@ export class SystemRoleRepository {
         return row;
     }
     async change(
-        db: RoleDb,
-        row: RoleRunRow,
-        state: RoleRunState,
+        db: TRoleDb,
+        row: IRoleRunRow,
+        state: TRoleRunState,
         phase: string,
         message: string,
-        patch: RolePatch = {},
-    ): Promise<RoleRunRow> {
+        patch: TRolePatch = {},
+    ): Promise<IRoleRunRow> {
         const steps = [...row.steps, { at: new Date().toISOString(), phase, message }].slice(-32);
         const active = ['queued', 'running'].includes(state);
         const result = patch.result === undefined ? row.result : patch.result;
         const updated = (
-            await db.query<RoleRunRow>(
+            await db.query<IRoleRunRow>(
                 `UPDATE system_role_runs SET state=$2,phase=$3,message=$4,revision=revision+1,steps=$5::jsonb,
             facts=$6::jsonb,result=$7::jsonb,applied=$8::jsonb,calls_started=$11,lease_until=CASE WHEN $2='applying' THEN now()+interval '60 seconds' WHEN $9 THEN lease_until ELSE NULL END,
             finished_at=CASE WHEN $2 IN ('queued','running','awaiting_review','applying') THEN NULL ELSE now() END
@@ -227,7 +227,7 @@ export class SystemRoleRepository {
     async expire(): Promise<void> {
         await this.transaction(async (db) => {
             const rows = (
-                await db.query<RoleRunRow>(
+                await db.query<IRoleRunRow>(
                     "SELECT * FROM system_role_runs WHERE state IN ('queued','running','applying') AND lease_until<=now() FOR NO KEY UPDATE SKIP LOCKED",
                 )
             ).rows;

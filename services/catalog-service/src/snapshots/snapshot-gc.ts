@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
 import type { SnapshotService } from './snapshot.service';
-import type { SnapshotBlob } from './snapshot-storage';
+import type { ISnapshotBlob } from './snapshot-storage';
 
 /** Explicit deletions are collected in bounded batches; durable object intents survive lost ACK/crash. */
 export class SnapshotGarbageCollector {
@@ -51,10 +51,10 @@ export class SnapshotGarbageCollector {
                     [row.id],
                 )
             ).rows;
-            const removing: Array<{ sha256: string; blob: SnapshotBlob }> = [];
+            const removing: Array<{ sha256: string; blob: ISnapshotBlob }> = [];
             for (const ref of refs) {
                 const intent = (
-                    await client.query<SnapshotBlob>(
+                    await client.query<ISnapshotBlob>(
                         "SELECT bytes,storage_id,version_id,state FROM project_snapshot_blobs WHERE project_id=$1 AND sha256=$2 AND state='DELETING'",
                         [candidate.project_id, ref.sha256],
                     )
@@ -78,7 +78,7 @@ export class SnapshotGarbageCollector {
                     continue;
                 }
                 const blob = (
-                    await client.query<SnapshotBlob>(
+                    await client.query<ISnapshotBlob>(
                         "UPDATE project_snapshot_blobs SET state='DELETING' WHERE project_id=$1 AND sha256=$2 RETURNING bytes,storage_id,version_id,state",
                         [candidate.project_id, ref.sha256],
                     )

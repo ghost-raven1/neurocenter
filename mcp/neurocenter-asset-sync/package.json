@@ -14,13 +14,13 @@
     "test": "vitest run",
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src integration scripts --no-error-on-unmatched-pattern --max-warnings=0",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test:coverage": "vitest run --coverage",
     "lint:fix": "npm run lint -- --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\" \"scripts/**/*.mjs\"",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\" \"scripts/**/*.mjs\""
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.29.0",
@@ -38,10 +38,11 @@
     "@types/node": "^22.10.0",
     "@vitest/coverage-v8": "4.1.12",
     "eslint": "10.13.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
     "tsx": "^4.19.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.72.0",
-    "vitest": "4.1.12",
-    "prettier": "3.9.10"
+    "vitest": "4.1.12"
   }
 }

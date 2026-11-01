@@ -5,7 +5,7 @@ import { Redirect, Route } from 'react-router-dom';
 import { IProtectedRouteProps } from './interfaces';
 
 import { baseRoutes } from '../../../core/baseRoutes';
-import { RootState } from '../../../store';
+import { TRootState } from '../../../store';
 
 /**
  * Обёртка маршрута: доступность страницы определяется `routePermissions`.
@@ -14,7 +14,7 @@ import { RootState } from '../../../store';
  * @component
  */
 const ProtectedRoute: FC<IProtectedRouteProps> = ({ name, path, render, exact = false }) => {
-    const { isAuth, user } = useSelector((state: RootState) => state.userBlock);
+    const { isAuth, user } = useSelector((state: TRootState) => state.userBlock);
 
     const isAvailableRoute = user?.routePermissions.includes(name) ?? false;
 

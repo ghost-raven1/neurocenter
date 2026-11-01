@@ -52,16 +52,16 @@ export function hasDeviceJobPermission(
     );
 }
 
-interface QueuePermission {
+interface IQueuePermission {
     role: string;
     project_id: string | null;
     kind: string;
 }
-interface QueuedJob extends QueuePermission {
+interface IQueuedJob extends IQueuePermission {
     id: string;
     email: string;
 }
-interface DeviceIdentity {
+interface IDeviceIdentity {
     id: string;
     email: string;
     role: string;
@@ -70,11 +70,11 @@ interface DeviceIdentity {
 /** Вызывается под device lock: отменяет только queued с доказанно утраченным доступом, в транзакции enqueue. */
 export async function reclaimUnauthorizedQueuedJobs(
     client: PoolClient,
-    device: DeviceIdentity,
-    incoming: QueuePermission,
+    device: IDeviceIdentity,
+    incoming: IQueuePermission,
     readClaims: () => Promise<IAccessClaims>,
 ): Promise<boolean> {
-    const { rows: queued } = await client.query<QueuedJob>(
+    const { rows: queued } = await client.query<IQueuedJob>(
         `SELECT id,email,role,project_id,kind FROM bridge_jobs
         WHERE device_id=$1 AND email=$2 AND state='queued' ORDER BY id FOR UPDATE`,
         [device.id, device.email],
@@ -86,7 +86,7 @@ export async function reclaimUnauthorizedQueuedJobs(
         projectIds,
     ]);
     const existing = new Set(projects.map((project) => project.id));
-    const permitted = (job: QueuePermission) =>
+    const permitted = (job: IQueuePermission) =>
         hasDeviceJobPermission(claims, job.role, device.role, job.project_id ?? undefined, jobMinimumLevel(job.kind)) &&
         (job.project_id
             ? existing.has(job.project_id)
@@ -109,7 +109,7 @@ export async function reclaimUnauthorizedQueuedJobs(
         throw new ForbiddenException('Роль или доступ к проекту изменились. Обновите права перед новым действием.');
     const invalid = queued.filter((job) => !permitted(job)).map((job) => job.id);
     if (!invalid.length) return false;
-    const { rows: cancelled } = await client.query<QueuedJob>(
+    const { rows: cancelled } = await client.query<IQueuedJob>(
         `UPDATE bridge_jobs SET state='cancelled',message=$4,result=NULL,updated_at=now()
         WHERE device_id=$1 AND email=$2 AND id=ANY($3::text[]) AND state='queued' RETURNING id,email,role,project_id,kind`,
         [device.id, device.email, invalid, REVOKED_QUEUE_MESSAGE],

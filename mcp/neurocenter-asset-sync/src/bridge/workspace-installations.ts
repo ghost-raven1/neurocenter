@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises';
-import { safeTarget, type WorkspaceFileVerification } from './workspace.js';
+import { safeTarget, type IWorkspaceFileVerification } from './workspace.js';
 import { withProjectFilesAt, commitChanges } from './installation-files.js';
 import { inspectInstallationAt } from './installation-inspection.js';
 import { assetKey } from './installation-receipt.js';
-import { verify, type Package } from './package.js';
+import { verify, type IPackage } from './package.js';
 import { readBoundedUtf8 } from './read-bounded.js';
 import { LEDGER_PATH } from './installation-ledger.js';
 import { InstallationPlan } from './installation-plan.js';
@@ -11,7 +11,7 @@ import { planInstall } from './installation-planner.js';
 import { hash } from './state.js';
 import { sortedRefs } from './install-set.js';
 import { WorkspaceBindingError } from './workspace-binding-error.js';
-import type { WorkspaceVerificationRelease } from './workspace-instance.model.js';
+import type { TWorkspaceVerificationRelease } from './workspace-instance.model.js';
 import { prepareMemoryOwnershipHandoffs } from '../features/project-learning-memory-sync/workspace-handoff.js';
 
 async function hold(root: string): Promise<() => Promise<void>> {
@@ -38,7 +38,7 @@ async function hold(root: string): Promise<() => Promise<void>> {
 }
 
 /** Все локальные квитанции должны иметь замороженное серверное происхождение; неизвестные не усыновляются. */
-async function assertReceipts(root: string, packages: Package[]): Promise<void> {
+async function assertReceipts(root: string, packages: IPackage[]): Promise<void> {
     const directory = await safeTarget(root, '.opencode/neurocenter/receipts');
     const names = await fs.readdir(directory).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') {
@@ -85,10 +85,10 @@ async function assertReceipts(root: string, packages: Package[]): Promise<void> 
 
 /** Удерживает прежние файловые locks до завершения identity commit; код инструментов не исполняет. */
 export async function verifyWorkspaceInstallations(
-    context: WorkspaceFileVerification,
-    packages: Package[],
+    context: IWorkspaceFileVerification,
+    packages: IPackage[],
     authorize: () => Promise<unknown> = async () => undefined,
-): Promise<WorkspaceVerificationRelease> {
+): Promise<TWorkspaceVerificationRelease> {
     for (const pkg of packages) {
         verify(pkg);
     }

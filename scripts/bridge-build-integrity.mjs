@@ -10,7 +10,8 @@ export async function verifyBridgeBuild(directory, version) {
     }
     const digest = createHash('sha256');
     for (const file of (await fs.readdir(directory, { recursive: true })).sort()) {
-        const full = path.join(directory, file), info = await fs.lstat(full);
+        const full = path.join(directory, file),
+            info = await fs.lstat(full);
         if (info.isSymbolicLink()) throw new Error('В сборке моста обнаружена ссылка: ' + file);
         if (file !== 'build.json' && info.isFile()) {
             digest.update(file.split(path.sep).join('/') + '\0');

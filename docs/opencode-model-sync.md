@@ -24,4 +24,8 @@
 
 ## Проверка
 
-Изолированные тесты: `services/catalog-service/test/opencode-model-sync.test.ts` с `OPENCODE_MODEL_SYNC_TEST_PG_URL`, `scripts/test/opencode-model-sync-http.test.mjs` с той же переменной, bridge `opencode-model-scan`/`opencode-model-sync`/`worker-heartbeat`, frontend `opencode-model-sync-ui`/`opencode-model-import-ui`. PostgreSQL для них должен иметь отдельный loopback-порт, отличный от 5432; тесты создают и удаляют только собственные базы.
+Сохранившиеся проверки моста: `mcp/neurocenter-asset-sync/integration/test/opencode-model-scan.test.ts`, `opencode-model-sync.test.ts` и `worker-heartbeat.test.ts`. Их запускают через `npm --prefix mcp/neurocenter-asset-sync test -- <имя-файла>`.
+
+HTTP/SQL-сценарий `scripts/test/opencode-model-sync-http.test.mjs` использует `OPENCODE_MODEL_SYNC_TEST_PG_URL`. PostgreSQL должен иметь отдельный loopback-порт, отличный от 5432; тест создаёт и удаляет собственную базу.
+
+Прежние `services/catalog-service/test/opencode-model-sync.test.ts` и frontend-наборы удалены при рефакторинге тестов. Они не входят в текущий запуск и не подтверждают нынешнее покрытие. Новые unit-тесты размещаются по [общему соглашению](service-eslint.md).

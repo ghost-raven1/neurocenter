@@ -7,53 +7,54 @@ import type { Request } from 'express';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { modelInferenceBody } from '../models/inference.controller';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
 import { chatContext, chatUsage } from './chat-context';
 import type { ChatGroup } from './chat-group';
-import { unknownGroupUsage, type ChatRoundBudget } from './chat-group.types';
-import type { ChatDb, ChatRepository } from './chat.repository';
-import type { ChatMessage, ConversationRow, TurnRow } from './chat.types';
-import type { ChatResearchExecutor, ResearchRoundBudget } from './chat-research';
+import { unknownGroupUsage } from './chat-group.utils';
+import { type IChatRoundBudget } from './chat-group.interfaces';
+import type { TChatDb, ChatRepository } from './chat.repository';
+import type { IChatMessage, IConversationRow, ITurnRow } from './chat.interfaces';
+import type { ChatResearchExecutor, IResearchRoundBudget } from './chat-research';
 import { researchEvidence } from './chat-research-evidence';
-import type { PreparedProjectContext } from './chat-project-context.types';
-import type { PreparedChatRound } from './chat-round-preflight';
+import type { IPreparedProjectContext } from './chat-project-context.interfaces';
+import type { TPreparedChatRound } from './chat-round-preflight';
 import { assertPendingChatInference } from './chat-inference-admission';
 
-export interface ChatRoundScope {
+export interface IChatRoundScope {
     owner: string;
     actorRole?: string;
-    row: ConversationRow;
+    row: IConversationRow;
     model: IModel;
     authorize(pin?: boolean): Promise<IModel>;
 }
-export interface ChatRoundHooks {
+export interface IChatRoundHooks {
     compact(
         model: IModel,
-        overhead: ChatMessage[],
-        assertCurrent: (db?: ChatDb) => Promise<void>,
-        budget: ChatRoundBudget,
+        overhead: IChatMessage[],
+        assertCurrent: (db?: TChatDb) => Promise<void>,
+        budget: IChatRoundBudget,
         responseId: string,
         beforeInference?: () => Promise<void>,
-    ): Promise<ChatMessage[]>;
+    ): Promise<IChatMessage[]>;
     localContextWindow: number | null;
     research: ChatResearchExecutor;
     agentTools?: AgentToolsService;
-    researchBudget: ResearchRoundBudget;
-    prepared: PreparedChatRound;
+    researchBudget: IResearchRoundBudget;
+    prepared: TPreparedChatRound;
 }
 
 /** Each explicitly addressed participant runs once; successful siblings survive retry, cancellation and failures. */
 export async function executeChatRound(
     req: Request,
-    scope: ChatRoundScope,
-    turn: TurnRow,
+    scope: IChatRoundScope,
+    turn: ITurnRow,
     signal: AbortSignal,
-    project: PreparedProjectContext,
+    project: IPreparedProjectContext,
     groups: ChatGroup,
     repository: ChatRepository,
     runtime: IModelInferenceRuntime,
-    hooks: ChatRoundHooks,
+    hooks: IChatRoundHooks,
 ): Promise<void> {
     const responses = await groups.responses(repository.pool, scope.row.id, [turn.id]),
         budget = { summaries: 0 };
@@ -74,7 +75,7 @@ export async function executeChatRound(
         try {
             const model = await groups.assert(req, scope.row, await scope.authorize(true), response.snapshot),
                 settings = prepared.settings;
-            const persona: ChatMessage[] = [{ role: 'system', content: response.snapshot.definition.prompt }];
+            const persona: IChatMessage[] = [{ role: 'system', content: response.snapshot.definition.prompt }];
             const learning = prepared.learning,
                 base = [...persona, ...learning.messages];
             const minimal = project.fit([...base, { role: 'user', content: turn.input_text }], settings);
@@ -85,7 +86,7 @@ export async function executeChatRound(
                     ? agentToolContext(scope.row.project_id!, turn.agent_tools_request)
                     : hooks.research.overhead(turn.research_request)),
             ];
-            const assertCurrent = async (db?: ChatDb) => {
+            const assertCurrent = async (db?: TChatDb) => {
                 signal.throwIfAborted();
                 await scope.authorize(true);
                 await groups.assert(req, scope.row, scope.model, response.snapshot, db);
@@ -129,7 +130,7 @@ export async function executeChatRound(
                 );
             if (turn.agent_tools_request && !hooks.agentTools)
                 throw new BadRequestException('Инструменты агентов недоступны.');
-            const toolMessages: ChatMessage[] = [
+            const toolMessages: IChatMessage[] = [
                 ...persona,
                 ...fitted.messages.slice(0, fitted.messages.length - base.length - history.length),
                 ...learning.messages,
@@ -294,8 +295,8 @@ export async function executeChatRound(
 
 /** A preflight with no viable recipients still finalizes safely without starting retrieval or discarding completed siblings. */
 export async function finishChatRound(
-    scope: ChatRoundScope,
-    turn: TurnRow,
+    scope: IChatRoundScope,
+    turn: ITurnRow,
     signal: AbortSignal,
     groups: ChatGroup,
     repository: ChatRepository,

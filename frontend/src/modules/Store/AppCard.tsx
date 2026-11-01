@@ -1,16 +1,11 @@
-import {
-    ApiOutlined,
-    AppstoreOutlined,
-    DownloadOutlined,
-    ThunderboltOutlined,
-} from '@ant-design/icons';
+import { ApiOutlined, AppstoreOutlined, DownloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { Button, Card, Tag, Typography } from 'antd';
 import { FC, ReactNode } from 'react';
-import type { IStoreApp, TStoreKind } from '../../features/Catalog/types';
-import {storeCardPlatforms,storeCardRevision,storeCardSource} from './storeCardPresentation';
+import type { IStoreApp, TStoreKind } from '../../features/Catalog/interfaces';
+import { storeCardPlatforms, storeCardRevision, storeCardSource } from './storeCardPresentation';
 import type { IProjectCatalogUpdate } from './projectCatalogUpdates';
-import type {IBundledSourcePlan} from '../../features/AssetSources/types';
-import {CatalogSourceUpdateHint} from '../../features/AssetSources/CatalogRebuildStatus';
+import type { IBundledSourcePlan } from '../../features/AssetSources/interfaces';
+import { CatalogSourceUpdateHint } from '../../features/AssetSources/CatalogRebuildStatus';
 
 const { Text, Paragraph } = Typography;
 
@@ -29,7 +24,7 @@ export interface IStoreStats {
 }
 
 /** Цветной бейдж типа (иконка + подпись) — общий вид для карточки и модалки. */
-export const KindBadge: FC<{ kind: TStoreKind; icon?:boolean }> = ({ kind,icon=true }) => {
+export const KindBadge: FC<{ kind: TStoreKind; icon?: boolean }> = ({ kind, icon = true }) => {
     const k = KIND[kind];
     return (
         <span
@@ -45,8 +40,8 @@ export const KindBadge: FC<{ kind: TStoreKind; icon?:boolean }> = ({ kind,icon=t
                 fontWeight: 600,
             }}
         >
-            { icon&&k.icon }
-            { k.label }
+            {icon && k.icon}
+            {k.label}
         </span>
     );
 };
@@ -63,7 +58,7 @@ interface IAppCardProps {
     action: ReactNode;
     feedback?: ReactNode;
     update?: IProjectCatalogUpdate;
-    pendingSource?:IBundledSourcePlan;
+    pendingSource?: IBundledSourcePlan;
 }
 
 /**
@@ -75,25 +70,76 @@ interface IAppCardProps {
  * @returns JSX-элемент карточки
  */
 const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback, update, pendingSource }) => {
-    const source=storeCardSource(app.origin),revision=storeCardRevision(app.revision),platforms=storeCardPlatforms(app.config);
-    const description=app.description.trim(),tags=[...new Set(app.tags.map(tag=>tag.trim()).filter(Boolean))].slice(0,3);
+    const source = storeCardSource(app.origin),
+        revision = storeCardRevision(app.revision),
+        platforms = storeCardPlatforms(app.config);
+    const description = app.description.trim(),
+        tags = [...new Set(app.tags.map((tag) => tag.trim()).filter(Boolean))].slice(0, 3);
     return (
-        <Card className="store-card" title={
-            <div className="store-card__identity"><span className="store-card__icon" aria-hidden="true">{KIND[app.kind].icon}</span><div><Button type="link" className="store-card__title" title={app.name} aria-label={`Подробнее: ${app.name}`} onClick={onView}>{app.name}</Button><KindBadge kind={app.kind} icon={false} /></div></div>
-        } extra={installed ? <Tag color="green">В проекте</Tag> : undefined}>
-            <Paragraph className="store-card__description" type="secondary" ellipsis={{rows:3,tooltip:description}}>{description || 'Описание пока не добавлено.'}</Paragraph>
-            {tags.length>0&&<div className="store-card__tags">{tags.map(tag => <Tag key={tag}>{tag}</Tag>)}</div>}
-            {(source||platforms)&&<div className="store-card__facts">
-                {source&&<Text type="secondary" className="store-card__source" title={source.label}>{source.label}</Text>}
-                {platforms&&<Text type="secondary" title={platforms.title}>Платформы: {platforms.label}</Text>}
-            </div>}
+        <Card
+            className="store-card"
+            title={
+                <div className="store-card__identity">
+                    <span className="store-card__icon" aria-hidden="true">
+                        {KIND[app.kind].icon}
+                    </span>
+                    <div>
+                        <Button
+                            type="link"
+                            className="store-card__title"
+                            title={app.name}
+                            aria-label={`Подробнее: ${app.name}`}
+                            onClick={onView}
+                        >
+                            {app.name}
+                        </Button>
+                        <KindBadge kind={app.kind} icon={false} />
+                    </div>
+                </div>
+            }
+            extra={installed ? <Tag color="green">В проекте</Tag> : undefined}
+        >
+            <Paragraph
+                className="store-card__description"
+                type="secondary"
+                ellipsis={{ rows: 3, tooltip: description }}
+            >
+                {description || 'Описание пока не добавлено.'}
+            </Paragraph>
+            {tags.length > 0 && (
+                <div className="store-card__tags">
+                    {tags.map((tag) => (
+                        <Tag key={tag}>{tag}</Tag>
+                    ))}
+                </div>
+            )}
+            {(source || platforms) && (
+                <div className="store-card__facts">
+                    {source && (
+                        <Text type="secondary" className="store-card__source" title={source.label}>
+                            {source.label}
+                        </Text>
+                    )}
+                    {platforms && (
+                        <Text type="secondary" title={platforms.title}>
+                            Платформы: {platforms.label}
+                        </Text>
+                    )}
+                </div>
+            )}
             <div className="store-card__meta">
-                {revision&&<Text type="secondary">Поставка {revision}</Text>}
-                {!!stats?.installs&&<span><DownloadOutlined /> {stats.installs} установок</span>}
-                <Text type="secondary" className="store-card__edition">Редакция {app.version}</Text>
+                {revision && <Text type="secondary">Поставка {revision}</Text>}
+                {!!stats?.installs && (
+                    <span>
+                        <DownloadOutlined /> {stats.installs} установок
+                    </span>
+                )}
+                <Text type="secondary" className="store-card__edition">
+                    Редакция {app.version}
+                </Text>
             </div>
             {update && <ProjectToolVersions app={app} update={update} />}
-            {pendingSource&&<CatalogSourceUpdateHint plan={pendingSource}/>}
+            {pendingSource && <CatalogSourceUpdateHint plan={pendingSource} />}
             {feedback}
             <div className="store-card__actions">{action}</div>
         </Card>
@@ -101,16 +147,33 @@ const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, fee
 };
 
 /** Редакция назначения и квитанция файлов не подменяют проверку запуска инструмента. */
-function ProjectToolVersions({app, update}: {app: IStoreApp; update: IProjectCatalogUpdate}): JSX.Element {
+function ProjectToolVersions({ app, update }: { app: IStoreApp; update: IProjectCatalogUpdate }): JSX.Element {
     const headRevision = storeCardRevision(update.head?.revision);
     const projectRevision = storeCardRevision(app.revision);
-    return <div className="store-card__versions" role="status" style={{display: 'grid', gap: 2, fontSize: 12}}>
-        <Text type={update.catalogNewer ? 'warning' : 'secondary'}>Каталог: {update.head ? `${headRevision ? headRevision + ' · ' : ''}редакция ${update.head.version}` : 'версия не подтверждена'}</Text>
-        <Text type="secondary">Проект: {update.project.version && !app.pinError ? `${projectRevision ? projectRevision + ' · ' : ''}редакция ${update.project.version}` : 'версия не подтверждена'}</Text>
-        <Text type={update.computerDiffers ? 'warning' : 'secondary'}>Компьютер: {update.computer
-            ? `квитанция редакции ${update.computer.version}${update.computerDiffers ? ' · отличается от проекта' : ''}`
-            : update.receiptsReady ? 'нет квитанции выбранной папки' : 'версия не подтверждена'}</Text>
-    </div>;
+    return (
+        <div className="store-card__versions" role="status" style={{ display: 'grid', gap: 2, fontSize: 12 }}>
+            <Text type={update.catalogNewer ? 'warning' : 'secondary'}>
+                Каталог:{' '}
+                {update.head
+                    ? `${headRevision ? headRevision + ' · ' : ''}редакция ${update.head.version}`
+                    : 'версия не подтверждена'}
+            </Text>
+            <Text type="secondary">
+                Проект:{' '}
+                {update.project.version && !app.pinError
+                    ? `${projectRevision ? projectRevision + ' · ' : ''}редакция ${update.project.version}`
+                    : 'версия не подтверждена'}
+            </Text>
+            <Text type={update.computerDiffers ? 'warning' : 'secondary'}>
+                Компьютер:{' '}
+                {update.computer
+                    ? `квитанция редакции ${update.computer.version}${update.computerDiffers ? ' · отличается от проекта' : ''}`
+                    : update.receiptsReady
+                      ? 'нет квитанции выбранной папки'
+                      : 'версия не подтверждена'}
+            </Text>
+        </div>
+    );
 }
 
 export default AppCard;

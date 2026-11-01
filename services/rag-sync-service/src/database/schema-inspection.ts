@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 
-export interface SchemaObjects {
+export interface ISchemaObjects {
     tables: readonly string[];
     indexes?: readonly string[];
     functions?: readonly string[];
@@ -8,7 +8,7 @@ export interface SchemaObjects {
 }
 
 /** Only migration-owned objects are compared; quota triggers and generation search indexes have independent owners. */
-export async function inspectSchema(db: Pick<PoolClient, 'query'>, objects: SchemaObjects): Promise<unknown> {
+export async function inspectSchema(db: Pick<PoolClient, 'query'>, objects: ISchemaObjects): Promise<unknown> {
     const tables = (
         await db.query(
             `SELECT c.relname AS name,c.relkind AS kind,c.relpersistence AS persistence,c.relrowsecurity AS rls,c.relforcerowsecurity AS force_rls

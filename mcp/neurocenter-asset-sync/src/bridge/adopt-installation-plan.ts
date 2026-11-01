@@ -12,22 +12,22 @@ import {
     receiptPath,
     removalReceipt,
     sameValue,
-    type Receipt,
+    type IReceipt,
 } from './installation-receipt.js';
-import { verify, type Package } from './package.js';
-import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type InstallSet } from './install-set.js';
+import { verify, type IPackage } from './package.js';
+import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type IInstallSet } from './install-set.js';
 import { InventoryReader } from './project-inventory-reader.js';
 import { expectedAdoptConnection, parseProjectConfig, configSpecInside } from './project-inventory-config.js';
 import { hash } from './state.js';
 
-export interface FrozenAdoption {
-    root: Package;
-    packages: Package[];
+export interface IFrozenAdoption {
+    root: IPackage;
+    packages: IPackage[];
     manifest: string;
 }
 
 /** Снимок одобренного графа никогда не разрешает зависимости по текущему head. */
-export function frozenAdoption(pkg: Package, set: InstallSet | undefined): FrozenAdoption {
+export function frozenAdoption(pkg: IPackage, set: IInstallSet | undefined): IFrozenAdoption {
     pkg = structuredClone(pkg);
     set = set ? structuredClone(set) : undefined;
     verify(pkg);
@@ -49,7 +49,7 @@ export function frozenAdoption(pkg: Package, set: InstallSet | undefined): Froze
     }
     return { root: pkg, packages: [pkg], manifest: pkg.manifest.sha256 };
 }
-function commandInside(value: unknown, root: string, pkg: Package): boolean {
+function commandInside(value: unknown, root: string, pkg: IPackage): boolean {
     if (!value || typeof value !== 'object' || !Array.isArray((value as { command?: unknown }).command)) {
         return false;
     }
@@ -68,7 +68,7 @@ function commandInside(value: unknown, root: string, pkg: Package): boolean {
 /** Строит исключительно новые квитанции и ledger; файлы пакетов и JSONC остаются побайтно прежними. */
 export async function adoptionPlan(
     root: string,
-    frozen: FrozenAdoption,
+    frozen: IFrozenAdoption,
 ): Promise<{ plan: InstallationPlan; reader: InventoryReader; configs: Map<string, Record<string, unknown>> }> {
     const plan = new InstallationPlan(root);
     const reader = new InventoryReader(root);
@@ -83,7 +83,7 @@ export async function adoptionPlan(
             configs.set(relative, parseProjectConfig(raw));
         }
     }
-    const knownReceipts: Array<{ key: string; value: Receipt }> = [];
+    const knownReceipts: Array<{ key: string; value: IReceipt }> = [];
     const receiptNames = (await reader.list('.opencode/neurocenter/receipts')) ?? [];
     if (receiptNames.length > 1000) {
         throw new Error('Слишком много квитанций установки.');
@@ -93,7 +93,7 @@ export async function adoptionPlan(
             throw new Error('Неизвестная запись в каталоге квитанций. Принятие остановлено.');
         }
         const raw = await plan.read('.opencode/neurocenter/receipts/' + name);
-        const value = JSON.parse(raw!) as Receipt;
+        const value = JSON.parse(raw!) as IReceipt;
         if (!value?.files || typeof value.files !== 'object' || Array.isArray(value.files)) {
             throw new Error('Повреждена существующая квитанция.');
         }
@@ -169,7 +169,7 @@ export async function adoptionPlan(
                 throw new Error('Локальные файлы не совпадают с одобренным пакетом.');
             }
         }
-        const receipt: Receipt = {
+        const receipt: IReceipt = {
             version: member.plugin.version,
             manifest: member.manifest.sha256,
             files: Object.fromEntries(member.files.map((file) => [base + '/' + file.path, file.sha256])),

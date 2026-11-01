@@ -2,11 +2,11 @@ import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { object, request, revision, sha } from '../agents/agent-validation';
 import { validateModelId } from '../models/model-validation';
-import type { StartAgentTrial } from './agent-readiness.types';
+import type { IStartAgentTrial } from './agent-readiness.interfaces';
 
 export const trialHash = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** Consent is part of the immutable idempotency input; omission never grants a tool permission. */
-export function startAgentTrial(raw: unknown): StartAgentTrial {
+export function startAgentTrial(raw: unknown): IStartAgentTrial {
     const body = object(raw, [
         'requestId',
         'expectedRevision',
@@ -33,7 +33,7 @@ export function startAgentTrial(raw: unknown): StartAgentTrial {
         expectedAgentPin: body.expectedAgentPin,
         modelId: validateModelId(body.modelId),
         expectedModelPin: body.expectedModelPin,
-        tool: body.tool as StartAgentTrial['tool'],
+        tool: body.tool as IStartAgentTrial['tool'],
         toolConsent: body.toolConsent === true,
     };
 }

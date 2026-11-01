@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { normalizeOpenCodeInstallSupply } from '../../../shared/opencode-cli-install.cjs';
 
-export interface BridgePresence {
+export interface IBridgePresence {
     platform: string;
     arch: string;
     runtimeVersion: string;

@@ -1,14 +1,14 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ROLES } from '../access/access.model';
-import type { JobInput } from '../devices/device-job.model';
-import type { AutoUpdateMutation, AutoUpdateRow, AutoUpdateTarget } from './auto-update.types';
+import type { IJobInput } from '../devices/device-job.model';
+import type { IAutoUpdateMutation, IAutoUpdateRow, IAutoUpdateTarget } from './auto-update.interfaces';
 export const autoUpdateUuid = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
 const text = (value: unknown): value is string =>
     typeof value === 'string' && value.length > 0 && value.length <= 500 && !/[\x00-\x1f\x7f]/.test(value);
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
-export function autoUpdateTarget(raw: unknown, mutation = false): AutoUpdateTarget {
+export function autoUpdateTarget(raw: unknown, mutation = false): IAutoUpdateTarget {
     const allowed = [
         'deviceId',
         'projectId',
@@ -29,7 +29,7 @@ export function autoUpdateTarget(raw: unknown, mutation = false): AutoUpdateTarg
         throw new BadRequestException('Выберите установленный плагин и его текущую папку.');
     return { deviceId: raw.deviceId, projectId: raw.projectId, bindingId: raw.bindingId, assetId: raw.assetId };
 }
-export function autoUpdateMutation(raw: unknown): AutoUpdateMutation {
+export function autoUpdateMutation(raw: unknown): IAutoUpdateMutation {
     const target = autoUpdateTarget(raw, true),
         input = raw as Record<string, unknown>;
     if (
@@ -47,7 +47,7 @@ export function autoUpdateMutation(raw: unknown): AutoUpdateMutation {
     };
 }
 /** Restarts reuse only the persisted bounded install input for this exact policy tuple. */
-export function pendingAutoUpdate(row: AutoUpdateRow): JobInput {
+export function pendingAutoUpdate(row: IAutoUpdateRow): IJobInput {
     const input = row.pending_input,
         keys = [
             'deviceId',

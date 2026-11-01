@@ -4,23 +4,23 @@ import type { Pool, PoolClient } from 'pg';
 import {
     SYSTEM_ROLE_MCP_LIMITS as limits,
     systemRoleMcpDigest,
-    type RoleMcpExecutionResult,
-    type RoleMcpTarget,
+    type TRoleMcpExecutionResult,
+    type TRoleMcpTarget,
 } from '../../../shared/system-role-mcp.cjs';
 import type { IPackage } from '../catalog/bundle-package';
 import type { IInstallationSet } from '../devices/installation-set';
-import type { RoleRunRow } from '../system-roles/system-role.types';
-import type { McpCallRow, McpDiscoveryRow, McpSessionRow } from './system-role-mcp.store-types';
+import type { IRoleRunRow } from '../system-roles/system-role.interfaces';
+import type { IMcpCallRow, IMcpDiscoveryRow, IMcpSessionRow } from './system-role-mcp.store-interfaces';
 
-type Db = Pick<PoolClient, 'query'>;
-type SessionInput = {
+type TDb = Pick<PoolClient, 'query'>;
+type TSessionInput = {
     owner: string;
     role: string;
     project: string;
-    target: RoleMcpTarget;
+    target: TRoleMcpTarget;
     package: IPackage;
     installSet?: IInstallationSet;
-    run?: RoleRunRow;
+    run?: IRoleRunRow;
 };
 /** The private MCP channel owns one-send leases; it never occupies the general device-job lane. */
 export class SystemRoleMcpRepository {
@@ -40,15 +40,15 @@ export class SystemRoleMcpRepository {
         }
     }
     /** Device revocation precedes project retirement; child authority locks are taken only after both fences. */
-    private async lockScope(db: Db, project: string, target: RoleMcpTarget): Promise<void> {
+    private async lockScope(db: TDb, project: string, target: TRoleMcpTarget): Promise<void> {
         if (target.runtime === 'device')
             await db.query('SELECT id FROM bridge_devices WHERE id=$1 FOR SHARE', [target.deviceId]);
         if (!(await db.query('SELECT id FROM projects WHERE id=$1 FOR SHARE', [project])).rowCount)
             throw new ConflictException('Проект недоступен.');
     }
-    async session(id: string, db: Db = this.pool, lock = false): Promise<McpSessionRow> {
+    async session(id: string, db: TDb = this.pool, lock = false): Promise<IMcpSessionRow> {
         const row = (
-            await db.query<McpSessionRow>(
+            await db.query<IMcpSessionRow>(
                 'SELECT * FROM system_role_mcp_sessions WHERE id=$1' + (lock ? ' FOR NO KEY UPDATE' : ''),
                 [id],
             )
@@ -56,9 +56,9 @@ export class SystemRoleMcpRepository {
         if (!row) throw new NotFoundException('Сессия инструментов недоступна.');
         return row;
     }
-    async call(id: string, db: Db = this.pool, lock = false): Promise<McpCallRow> {
+    async call(id: string, db: TDb = this.pool, lock = false): Promise<IMcpCallRow> {
         const row = (
-            await db.query<McpCallRow>(
+            await db.query<IMcpCallRow>(
                 'SELECT * FROM system_role_mcp_calls WHERE id=$1' + (lock ? ' FOR UPDATE' : ''),
                 [id],
             )
@@ -66,19 +66,19 @@ export class SystemRoleMcpRepository {
         if (!row) throw new NotFoundException('Квитанция инструмента недоступна.');
         return row;
     }
-    async discovery(id: string, owner: string, db: Db = this.pool): Promise<McpDiscoveryRow | undefined> {
+    async discovery(id: string, owner: string, db: TDb = this.pool): Promise<IMcpDiscoveryRow | undefined> {
         return (
-            await db.query<McpDiscoveryRow>(
+            await db.query<IMcpDiscoveryRow>(
                 'SELECT * FROM system_role_mcp_discoveries WHERE id=$1 AND owner_email=$2',
                 [id, owner],
             )
         ).rows[0];
     }
-    private async open(db: Db, input: SessionInput): Promise<McpSessionRow> {
+    private async open(db: TDb, input: TSessionInput): Promise<IMcpSessionRow> {
         const targetHash = systemRoleMcpDigest(input.target);
         if (input.run) {
             const old = (
-                await db.query<McpSessionRow>(
+                await db.query<IMcpSessionRow>(
                     'SELECT * FROM system_role_mcp_sessions WHERE run_id=$1 AND lease_token=$2 AND target_hash=$3 FOR NO KEY UPDATE',
                     [input.run.id, input.run.lease_token, targetHash],
                 )
@@ -92,7 +92,7 @@ export class SystemRoleMcpRepository {
         const id = randomUUID(),
             local = input.target.runtime === 'device';
         return (
-            await db.query<McpSessionRow>(
+            await db.query<IMcpSessionRow>(
                 `INSERT INTO system_role_mcp_sessions(id,owner_email,actor_role,project_id,run_id,lease_token,target_hash,target,package,install_set,job_id,worker_lease,deadline_at)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,LEAST(now()+($13::int*interval '1 millisecond'),COALESCE($14::timestamptz,'infinity'))) RETURNING *`,
                 [
@@ -115,13 +115,13 @@ export class SystemRoleMcpRepository {
         ).rows[0];
     }
     private async insertCall(
-        db: Db,
-        session: McpSessionRow,
+        db: TDb,
+        session: IMcpSessionRow,
         kind: 'list' | 'call',
         tool?: { key: string; name: string; digest: string; arguments: Record<string, unknown> },
-    ): Promise<McpCallRow> {
+    ): Promise<IMcpCallRow> {
         return (
-            await db.query<McpCallRow>(
+            await db.query<IMcpCallRow>(
                 `INSERT INTO system_role_mcp_calls(id,session_id,run_id,kind,dispatch_proof,tool_key,name,schema_digest,arguments,deadline_at)
             VALUES($1,$2,$3,$4,$11,$5,$6,$7,$8::jsonb,LEAST($9::timestamptz,now()+($10::int*interval '1 millisecond'))) RETURNING *`,
                 [
@@ -140,7 +140,7 @@ export class SystemRoleMcpRepository {
             )
         ).rows[0];
     }
-    async discover(id: string, hash: string, input: SessionInput, authorize: (db: Db) => Promise<void>) {
+    async discover(id: string, hash: string, input: TSessionInput, authorize: (db: TDb) => Promise<void>) {
         return this.transaction(async (db) => {
             await this.lockScope(db, input.project, input.target);
             await db.query("SELECT pg_advisory_xact_lock(hashtextextended('system-role-mcp-discovery:'||$1,0))", [
@@ -185,7 +185,7 @@ export class SystemRoleMcpRepository {
             const session = await this.open(db, input),
                 call = await this.insertCall(db, session, 'list');
             const discovery = (
-                await db.query<McpDiscoveryRow>(
+                await db.query<IMcpDiscoveryRow>(
                     `INSERT INTO system_role_mcp_discoveries(id,owner_email,actor_role,project_id,request_hash,target,session_id,call_id,expires_at)
                 VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,now()+($9::int*interval '1 millisecond')) RETURNING *`,
                     [
@@ -205,14 +205,14 @@ export class SystemRoleMcpRepository {
         });
     }
     async enqueue(
-        input: SessionInput & { run: RoleRunRow },
+        input: TSessionInput & { run: IRoleRunRow },
         tool: { key: string; name: string; digest: string; arguments: Record<string, unknown> },
-        authorize: (db: Db, current: RoleRunRow) => Promise<void>,
+        authorize: (db: TDb, current: IRoleRunRow) => Promise<void>,
     ) {
         return this.transaction(async (db) => {
             await this.lockScope(db, input.project, input.target);
             const current = (
-                await db.query<RoleRunRow>(
+                await db.query<IRoleRunRow>(
                     "SELECT * FROM system_role_runs WHERE id=$1 AND lease_token=$2 AND state='running' AND lease_until>now() FOR NO KEY UPDATE",
                     [input.run.id, input.run.lease_token],
                 )
@@ -235,7 +235,7 @@ export class SystemRoleMcpRepository {
             return { session, call };
         });
     }
-    async dispatch(id: string, authorize: (db: Db, session: McpSessionRow, call: McpCallRow) => Promise<void>) {
+    async dispatch(id: string, authorize: (db: TDb, session: IMcpSessionRow, call: IMcpCallRow) => Promise<void>) {
         return this.transaction(async (db) => {
             const observed = await this.call(id, db);
             const source = await this.session(observed.session_id, db);
@@ -259,7 +259,7 @@ export class SystemRoleMcpRepository {
             return { ok: true };
         });
     }
-    async finish(id: string, result: RoleMcpExecutionResult): Promise<McpCallRow> {
+    async finish(id: string, result: TRoleMcpExecutionResult): Promise<IMcpCallRow> {
         return this.transaction(async (db) => {
             const call = await this.call(id, db, true);
             const session = await this.session(call.session_id, db);
@@ -280,7 +280,7 @@ export class SystemRoleMcpRepository {
                 !active;
             if (expired && ['queued', 'dispatched'].includes(call.state))
                 return (
-                    await db.query<McpCallRow>(
+                    await db.query<IMcpCallRow>(
                         "UPDATE system_role_mcp_calls SET state=CASE WHEN state='dispatched' THEN 'unknown' ELSE 'cancelled' END,late_result=$2::jsonb,completed_at=now() WHERE id=$1 RETURNING *",
                         [id, JSON.stringify(result)],
                     )
@@ -305,7 +305,7 @@ export class SystemRoleMcpRepository {
                 throw new ConflictException('Отправка инструмента не подтверждена.');
             const state = call.state === 'queued' ? 'failed' : result.state;
             return (
-                await db.query<McpCallRow>(
+                await db.query<IMcpCallRow>(
                     'UPDATE system_role_mcp_calls SET state=$2,result=$3::jsonb,completed_at=now() WHERE id=$1 RETURNING *',
                     [id, state, JSON.stringify(result)],
                 )
@@ -350,7 +350,7 @@ export class SystemRoleMcpRepository {
         });
     }
     /** Rejected queue candidates cannot close a session already leased by another worker. */
-    async close(id: string, onlyUnclaimed = false): Promise<McpSessionRow> {
+    async close(id: string, onlyUnclaimed = false): Promise<IMcpSessionRow> {
         return this.transaction(async (db) => {
             const session = await this.session(id, db, true);
             if (onlyUnclaimed && (session.state !== 'open' || session.claimed_at)) return session;

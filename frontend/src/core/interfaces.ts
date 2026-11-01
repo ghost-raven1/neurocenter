@@ -32,7 +32,7 @@ export interface IUserInfo {
     id: string;
     principalName: string;
     email: string;
-    projectRoles: Array<{projectId:string;projectName:string;role:string}>;
+    projectRoles: Array<{ projectId: string; projectName: string; role: string }>;
     displayName: string;
     userRoles: string[];
     activeRole: string;

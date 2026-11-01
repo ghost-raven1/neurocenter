@@ -17,9 +17,9 @@ import {
     type IAccessClaims,
 } from '../access/access.model';
 import { HelpService } from '../help/help.service';
-import type { DiscussionTarget } from './discussions.types';
-type Db = Pick<PoolClient | Pool, 'query'>;
-export interface DiscussionActor extends IAccessActor {
+import type { IDiscussionTarget } from './discussions.interfaces';
+type TDb = Pick<PoolClient | Pool, 'query'>;
+export interface IDiscussionActor extends IAccessActor {
     claims: IAccessClaims;
     displayName: string;
 }
@@ -37,7 +37,7 @@ export class DiscussionsPolicy {
             throw new BadRequestException('Не подтверждён пользователь обсуждения.');
         }
     }
-    async actor(db: Db, actor: IAccessActor, lock = false): Promise<DiscussionActor> {
+    async actor(db: TDb, actor: IAccessActor, lock = false): Promise<IDiscussionActor> {
         const suffix = lock ? ' FOR SHARE' : '';
         const user = (
             await db.query<{ enabled: boolean; is_main_admin: boolean; display_name: string }>(
@@ -65,7 +65,7 @@ export class DiscussionsPolicy {
         };
     }
     /** Reuses exact skill visibility before and after the external catalog wait. */
-    private async skillScope(db: Db, actor: DiscussionActor, id: string, write: boolean): Promise<void> {
+    private async skillScope(db: TDb, actor: IDiscussionActor, id: string, write: boolean): Promise<void> {
         const projects = actor.claims.projects
             .filter((row) => Math.min(roleLevel(row.role), roleLevel(actor.activeRole)) > 0)
             .map((row) => row.projectId);
@@ -81,7 +81,7 @@ export class DiscussionsPolicy {
         if (!assigned && !native && !(canReadCommon(actor.claims, actor.activeRole) && id.startsWith('common/')))
             throw new NotFoundException('Карточка недоступна.');
     }
-    async target(db: Db, actor: DiscussionActor, target: DiscussionTarget, write = false): Promise<void> {
+    async target(db: TDb, actor: IDiscussionActor, target: IDiscussionTarget, write = false): Promise<void> {
         if (target.type === 'help') {
             await this.help.files.read(target.id);
             return;

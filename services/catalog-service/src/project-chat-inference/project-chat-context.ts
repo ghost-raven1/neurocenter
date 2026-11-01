@@ -1,10 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { chatContext, type IChatContextSettings } from '../model-chat/chat-context';
-import type { ChatMessage } from '../model-chat/chat.types';
-import type { ProjectChatMessageRow } from '../project-chat/project-chat.types';
+import type { IChatMessage } from '../model-chat/chat.interfaces';
+import type { IProjectChatMessageRow } from '../project-chat/project-chat.interfaces';
 
 /** Source IDs and quoted authors are reference data, never agent instructions. */
-export function projectChatQuote(row: ProjectChatMessageRow): ChatMessage {
+export function projectChatQuote(row: IProjectChatMessageRow): IChatMessage {
     const quoted =
         row.content.length > 16000
             ? row.content.slice(0, 16000) + '\n[Длинный ответ процитирован частично; полный текст сохранён в комнате.]'
@@ -29,12 +29,12 @@ export function projectChatQuote(row: ProjectChatMessageRow): ChatMessage {
 /** Preserve the exact question, profile and direct parent; trim older optional ancestors without paid compaction. */
 export function projectChatContext(
     profile: string,
-    source: ProjectChatMessageRow,
-    ancestors: ProjectChatMessageRow[],
-    learning: ChatMessage[],
+    source: IProjectChatMessageRow,
+    ancestors: IProjectChatMessageRow[],
+    learning: IChatMessage[],
     settings: IChatContextSettings,
-): ChatMessage[] {
-    const base: ChatMessage[] = [
+): IChatMessage[] {
+    const base: IChatMessage[] = [
         { role: 'system', content: profile },
         {
             role: 'system',
@@ -44,7 +44,7 @@ export function projectChatContext(
         },
         ...learning,
     ];
-    const question: ChatMessage[] = [
+    const question: IChatMessage[] = [
         {
             role: 'user',
             content:

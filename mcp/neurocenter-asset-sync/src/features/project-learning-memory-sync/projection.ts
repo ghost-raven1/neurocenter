@@ -1,7 +1,7 @@
 import { memoryDigest, MEMORY_SYNC_LIMITS as limits, type MemoryEntity } from './contract.js';
-import type { MemoryPort } from './memory-client.js';
+import type { IMemoryPort } from './memory-client.js';
 
-interface Step {
+interface IStep {
     kind: 'create' | 'add' | 'remove';
     name: string;
     before: MemoryEntity | undefined;
@@ -9,11 +9,11 @@ interface Step {
     values: string[];
     state: 'pending' | 'intent' | 'done';
 }
-export interface ProjectionJournal {
+export interface IProjectionJournal {
     schemaVersion: 1;
     namespace: string;
     owned: Record<string, MemoryEntity>;
-    plan?: { digest: string; steps: Step[] };
+    plan?: { digest: string; steps: IStep[] };
 }
 const conflict = () =>
     Object.assign(new Error('Управляемая запись Memory изменена вне сохранённого плана. Ручные данные сохранены.'), {
@@ -28,7 +28,7 @@ const includes = (node: MemoryEntity | undefined, owned: MemoryEntity) =>
 const same = (a: MemoryEntity | undefined, b: MemoryEntity) => !!a && memoryDigest(a) === memoryDigest(b);
 
 /** A corrupt private receipt cannot turn a managed retry into writes outside its namespace. */
-export function assertProjectionJournal(value: ProjectionJournal, namespace: string): void {
+export function assertProjectionJournal(value: IProjectionJournal, namespace: string): void {
     const entity = (item: MemoryEntity | undefined, name: string) =>
         !!item &&
         item.name === name &&
@@ -106,12 +106,12 @@ export function assertProjectionJournal(value: ProjectionJournal, namespace: str
 
 /** Preserve unrelated observations and all relations: revocation removes only recorded owned strings. */
 export async function projectMemory(
-    port: MemoryPort,
-    journal: ProjectionJournal,
+    port: IMemoryPort,
+    journal: IProjectionJournal,
     desired: MemoryEntity[],
     planDigest: string,
     cleanup: boolean,
-    save: (journal: ProjectionJournal) => Promise<void>,
+    save: (journal: IProjectionJournal) => Promise<void>,
     authorize: () => Promise<unknown>,
     checkpoint: (applied: number, removed: number, remaining: number) => Promise<void>,
 ) {
@@ -154,7 +154,7 @@ export async function projectMemory(
         await save(journal);
     }
     if (!journal.plan) {
-        const steps: Step[] = [],
+        const steps: IStep[] = [],
             wanted = new Map(desired.map((entity) => [entity.name, entity]));
         for (const after of desired) {
             const before = journal.owned[after.name];

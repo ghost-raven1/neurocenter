@@ -3,15 +3,15 @@ import type { Request } from 'express';
 import { assertInternal } from '../access/access.controller';
 import { DeviceStore } from '../devices/device-store';
 import { DeviceLearningService } from './device-learning.service';
-import type { DeviceLearningEnvelope } from './device-learning-auth';
+import type { IDeviceLearningEnvelope } from './device-learning-auth';
 import type {
-    LearningExperienceInput,
-    LearningObservedExperienceInput,
-    LearningHypothesisInput,
+    ILearningExperienceInput,
+    TLearningObservedExperienceInput,
+    ILearningHypothesisInput,
 } from '../../../shared/project-learning.cjs';
 
-type LearningDeviceTarget = Omit<DeviceLearningEnvelope, 'input'>;
-type LearningDeviceMessage<T> = LearningDeviceTarget & { input: T };
+type TLearningDeviceTarget = Omit<IDeviceLearningEnvelope, 'input'>;
+type TLearningDeviceMessage<T> = TLearningDeviceTarget & { input: T };
 
 /** Gateway's device-only allowlist and a fresh bearer identity protect this narrow transport. */
 @Controller('internal/device-channel/learning')
@@ -24,19 +24,22 @@ export class DeviceLearningController {
         assertInternal(req.headers['x-neurocenter-internal']);
         return this.devices.identity(String(req.headers.authorization ?? '').replace(/^Bearer /, ''));
     }
-    @Post('context') async context(@Req() req: Request, @Body() input: LearningDeviceTarget) {
+    @Post('context') async context(@Req() req: Request, @Body() input: TLearningDeviceTarget) {
         return this.learning.context(await this.identity(req), input);
     }
-    @Post('record') async record(@Req() req: Request, @Body() input: LearningDeviceMessage<LearningExperienceInput>) {
+    @Post('record') async record(@Req() req: Request, @Body() input: TLearningDeviceMessage<ILearningExperienceInput>) {
         return this.learning.record(await this.identity(req), input);
     }
     @Post('observe') async observe(
         @Req() req: Request,
-        @Body() input: LearningDeviceMessage<LearningObservedExperienceInput>,
+        @Body() input: TLearningDeviceMessage<TLearningObservedExperienceInput>,
     ) {
         return this.learning.observe(await this.identity(req), input);
     }
-    @Post('propose') async propose(@Req() req: Request, @Body() input: LearningDeviceMessage<LearningHypothesisInput>) {
+    @Post('propose') async propose(
+        @Req() req: Request,
+        @Body() input: TLearningDeviceMessage<ILearningHypothesisInput>,
+    ) {
         return this.learning.propose(await this.identity(req), input);
     }
 }

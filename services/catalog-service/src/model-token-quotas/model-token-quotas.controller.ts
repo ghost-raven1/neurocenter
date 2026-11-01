@@ -1,7 +1,11 @@
 import { Body, Controller, Get, Param, Put, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { ModelTokenQuotasService } from './model-token-quotas.service';
-import type { ModelTokenQuotaInput, ModelTokenQuotaReceipt, ModelTokenQuotaView } from './model-token-quotas.types';
+import type {
+    IModelTokenQuotaInput,
+    IModelTokenQuotaReceipt,
+    IModelTokenQuotaView,
+} from './model-token-quotas.interfaces';
 
 /** Exact model/user identity never comes from display labels or the model's generated content. */
 @Controller('api/models')
@@ -14,7 +18,7 @@ export class ModelTokenQuotasController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('email') email: string,
-    ): Promise<ModelTokenQuotaView> {
+    ): Promise<IModelTokenQuotaView> {
         return this.quotas.read(req, id, email);
     }
     /** MainAdmin saves a policy with revision CAS and an immutable request receipt, including when enforcement is OFF.
@@ -26,8 +30,8 @@ export class ModelTokenQuotasController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('email') email: string,
-        @Body() body: ModelTokenQuotaInput,
-    ): Promise<ModelTokenQuotaReceipt> {
+        @Body() body: IModelTokenQuotaInput,
+    ): Promise<IModelTokenQuotaReceipt> {
         return this.quotas.save(req, id, email, body);
     }
     /** MainAdmin reads its own exact accepted receipt when enforcement is OFF or its model/user was deleted.
@@ -38,7 +42,7 @@ export class ModelTokenQuotasController {
         @Param('id') id: string,
         @Param('email') email: string,
         @Param('requestKey') key: string,
-    ): Promise<ModelTokenQuotaReceipt> {
+    ): Promise<IModelTokenQuotaReceipt> {
         return this.quotas.receipt(req, id, email, key);
     }
 }

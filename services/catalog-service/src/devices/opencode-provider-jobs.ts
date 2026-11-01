@@ -9,15 +9,15 @@ import {
     OPENCODE_PROVIDER_CAPABILITY,
     OPENCODE_OLLAMA_CAPABILITY,
     OPENCODE_PROVIDER_JOBS,
-    type OpenCodeProviderDescriptor,
+    type IOpenCodeProviderDescriptor,
 } from '../../../shared/opencode-providers.cjs';
 import { modelFromRow, type IModelRow } from '../models/model-history';
 import { remoteModelBaseUrl } from '../models/remote-model-validation';
 import { assertRemoteModelOptions, remoteModelOptions } from '../models/remote-model-options';
 import { verifyPackage, type IPackage } from '../catalog/bundle-package';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import type { DeviceArtifacts } from './device-artifacts';
-import type { Job, JobInput } from './device-job.model';
+import type { IJob, IJobInput } from './device-job.model';
 import { assertExpectedBinding, managedBinding, assertPackageBridge } from './device-compatibility';
 import { assertLocalFeature } from './local-change-jobs';
 import { publishedCodexConnectors } from '../package-build/codex-connector-build';
@@ -41,7 +41,7 @@ const inputKeys = [
 ];
 export const isProviderJob = (kind: string) => OPENCODE_PROVIDER_JOBS.includes(kind as never);
 
-function binding(device: Device, input: Pick<JobInput, 'projectId' | 'expectedBindingId' | 'expectedInstanceId'>) {
+function binding(device: IDevice, input: Pick<IJobInput, 'projectId' | 'expectedBindingId' | 'expectedInstanceId'>) {
     assertLocalFeature(device.report, OPENCODE_PROVIDER_CAPABILITY);
     const bindingId = managedBinding(device.report, input.projectId);
     assertExpectedBinding(bindingId, input.expectedBindingId, true);
@@ -99,9 +99,9 @@ export async function trustedCodexConnector(store: DeviceStore, artifacts: Devic
 }
 
 /** Read only non-secret model identity and endpoint; server credential columns are never selected. */
-async function descriptor(store: DeviceStore, artifacts: DeviceArtifacts, device: Device, input: JobInput) {
+async function descriptor(store: DeviceStore, artifacts: DeviceArtifacts, device: IDevice, input: IJobInput) {
     const current = binding(device, input);
-    let expectations: OpenCodeProviderDescriptor['expectations'] = null,
+    let expectations: IOpenCodeProviderDescriptor['expectations'] = null,
         pkg: IPackage | undefined;
     if (input.providerKind === 'openai-compatible' || input.providerKind === 'ollama') {
         const ollama = input.providerKind === 'ollama';
@@ -202,7 +202,7 @@ async function descriptor(store: DeviceStore, artifacts: DeviceArtifacts, device
     }
 }
 
-async function preparation(store: DeviceStore, device: Device, expected: OpenCodeProviderDescriptor, id: unknown) {
+async function preparation(store: DeviceStore, device: IDevice, expected: IOpenCodeProviderDescriptor, id: unknown) {
     if (!uuid(id)) throw new BadRequestException('Выберите подготовку настройки.');
     const row = (
         await store.pool.query<{ result: unknown; role: string }>(
@@ -230,8 +230,8 @@ async function preparation(store: DeviceStore, device: Device, expected: OpenCod
 export async function providerJobPayload(
     store: DeviceStore,
     artifacts: DeviceArtifacts,
-    device: Device,
-    input: JobInput,
+    device: IDevice,
+    input: IJobInput,
     role: string,
 ) {
     if (!isProviderJob(input.kind)) return undefined;
@@ -259,8 +259,8 @@ export async function providerJobPayload(
 export async function assertProviderJob(
     store: DeviceStore,
     artifacts: DeviceArtifacts,
-    device: Device,
-    job: Pick<Job, 'kind' | 'payload' | 'project_id' | 'role'>,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id' | 'role'>,
     allowExpired = false,
 ) {
     if (!isProviderJob(job.kind)) return;

@@ -5,11 +5,11 @@ import { load } from 'js-yaml';
 import { runtimeProbeEngine } from '../../bridge/runtime-engine.js';
 import { safeTarget } from '../../bridge/workspace.js';
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
-import { MethodExecutionError, type MethodCommandRunner } from './process.js';
+import { MethodExecutionError, type TMethodCommandRunner } from './process.js';
 import { AGENT_METHOD_VERSIONS, type AgentMethodWorkflowPayload } from './contract.js';
 import { assertOpenSpecRoot } from './completion.js';
 
-export interface PreparedMethod {
+export interface IPreparedMethod {
     command: string;
     args: string[];
     outputProtocol?: 'opencode-http-v1';
@@ -69,8 +69,8 @@ async function workflowSkill(root: string, name: string): Promise<{ path: string
 export async function prepareMethod(
     root: string,
     payload: AgentMethodWorkflowPayload,
-    run: MethodCommandRunner,
-): Promise<PreparedMethod> {
+    run: TMethodCommandRunner,
+): Promise<IPreparedMethod> {
     if (!payload.checks.length) throw new MethodExecutionError('CHECKS_REQUIRED');
     const engine = await runtimeProbeEngine(),
         command = engine.path || 'opencode';

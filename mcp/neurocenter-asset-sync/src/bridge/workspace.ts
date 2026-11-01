@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readState, writeState, type Workspace } from './state.js';
+import { readState, writeState, type IWorkspace } from './state.js';
 import { BRIDGE_VERSION, BRIDGE_PROTOCOL, BRIDGE_CAPABILITIES, bridgeBuildId } from './protocol.js';
 import { runtimeArtifactTarget, TARGETS } from '../features/runtime-artifacts/model.js';
 import { previousDeviceCompletions } from './completions.js';
@@ -21,12 +21,12 @@ export {
     adoptLegacyProject,
 } from './workspace-instance.js';
 export type {
-    WorkspaceBindingInput,
-    WorkspaceBindingMode,
-    WorkspaceBindingPreparation,
-    WorkspaceBindingResult,
-    WorkspaceFileVerification,
-    VerifyWorkspaceFiles,
+    IWorkspaceBindingInput,
+    TWorkspaceBindingMode,
+    IWorkspaceBindingPreparation,
+    IWorkspaceBindingResult,
+    IWorkspaceFileVerification,
+    TVerifyWorkspaceFiles,
 } from './workspace-instance.js';
 export { recoverPendingWorkspaceIdentity } from './workspace-identity-state.js';
 
@@ -52,7 +52,7 @@ async function pick(command: string, args: string[]): Promise<{ stdout: string }
     }
 }
 /** Локальный native picker выполняется в MCP; сервер никогда не выбирает путь на своём диске. */
-export async function chooseRoot(): Promise<Workspace> {
+export async function chooseRoot(): Promise<IWorkspace> {
     let chosen: string;
     if (process.platform === 'darwin') {
         chosen = (
@@ -94,14 +94,14 @@ export async function chooseRoot(): Promise<Workspace> {
     }
     return setRoot(chosen);
 }
-export async function setRoot(root: string): Promise<Workspace> {
+export async function setRoot(root: string): Promise<IWorkspace> {
     const resolved = await fs.realpath(root);
     if (!(await fs.stat(resolved)).isDirectory()) {
         throw new Error('Нужна папка проектов.');
     }
     return withWorkspaceIdentityLock(async () => {
         await recoverWorkspaceIdentity();
-        const current = await readState<Workspace>('workspace');
+        const current = await readState<IWorkspace>('workspace');
         const workspace = { root: resolved, bindings: current?.bindings || {} };
         await writeState('workspace', workspace);
         return workspace;
@@ -121,7 +121,7 @@ export async function bridgePresenceReport() {
 }
 export async function workspaceReport() {
     const cliSupply = await openCodeInstallSupply();
-    const workspace = await readState<Workspace>('workspace');
+    const workspace = await readState<IWorkspace>('workspace');
     let folders: string[] = [];
     let rootError: string | undefined;
     if (workspace?.root) {

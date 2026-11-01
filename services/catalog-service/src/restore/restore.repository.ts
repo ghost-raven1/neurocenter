@@ -6,12 +6,12 @@ import {
     previewResult,
     restoreReceipt,
     restoreFailureMessages,
-    type RestorePreviewInput,
-    type RestoreInput,
-    type RestoreRunnerReport,
+    type IRestorePreviewInput,
+    type IRestoreInput,
+    type IRestoreRunnerReport,
 } from '../../../shared/web-restore.cjs';
 import { securityEvent } from '../access/security-events';
-import type { RestoreJob, RestoreRunner } from './restore.types';
+import type { IRestoreJob, IRestoreRunner } from './restore.interfaces';
 
 const leaseSeconds = 45;
 const conflict = () =>
@@ -36,7 +36,7 @@ export class RestoreRepository {
     }
     private async expire(client: PoolClient) {
         const expired = (
-            await client.query<RestoreJob>(`UPDATE web_restore_jobs SET state='interrupted',error_code='RUNNER_LOST',message='Связь с исполнителем потеряна. Результат неизвестен; повторная запись автоматически не запускается.',updated_at=now()
+            await client.query<IRestoreJob>(`UPDATE web_restore_jobs SET state='interrupted',error_code='RUNNER_LOST',message='Связь с исполнителем потеряна. Результат неизвестен; повторная запись автоматически не запускается.',updated_at=now()
    WHERE state='running' AND lease_until<now() RETURNING *`)
         ).rows;
         for (const row of expired)
@@ -50,7 +50,7 @@ export class RestoreRepository {
     }
     private async runner(client: Pool | PoolClient, runnerId?: string) {
         const row = (
-            await client.query<RestoreRunner>(
+            await client.query<IRestoreRunner>(
                 "SELECT * FROM web_restore_runner WHERE singleton AND seen_at>now()-interval '45 seconds'",
             )
         ).rows[0];
@@ -58,17 +58,17 @@ export class RestoreRepository {
             throw new ServiceUnavailableException('Исполнитель восстановления не подключён. Запрос не запускается.');
         return row;
     }
-    private checkpoint(runner: RestoreRunner, input: RestorePreviewInput) {
+    private checkpoint(runner: IRestoreRunner, input: IRestorePreviewInput) {
         if (
             !input.targetProject.startsWith(runner.target_prefix + '-') ||
             !runner.checkpoints.some((item) => item.id === input.checkpointId && item.sha256 === input.checkpointSha256)
         )
             throw conflict();
     }
-    async report(input: RestoreRunnerReport) {
+    async report(input: IRestoreRunnerReport) {
         return this.transaction(async (client) => {
             const current = (
-                await client.query<RestoreRunner>('SELECT * FROM web_restore_runner WHERE singleton FOR UPDATE')
+                await client.query<IRestoreRunner>('SELECT * FROM web_restore_runner WHERE singleton FOR UPDATE')
             ).rows[0];
             if (
                 current &&
@@ -86,11 +86,11 @@ export class RestoreRepository {
     }
     async status(actor: string) {
         await this.transaction((client) => this.expire(client));
-        const runner = (await this.pool.query<RestoreRunner>('SELECT * FROM web_restore_runner WHERE singleton'))
+        const runner = (await this.pool.query<IRestoreRunner>('SELECT * FROM web_restore_runner WHERE singleton'))
             .rows[0];
         const available = !!runner && Date.now() - new Date(runner.seen_at).getTime() < leaseSeconds * 1000;
         const jobs = (
-            await this.pool.query<RestoreJob>(
+            await this.pool.query<IRestoreJob>(
                 'SELECT * FROM web_restore_jobs WHERE actor=$1 ORDER BY created_at DESC LIMIT 20',
                 [actor],
             )
@@ -104,7 +104,7 @@ export class RestoreRepository {
     async get(actor: string, key: string, byRequest = false) {
         await this.transaction((client) => this.expire(client));
         const row = (
-            await this.pool.query<RestoreJob>(
+            await this.pool.query<IRestoreJob>(
                 `SELECT * FROM web_restore_jobs WHERE actor=$1 AND ${byRequest ? 'request_key' : 'id'}=$2`,
                 [actor, key],
             )
@@ -112,11 +112,11 @@ export class RestoreRepository {
         if (!row) throw new NotFoundException('Запрос восстановления не найден.');
         return row;
     }
-    async create(actor: string, kind: 'preview' | 'restore', input: RestorePreviewInput | RestoreInput) {
+    async create(actor: string, kind: 'preview' | 'restore', input: IRestorePreviewInput | IRestoreInput) {
         return this.transaction(async (client) => {
             const inputHash = digest({ kind, input });
             const existing = (
-                await client.query<RestoreJob>('SELECT * FROM web_restore_jobs WHERE actor=$1 AND request_key=$2', [
+                await client.query<IRestoreJob>('SELECT * FROM web_restore_jobs WHERE actor=$1 AND request_key=$2', [
                     actor,
                     input.requestKey,
                 ])
@@ -139,12 +139,12 @@ export class RestoreRepository {
                 );
             const runner = await this.runner(client);
             let previewId: string | undefined,
-                preview: RestoreJob['preview'] = null;
-            if (kind === 'preview') this.checkpoint(runner, input as RestorePreviewInput);
+                preview: IRestoreJob['preview'] = null;
+            if (kind === 'preview') this.checkpoint(runner, input as IRestorePreviewInput);
             else {
-                const request = input as RestoreInput;
+                const request = input as IRestoreInput;
                 const prior = (
-                    await client.query<RestoreJob>(
+                    await client.query<IRestoreJob>(
                         'SELECT * FROM web_restore_jobs WHERE actor=$1 AND id=$2 FOR UPDATE',
                         [actor, request.previewId],
                     )
@@ -166,7 +166,7 @@ export class RestoreRepository {
                     );
             }
             const row = (
-                await client.query<RestoreJob>(
+                await client.query<IRestoreJob>(
                     `INSERT INTO web_restore_jobs(id,actor,request_key,kind,input,input_hash,preview_id,state,preview,message)
     VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8,$9) RETURNING *`,
                     [
@@ -208,7 +208,7 @@ export class RestoreRepository {
     async cancel(actor: string, id: string) {
         return this.transaction(async (client) => {
             const row = (
-                await client.query<RestoreJob>(
+                await client.query<IRestoreJob>(
                     `UPDATE web_restore_jobs SET state='cancelled',updated_at=now(),message='Запрос отменён до запуска.' WHERE actor=$1 AND id=$2 AND state='queued' RETURNING *`,
                     [actor, id],
                 )
@@ -231,7 +231,7 @@ export class RestoreRepository {
     async cancelRequest(actor: string, key: string) {
         return this.transaction(async (client) => {
             let job = (
-                await client.query<RestoreJob>(
+                await client.query<IRestoreJob>(
                     'SELECT * FROM web_restore_jobs WHERE actor=$1 AND request_key=$2 FOR UPDATE',
                     [actor, key],
                 )
@@ -246,7 +246,7 @@ export class RestoreRepository {
             );
             if (job?.state === 'queued')
                 job = (
-                    await client.query<RestoreJob>(
+                    await client.query<IRestoreJob>(
                         "UPDATE web_restore_jobs SET state='cancelled',message='Запрос отменён до запуска.',updated_at=now() WHERE id=$1 RETURNING *",
                         [job.id],
                     )
@@ -268,14 +268,14 @@ export class RestoreRepository {
             const runner = await this.runner(client, runnerId);
             if ((await client.query("SELECT 1 FROM web_restore_jobs WHERE state='running'")).rowCount) return null;
             const row = (
-                await client.query<RestoreJob>(
+                await client.query<IRestoreJob>(
                     "SELECT * FROM web_restore_jobs WHERE state='queued' ORDER BY created_at LIMIT 1 FOR UPDATE",
                 )
             ).rows[0];
             if (!row) return null;
             let valid = await authorized(row.actor);
             try {
-                this.checkpoint(runner, (row.kind === 'preview' ? row.input : row.preview) as RestorePreviewInput);
+                this.checkpoint(runner, (row.kind === 'preview' ? row.input : row.preview) as IRestorePreviewInput);
                 if (
                     row.kind === 'restore' &&
                     (!row.preview ||
@@ -301,7 +301,7 @@ export class RestoreRepository {
                 return null;
             }
             return (
-                await client.query<RestoreJob>(
+                await client.query<IRestoreJob>(
                     "UPDATE web_restore_jobs SET state='running',runner_id=$2,lease_id=$3,lease_until=now()+interval '45 seconds',updated_at=now(),message=$4 WHERE id=$1 RETURNING *",
                     [
                         row.id,
@@ -317,7 +317,7 @@ export class RestoreRepository {
     }
     async pulse(id: string, runnerId: string, leaseId: string, message: string) {
         const row = (
-            await this.pool.query<RestoreJob>(
+            await this.pool.query<IRestoreJob>(
                 "UPDATE web_restore_jobs SET lease_until=now()+interval '45 seconds',message=$4,updated_at=now() WHERE id=$1 AND runner_id=$2 AND lease_id=$3 AND state='running' AND lease_until>now() RETURNING *",
                 [id, runnerId, leaseId, message],
             )
@@ -336,7 +336,7 @@ export class RestoreRepository {
     ) {
         return this.transaction(async (client) => {
             const row = (
-                await client.query<RestoreJob>(
+                await client.query<IRestoreJob>(
                     'SELECT * FROM web_restore_jobs WHERE id=$1 AND runner_id=$2 AND lease_id=$3 FOR UPDATE',
                     [id, runnerId, leaseId],
                 )
@@ -352,12 +352,12 @@ export class RestoreRepository {
                 return row;
             }
             if (!['running', 'interrupted'].includes(row.state)) throw conflict();
-            let preview: RestoreJob['preview'] = null,
-                receipt: RestoreJob['receipt'] = null;
+            let preview: IRestoreJob['preview'] = null,
+                receipt: IRestoreJob['receipt'] = null;
             if (result.state === 'ready') {
                 if (row.kind !== 'preview') throw conflict();
                 preview = previewResult(result.preview);
-                const input = row.input as RestorePreviewInput;
+                const input = row.input as IRestorePreviewInput;
                 if (
                     preview.checkpointId !== input.checkpointId ||
                     preview.checkpointSha256 !== input.checkpointSha256 ||
@@ -387,7 +387,7 @@ export class RestoreRepository {
                             ? 'Восстановление не запускалось.'
                             : 'Исходный стек сохранён; новый target может содержать частичные данные.');
             const updated = (
-                await client.query<RestoreJob>(
+                await client.query<IRestoreJob>(
                     'UPDATE web_restore_jobs SET state=$2,preview=COALESCE($3,preview),receipt=$4,error_code=$5,message=$6,updated_at=now() WHERE id=$1 RETURNING *',
                     [
                         id,

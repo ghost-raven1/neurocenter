@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { publicationHash } from '../publication/publication-validation';
 import { AssetImportRepository } from './import-repository';
-import type { IImportItem, ISourceReceipt } from './import-types';
+import type { IImportItem, ISourceReceipt } from './import-interfaces';
 import { SkillAssetAdapter } from './skill-adapter';
 import { AssetBlobStore, type IAssetBlob } from './asset-blob-store';
 import { validateSkillLinks } from '../../../shared/skill-source.cjs';

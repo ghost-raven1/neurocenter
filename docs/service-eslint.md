@@ -1,48 +1,57 @@
-# ESLint и форматирование серверных сервисов и моста
+# ESLint, форматирование и расположение тестов
 
-Используйте проектный Node 24 и установленные зависимости каждого пакета (`npm ci`).
+Используйте Node 24. В корне и каждом runtime-пакете установите зависимости через `npm ci`.
 
 ```sh
-# Все восемь пакетов, включая существующий frontend:
 npm run lint
-
-# Один сервис через workspace runner с отчётом .run/check:
-npm run check -- --package catalog-service --step lint
-
-# Из папки конкретного сервиса или mcp/neurocenter-asset-sync:
-npm run lint
-npm run lint:fix
-npm run format
 npm run format:check
+npm run format
+npm run check -- --package catalog-service --step lint
+npm --prefix frontend run lint:fix
 ```
 
-Обычный `npm run check` теперь выполняет lint и format:check перед typecheck, build и test. Селектор `--step lint` доступен и в контрактах dev-MCP; чтение старых отчётов сохраняется. Уже открытый MCP-клиент сам по себе новую схему инструментов не получает.
+Корневой `lint` сначала проверяет инструменты `scripts`, общие runtime-модули `services/shared` и собственные TypeScript-компоненты `catalog-source`, затем восемь runtime-пакетов. Отдельные команды `lint:root`, `format:root`, `format:root:check` ограничиваются первой областью. Подпакеты `scripts/coverage` и `scripts/snapshots/verifier` используют эту корневую настройку: их package.json поставляют зависимости инструментов. `npm run check` сохраняет последовательность lint → format:check → typecheck → build → test для runtime-пакетов и отдельный отчёт `.run/check`.
 
-Каждый из шести сервисов в `services/` и мост имеет собственные devDependencies и `eslint.config.mjs`. Версии согласованы с frontend: ESLint 10.13.0, `@eslint/js` 10.0.1, `typescript-eslint` 8.72.0. Конфиги импортируют общую политику из `scripts/lint/service-rules.mjs`; запуск предполагает checkout репозитория, как существующие сборки сервисов. Старый конфиг Airbnb/ESLint 7 моста удалён. Изменений версий runtime-зависимостей для настройки lint не требуется.
+ESLint 10.13.0, `@eslint/js` 10.0.1 и `typescript-eslint` 8.72.0 закреплены одинаково в корне и runtime-пакетах. Prettier 3.9.10 использует общий `.prettierrc.json`: 4 пробела, одинарные кавычки, ширина 120, точки с запятой, trailing commas и LF. Frontend форматирует TypeScript, TSX, Less и CSS; сервисы и мост — `src/**/*.ts` и интеграционные тесты/fixtures. Скрипты сборки и диагностики моста также входят в его lint/format. Корневой formatter обрабатывает JS/TS tooling, shared runtime и собственные catalog sources.
 
-Область backend-проверки — `src/**/*.ts`, включая объявления типов. Сгенерированный `dist`, зависимости, тесты и общие `services/shared/*.cjs` в этот lint не входят; их прежние отдельные проверки сохраняются. Список явно проверяемых исходников не зависит от текущего каталога shell при использовании package scripts.
+`vendor/asset-contract` и `catalog-source/components/fetch-mcp/source` сохраняются как upstream snapshots. Их исходные байты и provenance закреплены отдельными описями; эти каталоги исключены из локальной lint/format миграции. Generated output, зависимости, coverage reports и `.run` также исключены. `scripts/coverage` — исходный tooling-код, он проверяется и форматируется.
 
-Используются рекомендованные правила JavaScript и TypeScript без правил форматирования и без type-aware lint. TypeScript продолжает отдельно проверять типы и имена. Backend lint завершается ошибкой при любом предупреждении (`--max-warnings=0`). Frontend сохраняет прежний режим, включая предупреждения зависимостей React hooks.
+Общие серверные правила находятся в `scripts/lint/service-rules.mjs`. TypeScript отдельно разрешает имена, поэтому `no-undef` для TS отключён. Валидаторы управляющих байтов, публичные ошибки без чувствительной причины, optional CommonJS imports и best-effort пустой `catch` допустимы. Неиспользуемые production-переменные и явный `any` запрещены. Критические `throw` в `finally`, которые должны сообщать о неудачной очистке, имеют точечный комментарий с причиной.
 
-Исключения общей политики:
+Для тестов `src/**/tests/**` и `integration/test/**` действует отдельная политика mock-объектов: допустимы `any` и неиспользуемые параметры/переменные тестовых doubles. Остальные рекомендованные правила сохраняются. Frontend сохраняет проверку React hooks. Root Node tooling использует Node globals; сериализованный Preact-адаптер объявляет свои bundle aliases только в собственном файле.
 
-- `no-undef` выключен только в TypeScript-конфигурации: разрешением имён занимается tsc.
-- `no-control-regex` выключен для валидаторов запрещённых управляющих байтов.
-- `preserve-caught-error` выключен: публичная ошибка намеренно не включает потенциально чувствительную причину.
-- Пустой `catch` допустим для best-effort очистки; пустые обычные блоки запрещены.
-- `no-require-imports` выключен для поддерживаемых Node CommonJS/optional зависимостей.
-- Неиспользуемые параметры с `_` и исключаемые rest-свойства допустимы. Обычные неиспользуемые переменные, явный `any` и ненужные suppressions остаются ошибками.
+## Структура
 
-Критичные существующие `throw` в `finally` сохраняются с точечным подавлением и причиной рядом с кодом: сбой очистки или durable receipt может намеренно отменять успешный результат. Эти исключения не отключают правило для других функций.
+```text
+Component/
+  Component.tsx
+  interfaces.ts
+  constants.ts
+  utils.ts
+  tests/
+    Component.test.tsx
+    utils.test.ts
+integration/
+  test/
+    scenario.test.ts
+```
 
-`scripts/test/service-eslint.test.mjs` загружает реальный конфиг каждого пакета и проверяет допустимый NestJS/TypeScript, отклонение `any`, unused variable, unsafe finally и лишнего suppression, а также исключение generated output.
+Создавайте вспомогательные файлы только при наличии соответствующего кода. Unit-тест именуется по проверяемому исходному файлу. Межмодульные сценарии и их fixtures остаются в `integration/test`. Legacy `test` пока поддерживается раннерами для совместимости.
 
-Документация: [typescript-eslint quickstart](https://typescript-eslint.io/getting-started/), [no-undef для TypeScript](https://typescript-eslint.io/troubleshooting/faqs/eslint/#i-get-errors-from-the-no-undef-rule-about-global-variables-not-being-defined-even-though-there-are-no-typescript-errors).
+Vitest обнаруживает `src/**/tests/**/*.test.{ts,tsx}`, `integration/test/**/*.test.{ts,tsx,js,cjs,mjs}` и legacy пути. Build tsconfig исключает unit-тесты из production output. Coverage исключает `test`/`tests` из знаменателя production, обнаруживает новые расположения и разрешает точный `--test-file src/.../tests/name.test.ts` с прежней проверкой инфраструктурных зависимостей. Native workspace runner также обнаруживает `.ts`, `.mts`, `.cts` тесты Node 24 в каталогах tooling.
 
-## Форматирование
+Удалённые до этой миграции сервисные тесты не восстановлены. Их устаревшие записи удалены из активного unit-safe profile; прежние сведения остаются в Git. Это не свидетельство сохранения прежнего покрытия. Новый тест или helper нельзя считать проверенным mock-only исключением без проверки его кода и точных хешей.
 
-Prettier 3.9.10 закреплён в каждом backend-пакете. Общий `.prettierrc.json`: 4 пробела, одинарные кавычки, ширина 120, точки с запятой, trailing commas и LF. Область — те же `src/**/*.ts`; frontend и тесты массово не форматируются.
+## Владение и поведение
 
-Из корня `npm run format` форматирует все семь backend-пакетов, `npm run format:check` только проверяет их и сохраняет отчёт. Проверка frontend пропускается, поскольку там нет этого script. Обычный `check` и dev-MCP выполняют только read-only `format:check`; изменяющий файлы `format` запускается явно.
+Контракт с единственным потребителем хранится у этого потребителя. Общие контракты остаются на уровне фичи. `interfaces.ts` содержит типы и интерфейсы; исполняемые значения и функции находятся в `constants.ts` и `utils.ts`. В сервисах допустимы имена `request.interfaces.ts`, `request.constants.ts`, `request.utils.ts`, сохраняющие владельца в имени. Перед добавлением helper проверяйте существующие реализации и переиспользуйте совпадающий контракт. Похожая форма кода сама по себе не означает одинаковое поведение.
 
-Форматирование проверяется через Prettier `--debug-check` (устойчивость и эквивалентность AST). Для проверки BigInt используется временный JSON serializer только в процессе debug-check; в код приложения он не входит. Две цепочки вызовов требуют второго прохода Prettier для стабильной раскладки. ESLint отвечает за корректность, Prettier — за стиль; плагины, запускающие форматтер внутри ESLint, не нужны.
+Собственные интерфейсы называются с префиксом `I` и следующей заглавной буквой (`IRequest`, `IAgentProps`), алиасы `type` — с `T` (`TStatus`, `THandler`). Единая `typeNamingConvention` из `scripts/lint/service-rules.mjs` применяется к frontend, сервисам, мосту, shared-модулям и собственным TypeScript-инструментам. Классы, параметры generic и имена импортированных сторонних контрактов правило не переименовывает. Точечное исключение: ambient-интерфейсы Vite `ImportMeta` и `ImportMetaEnv` сохраняют публичные имена только в `frontend/src/vite-env.d.ts`; другие объявления этого файла проверяются обычным правилом. Новые внешние augmentation-контракты требуют столь же узкого исключения по файлу и имени, а не отключения проверки для всех `.d.ts`.
+
+Расширение Axios сохраняет имя `AxiosRequestConfig` только в `frontend/src/core/api/base.ts`, где объявлено `declare module 'axios'`. Исключение не распространяется на другие имена этого файла или другие модули.
+
+Less-правила группируются по блоку компонента, его элементам, состояниям и модификаторам. При переносе сохраняются селекторы, специфичность и порядок конфликтующих правил. Общие стили принадлежат фиче.
+
+Тесты проверяют наблюдаемые результаты, разрешённые действия, ошибки и сохранность данных. Не проверяйте текст исходника, внутреннее устройство функций и возможности сторонних библиотек. Проверка нашей настройки или интеграции с библиотекой допустима, если защищает наш контракт.
+
+Мокируйте внешние зависимости и источники недетерминированности: HTTP, модели, часы, случайность и запуск процессов. Тестируемый модуль остаётся настоящим. Реальные файловые, процессные и межмодульные сценарии относятся к `integration/test`, когда именно эта граница является предметом проверки. Они используют собственные временные ресурсы и очищают их.

@@ -9,7 +9,7 @@ import { LEARNING_COLLECTOR_FILE } from '../project-learning/collector-plugin.js
 export const AGENTS_RECEIPT = '.opencode/neurocenter/agents.json';
 export const agentFile = (slug: string): string => '.opencode/agents/' + slug + '.md';
 export const agentsJournalKey = (projectId: string): string => hash('project-agents:' + projectId).slice(0, 24);
-export type AgentsReceipt = {
+export type TAgentsReceipt = {
     schemaVersion: 1 | 2;
     projectId: string;
     bindingId: string;
@@ -31,7 +31,7 @@ const exact = (value: unknown, keys: string[], optional: string[] = []): value i
     keys.every((key) => Object.hasOwn(value, key)) &&
     Object.keys(value).every((key) => keys.includes(key) || optional.includes(key));
 
-export function parseAgentsReceipt(raw: string): AgentsReceipt {
+export function parseAgentsReceipt(raw: string): TAgentsReceipt {
     let value: unknown;
     try {
         value = JSON.parse(raw);
@@ -95,7 +95,7 @@ export function parseAgentsReceipt(raw: string): AgentsReceipt {
             !/^[a-f0-9]{64}$/.test(value.collector.sha256))
     )
         throw damaged();
-    return value as unknown as AgentsReceipt;
+    return value as unknown as TAgentsReceipt;
 }
 
 async function optionalRead(file: string, maximum: number): Promise<string | null> {
@@ -111,7 +111,7 @@ async function optionalRead(file: string, maximum: number): Promise<string | nul
 export async function agentsPrivateProof(
     root: string,
     projectId: string,
-): Promise<{ receipt: AgentsReceipt; raw: string; recoveryPath: string } | null> {
+): Promise<{ receipt: TAgentsReceipt; raw: string; recoveryPath: string } | null> {
     const directory = journalDirectory(root),
         key = agentsJournalKey(projectId);
     const pointerRaw = await optionalRead(path.join(directory, 'assets', key + '.json'), LOCK_BYTES_LIMIT);

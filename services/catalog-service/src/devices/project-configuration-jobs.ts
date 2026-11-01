@@ -10,13 +10,13 @@ import { requiredJobFeatures } from '../../../shared/feature-policy.cjs';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { assertExpectedBinding, managedBinding } from './device-compatibility';
 import { assertLocalFeature } from './local-change-jobs';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import { localRagUi } from '../../../shared/rag-ui-contract.cjs';
 import type { DeviceInstallations } from './device-installations';
-import type { Job, JobInput } from './device-job.model';
+import type { IJob, IJobInput } from './device-job.model';
 const uuid = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
-function currentBinding(device: Device, projectId: string, expectedBindingId: unknown, expectedInstanceId: unknown) {
+function currentBinding(device: IDevice, projectId: string, expectedBindingId: unknown, expectedInstanceId: unknown) {
     assertLocalFeature(device.report, PROJECT_CONFIGURATION_CAPABILITY);
     const bindingId = managedBinding(device.report, projectId);
     assertExpectedBinding(bindingId, expectedBindingId, true);
@@ -27,7 +27,12 @@ function currentBinding(device: Device, projectId: string, expectedBindingId: un
         throw new ConflictException('Экземпляр папки изменился. Откройте мастер заново.');
     return { bindingId, instanceId: expectedInstanceId };
 }
-async function ragReferences(installations: DeviceInstallations, device: Device, projectId: string, bindingId: string) {
+async function ragReferences(
+    installations: DeviceInstallations,
+    device: IDevice,
+    projectId: string,
+    bindingId: string,
+) {
     const packages = await installations.workspacePackages(device.email, device.id, projectId, bindingId);
     return packages
         .filter((pkg) => {
@@ -45,7 +50,11 @@ async function ragReferences(installations: DeviceInstallations, device: Device,
         }));
 }
 /** The website supplies a pinned binding, never paths, text, configuration values or credentials. */
-export async function projectConfigurationPayload(installations: DeviceInstallations, device: Device, input: JobInput) {
+export async function projectConfigurationPayload(
+    installations: DeviceInstallations,
+    device: IDevice,
+    input: IJobInput,
+) {
     if (input.kind !== PROJECT_CONFIGURATION_JOB) return;
     const allowed = ['deviceId', 'projectId', 'kind', 'requestKey', 'expectedBindingId', 'expectedInstanceId'];
     if (Object.keys(input).some((key) => !allowed.includes(key)) || !input.projectId)
@@ -66,8 +75,8 @@ export async function projectConfigurationPayload(installations: DeviceInstallat
 }
 export async function assertProjectConfigurationJob(
     installations: DeviceInstallations,
-    device: Device,
-    job: Pick<Job, 'kind' | 'payload' | 'project_id'>,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id'>,
 ) {
     if (job.kind !== PROJECT_CONFIGURATION_JOB) return;
     let d;
@@ -96,7 +105,7 @@ export async function assertProjectConfigurationJob(
 export async function authorizeProjectConfiguration(
     store: DeviceStore,
     installations: DeviceInstallations,
-    device: Device,
+    device: IDevice,
     input: unknown,
     permission: (role: string, projectId: string) => Promise<unknown>,
 ) {
@@ -104,7 +113,7 @@ export async function authorizeProjectConfiguration(
     if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || !uuid(body.jobId))
         throw new BadRequestException('Разрешение принимает только исходное задание открытия.');
     const job = (
-        await store.pool.query<Job>(
+        await store.pool.query<IJob>(
             `SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3 AND kind=$4 AND state IN ('running','succeeded')`,
             [body.jobId, device.id, device.email, PROJECT_CONFIGURATION_JOB],
         )

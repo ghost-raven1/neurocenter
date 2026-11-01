@@ -1,20 +1,20 @@
-import type { ProjectChatTransport } from './project-chat.types';
+import type { TProjectChatTransport } from './project-chat.interfaces';
 
-interface Waiter {
+interface IWaiter {
     signal: AbortSignal;
     abort(): void;
     grant(release: () => void): void;
 }
-interface Lane {
-    waiters: Waiter[];
+interface ILane {
+    waiters: IWaiter[];
 }
 
 /** One server and one device call per project in this Catalog instance; cancellation never skips a held permit. */
 export class ProjectChatDispatch {
-    private readonly lanes = new Map<string, Lane>();
+    private readonly lanes = new Map<string, ILane>();
     async run<T>(
         projectId: string,
-        transport: ProjectChatTransport,
+        transport: TProjectChatTransport,
         signal: AbortSignal,
         action: () => Promise<T>,
     ): Promise<T> {
@@ -31,7 +31,7 @@ export class ProjectChatDispatch {
         const existing = this.lanes.get(key);
         if (existing)
             return new Promise((grant, reject) => {
-                const waiter: Waiter = {
+                const waiter: IWaiter = {
                     signal,
                     grant,
                     abort: () => {
@@ -43,7 +43,7 @@ export class ProjectChatDispatch {
                 existing.waiters.push(waiter);
                 signal.addEventListener('abort', waiter.abort, { once: true });
             });
-        const lane: Lane = { waiters: [] };
+        const lane: ILane = { waiters: [] };
         this.lanes.set(key, lane);
         const release = () => {
             const next = lane.waiters.shift();

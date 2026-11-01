@@ -1,8 +1,8 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import type { DeviceInstallations } from './device-installations';
 import type { InstallPlans } from './install-plans';
-import type { Job } from './device-job.model';
+import type { IJob } from './device-job.model';
 import { configurationUuid } from './mcp-config-reports';
 import { assertMcpConfigurationJob } from './mcp-config-jobs';
 
@@ -11,7 +11,7 @@ export async function authorizeMcpConfigurationSave(
     store: DeviceStore,
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
+    device: IDevice,
     input: unknown,
     permission: (role: string, projectId?: string) => Promise<unknown>,
 ) {
@@ -24,7 +24,7 @@ export async function authorizeMcpConfigurationSave(
         !configurationUuid(body.jobId)
     )
         throw new BadRequestException('Разрешение настройки принимает только исходное задание открытия.');
-    const { rows } = await store.pool.query<Job>(
+    const { rows } = await store.pool.query<IJob>(
         `SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3
         AND kind='open-mcp-configuration' AND state IN ('running','succeeded')`,
         [body.jobId, device.id, device.email],

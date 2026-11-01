@@ -29,7 +29,7 @@
 | Кэш локального моста | limitBytes и cleanup policy на выбранном компьютере, версия capability учитывается | `services/shared/runtime-cache-policy.cjs`, `frontend/src/features/McpBridge/RuntimeCacheSettings.tsx` |
 | Резервные копии | Расписание, окна, pause, copies, retention, RPO/RTO | `services/shared/maintenance-policy.cjs`, `maintenance/maintenance.service.ts`, `frontend/src/modules/Maintenance/FullBackupSettings.tsx` |
 
-Эти формы имеют собственные права, CAS и квитанции. Общий редактор их не дублирует и не подменяет существующий ledger токенов. Резерв не является настраиваемой произвольной суммой: он вычисляется из запроса и лимита ответа; fallback output estimate4096 в `model-token-quotas.types.ts` пока константа.
+Эти формы имеют собственные права, CAS и квитанции. Общий редактор их не дублирует и не подменяет существующий ledger токенов. Резерв не является настраиваемой произвольной суммой: он вычисляется из запроса и лимита ответа; fallback output estimate4096 в `model-token-quotas.constants.ts` пока константа.
 
 ## Оставшиеся product-limit consumers
 

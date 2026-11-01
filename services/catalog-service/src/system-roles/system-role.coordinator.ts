@@ -1,41 +1,41 @@
 import { ConflictException } from '@nestjs/common';
-import type { ChatMessage } from '../model-chat/chat.types';
+import type { IChatMessage } from '../model-chat/chat.interfaces';
 import { ROLE_BUDGET, SYSTEM_ROLE_DEFINITIONS, roleDefinitionPin, systemRole } from './system-role.definitions';
 import { LEGACY_ROLE_DEFINITIONS, legacyRoleDefinitionPin, legacySystemRole } from './system-role.legacy-contract';
 import { previousRoleDefinitionPin, previousSystemRole } from './system-role.previous-contract';
 import { roleObject, roleResult } from './system-role.validation';
 import { roleProjection } from './system-role.privacy';
 import type {
-    DiagnosticFact,
-    DiagnosticKind,
-    RoleDelegationResult,
-    RoleInvocation,
-    RolePrepared,
-    RoleResult,
-    SystemRoleId,
-    RoleGuidanceEvidence,
-} from './system-role.types';
+    IDiagnosticFact,
+    TDiagnosticKind,
+    IRoleDelegationResult,
+    IRoleInvocation,
+    IRolePrepared,
+    IRoleResult,
+    TSystemRoleId,
+    IRoleGuidanceEvidence,
+} from './system-role.interfaces';
 import { synthesisProjectEvidence } from './system-role.rag-context';
 
-interface Delegation {
-    roleId: SystemRoleId;
+interface IDelegation {
+    roleId: TSystemRoleId;
     instruction: string;
     targetKeys: string[];
-    diagnostics: DiagnosticKind[];
+    diagnostics: TDiagnosticKind[];
     toolKeys?: string[];
 }
 /** Remaining work is server-owned scheduling metadata, never part of a model-selected plan. */
-export interface CoordinatorStep {
+export interface ICoordinatorStep {
     phase: 'planning' | 'delegating' | 'synthesizing';
     remainingSteps: number;
     toolKeys?: string[];
 }
-type Invoke = (
-    id: SystemRoleId,
-    messages: ChatMessage[],
-    step: CoordinatorStep,
-    recipient?: RolePrepared,
-) => Promise<RoleInvocation>;
+type TInvoke = (
+    id: TSystemRoleId,
+    messages: IChatMessage[],
+    step: ICoordinatorStep,
+    recipient?: IRolePrepared,
+) => Promise<IRoleInvocation>;
 const invalid = (): never => {
     throw new ConflictException('План делегирования не прошёл проверку разрешённых ролей и выбранного контекста.');
 };
@@ -47,7 +47,7 @@ const uniqueSubset = (value: unknown, allowed: readonly string[]): value is stri
     value.every((item) => typeof item === 'string' && allowed.includes(item));
 
 /** The preview grants only server-owned roles, one delegation level and subsets of explicitly selected context. */
-export function coordinatorContext(prepared: Pick<RolePrepared, 'targets' | 'selection' | 'mcp'>, legacy = false) {
+export function coordinatorContext(prepared: Pick<IRolePrepared, 'targets' | 'selection' | 'mcp'>, legacy = false) {
     return {
         maxDelegations: ROLE_BUDGET.fanout,
         maxDepth: ROLE_BUDGET.depth,
@@ -70,7 +70,7 @@ export function coordinatorContext(prepared: Pick<RolePrepared, 'targets' | 'sel
 }
 
 /** A model cannot invent roles, grow fanout, pass another project or delegate to itself. */
-export function coordinatorPlan(content: string, prepared: RolePrepared, legacy = false): Delegation[] {
+export function coordinatorPlan(content: string, prepared: IRolePrepared, legacy = false): IDelegation[] {
     if (Buffer.byteLength(content) > ROLE_BUDGET.outputBytes) return invalid();
     let value: unknown;
     try {
@@ -109,14 +109,14 @@ export function coordinatorPlan(content: string, prepared: RolePrepared, legacy 
             (item.toolKeys !== undefined && !uniqueSubset(item.toolKeys, role.toolKeys ?? []))
         )
             return invalid();
-        return item as unknown as Delegation;
+        return item as unknown as IDelegation;
     });
     if (new Set(plan.map((item) => item.roleId)).size !== plan.length) return invalid();
     return plan;
 }
 
 /** Each child uses its real role contract, target capabilities and result validator without an independent queue. */
-function childContext(prepared: RolePrepared, plan: Delegation, legacy: boolean): RolePrepared {
+function childContext(prepared: IRolePrepared, plan: IDelegation, legacy: boolean): IRolePrepared {
     const targets = prepared.targets.filter((target) => plan.targetKeys.includes(target.key));
     const mcp = prepared.mcp
         ?.map((target) => ({ ...target, tools: target.tools.filter((tool) => plan.toolKeys?.includes(tool.toolKey)) }))
@@ -164,15 +164,15 @@ function childContext(prepared: RolePrepared, plan: Delegation, legacy: boolean)
 
 /** Planning, child calls and synthesis share one caller-supplied durable invocation and current authority fence. */
 export async function coordinateRole(
-    prepared: RolePrepared,
-    facts: DiagnosticFact[],
-    invoke: Invoke,
+    prepared: IRolePrepared,
+    facts: IDiagnosticFact[],
+    invoke: TInvoke,
     checkpoint: () => Promise<unknown>,
     replacement: (key: string, value: string) => void,
-    step: (role: SystemRoleId, state: 'succeeded' | 'failed') => Promise<unknown>,
+    step: (role: TSystemRoleId, state: 'succeeded' | 'failed') => Promise<unknown>,
     legacy = false,
-    guidance?: RoleGuidanceEvidence,
-): Promise<RoleResult> {
+    guidance?: IRoleGuidanceEvidence,
+): Promise<IRoleResult> {
     const previous = prepared.definitionPin === previousRoleDefinitionPin('agent-coordinator'),
         fullAnswer = !legacy && !previous;
     const definition = legacy
@@ -203,7 +203,7 @@ export async function coordinateRole(
         { phase: 'planning', remainingSteps: ROLE_BUDGET.fanout + 2 },
     );
     const plan = coordinatorPlan(planning.content, prepared, legacy);
-    const delegations: RoleDelegationResult[] = [];
+    const delegations: IRoleDelegationResult[] = [];
     for (const [index, task] of plan.entries()) {
         await checkpoint();
         const child = childContext(prepared, task, legacy),
@@ -252,7 +252,7 @@ export async function coordinateRole(
         await step(task.roleId, delegations[delegations.length - 1].state);
     }
     const succeeded = delegations.filter((item) => item.state === 'succeeded');
-    let result: RoleResult = {
+    let result: IRoleResult = {
         kind: 'diagnosis',
         summary: `Получены ответы: ${succeeded.length} из ${delegations.length}.`,
         findings: [],

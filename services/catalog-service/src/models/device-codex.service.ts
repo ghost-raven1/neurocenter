@@ -20,17 +20,17 @@ import {
     normalizeDeviceCodexPayload,
     normalizeDeviceCodexRequest,
     normalizeDeviceCodexContext,
-    type DeviceCodexSource,
-    type DeviceCodexPayload,
-    type DeviceCodexResult,
-    type DeviceCodexRequest,
+    type TDeviceCodexSource,
+    type IDeviceCodexPayload,
+    type TDeviceCodexResult,
+    type IDeviceCodexRequest,
 } from '../../../shared/device-codex-inference.cjs';
 import type { IOpenCodeModelCandidate } from '../../../shared/opencode-model-scan.cjs';
 import { requiredInferenceFeatures } from '../../../shared/feature-policy.cjs';
-import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import type { TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 import { isFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 import { type IAccessActor } from '../access/access.model';
-import { DeviceStore, digest, type Device } from '../devices/device-store';
+import { DeviceStore, digest, type IDevice } from '../devices/device-store';
 import { DeviceArtifacts } from '../devices/device-artifacts';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { currentModelUsage, ModelDispatchNotStarted } from '../model-usage/model-usage.context';
@@ -42,9 +42,9 @@ import {
 import { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 import { ModelsService } from './models.service';
 import { projectEmbeddingPin } from './project-embedding.validation';
-import type { IModel } from './model.types';
-type Db = Pick<PoolClient, 'query'>;
-interface Call {
+import type { IModel } from './model.interfaces';
+type TDb = Pick<PoolClient, 'query'>;
+interface ICall {
     id: string;
     job_id: string;
     model_id: string;
@@ -54,12 +54,12 @@ interface Call {
     project_id: string | null;
     model_pin: string;
     connection_revision: number;
-    request: DeviceCodexRequest;
-    required_features: FeatureFlagKey[];
+    request: IDeviceCodexRequest;
+    required_features: TFeatureFlagKey[];
     deadline_at: Date;
     dispatched_at: Date | null;
     cancelled_at: Date | null;
-    result: DeviceCodexResult | null;
+    result: TDeviceCodexResult | null;
     state: string;
     payload: unknown;
     lease: string;
@@ -78,9 +78,9 @@ export class DeviceCodexService {
     }
     async importModel(
         req: Request,
-        device: Device,
+        device: IDevice,
         candidate: IOpenCodeModelCandidate,
-        source: DeviceCodexSource,
+        source: TDeviceCodexSource,
         projectId: string | null,
         name: string,
         expiresAt: string,
@@ -103,7 +103,7 @@ export class DeviceCodexService {
             throw new ForbiddenException(
                 'Для Codex нужна текущая роль пользователя. Запустите действие из своего профиля.',
             );
-        let request: DeviceCodexRequest;
+        let request: IDeviceCodexRequest;
         try {
             request = normalizeDeviceCodexRequest(
                 { messages: body.messages, options: body.options ?? {} },
@@ -123,8 +123,8 @@ export class DeviceCodexService {
         )
             throw new BadRequestException('Некорректные ограничения отправки модели.');
         request.options = { ...connection.options, ...request.options };
-        const flags: FeatureFlagKey[] = [
-            ...new Set<FeatureFlagKey>([
+        const flags: TFeatureFlagKey[] = [
+            ...new Set<TFeatureFlagKey>([
                 'device_codex_inference',
                 ...requiredInferenceFeatures(context.purpose, context.agentId),
                 ...(context.requiredFeatures ?? []),
@@ -154,7 +154,7 @@ export class DeviceCodexService {
                 const callId = randomUUID(),
                     jobId = randomUUID(),
                     deadlineAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-                const payload: DeviceCodexPayload = normalizeDeviceCodexPayload({
+                const payload: IDeviceCodexPayload = normalizeDeviceCodexPayload({
                     protocol: DEVICE_CODEX_PROTOCOL,
                     callId,
                     modelId: model.id,
@@ -168,7 +168,7 @@ export class DeviceCodexService {
                 signal?.throwIfAborted();
                 const db = await this.models.pool.connect();
                 let dispatchedAt: number | null = null;
-                const observeDispatch = async (call: Call) => {
+                const observeDispatch = async (call: ICall) => {
                     if (!call.dispatched_at || dispatchedAt !== null) return;
                     dispatchedAt = new Date(call.dispatched_at).getTime();
                     if (metrics) {
@@ -297,9 +297,9 @@ export class DeviceCodexService {
             }),
         );
     }
-    private async call(jobId: string, db: Db = this.models.pool): Promise<Call> {
+    private async call(jobId: string, db: TDb = this.models.pool): Promise<ICall> {
         const call = (
-            await db.query<Call>(
+            await db.query<ICall>(
                 'SELECT c.*,j.state,j.payload,j.lease FROM device_model_calls c JOIN bridge_jobs j ON j.id=c.job_id WHERE c.job_id=$1',
                 [jobId],
             )
@@ -308,8 +308,8 @@ export class DeviceCodexService {
         return call;
     }
     private async assertCall(
-        call: Call,
-        db: Db = this.models.pool,
+        call: ICall,
+        db: TDb = this.models.pool,
         mode: 'active' | 'poll' = 'active',
         featureHttp = true,
     ) {
@@ -366,7 +366,7 @@ export class DeviceCodexService {
             throw new ConflictException('Права, подключение Codex или папка изменились во время проверки.');
     }
     async authorizeJob(
-        device: Device,
+        device: IDevice,
         job: {
             id: string;
             kind: string;
@@ -379,7 +379,7 @@ export class DeviceCodexService {
             deviceCodexConflict();
         await this.assertCall(call);
     }
-    async context(device: Device, input: unknown) {
+    async context(device: IDevice, input: unknown) {
         const { jobId, lease } = this.input(input),
             call = await this.leased(device, jobId, lease);
         await this.assertCall(call);
@@ -397,7 +397,7 @@ export class DeviceCodexService {
             deadlineAt: new Date(call.deadline_at).toISOString(),
         });
     }
-    async dispatch(device: Device, input: unknown) {
+    async dispatch(device: IDevice, input: unknown) {
         const { jobId, lease, callId } = this.input(input, true);
         const admitted = await this.leased(device, jobId, lease),
             payload = normalizeDeviceCodexPayload(admitted.payload);
@@ -465,7 +465,7 @@ export class DeviceCodexService {
             callId?: string;
         };
     }
-    private async leased(device: Device, jobId: string, lease: string) {
+    private async leased(device: IDevice, jobId: string, lease: string) {
         const found = await this.models.pool.query(
             "SELECT id FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3 AND lease=$4 AND kind=$5 AND state='running' AND lease_until>clock_timestamp()",
             [jobId, device.id, device.email, lease, DEVICE_CODEX_JOB],
@@ -494,7 +494,7 @@ export class DeviceCodexService {
                 const call = (
                     await db.query<{
                         dispatched_at: Date | null;
-                        result: DeviceCodexResult | null;
+                        result: TDeviceCodexResult | null;
                         cancelled_at: Date | null;
                     }>('SELECT dispatched_at,result,cancelled_at FROM device_model_calls WHERE job_id=$1 FOR UPDATE', [
                         jobId,
@@ -543,10 +543,10 @@ export class DeviceCodexService {
         return outcome;
     }
     /** A revoked connection can only acknowledge the already-leased private result; it cannot fetch context or dispatch. */
-    async receiptIdentity(token: string, jobId: string, lease: string): Promise<Device | undefined> {
+    async receiptIdentity(token: string, jobId: string, lease: string): Promise<IDevice | undefined> {
         if (!/^[a-f0-9]{64}$/.test(token)) return;
         return (
-            await this.models.pool.query<Device>(
+            await this.models.pool.query<IDevice>(
                 `SELECT d.* FROM bridge_devices d JOIN bridge_jobs j ON j.device_id=d.id JOIN device_model_calls c ON c.job_id=j.id
    WHERE d.token_hash=$1 AND j.id=$2 AND j.lease=$3 AND j.kind=$4 AND c.dispatched_at IS NOT NULL`,
                 [digest(token), jobId, lease, DEVICE_CODEX_JOB],

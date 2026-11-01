@@ -14,16 +14,11 @@ const fixtureFile = path.join(root, '.run/uninstall-fixture.json');
 const cleanupOnly = process.argv.includes('--cleanup');
 let fixture = cleanupOnly ? JSON.parse(await fs.readFile(fixtureFile, 'utf8')) : {};
 const temp =
-    fixture.temp ||
-    (await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-uninstall-live-'))));
+    fixture.temp || (await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-uninstall-live-'))));
 process.env.NEUROCENTER_BRIDGE_HOME = path.join(temp, 'private');
 process.env.NEUROCENTER_URL = base;
-const { writeState } = await import(
-    path.join(root, 'mcp/neurocenter-asset-sync/dist/bridge/state.js')
-);
-const { setRoot } = await import(
-    path.join(root, 'mcp/neurocenter-asset-sync/dist/bridge/workspace.js')
-);
+const { writeState } = await import(path.join(root, 'mcp/neurocenter-asset-sync/dist/bridge/state.js'));
+const { setRoot } = await import(path.join(root, 'mcp/neurocenter-asset-sync/dist/bridge/workspace.js'));
 const require = createRequire(path.join(root, 'services/catalog-service/package.json'));
 const { Pool } = require('pg');
 const pool = new Pool({
@@ -53,11 +48,7 @@ async function call(method, route, body, expected = 200) {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const data = await response.json();
-    assert.equal(
-        response.status,
-        expected,
-        JSON.stringify({ route, status: response.status, data }),
-    );
+    assert.equal(response.status, expected, JSON.stringify({ route, status: response.status, data }));
     return data;
 }
 async function waitFor(action, label, timeout = 20000) {
@@ -74,12 +65,7 @@ async function waitFor(action, label, timeout = 20000) {
 const jobs = () => call('GET', '/api/device-jobs');
 const installations = () => call('GET', '/api/device-installations');
 const createJob = (input, expected = 201) =>
-    call(
-        'POST',
-        '/api/device-jobs',
-        { deviceId, projectId: project.id, requestKey: randomUUID(), ...input },
-        expected,
-    );
+    call('POST', '/api/device-jobs', { deviceId, projectId: project.id, requestKey: randomUUID(), ...input }, expected);
 async function done(id) {
     return waitFor(async () => {
         const item = (await jobs()).find((item) => item.id === id);
@@ -95,24 +81,16 @@ async function success(input) {
 async function stop() {
     if (worker && worker.exitCode === null) {
         worker.kill('SIGTERM');
-        await waitFor(
-            () => worker.exitCode !== null || worker.signalCode,
-            'остановки worker',
-            8000,
-        );
+        await waitFor(() => worker.exitCode !== null || worker.signalCode, 'остановки worker', 8000);
     }
     worker = undefined;
 }
 function start() {
-    worker = spawn(
-        process.execPath,
-        [path.join(root, 'mcp/neurocenter-asset-sync/dist/index.js'), '--worker'],
-        {
-            env: process.env,
-            stdio: 'ignore',
-            ...(process.argv.includes('--keep') ? { detached: true } : {}),
-        },
-    );
+    worker = spawn(process.execPath, [path.join(root, 'mcp/neurocenter-asset-sync/dist/index.js'), '--worker'], {
+        env: process.env,
+        stdio: 'ignore',
+        ...(process.argv.includes('--keep') ? { detached: true } : {}),
+    });
 }
 async function cleanup() {
     if (cleanupOnly && fixture.workerPid) {
@@ -169,8 +147,7 @@ try {
             { name: 'Проверка удаления MCP ' + randomUUID().slice(0, 6) },
             201,
         );
-        const database =
-            'nc_rag_' + createHash('sha256').update(project.id).digest('hex').slice(0, 32);
+        const database = 'nc_rag_' + createHash('sha256').update(project.id).digest('hex').slice(0, 32);
         const trackedFile = path.join(root, '.run/uninstall-rag-databases.json');
         const tracked = JSON.parse(await fs.readFile(trackedFile, 'utf8').catch(() => '[]'));
         await fs.writeFile(trackedFile, JSON.stringify([...tracked, { id: project.id, database }]));
@@ -191,12 +168,7 @@ try {
         );
         pairHash = createHash('sha256').update(pair.deviceCode).digest('hex');
         await call('POST', `/api/device-pairs/${pair.userCode}/approve`, {}, 201);
-        const connected = await call(
-            'POST',
-            '/api/device-channel/pair/poll',
-            { deviceCode: pair.deviceCode },
-            201,
-        );
+        const connected = await call('POST', '/api/device-channel/pair/poll', { deviceCode: pair.deviceCode }, 201);
         deviceId = connected.deviceId;
         await writeState('credentials', {
             token: connected.token,
@@ -208,12 +180,24 @@ try {
         await fs.mkdir(local, { recursive: true });
         await setRoot(workspace);
         start();
-        await waitFor(async () => (await call('GET', '/api/devices')).find(item => item.id === deviceId)?.report.protocolVersion === 2, 'отчёта протокола MCP');
+        await waitFor(
+            async () =>
+                (await call('GET', '/api/devices')).find((item) => item.id === deviceId)?.report.protocolVersion === 2,
+            'отчёта протокола MCP',
+        );
         await success({
             kind: 'bind-project',
             folderName: path.basename(local),
         });
-        await waitFor(async () => (await call('GET', '/api/devices')).find(item => item.id === deviceId)?.report.bindings?.some(binding => binding.projectId === project.id && binding.bindingId && binding.valid !== false), 'отчёта привязки папки');
+        await waitFor(
+            async () =>
+                (await call('GET', '/api/devices'))
+                    .find((item) => item.id === deviceId)
+                    ?.report.bindings?.some(
+                        (binding) => binding.projectId === project.id && binding.bindingId && binding.valid !== false,
+                    ),
+            'отчёта привязки папки',
+        );
         const configFile = path.join(local, 'opencode.jsonc');
         await fs.writeFile(
             configFile,
@@ -247,12 +231,7 @@ try {
                 201,
             );
             plugins.push(plugin.id);
-            await call(
-                'POST',
-                `/api/projects/${project.id}/assets`,
-                { assetId: plugin.id, assetKind: kind },
-                201,
-            );
+            await call('POST', `/api/projects/${project.id}/assets`, { assetId: plugin.id, assetKind: kind }, 201);
             await success({
                 kind: 'install',
                 assetId: plugin.id,
@@ -268,10 +247,7 @@ try {
                 .digest('hex')
                 .slice(0, 24);
             const installedFile = path.join(local, `.opencode/${kind}-bundles/${key}/index.mjs`);
-            await fs.writeFile(
-                path.join(path.dirname(installedFile), 'личная заметка.txt'),
-                'сохранить',
-            );
+            await fs.writeFile(path.join(path.dirname(installedFile), 'личная заметка.txt'), 'сохранить');
             const removal = {
                 kind: 'uninstall',
                 assetId: plugin.id,
@@ -279,19 +255,17 @@ try {
                 expectedManifest: installed.manifest,
             };
             await createJob({ ...removal, expectedManifest: '0'.repeat(64) }, 409);
-            await call(
-                'PATCH',
-                `/api/projects/${project.id}/members/${encodeURIComponent(membership.userId)}`,
-                { role: 'Наблюдатель', expectedRole: 'Разработчик' },
-            );
+            await call('PATCH', `/api/projects/${project.id}/members/${encodeURIComponent(membership.userId)}`, {
+                role: 'Наблюдатель',
+                expectedRole: 'Разработчик',
+            });
             await call('POST', '/auth/switch-role', { role: 'Наблюдатель' });
             await createJob(removal, 403);
             await call('POST', '/auth/switch-role', { role: 'Главный админ' });
-            await call(
-                'PATCH',
-                `/api/projects/${project.id}/members/${encodeURIComponent(membership.userId)}`,
-                { role: 'Разработчик', expectedRole: 'Наблюдатель' },
-            );
+            await call('PATCH', `/api/projects/${project.id}/members/${encodeURIComponent(membership.userId)}`, {
+                role: 'Разработчик',
+                expectedRole: 'Наблюдатель',
+            });
             await call('POST', '/auth/switch-role', { role: 'Разработчик' });
             await createJob({ ...removal, projectId: 'prj-example-project' }, 403);
             await call('POST', '/auth/switch-role', { role: 'Главный админ' });
@@ -322,14 +296,9 @@ try {
             assert.equal((await createJob({ ...removal, requestKey })).id, queued.id);
             await createJob(removal, 409);
             await assert.rejects(fs.access(installedFile));
-            await assert.rejects(
-                fs.access(path.join(local, '.opencode/neurocenter/receipts', key + '.json')),
-            );
+            await assert.rejects(fs.access(path.join(local, '.opencode/neurocenter/receipts', key + '.json')));
             assert.equal(
-                await fs.readFile(
-                    path.join(path.dirname(installedFile), 'личная заметка.txt'),
-                    'utf8',
-                ),
+                await fs.readFile(path.join(path.dirname(installedFile), 'личная заметка.txt'), 'utf8'),
                 'сохранить',
             );
             const backup = JSON.parse(await fs.readFile(result.result.recoveryPath, 'utf8'));
@@ -339,10 +308,7 @@ try {
                 (await installations()).some((item) => item.assetId === plugin.id),
                 false,
             );
-            await waitFor(
-                () => events.some((event) => event.jobId === queued.id),
-                'статуса удаления по WebSocket',
-            );
+            await waitFor(() => events.some((event) => event.jobId === queued.id), 'статуса удаления по WebSocket');
             cases.push({
                 case:
                     kind === 'mcp'
@@ -377,9 +343,7 @@ try {
             assetKind: 'skill',
             version: skill.meta.version,
         });
-        const installedSkill = (await installations()).find(
-            (item) => item.assetId === 'ops/rag-index-monitor',
-        );
+        const installedSkill = (await installations()).find((item) => item.assetId === 'ops/rag-index-monitor');
         assert.ok(installedSkill);
         const skillFile = path.join(local, '.opencode/skills', skill.meta.slug, 'SKILL.md');
         const original = await fs.readFile(skillFile, 'utf8');

@@ -1,10 +1,10 @@
-import { readState, type Workspace } from '../../bridge/state.js';
+import { readState, type IWorkspace } from '../../bridge/state.js';
 import { projectBindingId, projectInstanceId } from '../../bridge/workspace.js';
 import { flushLearningObservations } from './observation-queue.js';
 
 /** A background pass never scans arbitrary folders and spends at most four network attempts. */
 export async function synchronizeLearningObservations(): Promise<void> {
-    const workspace = await readState<Workspace>('workspace');
+    const workspace = await readState<IWorkspace>('workspace');
     let budget = 4;
     for (const projectId of Object.keys(workspace?.bindings ?? {})) {
         if (budget < 1) break;

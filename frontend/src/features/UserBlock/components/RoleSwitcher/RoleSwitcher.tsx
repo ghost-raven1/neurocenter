@@ -3,7 +3,7 @@ import { FC } from 'react';
 import { useSelector } from 'react-redux';
 
 import { useAppDispatch } from '../../../../core/hooks';
-import { RootState } from '../../../../store';
+import { TRootState } from '../../../../store';
 import { authSwitchRole } from '../../redux/actions';
 
 /**
@@ -14,7 +14,7 @@ import { authSwitchRole } from '../../redux/actions';
  */
 const RoleSwitcher: FC = () => {
     const dispatch = useAppDispatch();
-    const { user, processing } = useSelector((state: RootState) => state.userBlock);
+    const { user, processing } = useSelector((state: TRootState) => state.userBlock);
 
     if (!user) {
         return null;

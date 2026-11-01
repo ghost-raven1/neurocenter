@@ -1,76 +1,110 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import {randomUUID} from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { createServer } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {nodeRuntime, npmCli} from './workspace/node-runtime.mjs';
-import {ensureCompose,checkCompose} from './workspace/compose.mjs';
-import {createDevOutput} from './workspace/dev-output.mjs';
-import {devServiceEntry, discoverDevProcesses, ownsDevProcess} from './workspace/dev-processes.mjs';
-import {devServices,devServiceHealth,probeLocalEndpoint,serviceDetailsFlag} from './workspace/dev-service-health.mjs';
-import {modelRuntimeEnvironment,startModelRuntime} from './models/startup.mjs';
-import {prepareStartupAssets} from './assets/startup.mjs';
-import {prepareDevModelCredentials} from './workspace/dev-model-credentials.mjs';
-import {privateSnapshotFile} from './snapshots/control.mjs';
-import {prepareDevSnapshots} from './workspace/dev-snapshots.mjs';
-import {prepareCurrentDevPackages,optionalDevSnapshotImage} from './workspace/dev-current-components.mjs';
-import {catalogRebuildRequestPath} from './workspace/catalog-rebuild-request.mjs';
-import {prepareDevChatStorage} from './workspace/dev-chat-storage.mjs';
-import {withBuildNetwork,withNpmBuildEnvironment} from './workspace/npm-build-environment.mjs';
-import {launchDevService,currentDevLaunchId} from './workspace/dev-launch-provenance.mjs';
-import {recoverDevLaunch} from './workspace/dev-launch-recovery.mjs';
+import { nodeRuntime, npmCli } from './workspace/node-runtime.mjs';
+import { ensureCompose, checkCompose } from './workspace/compose.mjs';
+import { createDevOutput } from './workspace/dev-output.mjs';
+import { devServiceEntry, discoverDevProcesses, ownsDevProcess } from './workspace/dev-processes.mjs';
+import {
+    devServices,
+    devServiceHealth,
+    probeLocalEndpoint,
+    serviceDetailsFlag,
+} from './workspace/dev-service-health.mjs';
+import { modelRuntimeEnvironment, startModelRuntime } from './models/startup.mjs';
+import { prepareStartupAssets } from './assets/startup.mjs';
+import { prepareDevModelCredentials } from './workspace/dev-model-credentials.mjs';
+import { privateSnapshotFile } from './snapshots/control.mjs';
+import { prepareDevSnapshots } from './workspace/dev-snapshots.mjs';
+import { prepareCurrentDevPackages, optionalDevSnapshotImage } from './workspace/dev-current-components.mjs';
+import { catalogRebuildRequestPath } from './workspace/catalog-rebuild-request.mjs';
+import { prepareDevChatStorage } from './workspace/dev-chat-storage.mjs';
+import { withBuildNetwork, withNpmBuildEnvironment } from './workspace/npm-build-environment.mjs';
+import { launchDevService, currentDevLaunchId } from './workspace/dev-launch-provenance.mjs';
+import { recoverDevLaunch } from './workspace/dev-launch-recovery.mjs';
 
 const root = path.resolve(fileURLToPath(new URL('../', import.meta.url)));
 const stateDir = path.join(root, '.run');
 const stateFile = path.join(stateDir, 'processes.json');
 const services = devServices;
-const snapshotWorker={name:'snapshot-verifier',label:'Проверка снимков',dir:'.',port:4100,entry:'scripts/snapshots/runner.mjs'};
-const managedServices=[...services,snapshotWorker];
-const watchService={name:'source-watch',label:'Пересборка исходников',dir:'.',entry:'scripts/workspace/dev-watch-guardian.mjs'};
-const trackedServices=[...managedServices,watchService];
-const packages = [ ...services, {dir: 'mcp/neurocenter-asset-sync', label: 'Мост OpenCode'} ];
+const snapshotWorker = {
+    name: 'snapshot-verifier',
+    label: 'Проверка снимков',
+    dir: '.',
+    port: 4100,
+    entry: 'scripts/snapshots/runner.mjs',
+};
+const managedServices = [...services, snapshotWorker];
+const watchService = {
+    name: 'source-watch',
+    label: 'Пересборка исходников',
+    dir: '.',
+    entry: 'scripts/workspace/dev-watch-guardian.mjs',
+};
+const trackedServices = [...managedServices, watchService];
+const packages = [...services, { dir: 'mcp/neurocenter-asset-sync', label: 'Мост OpenCode' }];
 const defaultProfile = 'standard';
-const output = createDevOutput({defaultProfile});
+const output = createDevOutput({ defaultProfile });
 let node;
 let logDir;
 
 /** Показывает текущий этап без анимации, в том числе при перенаправлении в файл. */
 function progress(total) {
     let index = 0;
-    return label => output.step(++index, total, label);
+    return (label) => output.step(++index, total, label);
 }
 
 /** Выполняет команду с передачей её ошибки вызывающему процессу. */
 function run(command, args, cwd = root, env = process.env) {
     const result = spawnSync(command, args, { cwd, stdio: 'inherit', env });
-    if (result.error) { throw result.error; }
-    if (result.status !== 0) { throw new Error(`Команда ${path.basename(command)} ${args.join(' ')} ${result.signal ? `остановлена сигналом ${result.signal}` : `завершилась с кодом ${result.status}`}.`); }
+    if (result.error) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(
+            `Команда ${path.basename(command)} ${args.join(' ')} ${result.signal ? `остановлена сигналом ${result.signal}` : `завершилась с кодом ${result.status}`}.`,
+        );
+    }
 }
 
 /** Общий source contract устанавливается по HTTPS и integrity корневого lock-файла. */
 async function installDependencies(cwd = root, extra = []) {
     const npm = npmCli(process.env);
-    await withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [npm, 'ci', ...extra, '--no-audit', '--no-fund', ...args], cwd, env));
+    await withNpmBuildEnvironment(process.env, ({ env, args }) =>
+        run(node, [npm, 'ci', ...extra, '--no-audit', '--no-fund', ...args], cwd, env),
+    );
 }
 async function prepareWorkspaceDependencies() {
     await installDependencies(root, ['--ignore-scripts']);
 }
 
 /** Установка и сборка охватывают сервисы, интерфейс и мост. */
-async function forPackages(command, next, {repairDependencies = true, selection = packages} = {}) {
+async function forPackages(command, next, { repairDependencies = true, selection = packages } = {}) {
     const npm = npmCli(process.env);
-    for (const {dir, label} of selection) {
+    for (const { dir, label } of selection) {
         next(`${command === 'install' ? 'Зависимости' : 'Сборка'} · ${label}`);
         const started = Date.now();
         const cwd = path.join(root, dir);
-        if (command === 'install') { await installDependencies(cwd); }
-        else {
-            const build = () => withNpmBuildEnvironment(process.env, ({env, args}) => run(node, [ npm, 'run', 'build', ...args ], cwd, env));
-            try { await build(); }
-            catch (error) {
-                if (!repairDependencies) { throw new Error(error.message+' Проверьте исходники; для подготовки зависимостей выполните scripts/dev.sh install.'); }
+        if (command === 'install') {
+            await installDependencies(cwd);
+        } else {
+            const build = () =>
+                withNpmBuildEnvironment(process.env, ({ env, args }) =>
+                    run(node, [npm, 'run', 'build', ...args], cwd, env),
+                );
+            try {
+                await build();
+            } catch (error) {
+                if (!repairDependencies) {
+                    throw new Error(
+                        error.message +
+                            ' Проверьте исходники; для подготовки зависимостей выполните scripts/dev.sh install.',
+                    );
+                }
                 // Повреждённый или неполный node_modules (прерванная установка, сбой диска) восстанавливаем
                 // из lock-файла и повторяем сборку один раз; настоящая ошибка кода проявится повторно.
                 output.warning(`Сборка «${label}» не прошла; восстанавливаем зависимости из lock-файла и повторяем.`);
@@ -80,7 +114,6 @@ async function forPackages(command, next, {repairDependencies = true, selection 
         }
         output.success(`${label} · ${((Date.now() - started) / 1000).toFixed(1)} с`);
     }
-
 }
 
 function entryFor(service) {
@@ -90,14 +123,24 @@ function entryFor(service) {
 function readProcesses() {
     try {
         const records = JSON.parse(readFileSync(stateFile, 'utf8'));
-        if (!Array.isArray(records) || records.some(record => !record || typeof record !== 'object'
-            || !Number.isSafeInteger(record.pid) || record.pid <= 0 || !trackedServices.some(service => service.name === record.name))) {
+        if (
+            !Array.isArray(records) ||
+            records.some(
+                (record) =>
+                    !record ||
+                    typeof record !== 'object' ||
+                    !Number.isSafeInteger(record.pid) ||
+                    record.pid <= 0 ||
+                    !trackedServices.some((service) => service.name === record.name),
+            )
+        ) {
             throw new SyntaxError('Ожидается список PID сервисов');
         }
         return records;
-    }
-    catch (error) {
-        if (error.code === 'ENOENT') { return []; }
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            return [];
+        }
         if (error instanceof SyntaxError) {
             output.warning('Список PID повреждён; ищем сервисы по их командам и рабочим каталогам.');
             return [];
@@ -108,175 +151,334 @@ function readProcesses() {
 
 /** Чужие процессы и переиспользованные PID не останавливаем, перенос checkout поддерживаем. */
 function ownsProcess(record) {
-    const service = trackedServices.find(item => item.name === record.name);
+    const service = trackedServices.find((item) => item.name === record.name);
     return ownsDevProcess(record, root, service);
 }
 
 /** Факт завершения берём у запущенного ChildProcess, включая выход во время проверки HTTP. */
 function assertServicesRunning(children) {
-    const failed = children.find(({child}) => child.exitCode !== null || child.signalCode !== null);
-    if (!failed) { return; }
-    const {child, service, logFile} = failed;
+    const failed = children.find(({ child }) => child.exitCode !== null || child.signalCode !== null);
+    if (!failed) {
+        return;
+    }
+    const { child, service, logFile } = failed;
     const reason = child.signalCode ? `сигнал ${child.signalCode}` : `код ${child.exitCode}`;
     throw new Error(`${service.label} (:${service.port}) завершился при запуске: ${reason}. Лог: ${logFile}`);
 }
 
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Процесс может успеть завершиться между проверкой принадлежности и сигналом. */
 function signalProcess(pid, signal) {
-    try { process.kill(pid, signal); }
-    catch (error) { if (error.code !== 'ESRCH') { throw error; } }
+    try {
+        process.kill(pid, signal);
+    } catch (error) {
+        if (error.code !== 'ESRCH') {
+            throw error;
+        }
+    }
 }
 
 /** Останавливает только процессы, запущенные этим checkout; данные PostgreSQL сохраняются. */
 async function stop(saved) {
     let known = saved ?? readProcesses();
-    const witnessed = known.filter(record=>record.serviceWitness!==undefined),recovered=new Set();
-    const recoverOwners=async()=>{
-        for(const record of witnessed){if(ownsProcess(record))continue;
-            const result=await recoverDevLaunch(root,record,trackedServices.find(service=>service.name===record.name));
-            if(result.state==='unknown'){
-                const current=readProcesses(),missing=witnessed.filter(item=>!current.some(row=>row.pid===item.pid&&JSON.stringify(row.serviceWitness)===JSON.stringify(item.serviceWitness)));
-                if(missing.length){const temporary=stateFile+'.recovery-'+randomUUID();
-                    try{writeFileSync(temporary,JSON.stringify([...current,...missing],null,2),{mode:0o600,flag:'wx'});renameSync(temporary,stateFile);}
-                    finally{rmSync(temporary,{force:true});}
+    const witnessed = known.filter((record) => record.serviceWitness !== undefined),
+        recovered = new Set();
+    const recoverOwners = async () => {
+        for (const record of witnessed) {
+            if (ownsProcess(record)) continue;
+            const result = await recoverDevLaunch(
+                root,
+                record,
+                trackedServices.find((service) => service.name === record.name),
+            );
+            if (result.state === 'unknown') {
+                const current = readProcesses(),
+                    missing = witnessed.filter(
+                        (item) =>
+                            !current.some(
+                                (row) =>
+                                    row.pid === item.pid &&
+                                    JSON.stringify(row.serviceWitness) === JSON.stringify(item.serviceWitness),
+                            ),
+                    );
+                if (missing.length) {
+                    const temporary = stateFile + '.recovery-' + randomUUID();
+                    try {
+                        writeFileSync(temporary, JSON.stringify([...current, ...missing], null, 2), {
+                            mode: 0o600,
+                            flag: 'wx',
+                        });
+                        renameSync(temporary, stateFile);
+                    } finally {
+                        rmSync(temporary, { force: true });
+                    }
                 }
-                throw new Error(`${record.name}: ${result.reason}; принадлежность процесса не подтверждена. Состояние сохранено; повторите down после проверки.`);
+                throw new Error(
+                    `${record.name}: ${result.reason}; принадлежность процесса не подтверждена. Состояние сохранено; повторите down после проверки.`,
+                );
             }
-            if(result.state==='stopped')recovered.add(record.pid);
+            if (result.state === 'stopped') recovered.add(record.pid);
         }
     };
     await recoverOwners();
-    const watchers=[...known.filter(item=>item.name===watchService.name),...(!saved?discoverDevProcesses(root,[watchService],known.map(record=>record.pid)):[])].filter(ownsProcess);
-    if(watchers.length){const {stopDevWatch}=await import('./workspace/dev-watch-control.mjs');for(const record of watchers)await stopDevWatch(root,record);if(!saved)known=readProcesses();}
-    const managedNames=new Set(witnessed.map(record=>record.name));
-    const discovered = saved ? [] : discoverDevProcesses(root, trackedServices.filter(service=>!managedNames.has(service.name)), known.map(record => record.pid));
-    const records = [...new Map([...known, ...discovered].map(record => [record.pid, record])).values()].filter(ownsProcess);
-    for (const record of records) { signalProcess(record.pid, 'SIGTERM'); }
+    const watchers = [
+        ...known.filter((item) => item.name === watchService.name),
+        ...(!saved
+            ? discoverDevProcesses(
+                  root,
+                  [watchService],
+                  known.map((record) => record.pid),
+              )
+            : []),
+    ].filter(ownsProcess);
+    if (watchers.length) {
+        const { stopDevWatch } = await import('./workspace/dev-watch-control.mjs');
+        for (const record of watchers) await stopDevWatch(root, record);
+        if (!saved) known = readProcesses();
+    }
+    const managedNames = new Set(witnessed.map((record) => record.name));
+    const discovered = saved
+        ? []
+        : discoverDevProcesses(
+              root,
+              trackedServices.filter((service) => !managedNames.has(service.name)),
+              known.map((record) => record.pid),
+          );
+    const records = [...new Map([...known, ...discovered].map((record) => [record.pid, record])).values()].filter(
+        ownsProcess,
+    );
+    for (const record of records) {
+        signalProcess(record.pid, 'SIGTERM');
+    }
     const deadline = Date.now() + 5000;
-    while (records.some(ownsProcess) && Date.now() < deadline) { await delay(100); }
-    for (const record of records.filter(ownsProcess)) { signalProcess(record.pid, 'SIGKILL'); }
+    while (records.some(ownsProcess) && Date.now() < deadline) {
+        await delay(100);
+    }
+    for (const record of records.filter(ownsProcess)) {
+        signalProcess(record.pid, 'SIGKILL');
+    }
     const killedDeadline = Date.now() + 2000;
-    while (records.some(ownsProcess) && Date.now() < killedDeadline) { await delay(50); }
+    while (records.some(ownsProcess) && Date.now() < killedDeadline) {
+        await delay(50);
+    }
     const remaining = records.filter(ownsProcess);
-    if (remaining.length) { throw new Error(`Не удалось остановить сервисы (PID: ${remaining.map(record => record.pid).join(', ')}). Перезапуск отменён.`); }
+    if (remaining.length) {
+        throw new Error(
+            `Не удалось остановить сервисы (PID: ${remaining.map((record) => record.pid).join(', ')}). Перезапуск отменён.`,
+        );
+    }
     await recoverOwners();
     rmSync(stateFile, { force: true });
-    return records.length+recovered.size;
+    return records.length + recovered.size;
 }
 
 /** Проверяем освобождение адресов до запуска новых процессов; чужие сервисы не останавливаем. */
 async function assertServicePortsAvailable() {
-    await Promise.all(services.map(service => new Promise((resolve, reject) => {
-        const host = service.name === 'frontend' ? '127.0.0.1' : process.env.BIND_HOST || '127.0.0.1';
-        const server = createServer();
-        server.once('error', error => reject(new Error(error.code === 'EADDRINUSE'
-            ? `${service.label} (:${service.port}): порт ${host}:${service.port} занят другим процессом. Новые сервисы не запущены.`
-            : `${service.label} (:${service.port}): не удалось проверить порт (${error.code || error.message}).`)));
-        server.once('listening', () => server.close(error => error ? reject(error) : resolve()));
-        server.listen({host, port: service.port, exclusive: true});
-    })));
+    await Promise.all(
+        services.map(
+            (service) =>
+                new Promise((resolve, reject) => {
+                    const host = service.name === 'frontend' ? '127.0.0.1' : process.env.BIND_HOST || '127.0.0.1';
+                    const server = createServer();
+                    server.once('error', (error) =>
+                        reject(
+                            new Error(
+                                error.code === 'EADDRINUSE'
+                                    ? `${service.label} (:${service.port}): порт ${host}:${service.port} занят другим процессом. Новые сервисы не запущены.`
+                                    : `${service.label} (:${service.port}): не удалось проверить порт (${error.code || error.message}).`,
+                            ),
+                        ),
+                    );
+                    server.once('listening', () => server.close((error) => (error ? reject(error) : resolve())));
+                    server.listen({ host, port: service.port, exclusive: true });
+                }),
+        ),
+    );
 }
 
 /** Liveness, passive dependency checks and OS ownership are separate evidence. */
-async function health(deadline = Infinity, cancellation, snapshotsEnabled = readProcesses().some(record=>record.name===snapshotWorker.name)) {
-    const read=devServiceHealth(services,{root,deadline,detailsEnabled:serviceDetailsFlag()});
-    const readWorker=async()=>{
-        try{
-            const token=(await privateSnapshotFile(path.resolve(root,process.env.SNAPSHOT_VERIFIER_TOKEN_FILE||'.run/project-snapshots/secrets/verifier-token'),1024)).toString('utf8').trim();
-            const probe=await probeLocalEndpoint({...snapshotWorker,path:'/internal/project-snapshots/verifier/ready'},
-                {signal:cancellation,deadline,headers:{'x-neurocenter-snapshot-verifier':token}});
-            return {...snapshotWorker,ok:probe.ok===true,available:probe.ok===true};
-        }catch{return {...snapshotWorker,ok:false,available:false};}
+async function health(
+    deadline = Infinity,
+    cancellation,
+    snapshotsEnabled = readProcesses().some((record) => record.name === snapshotWorker.name),
+) {
+    const read = devServiceHealth(services, { root, deadline, detailsEnabled: serviceDetailsFlag() });
+    const readWorker = async () => {
+        try {
+            const token = (
+                await privateSnapshotFile(
+                    path.resolve(
+                        root,
+                        process.env.SNAPSHOT_VERIFIER_TOKEN_FILE || '.run/project-snapshots/secrets/verifier-token',
+                    ),
+                    1024,
+                )
+            )
+                .toString('utf8')
+                .trim();
+            const probe = await probeLocalEndpoint(
+                { ...snapshotWorker, path: '/internal/project-snapshots/verifier/ready' },
+                { signal: cancellation, deadline, headers: { 'x-neurocenter-snapshot-verifier': token } },
+            );
+            return { ...snapshotWorker, ok: probe.ok === true, available: probe.ok === true };
+        } catch {
+            return { ...snapshotWorker, ok: false, available: false };
+        }
     };
-    const [probes,worker]=await Promise.all([read(cancellation),snapshotsEnabled?readWorker():{...snapshotWorker,optional:true,ok:false,available:false}]);
-    const results=probes.map(result=>{
-        const base=result.service==='frontend'?result.compilation:result.liveness;
-        const available=base.ok===true&&(result.readiness.state==='skipped'||result.readiness.ok===true)&&result.ownership.state!=='foreign';
-        return {...services.find(service=>service.name===result.service),...result,available,ok:result.ready===true&&result.ownership.state==='owned'};
+    const [probes, worker] = await Promise.all([
+        read(cancellation),
+        snapshotsEnabled ? readWorker() : { ...snapshotWorker, optional: true, ok: false, available: false },
+    ]);
+    const results = probes.map((result) => {
+        const base = result.service === 'frontend' ? result.compilation : result.liveness;
+        const available =
+            base.ok === true &&
+            (result.readiness.state === 'skipped' || result.readiness.ok === true) &&
+            result.ownership.state !== 'foreign';
+        return {
+            ...services.find((service) => service.name === result.service),
+            ...result,
+            available,
+            ok: result.ready === true && result.ownership.state === 'owned',
+        };
     });
     results.push(worker);
     return results;
 }
 
 /** Show unknown checks explicitly so a healthy HTTP process cannot imply full readiness. */
-function reportHealth(results){
-    for(const service of results){
-        if(service.optional){output.info('Снимки проектов','Для этого запуска проверщик не подготовлен; новые публикации недоступны. Подготовка: scripts/dev.sh install --profile standard, затем up --profile standard.');continue;}
-        if(!service.liveness){output.service(service);continue;}
-        const live=service.name==='frontend'?`компиляция: ${service.compilation.ok===true?'готова (частичная проверка)':'не готова'}`
-            :`процесс: ${service.liveness.ok===true?'отвечает':'не отвечает'}`;
-        const ready=service.readiness.state==='skipped'
-            ?`готовность: ${service.readiness.reason==='disabled'?'проверка отключена':service.readiness.reason==='side-effectful-endpoint'?'не проверена (проверка пишет файлы)':'не применима'}`
-            :`зависимости: ${service.readiness.ok===true?'готовы':'не готовы'}`;
-        const owner={owned:'этот',foreign:'другой',unknown:'неизвестен',disabled:'проверка отключена'}[service.ownership.state];
-        output.info(`${service.label} (:${service.port})`,`${live}; ${ready}; checkout: ${owner}`);
+function reportHealth(results) {
+    for (const service of results) {
+        if (service.optional) {
+            output.info(
+                'Снимки проектов',
+                'Для этого запуска проверщик не подготовлен; новые публикации недоступны. Подготовка: scripts/dev.sh install --profile standard, затем up --profile standard.',
+            );
+            continue;
+        }
+        if (!service.liveness) {
+            output.service(service);
+            continue;
+        }
+        const live =
+            service.name === 'frontend'
+                ? `компиляция: ${service.compilation.ok === true ? 'готова (частичная проверка)' : 'не готова'}`
+                : `процесс: ${service.liveness.ok === true ? 'отвечает' : 'не отвечает'}`;
+        const ready =
+            service.readiness.state === 'skipped'
+                ? `готовность: ${service.readiness.reason === 'disabled' ? 'проверка отключена' : service.readiness.reason === 'side-effectful-endpoint' ? 'не проверена (проверка пишет файлы)' : 'не применима'}`
+                : `зависимости: ${service.readiness.ok === true ? 'готовы' : 'не готовы'}`;
+        const owner = { owned: 'этот', foreign: 'другой', unknown: 'неизвестен', disabled: 'проверка отключена' }[
+            service.ownership.state
+        ];
+        output.info(`${service.label} (:${service.port})`, `${live}; ${ready}; checkout: ${owner}`);
     }
 }
 
-async function start(profile,watchMode=false) {
-    const extended=profile!=='fast',startHosting=profile==='full',selectedPackages=extended?packages:services;
-    output.info('Профиль запуска', {fast:'fast — основные приложения; компоненты можно добавить архивом через «Ассеты»',standard:'standard — мост и инструменты, без весов моделей',full:'full — мост, инструменты и уже подготовленный хостинг; модели добавляются вручную'}[profile]);
-    const next = progress(selectedPackages.length + (extended?10:8));
+async function start(profile, watchMode = false) {
+    const extended = profile !== 'fast',
+        startHosting = profile === 'full',
+        selectedPackages = extended ? packages : services;
+    output.info(
+        'Профиль запуска',
+        {
+            fast: 'fast — основные приложения; компоненты можно добавить архивом через «Ассеты»',
+            standard: 'standard — мост и инструменты, без весов моделей',
+            full: 'full — мост, инструменты и уже подготовленный хостинг; модели добавляются вручную',
+        }[profile],
+    );
+    const next = progress(selectedPackages.length + (extended ? 10 : 8));
     next('Проверка Docker и Compose');
     checkCompose();
     output.success('Docker готов к запуску');
     next('Выбор и подготовка ассетов');
-    if (extended) { await withBuildNetwork(() => prepareStartupAssets({root,output,environment:process.env,withoutModels:true})); }
-    else { output.info('Ассеты', 'Источник не запрашивается; компоненты можно добавить архивом на странице «Ассеты».'); }
+    if (extended) {
+        await withBuildNetwork(() =>
+            prepareStartupAssets({ root, output, environment: process.env, withoutModels: true }),
+        );
+    } else {
+        output.info('Ассеты', 'Источник не запрашивается; компоненты можно добавить архивом на странице «Ассеты».');
+    }
     // Сборка до остановки предыдущего экземпляра: ошибка компиляции не прерывает его работу.
-    await forPackages('build', next, {repairDependencies:false,selection:selectedPackages});
-    if(extended)await prepareCurrentDevPackages({root,node,environment:process.env,output,next});
-    const snapshotImageId=extended?await optionalDevSnapshotImage({root,environment:process.env,output}):undefined;
-    const snapshotsEnabled=extended&&!!snapshotImageId;
+    await forPackages('build', next, { repairDependencies: false, selection: selectedPackages });
+    if (extended) await prepareCurrentDevPackages({ root, node, environment: process.env, output, next });
+    const snapshotImageId = extended
+        ? await optionalDevSnapshotImage({ root, environment: process.env, output })
+        : undefined;
+    const snapshotsEnabled = extended && !!snapshotImageId;
     next('Запуск PostgreSQL');
-    run('docker', [ 'compose', 'up', '-d', '--wait', '--wait-timeout', '45', 'postgres' ]);
-    const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], {cwd:root,encoding:'utf8'});
-    if (postgres.status !== 0 || !postgres.stdout.trim()) { throw new Error('Не найден контейнер PostgreSQL'); }
+    run('docker', ['compose', 'up', '-d', '--wait', '--wait-timeout', '45', 'postgres']);
+    const postgres = spawnSync('docker', ['compose', 'ps', '-q', 'postgres'], { cwd: root, encoding: 'utf8' });
+    if (postgres.status !== 0 || !postgres.stdout.trim()) {
+        throw new Error('Не найден контейнер PostgreSQL');
+    }
     output.success('PostgreSQL готов');
     next('Запуск хостинга моделей');
-    if (startHosting) { await startModelRuntime({root,output,environment:process.env,preparedOnly:true}); }
-    else { output.info('Хостинг моделей', 'Запуск runtime пропущен выбранным профилем. Веса добавляются вручную из GGUF или архива.'); }
+    if (startHosting) {
+        await startModelRuntime({ root, output, environment: process.env, preparedOnly: true });
+    } else {
+        output.info(
+            'Хостинг моделей',
+            'Запуск runtime пропущен выбранным профилем. Веса добавляются вручную из GGUF или архива.',
+        );
+    }
     next('Каталог инструментов');
-    output.info('Состав каталога', extended?'Встроенные пакеты обновляются по проверенному запросу пересборки. Ручные карточки и закрепления проектов сохраняются.':'Обновление встроенных пакетов пропущено лёгким профилем.');
-    const modelCredentials=await prepareDevModelCredentials(root,process.env);
-    output.info('Снимки LanceDB',snapshotsEnabled?'Проверка ключа и изолированного SDK-исполнителя':'Сохранение настроек; исполнитель не запускается');
-    const snapshots=await prepareDevSnapshots(root,process.env,snapshotImageId,{executorEnabled:snapshotsEnabled});
-    const activeServices=snapshotsEnabled?managedServices:services;
+    output.info(
+        'Состав каталога',
+        extended
+            ? 'Встроенные пакеты обновляются по проверенному запросу пересборки. Ручные карточки и закрепления проектов сохраняются.'
+            : 'Обновление встроенных пакетов пропущено лёгким профилем.',
+    );
+    const modelCredentials = await prepareDevModelCredentials(root, process.env);
+    output.info(
+        'Снимки LanceDB',
+        snapshotsEnabled
+            ? 'Проверка ключа и изолированного SDK-исполнителя'
+            : 'Сохранение настроек; исполнитель не запускается',
+    );
+    const snapshots = await prepareDevSnapshots(root, process.env, snapshotImageId, {
+        executorEnabled: snapshotsEnabled,
+    });
+    const activeServices = snapshotsEnabled ? managedServices : services;
     output.info('Файлы чата', 'Подготовка приватного S3-хранилища');
-    const chatStorage=await prepareDevChatStorage(root,process.env,{output});
-    const runtimeEnvironment=modelRuntimeEnvironment(root,process.env);
+    const chatStorage = await prepareDevChatStorage(root, process.env, { output });
+    const runtimeEnvironment = modelRuntimeEnvironment(root, process.env);
     next('Остановка прежних локальных процессов');
     await stop();
     await assertServicePortsAvailable();
     mkdirSync(stateDir, { recursive: true });
     mkdirSync(logDir, { recursive: true });
 
-    const commonEnvironment={...process.env};
+    const commonEnvironment = { ...process.env };
     delete commonEnvironment.DEV_BRIDGE_RUNTIME_DIR;
-    for(const key of Object.keys(commonEnvironment))if(key.startsWith('SNAPSHOT_'))delete commonEnvironment[key];
-    for(const key of Object.keys(commonEnvironment))if(key.startsWith('CHAT_S3_'))delete commonEnvironment[key];
-    delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY;delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE;
+    for (const key of Object.keys(commonEnvironment)) if (key.startsWith('SNAPSHOT_')) delete commonEnvironment[key];
+    for (const key of Object.keys(commonEnvironment)) if (key.startsWith('CHAT_S3_')) delete commonEnvironment[key];
+    delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY;
+    delete commonEnvironment.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE;
     const shared = {
         ...commonEnvironment,
         ...runtimeEnvironment,
         DEV_POSTGRES_CONTAINER: postgres.stdout.trim(),
         BACKUP_DIR: path.resolve(root, process.env.BACKUP_DIR || 'data/backups'),
-        RUNTIME_ARTIFACT_DIR:path.resolve(root,process.env.RUNTIME_ARTIFACT_DIR||'data/runtime-artifacts'),
+        RUNTIME_ARTIFACT_DIR: path.resolve(root, process.env.RUNTIME_ARTIFACT_DIR || 'data/runtime-artifacts'),
         CATALOG_SERVICE_URL: 'http://127.0.0.1:4100',
         SKILLS_SERVICE_URL: 'http://127.0.0.1:4200',
         RAG_SERVICE_URL: 'http://127.0.0.1:4300',
         FEATURE_FLAGS_SERVICE_URL: 'http://127.0.0.1:4400',
         AUTH_SERVICE_URL: 'http://127.0.0.1:22222',
-        CATALOG_PG_URL: process.env.CATALOG_PG_URL_FILE?undefined:process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
-        ...(process.env.CATALOG_PG_URL_FILE?{CATALOG_PG_URL_FILE:path.resolve(root,process.env.CATALOG_PG_URL_FILE)}:{}),
+        CATALOG_PG_URL: process.env.CATALOG_PG_URL_FILE
+            ? undefined
+            : process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
+        ...(process.env.CATALOG_PG_URL_FILE
+            ? { CATALOG_PG_URL_FILE: path.resolve(root, process.env.CATALOG_PG_URL_FILE) }
+            : {}),
         RAG_PG_URL: process.env.RAG_PG_URL || 'postgresql://rag:rag@localhost:5432/rag',
         PROJECTS_ROOT: path.resolve(root, process.env.PROJECTS_ROOT || path.join(homedir(), 'projects')),
         SKILLS_STORAGE_PATH: path.resolve(root, process.env.SKILLS_STORAGE_PATH || 'data/skills'),
         ASSET_SYNC_NODE_BIN: node,
         // Расширенный профиль использует Native checkout; fast сохраняет ручной путь или его отсутствие.
-        ...extended?{ASSET_SYNC_MCP_BIN:path.join(root, 'mcp/neurocenter-asset-sync/dist/index.js')}:{},
+        ...(extended ? { ASSET_SYNC_MCP_BIN: path.join(root, 'mcp/neurocenter-asset-sync/dist/index.js') } : {}),
         SSO_DISABLE: process.env.SSO_DISABLE || 'true',
         RAG_AUTH_DISABLED: 'false',
         AUTH_GUARD_ENABLED: 'true',
@@ -285,52 +487,121 @@ async function start(profile,watchMode=false) {
     const children = [];
     // Detached-сервисы не получают Ctrl+C терминала; отмена очищает только новый запуск.
     const cancellation = new AbortController();
-    const cancel = signal => cancellation.abort(Object.assign(new Error('Запуск сервисов прерван; процессы нового запуска остановлены.'), {code: 'ECANCELED', signal}));
-    const interrupt = () => cancel('SIGINT'), terminate = () => cancel('SIGTERM');
+    const cancel = (signal) =>
+        cancellation.abort(
+            Object.assign(new Error('Запуск сервисов прерван; процессы нового запуска остановлены.'), {
+                code: 'ECANCELED',
+                signal,
+            }),
+        );
+    const interrupt = () => cancel('SIGINT'),
+        terminate = () => cancel('SIGTERM');
     process.on('SIGINT', interrupt);
     process.on('SIGTERM', terminate);
     try {
         next('Запуск сервисов');
-        const environmentFor=service=>({...service.name==='snapshot-verifier'?snapshots.runner:{ ...shared, ...(service.name==='catalog'?{...modelCredentials,...snapshots.catalog,...chatStorage,CATALOG_REBUILD_REQUEST_FILE:extended?catalogRebuildRequestPath(root):undefined}:{}),
-            ...(service.name==='gateway'?{NODE_ENV:'development',DEV_BRIDGE_RUNTIME_DIR:path.join(root, '.run/dev-bridge/runtime')}:{}), PORT:String(service.port)},
-            NEUROCENTER_DEV_LAUNCH_PROVENANCE:process.env.NEUROCENTER_DEV_LAUNCH_PROVENANCE});
-        if(watchMode){
-            const {startDevWatch}=await import('./workspace/dev-watch-control.mjs');
-            const watcher=await startDevWatch({root,node,logDir,signal:cancellation.signal,nativeEnabled:extended,services:activeServices.map(service=>({...service,entry:entryFor(service),environment:environmentFor(service)}))});
-            records.push(watcher.record);children.push({child:watcher.child,service:watchService,logFile:path.join(logDir,'neurocenter-source-watch.log')});
-        }else for (const service of activeServices) {
-            cancellation.signal.throwIfAborted();
-            const {child,record,logFile} = await launchDevService({root,node,service,entry:entryFor(service),environment:environmentFor(service),logDir,signal:cancellation.signal});
-            children.push({child, service, logFile});
-            child.unref();
-            records.push(record);
-            writeFileSync(stateFile, JSON.stringify(records, null, 2));
-        }
+        const environmentFor = (service) => ({
+            ...(service.name === 'snapshot-verifier'
+                ? snapshots.runner
+                : {
+                      ...shared,
+                      ...(service.name === 'catalog'
+                          ? {
+                                ...modelCredentials,
+                                ...snapshots.catalog,
+                                ...chatStorage,
+                                CATALOG_REBUILD_REQUEST_FILE: extended ? catalogRebuildRequestPath(root) : undefined,
+                            }
+                          : {}),
+                      ...(service.name === 'gateway'
+                          ? {
+                                NODE_ENV: 'development',
+                                DEV_BRIDGE_RUNTIME_DIR: path.join(root, '.run/dev-bridge/runtime'),
+                            }
+                          : {}),
+                      PORT: String(service.port),
+                  }),
+            NEUROCENTER_DEV_LAUNCH_PROVENANCE: process.env.NEUROCENTER_DEV_LAUNCH_PROVENANCE,
+        });
+        if (watchMode) {
+            const { startDevWatch } = await import('./workspace/dev-watch-control.mjs');
+            const watcher = await startDevWatch({
+                root,
+                node,
+                logDir,
+                signal: cancellation.signal,
+                nativeEnabled: extended,
+                services: activeServices.map((service) => ({
+                    ...service,
+                    entry: entryFor(service),
+                    environment: environmentFor(service),
+                })),
+            });
+            records.push(watcher.record);
+            children.push({
+                child: watcher.child,
+                service: watchService,
+                logFile: path.join(logDir, 'neurocenter-source-watch.log'),
+            });
+        } else
+            for (const service of activeServices) {
+                cancellation.signal.throwIfAborted();
+                const { child, record, logFile } = await launchDevService({
+                    root,
+                    node,
+                    service,
+                    entry: entryFor(service),
+                    environment: environmentFor(service),
+                    logDir,
+                    signal: cancellation.signal,
+                });
+                children.push({ child, service, logFile });
+                child.unref();
+                records.push(record);
+                writeFileSync(stateFile, JSON.stringify(records, null, 2));
+            }
 
         next('Проверка готовности — до 45 секунд');
         const deadline = Date.now() + 45000;
         while (Date.now() < deadline) {
             cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
-            const results = await health(deadline, cancellation.signal, snapshotsEnabled),required=results.filter(service=>!service.optional);
+            const results = await health(deadline, cancellation.signal, snapshotsEnabled),
+                required = results.filter((service) => !service.optional);
             cancellation.signal.throwIfAborted();
             assertServicesRunning(children);
-            if (required.every(service => service.available)) {
+            if (required.every((service) => service.available)) {
                 reportHealth(results);
-                if(extended)try {
-                    const {applyPublishedDevBridge} = await import('./workspace/dev-bridge-startup.mjs');
-                    await applyPublishedDevBridge({root, node, environment: process.env, output});
-                } catch (error) { output.warning('Обновление установленного моста отложено: '+error.message+' Сервисы продолжают работать; повторите scripts/dev.sh up --profile '+profile+'.'); }
+                if (extended)
+                    try {
+                        const { applyPublishedDevBridge } = await import('./workspace/dev-bridge-startup.mjs');
+                        await applyPublishedDevBridge({ root, node, environment: process.env, output });
+                    } catch (error) {
+                        output.warning(
+                            'Обновление установленного моста отложено: ' +
+                                error.message +
+                                ' Сервисы продолжают работать; повторите scripts/dev.sh up --profile ' +
+                                profile +
+                                '.',
+                        );
+                    }
                 cancellation.signal.throwIfAborted();
                 assertServicesRunning(children);
-                const fullyReady=required.every(service=>service.ok);
-                output.heading(fullyReady?'Готов к работе':'Сервисы запущены');
-                if(!fullyReady)output.warning('Полная готовность не подтверждена: выше перечислены пропущенные проверки и неизвестная принадлежность процессов.');
+                const fullyReady = required.every((service) => service.ok);
+                output.heading(fullyReady ? 'Готов к работе' : 'Сервисы запущены');
+                if (!fullyReady)
+                    output.warning(
+                        'Полная готовность не подтверждена: выше перечислены пропущенные проверки и неизвестная принадлежность процессов.',
+                    );
                 output.info('Интерфейс', 'http://localhost:5173');
                 output.info('Логи', logDir);
                 output.info('Проверить состояние', 'scripts/dev.sh status');
                 output.info('Остановить', 'scripts/dev.sh down');
-                if(watchMode)output.info('Watch','Включён: изменения сервисов/shared собираются последовательно; статус — scripts/dev.sh status.');
+                if (watchMode)
+                    output.info(
+                        'Watch',
+                        'Включён: изменения сервисов/shared собираются последовательно; статус — scripts/dev.sh status.',
+                    );
                 return;
             }
             await delay(500);
@@ -352,30 +623,50 @@ async function main() {
     const helpFlags = ['--help', '-h', '—help'];
     // Scoped checks admit arguments before dotenv and keep their own report and exit status.
     if (command === 'check') {
-        const {parseCheckOptions, checkPlan, checkHelp} = await import('./workspace/check-plan.mjs');
+        const { parseCheckOptions, checkPlan, checkHelp } = await import('./workspace/check-plan.mjs');
         const options = parseCheckOptions(args.slice(1));
-        if (options.help) { console.log(checkHelp); return; }
+        if (options.help) {
+            console.log(checkHelp);
+            return;
+        }
         checkPlan(root, options);
-        const {launchNode24} = await import('./workspace/node24-cli.mjs');
+        const { launchNode24 } = await import('./workspace/node24-cli.mjs');
         await launchNode24(path.join(root, 'scripts/workspace/check.mjs'), args.slice(1));
         return;
     }
-    if (!args.length || args.length === 1 && (command === 'help' || helpFlags.includes(command))
-        || args.length === 2 && commands.includes(command) && helpFlags.includes(args[1])) {
+    if (
+        !args.length ||
+        (args.length === 1 && (command === 'help' || helpFlags.includes(command))) ||
+        (args.length === 2 && commands.includes(command) && helpFlags.includes(args[1]))
+    ) {
         output.help();
         return;
     }
     let profile = defaultProfile;
     let seenProfile = false;
-    let watchMode=command==='watch',seenWatch=false;
+    let watchMode = command === 'watch',
+        seenWatch = false;
     let invalid = !commands.includes(command);
     for (let index = 1; index < args.length && !invalid; index++) {
         const argument = args[index];
-        if((command==='up'||command==='watch')&&argument==='--watch'&&!seenWatch){watchMode=true;seenWatch=true;continue;}
-        if (!['install','build','up','watch'].includes(command) || seenProfile || !(argument === '--profile' || argument.startsWith('--profile='))) { invalid = true; break; }
+        if ((command === 'up' || command === 'watch') && argument === '--watch' && !seenWatch) {
+            watchMode = true;
+            seenWatch = true;
+            continue;
+        }
+        if (
+            !['install', 'build', 'up', 'watch'].includes(command) ||
+            seenProfile ||
+            !(argument === '--profile' || argument.startsWith('--profile='))
+        ) {
+            invalid = true;
+            break;
+        }
         profile = argument === '--profile' ? args[++index] : argument.slice('--profile='.length);
         seenProfile = true;
-        if (!['fast','standard','full'].includes(profile)) { invalid = true; }
+        if (!['fast', 'standard', 'full'].includes(profile)) {
+            invalid = true;
+        }
     }
     if (invalid) {
         output.error(`Неизвестная команда или параметры: ${args.join(' ')}`);
@@ -385,85 +676,140 @@ async function main() {
     }
     if (Number(process.versions.node.split('.')[0]) !== 24) {
         const runtime = nodeRuntime();
-        const result = spawnSync(runtime.node, [fileURLToPath(import.meta.url), ...args], {stdio:'inherit',env:runtime.env});
-        if (result.error) { throw result.error; }
+        const result = spawnSync(runtime.node, [fileURLToPath(import.meta.url), ...args], {
+            stdio: 'inherit',
+            env: runtime.env,
+        });
+        if (result.error) {
+            throw result.error;
+        }
         process.exitCode = result.status ?? 1;
         return;
     }
     // Переменные процесса имеют приоритет; затем локальные настройки машины и общий .env.
-    for (const name of [ '.env.local', '.env' ]) {
-        try { process.loadEnvFile(path.join(root, name)); }
-        catch (error) { if (error.code !== 'ENOENT') { throw error; } }
+    for (const name of ['.env.local', '.env']) {
+        try {
+            process.loadEnvFile(path.join(root, name));
+        } catch (error) {
+            if (error.code !== 'ENOENT') {
+                throw error;
+            }
+        }
     }
-    if(command==='up'||command==='status')serviceDetailsFlag();
+    if (command === 'up' || command === 'status') serviceDetailsFlag();
     const runtime = nodeRuntime();
     node = runtime.node;
     process.env.PATH = runtime.env.PATH;
     process.env.NODE_BIN = node;
     logDir = process.env.LOGDIR || path.join(stateDir, 'logs');
 
-    const titles = {install:'Установка зависимостей',build:'Сборка проекта',check:'Проверка проекта',up:'Запуск проекта',watch:'Запуск с пересборкой исходников',down:'Остановка проекта',status:'Состояние сервисов',tail:'Последние 20 строк логов'};
+    const titles = {
+        install: 'Установка зависимостей',
+        build: 'Сборка проекта',
+        check: 'Проверка проекта',
+        up: 'Запуск проекта',
+        watch: 'Запуск с пересборкой исходников',
+        down: 'Остановка проекта',
+        status: 'Состояние сервисов',
+        tail: 'Последние 20 строк логов',
+    };
     output.heading(titles[command]);
-    const extended=profile!=='fast',selectedPackages=extended?packages:services;
-    if(command==='install'||command==='build')output.info('Профиль подготовки',profile);
+    const extended = profile !== 'fast',
+        selectedPackages = extended ? packages : services;
+    if (command === 'install' || command === 'build') output.info('Профиль подготовки', profile);
     if (command === 'install') {
-        const next = progress(selectedPackages.length + (extended?5:2));
+        const next = progress(selectedPackages.length + (extended ? 5 : 2));
         next('Проверка и подготовка Docker Compose');
         await ensureCompose();
         next('Установка общего контракта ассетов');
         await prepareWorkspaceDependencies();
-        await forPackages(command, next, {selection:selectedPackages});
-        if(extended){
-            await prepareCurrentDevPackages({root,node,environment:process.env,output,next});
+        await forPackages(command, next, { selection: selectedPackages });
+        if (extended) {
+            await prepareCurrentDevPackages({ root, node, environment: process.env, output, next });
             next('Подготовка образа проверки снимков');
-            await optionalDevSnapshotImage({root,environment:process.env,output,build:true});
+            await optionalDevSnapshotImage({ root, environment: process.env, output, build: true });
         }
         output.success('Зависимости установлены');
-        output.info('Запустить проект', 'scripts/dev.sh up --profile '+profile);
-    }
-    else if (command === 'build') {
-        const next = progress(selectedPackages.length + (extended?4:1));
-        next('Установка общего контракта ассетов'); await prepareWorkspaceDependencies();
-        await forPackages(command, next, {selection:selectedPackages});
-        if(extended){await prepareCurrentDevPackages({root,node,environment:process.env,output,next});next('Подготовка образа проверки снимков');await optionalDevSnapshotImage({root,environment:process.env,output,build:true});}
+        output.info('Запустить проект', 'scripts/dev.sh up --profile ' + profile);
+    } else if (command === 'build') {
+        const next = progress(selectedPackages.length + (extended ? 4 : 1));
+        next('Установка общего контракта ассетов');
+        await prepareWorkspaceDependencies();
+        await forPackages(command, next, { selection: selectedPackages });
+        if (extended) {
+            await prepareCurrentDevPackages({ root, node, environment: process.env, output, next });
+            next('Подготовка образа проверки снимков');
+            await optionalDevSnapshotImage({ root, environment: process.env, output, build: true });
+        }
         output.success('Проект собран');
-    }
-    else if (command === 'up'||command==='watch') { await start(profile,watchMode); }
-    else if (command === 'down') {
+    } else if (command === 'up' || command === 'watch') {
+        await start(profile, watchMode);
+    } else if (command === 'down') {
         const count = await stop();
-        if (count) { output.success(`Остановлено процессов этого каталога: ${count}`); }
-        else { output.info('Локальные процессы', 'Активных процессов этого каталога не найдено'); }
+        if (count) {
+            output.success(`Остановлено процессов этого каталога: ${count}`);
+        } else {
+            output.info('Локальные процессы', 'Активных процессов этого каталога не найдено');
+        }
         output.info('Данные', 'PostgreSQL и рабочие файлы сохранены');
         output.info('Запустить снова', 'scripts/dev.sh up');
-    }
-    else if (command === 'status') {
+    } else if (command === 'status') {
         const results = await health();
-        if(existsSync(path.join(stateDir,'dev-watch/status.json'))){const {devWatchStatus}=await import('./workspace/dev-watch-control.mjs');const watch=await devWatchStatus(root);if(watch){output.info('Watch',watch.alive?watch.phase:'остановлен');if(watch.lastBuild?.ok===false)output.warning('Последняя пересборка не применена: '+watch.lastBuild.code+'; предыдущие сервисы сохранены. Лог: '+path.join(stateDir,'dev-watch/last-failure'));}}
+        if (existsSync(path.join(stateDir, 'dev-watch/status.json'))) {
+            const { devWatchStatus } = await import('./workspace/dev-watch-control.mjs');
+            const watch = await devWatchStatus(root);
+            if (watch) {
+                output.info('Watch', watch.alive ? watch.phase : 'остановлен');
+                if (watch.lastBuild?.ok === false)
+                    output.warning(
+                        'Последняя пересборка не применена: ' +
+                            watch.lastBuild.code +
+                            '; предыдущие сервисы сохранены. Лог: ' +
+                            path.join(stateDir, 'dev-watch/last-failure'),
+                    );
+            }
+        }
         reportHealth(results);
-        const required=results.filter(service=>!service.optional),ready=required.filter(service=>service.ok).length;
-        if (ready === required.length) { output.success(`Все основные сервисы готовы: ${ready}/${required.length}`); output.info('Интерфейс', 'http://localhost:5173'); }
-        else {
-            output.warning(`Подтверждена готовность сервисов: ${ready}/${required.length}; остальные проверки не пройдены или пропущены. Запуск: scripts/dev.sh up`);
-            if(required.some(service=>!service.available))process.exitCode=1;
+        const required = results.filter((service) => !service.optional),
+            ready = required.filter((service) => service.ok).length;
+        if (ready === required.length) {
+            output.success(`Все основные сервисы готовы: ${ready}/${required.length}`);
+            output.info('Интерфейс', 'http://localhost:5173');
+        } else {
+            output.warning(
+                `Подтверждена готовность сервисов: ${ready}/${required.length}; остальные проверки не пройдены или пропущены. Запуск: scripts/dev.sh up`,
+            );
+            if (required.some((service) => !service.available)) process.exitCode = 1;
         }
         output.info('Логи', logDir);
     } else if (command === 'tail') {
-        const {readOwnedFile}=await import('./dev-mcp/safe-file.mjs');
+        const { readOwnedFile } = await import('./dev-mcp/safe-file.mjs');
         let found = 0;
         for (const service of managedServices) {
-            if(!existsSync(logDir))break;
-            const launchId=await currentDevLaunchId(root,service.name),file=`neurocenter-${service.name}${launchId?'-'+launchId:''}.log`;
-            try{const read=await readOwnedFile(realpathSync(logDir),file,{limit:32768,tail:true});let text=read.text;
-                if(read.truncated){const newline=text.indexOf('\n');text=newline<0?'':text.slice(newline+1);}
-                found++;output.logs(service.label,text.trimEnd().split('\n').slice(-20).join('\n'));
-            }catch(error){if(error.code!=='ENOENT')throw error;}
+            if (!existsSync(logDir)) break;
+            const launchId = await currentDevLaunchId(root, service.name),
+                file = `neurocenter-${service.name}${launchId ? '-' + launchId : ''}.log`;
+            try {
+                const read = await readOwnedFile(realpathSync(logDir), file, { limit: 32768, tail: true });
+                let text = read.text;
+                if (read.truncated) {
+                    const newline = text.indexOf('\n');
+                    text = newline < 0 ? '' : text.slice(newline + 1);
+                }
+                found++;
+                output.logs(service.label, text.trimEnd().split('\n').slice(-20).join('\n'));
+            } catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+            }
         }
-        if (!found) { output.info('Логи', 'Пока нет — появятся после первого запуска проекта.'); }
+        if (!found) {
+            output.info('Логи', 'Пока нет — появятся после первого запуска проекта.');
+        }
         output.info('Каталог логов', logDir);
     }
 }
 
-main().catch(error => {
+main().catch((error) => {
     output.error(error.message);
     process.exitCode = error.code === 'ECANCELED' ? (error.signal === 'SIGTERM' ? 143 : 130) : 1;
 });

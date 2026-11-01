@@ -4,8 +4,8 @@ import type { Pool, PoolClient } from 'pg';
 import { publicationHash } from '../publication/publication-validation';
 import type { IAssetSourcePin } from './source-client';
 import { assetSourceMode } from './source-cache';
-import { importPlanDigest } from './import-types';
-import type { IImportItem, IImportJob, ISourceReceipt, TImportState } from './import-types';
+import { importPlanDigest } from './import-utils';
+import type { IImportItem, IImportJob, ISourceReceipt, TImportState } from './import-interfaces';
 import { securityEvent } from '../access/security-events';
 import { assertBridgeHead } from './bridge-source-head';
 

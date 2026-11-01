@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { parseCatalogRebuildRequest, type CatalogRebuildRequest } from '../../../shared/catalog-rebuild-request.cjs';
+import { parseCatalogRebuildRequest, type ICatalogRebuildRequest } from '../../../shared/catalog-rebuild-request.cjs';
 
-export interface CatalogRebuildItem {
+export interface ICatalogRebuildItem {
     id: string;
     name: string;
     state: 'ready' | 'pending' | 'attention' | 'archive-required';
@@ -12,20 +12,20 @@ export interface CatalogRebuildItem {
     operationId?: string;
     catalogId?: string;
 }
-export interface CatalogRebuildState {
+export interface ICatalogRebuildState {
     requestId: string;
     sourceRevision: string;
     requestedAt: string;
     updatedAt: string;
     state: 'preparing' | 'ready' | 'attention';
-    items: CatalogRebuildItem[];
+    items: ICatalogRebuildItem[];
     message?: string;
 }
 
 /** Reusing a UUID with different source bytes or creation time cannot resume an earlier admission. */
 export const sameCatalogRebuildRequest = (
-    left: Pick<CatalogRebuildRequest, 'requestId' | 'sourceRevision' | 'requestedAt'> | undefined,
-    right: CatalogRebuildRequest,
+    left: Pick<ICatalogRebuildRequest, 'requestId' | 'sourceRevision' | 'requestedAt'> | undefined,
+    right: ICatalogRebuildRequest,
 ): boolean =>
     left?.requestId === right.requestId &&
     left.sourceRevision === right.sourceRevision &&
@@ -61,20 +61,20 @@ async function localJson(file: string, maximum: number): Promise<unknown | undef
         await handle.close();
     }
 }
-export async function readCatalogRebuildRequest(file: string | undefined): Promise<CatalogRebuildRequest | undefined> {
+export async function readCatalogRebuildRequest(file: string | undefined): Promise<ICatalogRebuildRequest | undefined> {
     const value = file ? await localJson(file, 4096) : undefined;
     return value === undefined ? undefined : parseCatalogRebuildRequest(value);
 }
 /** A late status belongs to its original request; readers never show it as the result of a newer rebuild. */
-export async function readCatalogRebuildState(file: string | undefined): Promise<CatalogRebuildState | undefined> {
-    let request: CatalogRebuildRequest | undefined;
+export async function readCatalogRebuildState(file: string | undefined): Promise<ICatalogRebuildState | undefined> {
+    let request: ICatalogRebuildRequest | undefined;
     try {
         request = await readCatalogRebuildRequest(file);
     } catch {
         return;
     }
     if (!request || !file) return;
-    const waiting: CatalogRebuildState = {
+    const waiting: ICatalogRebuildState = {
         requestId: request.requestId,
         sourceRevision: request.sourceRevision,
         requestedAt: request.requestedAt,
@@ -84,7 +84,7 @@ export async function readCatalogRebuildState(file: string | undefined): Promise
         message: 'Запрос пересборки создан. Ожидаем проверку прав и приёма пакетов.',
     };
     try {
-        const value = (await localJson(file + '.status.json', 128 * 1024)) as CatalogRebuildState | undefined;
+        const value = (await localJson(file + '.status.json', 128 * 1024)) as ICatalogRebuildState | undefined;
         if (!value || !sameCatalogRebuildRequest(value, request)) return waiting;
         if (
             !['preparing', 'ready', 'attention'].includes(value.state) ||
@@ -114,8 +114,8 @@ export async function readCatalogRebuildState(file: string | undefined): Promise
 }
 export async function writeCatalogRebuildState(
     file: string,
-    request: CatalogRebuildRequest,
-    value: CatalogRebuildState,
+    request: ICatalogRebuildRequest,
+    value: ICatalogRebuildState,
 ): Promise<void> {
     if (!sameCatalogRebuildRequest(await readCatalogRebuildRequest(file), request)) return;
     const target = file + '.status.json',

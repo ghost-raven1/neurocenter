@@ -1,67 +1,67 @@
-import type { BuildSourceInventory, ExecutableBuildPlan } from '../../../shared/package-build-plan.cjs';
-import type { BuildDiagnostic } from '../../../shared/package-build-diagnostics.cjs';
+import type { IBuildSourceInventory, IExecutableBuildPlan } from '../../../shared/package-build-plan.cjs';
+import type { IBuildDiagnostic } from '../../../shared/package-build-diagnostics.cjs';
 import {
     validateUploadBuildSource,
-    type UploadBuildSource,
-    type PinnedUploadSource,
+    type IUploadBuildSource,
+    type IPinnedUploadSource,
 } from '../source-upload/source-upload.model';
 import { BadRequestException } from '@nestjs/common';
 import { packageFiles, publicationHash, filePath } from '../publication/publication-validation';
 import { TARGETS } from '../../../shared/runtime-artifacts.cjs';
 import {
     validateRepositorySource,
-    type RepositoryInput,
-    type RepositorySource,
+    type IRepositoryInput,
+    type IRepositorySource,
 } from '../../../shared/repository-source.cjs';
 import { isSourceEntrypoint } from '../../../shared/source-entrypoint.cjs';
 import { inspectSkillSource } from './skill-source';
-import type { SkillSourceFile } from '../../../shared/skill-source.cjs';
+import type { ISkillSourceFile } from '../../../shared/skill-source.cjs';
 import {
     validateBuildPublication,
-    type BuildPublicationTarget,
-    type PinnedBuildPublication,
+    type IBuildPublicationTarget,
+    type IPinnedBuildPublication,
 } from './publication-target';
-import { validatePackageAgentInput, type PackageAgentInput } from './package-agent.model';
-import { validateBundledBuildSource, type BundledBuildSource } from '../../../shared/bundled-catalog.cjs';
+import { validatePackageAgentInput, type IPackageAgentInput } from './package-agent.model';
+import { validateBundledBuildSource, type IBundledBuildSource } from '../../../shared/bundled-catalog.cjs';
 
-export type BuildState = 'QUEUED' | 'RUNNING' | 'CANCELLING' | 'CANCELLED' | 'SUCCEEDED' | 'FAILED';
-export interface BuildSourceNpm {
+export type TBuildState = 'QUEUED' | 'RUNNING' | 'CANCELLING' | 'CANCELLED' | 'SUCCEEDED' | 'FAILED';
+export interface IBuildSourceNpm {
     type: 'npm';
     specifier: string;
     entrypoint?: string;
 }
-export interface BuildSourceFiles {
+export interface IBuildSourceFiles {
     type: 'files';
-    files: SkillSourceFile[];
+    files: ISkillSourceFile[];
     entrypoint: string;
     args?: string[];
 }
-export interface BuildInput {
+export interface IBuildInput {
     requestKey: string;
     kind: 'mcp' | 'plugin' | 'skill';
     name: string;
     description: string;
     tags?: string[];
     targets?: string[];
-    publication?: BuildPublicationTarget;
-    agent?: PackageAgentInput;
-    source: BuildSourceNpm | BuildSourceFiles | RepositoryInput | UploadBuildSource | BundledBuildSource;
+    publication?: IBuildPublicationTarget;
+    agent?: IPackageAgentInput;
+    source: IBuildSourceNpm | IBuildSourceFiles | IRepositoryInput | IUploadBuildSource | IBundledBuildSource;
 }
-export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'source' | 'publication'> {
+export interface IBuildConfiguration extends Omit<IBuildInput, 'requestKey' | 'source' | 'publication'> {
     recipeVersion?: 2;
-    recipeInventory?: BuildSourceInventory;
-    buildPlan?: ExecutableBuildPlan;
-    buildDiagnostics?: Array<{ attempt: number; report: BuildDiagnostic }>;
-    publication?: PinnedBuildPublication;
+    recipeInventory?: IBuildSourceInventory;
+    buildPlan?: IExecutableBuildPlan;
+    buildDiagnostics?: Array<{ attempt: number; report: IBuildDiagnostic }>;
+    publication?: IPinnedBuildPublication;
     agentCandidates?: string[];
     targets: string[];
     tags: string[];
     source:
-        | BuildSourceFiles
-        | RepositorySource
-        | PinnedUploadSource
-        | BundledBuildSource
-        | (BuildSourceNpm & {
+        | IBuildSourceFiles
+        | IRepositorySource
+        | IPinnedUploadSource
+        | IBundledBuildSource
+        | (IBuildSourceNpm & {
               package: string;
               version: string;
               entrypoint: string;
@@ -69,7 +69,7 @@ export interface BuildConfiguration extends Omit<BuildInput, 'requestKey' | 'sou
               supportedTargets?: string[];
           });
 }
-export interface BuildResult {
+export interface IBuildResult {
     catalogId: string;
     name: string;
     version: number;
@@ -78,16 +78,16 @@ export interface BuildResult {
     sourceVersion?: string;
     sourceSha256?: string;
 }
-export interface BuildRow {
+export interface IBuildRow {
     id: string;
     actor: string;
     request_key: string;
     request_hash: string;
-    config: BuildConfiguration;
-    state: BuildState;
+    config: IBuildConfiguration;
+    state: TBuildState;
     percent: number;
     message: string;
-    result: BuildResult | null;
+    result: IBuildResult | null;
     error: string | null;
     created_at: string;
     updated_at: string;
@@ -97,7 +97,7 @@ export interface BuildRow {
     execution_pid?: number | null;
     execution_started?: boolean;
 }
-export const buildView = (row: BuildRow) => ({
+export const buildView = (row: IBuildRow) => ({
     id: row.id,
     requestKey: row.request_key,
     publicationStartedAt: row.publication_started_at ?? null,
@@ -112,7 +112,7 @@ export const buildView = (row: BuildRow) => ({
     createdAt: row.created_at,
     updatedAt: row.updated_at,
 });
-export const requestHash = (input: BuildInput) => publicationHash({ ...input, requestKey: undefined });
+export const requestHash = (input: IBuildInput) => publicationHash({ ...input, requestKey: undefined });
 export const validId = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -125,7 +125,7 @@ const text = (value: unknown, label: string, max: number) => {
 };
 
 /** В задании сохраняются только исходники и декларация; команды и секреты сервера не принимаются. */
-export function validateBuildInput(raw: unknown): BuildInput & { targets: string[]; tags: string[] } {
+export function validateBuildInput(raw: unknown): IBuildInput & { targets: string[]; tags: string[] } {
     if (
         !object(raw) ||
         Object.keys(raw).some(
@@ -181,7 +181,7 @@ export function validateBuildInput(raw: unknown): BuildInput & { targets: string
     const publication = validateBuildPublication(raw.publication),
         base = {
             requestKey: raw.requestKey,
-            kind: raw.kind as BuildInput['kind'],
+            kind: raw.kind as IBuildInput['kind'],
             name,
             description,
             tags,
@@ -232,8 +232,8 @@ export function validateBuildInput(raw: unknown): BuildInput & { targets: string
     if (raw.kind === 'skill') {
         if (!/(?:^|\/)SKILL\.md$/.test(entrypoint) || source.args !== undefined)
             throw new BadRequestException('Скилл использует SKILL.md без команды запуска и args.');
-        inspectSkillSource(source.files as SkillSourceFile[], { name, description, entrypoint });
-        const files = (source.files as SkillSourceFile[]).map(({ path, content, encoding }) => ({
+        inspectSkillSource(source.files as ISkillSourceFile[], { name, description, entrypoint });
+        const files = (source.files as ISkillSourceFile[]).map(({ path, content, encoding }) => ({
             path,
             content,
             ...(encoding ? { encoding } : {}),

@@ -1,2 +1,2 @@
 'use strict';
-module.exports=require('./skill-source.mjs');
+module.exports = require('./skill-source.mjs');

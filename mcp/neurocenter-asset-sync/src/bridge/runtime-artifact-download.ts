@@ -1,7 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import type { IncomingMessage } from 'node:http';
-import { apiHub, jobContext, readState, type Credentials } from './state.js';
+import { apiHub, jobContext, readState, type ICredentials } from './state.js';
 import { LIMITS, type RuntimeArtifact } from '../features/runtime-artifacts/model.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
@@ -12,7 +12,7 @@ export async function downloadJobRuntimeArtifact(
     timeoutMs = 120_000,
 ): Promise<IncomingMessage> {
     const job = jobContext.getStore(),
-        credentials = await readState<Credentials>('credentials');
+        credentials = await readState<ICredentials>('credentials');
     if (
         !job ||
         !uuid.test(job.id) ||

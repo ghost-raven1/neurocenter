@@ -5,16 +5,16 @@ import { randomUUID } from 'node:crypto';
 import { stateDir } from '../../bridge/state.js';
 import { atomicText, syncDirectory } from '../../bridge/atomic-file.js';
 import { readBoundedSnapshot } from '../../bridge/read-bounded.js';
-import type { Completion } from '../../bridge/completions.js';
+import type { ICompletion } from '../../bridge/completions.js';
 import {
     closeRoleMcpProcess,
     findRoleMcpProcess,
     roleMcpOwnerAlive,
     roleMcpProcessOwner,
     retireRoleMcpProcessReceipt,
-    type RoleMcpProcessJournal,
+    type IRoleMcpProcessJournal,
 } from '../system-role-mcp/owned-process.js';
-import type { RoleMcpOwner } from '../system-role-mcp/session-journal.js';
+import type { IRoleMcpOwner } from '../system-role-mcp/session-journal.js';
 import { normalizeOpenCodeCliResult } from './contract.js';
 import {
     normalizeOpenCodeInstallPayload,
@@ -22,26 +22,26 @@ import {
     type OpenCodeInstallPayload,
 } from './install-contract.js';
 
-export interface CliJobIdentity {
+export interface ICliJobIdentity {
     id: string;
     lease: string;
     deviceId: string;
 }
-interface CliInstallStage {
+interface ICliInstallStage {
     file: string;
     dev: number;
     ino: number;
     parentDev: number;
     parentIno: number;
 }
-export interface CliReceipt {
+export interface ICliReceipt {
     schemaVersion: 1;
-    job: CliJobIdentity;
-    worker: RoleMcpOwner;
+    job: ICliJobIdentity;
+    worker: IRoleMcpOwner;
     phase: 'started' | 'closed';
-    process?: { nonce: string; receipt: string; owner?: RoleMcpOwner };
-    completion?: Completion;
-    installation?: { payload: OpenCodeInstallPayload; publicationStarted: boolean; stage?: CliInstallStage };
+    process?: { nonce: string; receipt: string; owner?: IRoleMcpOwner };
+    completion?: ICompletion;
+    installation?: { payload: OpenCodeInstallPayload; publicationStarted: boolean; stage?: ICliInstallStage };
     localOnly?: true;
 }
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
@@ -79,7 +79,7 @@ async function directory(kind: keyof typeof names): Promise<string> {
     await syncDirectory(parent);
     return file;
 }
-function owner(value: RoleMcpOwner): boolean {
+function owner(value: IRoleMcpOwner): boolean {
     return (
         !!value &&
         exact(value, ['pid', 'uid', 'birth', 'entry']) &&
@@ -94,7 +94,7 @@ function owner(value: RoleMcpOwner): boolean {
         value.entry.length <= 4096
     );
 }
-function validate(item: CliReceipt): CliReceipt {
+function validate(item: ICliReceipt): ICliReceipt {
     if (
         !item ||
         !exact(item, [
@@ -186,7 +186,7 @@ function validate(item: CliReceipt): CliReceipt {
     }
     return item;
 }
-async function read(kind: 'active' | 'completed', id: string): Promise<CliReceipt | undefined> {
+async function read(kind: 'active' | 'completed', id: string): Promise<ICliReceipt | undefined> {
     if (!uuid.test(id)) throw new Error('Некорректное задание проверки OpenCode.');
     const file = path.join(await directory(kind), id + '.json');
     try {
@@ -200,7 +200,7 @@ async function read(kind: 'active' | 'completed', id: string): Promise<CliReceip
         )
             throw new Error('Небезопасная запись проверки OpenCode.');
         const item = validate(
-            JSON.parse((await readBoundedSnapshot(file, 16384)).bytes.toString('utf8')) as CliReceipt,
+            JSON.parse((await readBoundedSnapshot(file, 16384)).bytes.toString('utf8')) as ICliReceipt,
         );
         if (item.job.id !== id) throw new Error('Журнал проверки OpenCode относится к другому заданию.');
         return item;
@@ -209,18 +209,18 @@ async function read(kind: 'active' | 'completed', id: string): Promise<CliReceip
         throw error;
     }
 }
-export async function readCliReceipt(id: string): Promise<CliReceipt | undefined> {
+export async function readCliReceipt(id: string): Promise<ICliReceipt | undefined> {
     return (await read('active', id)) ?? (await read('completed', id));
 }
 /** Cancellation cannot cancel an fsync already in flight; drain it before accepting physical cleanup. */
-export async function settleCliReceipt(item: CliReceipt): Promise<CliReceipt> {
+export async function settleCliReceipt(item: ICliReceipt): Promise<ICliReceipt> {
     await writes;
     const current = await read('active', item.job.id);
     if (!current || !same(current.job, item.job) || !same(current.worker, item.worker))
         throw new Error('Владелец проверки OpenCode изменился.');
     return current;
 }
-async function change(previous: CliReceipt, next: CliReceipt): Promise<CliReceipt> {
+async function change(previous: ICliReceipt, next: ICliReceipt): Promise<ICliReceipt> {
     const prior = writes;
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
@@ -243,10 +243,10 @@ async function change(previous: CliReceipt, next: CliReceipt): Promise<CliReceip
     }
 }
 async function beginReceipt(
-    job: CliJobIdentity,
+    job: ICliJobIdentity,
     installation?: OpenCodeInstallPayload,
     localOnly = false,
-): Promise<CliReceipt> {
+): Promise<ICliReceipt> {
     if (await readCliReceipt(job.id)) throw new Error('Проверка OpenCode уже принята.');
     const item = validate({
         schemaVersion: 1,
@@ -261,11 +261,11 @@ async function beginReceipt(
     await atomicText(path.join(await directory('active'), job.id + '.json'), JSON.stringify(item), 0o600);
     return item;
 }
-export const beginCliReceipt = (job: CliJobIdentity, installation?: OpenCodeInstallPayload) =>
+export const beginCliReceipt = (job: ICliJobIdentity, installation?: OpenCodeInstallPayload) =>
     beginReceipt(job, installation);
 /** Private compatibility probes have durable process ownership but never a fictitious server job. */
-export const beginLocalCliReceipt = (job: CliJobIdentity) => beginReceipt(job, undefined, true);
-export async function retireLocalCliReceipt(item: CliReceipt): Promise<void> {
+export const beginLocalCliReceipt = (job: ICliJobIdentity) => beginReceipt(job, undefined, true);
+export async function retireLocalCliReceipt(item: ICliReceipt): Promise<void> {
     try {
         if (!item.localOnly) throw new Error('Проверка OpenCode не является локальной.');
         await closeCliReceipt(item);
@@ -284,12 +284,12 @@ export async function retireLocalCliReceipt(item: CliReceipt): Promise<void> {
     }
 }
 /** The durable marker precedes publication; recovery never guesses that an interrupted copy may run again. */
-export async function markCliInstallPublication(item: CliReceipt): Promise<CliReceipt> {
+export async function markCliInstallPublication(item: ICliReceipt): Promise<ICliReceipt> {
     if (!item.installation || item.phase !== 'started') throw new Error('Установка OpenCode не подготовлена.');
     return change(item, { ...item, installation: { ...item.installation, publicationStarted: true } });
 }
 /** Recovery can remove only the exact staged inode; an unjournalled crash can leave at most an empty file. */
-export async function markCliInstallStage(item: CliReceipt, stage: CliInstallStage): Promise<CliReceipt> {
+export async function markCliInstallStage(item: ICliReceipt, stage: ICliInstallStage): Promise<ICliReceipt> {
     if (
         !item.installation ||
         item.phase !== 'started' ||
@@ -299,7 +299,7 @@ export async function markCliInstallStage(item: CliReceipt, stage: CliInstallSta
         throw new Error('Временный файл OpenCode уже получил владельца.');
     return change(item, { ...item, installation: { ...item.installation, stage } });
 }
-async function cleanupInstallStage(item: CliReceipt): Promise<void> {
+async function cleanupInstallStage(item: ICliReceipt): Promise<void> {
     const stage = item.installation?.stage;
     if (!stage) return;
     try {
@@ -325,9 +325,9 @@ async function cleanupInstallStage(item: CliReceipt): Promise<void> {
 }
 /** Installation has several fixed --version probes; each preceding owned process must close first. */
 export async function cliInstallProcessJournal(
-    item: CliReceipt,
-    save: (next: CliReceipt) => void,
-): Promise<RoleMcpProcessJournal> {
+    item: ICliReceipt,
+    save: (next: ICliReceipt) => void,
+): Promise<IRoleMcpProcessJournal> {
     if (!item.installation) throw new Error('Установка OpenCode не подготовлена.');
     if (item.process) {
         await closeCliReceipt(item);
@@ -339,9 +339,9 @@ export async function cliInstallProcessJournal(
 }
 /** Nonce and exact wrapper identity are fsynced before the wrapper can receive its execution permit. */
 export async function cliProcessJournal(
-    item: CliReceipt,
-    save: (next: CliReceipt) => void,
-): Promise<RoleMcpProcessJournal> {
+    item: ICliReceipt,
+    save: (next: ICliReceipt) => void,
+): Promise<IRoleMcpProcessJournal> {
     if (item.phase !== 'started' || item.process) throw new Error('Проверка OpenCode уже получила владельца.');
     const nonce = randomUUID(),
         record = { nonce, receipt: path.join(await directory('processes'), nonce + '.json') };
@@ -356,7 +356,7 @@ export async function cliProcessJournal(
     };
 }
 /** A missing wrapper without a retained owner had no permit; a retained owner requires its exact closure receipt. */
-export async function closeCliReceipt(item: CliReceipt): Promise<void> {
+export async function closeCliReceipt(item: ICliReceipt): Promise<void> {
     if (item.phase === 'closed' || !item.process) return;
     try {
         const process = item.process,
@@ -366,13 +366,16 @@ export async function closeCliReceipt(item: CliReceipt): Promise<void> {
         throw new CliCleanupError(cause);
     }
 }
-export async function completeCliReceipt(item: CliReceipt, completion: Completion): Promise<CliReceipt> {
+export async function completeCliReceipt(item: ICliReceipt, completion: ICompletion): Promise<ICliReceipt> {
     if (item.phase !== 'started' || item.localOnly)
         throw new Error('Результат проверки OpenCode уже зафиксирован или предназначен только локальному владельцу.');
     return change(item, { ...item, phase: 'closed', completion });
 }
 /** Outbox takes delivery ownership first; the immutable closed archive prevents execution replay after its ACK. */
-export async function queueCliCompletion(item: CliReceipt, save: (value: Completion) => Promise<void>): Promise<void> {
+export async function queueCliCompletion(
+    item: ICliReceipt,
+    save: (value: ICompletion) => Promise<void>,
+): Promise<void> {
     if (item.phase !== 'closed' || !item.completion || item.localOnly)
         throw new Error('Очистка проверки OpenCode не подтверждена.');
     await save(item.completion);
@@ -390,8 +393,8 @@ export async function queueCliCompletion(item: CliReceipt, save: (value: Complet
 }
 /** Recover only orphaned intents. A live worker keeps its own lane, and uncertain closure blocks every new claim. */
 export async function recoverComputerSetupCompletions(
-    save: (value: Completion) => Promise<void>,
-    expected: readonly CliReceipt[] = [],
+    save: (value: ICompletion) => Promise<void>,
+    expected: readonly ICliReceipt[] = [],
 ): Promise<void> {
     await writes;
     let count = 0;

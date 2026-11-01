@@ -2,17 +2,17 @@ import { createHash, randomUUID } from 'node:crypto';
 import { ServiceUnavailableException } from '@nestjs/common';
 import {
     normalizeSkillAuditEvents,
-    type ISkillAuditEvent,
+    type TSkillAuditEvent,
     type ISkillAuditSummary,
 } from '../../../shared/skill-audit.cjs';
-import { normalizeMeta, parseSkillFile } from './frontmatter';
+import { normalizeMeta, parseSkillFile } from './frontmatter/frontmatter';
 import type { ISkillFileChange } from './skill-journal';
 
 export interface ISkillMutationContext {
     actor: string;
-    source: ISkillAuditEvent['source'];
+    source: TSkillAuditEvent['source'];
 }
-export type TDeliverSkillAudit = (events: ISkillAuditEvent[]) => Promise<void>;
+export type TDeliverSkillAudit = (events: TSkillAuditEvent[]) => Promise<void>;
 
 /** Старое поколение получает стабильную идентичность без изменения сохранённого файла. */
 export function skillAuditSummary(raw: string | null, skillPath: string): ISkillAuditSummary | null {
@@ -33,9 +33,9 @@ export function skillAuditSummary(raw: string | null, skillPath: string): ISkill
 }
 
 /** Событие описывает только реальное изменение; инструкция и ресурсы остаются в файловом журнале. */
-export function skillAuditEvents(changes: ISkillFileChange[], context: ISkillMutationContext): ISkillAuditEvent[] {
+export function skillAuditEvents(changes: ISkillFileChange[], context: ISkillMutationContext): TSkillAuditEvent[] {
     const at = new Date().toISOString();
-    const events: ISkillAuditEvent[] = changes
+    const events: TSkillAuditEvent[] = changes
         .filter((change) => change.before !== change.after)
         .map((change) => {
             const resourceId = change.relative.slice(0, -3);
@@ -51,7 +51,7 @@ export function skillAuditEvents(changes: ISkillFileChange[], context: ISkillMut
                 after: skillAuditSummary(change.after, resourceId),
             };
         });
-    const normalized: ISkillAuditEvent[] = [];
+    const normalized: TSkillAuditEvent[] = [];
     for (let offset = 0; offset < events.length; offset += 200) {
         normalized.push(...normalizeSkillAuditEvents({ events: events.slice(offset, offset + 200) }));
     }
@@ -59,7 +59,7 @@ export function skillAuditEvents(changes: ISkillFileChange[], context: ISkillMut
 }
 
 /** Создание папки использует тот же стабильный outbox без выдуманной версии файла. */
-export function skillDirectoryAuditEvents(relative: string, actor: string): ISkillAuditEvent[] {
+export function skillDirectoryAuditEvents(relative: string, actor: string): TSkillAuditEvent[] {
     return normalizeSkillAuditEvents({
         events: [
             {
@@ -77,7 +77,7 @@ export function skillDirectoryAuditEvents(relative: string, actor: string): ISki
 }
 
 /** Каталог подтверждает каждый пакет; потерянный ACK безопасно повторяется с прежними UUID. */
-export async function deliverSkillAudit(events: ISkillAuditEvent[]): Promise<void> {
+export async function deliverSkillAudit(events: TSkillAuditEvent[]): Promise<void> {
     if (!events.length) {
         return;
     }

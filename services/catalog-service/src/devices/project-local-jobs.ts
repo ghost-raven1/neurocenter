@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import type { DeviceInstallations } from './device-installations';
 import type { InstallPlans } from './install-plans';
 import type { JobInput } from './device-jobs';
@@ -11,7 +11,7 @@ import { localCapability, localPurpose, PROJECT_LOCAL_KINDS, PROJECT_LOCAL_APPLI
 import type { IPackage } from '../catalog/bundle-package';
 import type { IInstallationSet } from './installation-set';
 
-interface SourceJob {
+interface ISourceJob {
     id: string;
     device_id: string;
     project_id: string | null;
@@ -20,10 +20,10 @@ interface SourceJob {
     kind: string;
     payload: Record<string, unknown>;
 }
-type Payload = Record<string, unknown> & { package?: IPackage; installSet?: IInstallationSet };
+type TPayload = Record<string, unknown> & { package?: IPackage; installSet?: IInstallationSet };
 const conflict = () =>
     new ConflictException('План истёк или относится к другой папке, версии либо действию. Подготовьте его заново.');
-function identity(device: Device, input: { projectId?: string; expectedBindingId?: string }) {
+function identity(device: IDevice, input: { projectId?: string; expectedBindingId?: string }) {
     const bindingId = managedBinding(device.report, input.projectId);
     assertExpectedBinding(bindingId, input.expectedBindingId, true);
     const binding = (device.report.bindings as Array<{ projectId: string; instanceId?: string }>).find(
@@ -32,7 +32,7 @@ function identity(device: Device, input: { projectId?: string; expectedBindingId
     if (!uuid(binding?.instanceId)) throw new ConflictException('Подтвердите экземпляр папки проекта.');
     return { bindingId, instanceId: binding.instanceId };
 }
-async function inventorySource(store: DeviceStore, device: Device, projectId: string, payload: Payload) {
+async function inventorySource(store: DeviceStore, device: IDevice, projectId: string, payload: TPayload) {
     if (
         !uuid(payload.inventoryJobId) ||
         !uuid(payload.scanId) ||
@@ -57,7 +57,7 @@ async function inventorySource(store: DeviceStore, device: Device, projectId: st
     )
         throw conflict();
 }
-async function savedPlan(store: DeviceStore, device: Device, input: JobInput) {
+async function savedPlan(store: DeviceStore, device: IDevice, input: JobInput) {
     if (!uuid(input.changePlanId) || input.changePlanRevision !== 1 || !sha(input.expectedChangeDigest))
         throw new BadRequestException('Выберите подготовленный план, его ревизию и SHA.');
     const { rows } = await store.pool.query(
@@ -77,9 +77,9 @@ export async function projectLocalJobPayload(
     store: DeviceStore,
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
+    device: IDevice,
     input: JobInput,
-): Promise<Payload | undefined> {
+): Promise<TPayload | undefined> {
     if (!PROJECT_LOCAL_KINDS.includes(input.kind) && input.kind !== 'open-local-change-report') return;
     const saved =
         input.kind === 'open-local-change-report' || PROJECT_LOCAL_APPLIES.includes(input.kind)
@@ -122,11 +122,11 @@ export async function projectLocalJobPayload(
         return { scope: 'project', ...identity(device, input) };
     }
     const tuple = identity(device, input);
-    let payload: Payload = { ...tuple };
+    let payload: TPayload = { ...tuple };
     if (input.kind === 'scan-project-inventory') return payload;
     if (purpose === 'adopt') {
         if (saved) {
-            const source = saved.source_payload as Payload;
+            const source = saved.source_payload as TPayload;
             const pkg = source.package;
             if (
                 !pkg ||
@@ -210,8 +210,8 @@ export async function assertProjectLocalJob(
     store: DeviceStore,
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
-    job: SourceJob,
+    device: IDevice,
+    job: ISourceJob,
 ): Promise<void> {
     if (!PROJECT_LOCAL_KINDS.includes(job.kind) && !job.payload.localPlanPurpose) return;
     if (job.kind === 'scan-opencode-models' && job.role !== 'Главный админ')

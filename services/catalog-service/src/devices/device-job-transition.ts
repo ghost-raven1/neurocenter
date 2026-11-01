@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { Job } from './device-job.model';
+import type { IJob } from './device-job.model';
 import { notifyDeviceOperations, recordDeviceOperation } from './device-operations';
 import { publishMethodChatResult } from '../agent-method-workflows/chat-origin';
 
@@ -14,7 +14,7 @@ export async function transitionDeviceJobs(
     let saved;
     try {
         await client.query('BEGIN');
-        saved = await client.query<Job>(sql, values);
+        saved = await client.query<IJob>(sql, values);
         for (const job of saved.rows) {
             if (['failed', 'cancelled'].includes(job.state)) await publishMethodChatResult(client, job);
             await recordDeviceOperation(

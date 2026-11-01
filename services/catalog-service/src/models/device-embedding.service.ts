@@ -8,7 +8,7 @@ import {
     ServiceUnavailableException,
 } from '@nestjs/common';
 import { projectLevel } from '../access/access.model';
-import { DeviceStore, type Device } from '../devices/device-store';
+import { DeviceStore, type IDevice } from '../devices/device-store';
 import { managedBinding } from '../devices/device-compatibility';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { withModelUsage } from '../model-usage/model-usage.context';
@@ -19,7 +19,7 @@ import type {
     IConfiguredProjectEmbedding,
     IDeviceEmbeddingContext,
     IDeviceEmbeddingInput,
-} from './project-embedding.types';
+} from './project-embedding.interfaces';
 
 /** Бюджет всего device-запроса оставляет запас до опубликованного клиентского лимита 120 секунд. */
 async function deviceEmbeddingDeadline<T>(
@@ -62,7 +62,7 @@ export class DeviceEmbeddingService {
         private readonly grants: HostedRagGrantService,
     ) {}
     private async current(
-        device: Device,
+        device: IDevice,
         input: IDeviceEmbeddingContext,
         signal?: AbortSignal,
     ): Promise<IConfiguredProjectEmbedding> {
@@ -96,10 +96,10 @@ export class DeviceEmbeddingService {
         signal?.throwIfAborted();
         return selected;
     }
-    context(device: Device, value: unknown): Promise<IConfiguredProjectEmbedding> {
+    context(device: IDevice, value: unknown): Promise<IConfiguredProjectEmbedding> {
         return this.current(device, deviceEmbeddingInput(value) as IDeviceEmbeddingContext);
     }
-    async embed(device: Device, value: unknown, signal?: AbortSignal) {
+    async embed(device: IDevice, value: unknown, signal?: AbortSignal) {
         return deviceEmbeddingDeadline(signal, async (signal) => {
             const input = deviceEmbeddingInput(value, true) as IDeviceEmbeddingInput;
             const selected = await this.current(device, input, signal);

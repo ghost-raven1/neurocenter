@@ -23,8 +23,6 @@ export default class AccessModule extends ModuleBase {
      * @returns список компонент-роутов
      */
     public getRoute(): ReactNode[] {
-        return [
-            <ProtectedRoute key="access" name={ACCESS_ROUTE} path={baseRoutes.access} render={() => <Access />} />,
-        ];
+        return [<ProtectedRoute key="access" name={ACCESS_ROUTE} path={baseRoutes.access} render={() => <Access />} />];
     }
 }

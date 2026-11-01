@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { Request, Response } from 'express';
 import { panelOrigin, publicApiOrigin } from '../security/browser-security';
 import { BridgeSupplyService, bridgeRequest } from './bridge-supply.service';
-import type { IBridgeConfiguration } from './bridge-supply.types';
+import type { IBridgeConfiguration } from './bridge-supply.interfaces';
 import { FeatureFlagError, requireFeaturesEnabled } from '../../../shared/feature-client.cjs';
 
 /**

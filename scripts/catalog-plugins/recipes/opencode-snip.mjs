@@ -27,16 +27,31 @@ export async function prepareOpenCodeSnip({ target, directory }) {
         await fs.copyFile(path.join(unpacked, binary), path.join(directory, 'bin', binary));
         await fs.chmod(path.join(directory, 'bin', binary), 0o755);
         await fs.copyFile(path.join(unpacked, 'LICENSE'), path.join(directory, 'SNIP-LICENSE'));
-        const plugin = await download('https://registry.npmjs.org/opencode-snip/-/opencode-snip-2.0.0.tgz',
-            'd6cf0ccb34bb2edd4641ac4180c502974189c46d656c06847cb19b6b5500b960');
+        const plugin = await download(
+            'https://registry.npmjs.org/opencode-snip/-/opencode-snip-2.0.0.tgz',
+            'd6cf0ccb34bb2edd4641ac4180c502974189c46d656c06847cb19b6b5500b960',
+        );
         await extract(plugin, path.join(unpacked, 'plugin'));
         await fs.mkdir(path.join(directory, 'upstream'), { recursive: true });
-        await fs.copyFile(path.join(unpacked, 'plugin/package/src/index.ts'), path.join(directory, 'upstream/opencode-snip.ts'));
+        await fs.copyFile(
+            path.join(unpacked, 'plugin/package/src/index.ts'),
+            path.join(directory, 'upstream/opencode-snip.ts'),
+        );
         await fs.copyFile(path.join(unpacked, 'plugin/package/LICENSE'), path.join(directory, 'OPENCODE-SNIP-LICENSE'));
-        await fs.copyFile(fileURLToPath(new URL('./adapters/snip-plugin.mjs', import.meta.url)), path.join(directory, 'plugin.mjs'));
+        await fs.copyFile(
+            fileURLToPath(new URL('./adapters/snip-plugin.mjs', import.meta.url)),
+            path.join(directory, 'plugin.mjs'),
+        );
         await fs.writeFile(path.join(directory, 'package.json'), '{"private":true,"type":"module"}\n');
-        return { entrypoint: 'plugin.mjs', executables: ['bin/' + binary], kind: 'plugin', mode: 'plugin',
+        return {
+            entrypoint: 'plugin.mjs',
+            executables: ['bin/' + binary],
+            kind: 'plugin',
+            mode: 'plugin',
             config: { entrypoint: 'plugin.mjs' },
-            upstream: { plugin: SNIP_PLUGIN_VERSION, cli: SNIP_VERSION, archiveSha256: sha256 } };
-    } finally { await fs.rm(unpacked, { recursive: true, force: true }); }
+            upstream: { plugin: SNIP_PLUGIN_VERSION, cli: SNIP_VERSION, archiveSha256: sha256 },
+        };
+    } finally {
+        await fs.rm(unpacked, { recursive: true, force: true });
+    }
 }

@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { workspaceReport } from '../devices/device-report';
 import { containerObservation, validComposeProject } from '../../../shared/container-observation.cjs';
-import type { DiagnosticFact, DiagnosticKind } from './system-role.types';
-type Db = Pick<PoolClient, 'query'>;
+import type { IDiagnosticFact, TDiagnosticKind } from './system-role.interfaces';
+type TDb = Pick<PoolClient, 'query'>;
 const unavailable = (reason: string): Record<string, unknown> => ({ available: false, reason });
 /** Reads only a fresh safe observation from the existing authenticated, image-pinned snapshot runner. */
 export async function composeContainerState(
-    db: Db,
+    db: TDb,
     environment: NodeJS.ProcessEnv,
     now = Date.now(),
 ): Promise<Record<string, unknown>> {
@@ -36,8 +36,8 @@ export async function composeContainerState(
     return { ...report, scope: 'configured-compose-project' };
 }
 
-export interface RoleDiagnosticContext {
-    db: Db;
+export interface IRoleDiagnosticContext {
+    db: TDb;
     actor: string;
     projectId: string | null;
     main: boolean;
@@ -46,11 +46,11 @@ export interface RoleDiagnosticContext {
 }
 /** Each adapter returns a small allowlisted projection. Errors are reason codes, never raw logs or connection strings. */
 export async function collectRoleDiagnostic(
-    kind: DiagnosticKind,
-    context: RoleDiagnosticContext,
+    kind: TDiagnosticKind,
+    context: IRoleDiagnosticContext,
     signal: AbortSignal,
-): Promise<DiagnosticFact> {
-    const fact: DiagnosticFact = {
+): Promise<IDiagnosticFact> {
+    const fact: IDiagnosticFact = {
         id: randomUUID(),
         kind,
         checkedAt: new Date().toISOString(),

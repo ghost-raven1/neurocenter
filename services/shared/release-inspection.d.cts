@@ -1,5 +1,8 @@
-import type {ReleaseInspector} from './github-release-source.cjs';
-export const inspectGithubReleaseAsset:ReleaseInspector;
+import type { TReleaseInspector } from './github-release-source.cjs';
+export const inspectGithubReleaseAsset: TReleaseInspector;
 
-import type {RepositorySource,ResolvedRepository} from './repository-source.cjs';
-export function inspectGithubRepository(source:Pick<RepositorySource,'type'|'url'|'commit'|'subdirectory'>,entrypoint?:string):Promise<Partial<ResolvedRepository>>;
+import type { IRepositorySource, IResolvedRepository } from './repository-source.cjs';
+export function inspectGithubRepository(
+    source: Pick<IRepositorySource, 'type' | 'url' | 'commit' | 'subdirectory'>,
+    entrypoint?: string,
+): Promise<Partial<IResolvedRepository>>;

@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { ModelsService } from '../models/models.service';
 import { ProjectChatInferenceService } from '../project-chat-inference/project-chat-inference.service';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import { ProjectChatPolicy, type ProjectChatActor } from './project-chat.policy';
+import { ProjectChatPolicy, type IProjectChatActor } from './project-chat.policy';
 import { ProjectChatRepository } from './project-chat.repository';
 import { ProjectChatDialogs, canManageProjectChatRoom } from './project-chat-dialogs';
 import {
@@ -23,17 +23,16 @@ import {
 } from './project-chat-room-access';
 import { ProjectChatRunner } from './project-chat.runner';
 import { resolveProjectChatProject } from './project-chat-project';
+import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.constants';
+import { projectChatRoomId, projectChatRoomView } from './project-chat.utils';
 import {
-    DEFAULT_PROJECT_CHAT_ROOM,
-    projectChatRoomId,
-    projectChatRoomView,
-    type ProjectChatDb,
-    type ProjectChatDetail,
-    type ProjectChatMessage,
-    type ProjectChatMessageRow,
-    type ProjectChatReceipt,
-    type ProjectChatRoomRow,
-} from './project-chat.types';
+    type TProjectChatDb,
+    type IProjectChatDetail,
+    type IProjectChatMessage,
+    type IProjectChatMessageRow,
+    type IProjectChatReceipt,
+    type IProjectChatRoomRow,
+} from './project-chat.interfaces';
 import {
     projectChatBody,
     projectChatPage,
@@ -43,8 +42,8 @@ import {
     projectChatWatch,
 } from './project-chat.validation';
 import { ProjectChatActivityService } from '../chat-activity/project-chat-activity';
-import type { ChatAgentSnapshot } from '../model-chat/chat-group.types';
-import type { ProjectChatTransport } from './project-chat.types';
+import type { IChatAgentSnapshot } from '../model-chat/chat-group.interfaces';
+import type { TProjectChatTransport } from './project-chat.interfaces';
 import { projectChatMethodWorkflows, projectChatMethodWorkflowPage } from '../agent-method-workflows/chat-workflows';
 
 /** Project membership shares a room; private model chats keep their existing owner boundary. */
@@ -76,7 +75,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             project = await resolveProjectChatProject(this.models, this.models.pool, req, id);
         return { actor, projectId: project.id };
     }
-    private view(row: ProjectChatMessageRow, actor: ProjectChatActor): ProjectChatMessage {
+    private view(row: IProjectChatMessageRow, actor: IProjectChatActor): IProjectChatMessage {
         const manage =
             actor.level >= 2 && row.kind === 'user' && (row.author_email === actor.email || actor.level >= 3);
         return {
@@ -129,11 +128,11 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         };
     }
     private async receipt(
-        db: ProjectChatDb,
-        room: ProjectChatRoomRow,
-        actor: ProjectChatActor,
-        source: ProjectChatMessageRow,
-    ): Promise<ProjectChatReceipt> {
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        actor: IProjectChatActor,
+        source: IProjectChatMessageRow,
+    ): Promise<IProjectChatReceipt> {
         const slots = (await this.repository.children(db, room.project_id, source.id, projectChatRoomId(room))).slice(
             0,
             9,
@@ -142,11 +141,11 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         return { message: messages[0], messages, roomRevision: Number(room.revision) };
     }
     private async views(
-        db: ProjectChatDb,
-        room: ProjectChatRoomRow,
-        actor: ProjectChatActor,
-        rows: ProjectChatMessageRow[],
-    ): Promise<ProjectChatMessage[]> {
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        actor: IProjectChatActor,
+        rows: IProjectChatMessageRow[],
+    ): Promise<IProjectChatMessage[]> {
         const receipts = await projectChatMethodWorkflows(
             db,
             room.project_id,
@@ -198,12 +197,12 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
     }
     private async assertQueueCapacity(
         req: Request,
-        db: ProjectChatDb,
+        db: TProjectChatDb,
         projectId: string,
         author: string,
-        snapshots: ChatAgentSnapshot[],
+        snapshots: IChatAgentSnapshot[],
     ): Promise<void> {
-        const transports = new Set<ProjectChatTransport>();
+        const transports = new Set<TProjectChatTransport>();
         for (const snapshot of snapshots) transports.add(await this.inference.transport(req, projectId, snapshot, db));
         await this.repository.assertQueueCapacity(db, projectId, author, [...transports]);
     }
@@ -212,7 +211,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         id: string,
         rawWatch?: string,
         roomId = DEFAULT_PROJECT_CHAT_ROOM,
-    ): Promise<ProjectChatDetail> {
+    ): Promise<IProjectChatDetail> {
         projectChatUuid(roomId);
         const watch = projectChatWatch(rawWatch);
         const { actor, projectId } = await this.project(req, id);
@@ -225,7 +224,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
                 const page = await this.repository.page(db, projectId, undefined, 50, roomId);
                 const watched = watch.length
                     ? (
-                          await db.query<ProjectChatMessageRow>(
+                          await db.query<IProjectChatMessageRow>(
                               'SELECT * FROM project_chat_messages WHERE project_id=$1 AND id=ANY($2::uuid[]) AND room_id=$3',
                               [projectId, watch, roomId],
                           )
@@ -289,7 +288,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         id: string,
         raw: unknown,
         roomId = DEFAULT_PROJECT_CHAT_ROOM,
-    ): Promise<ProjectChatDetail> {
+    ): Promise<IProjectChatDetail> {
         projectChatUuid(roomId);
         const input = projectChatParticipants(raw),
             { actor, projectId } = await this.project(req, id);
@@ -514,7 +513,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         const { actor, projectId } = await this.project(req, id);
         return this.dialogs.update(projectId, actor, roomId, raw);
     }
-    private manage(source: ProjectChatMessageRow, actor: ProjectChatActor): void {
+    private manage(source: IProjectChatMessageRow, actor: IProjectChatActor): void {
         if (source.kind !== 'user' || (source.author_email !== actor.email && actor.level < 3))
             throw new ForbiddenException(
                 'Остановить или повторить ответ может автор сообщения или администратор проекта.',

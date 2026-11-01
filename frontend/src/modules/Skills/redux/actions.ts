@@ -13,7 +13,9 @@ export const fetchSkillTree = createAsyncThunk('skills/fetchSkillTree', () => bf
  *
  * @param {ISkillsListQuery} params - параметры списка
  */
-export const fetchSkillList = createAsyncThunk('skills/fetchSkillList', (params: ISkillsListQuery) => bffApi.listSkills(params));
+export const fetchSkillList = createAsyncThunk('skills/fetchSkillList', (params: ISkillsListQuery) =>
+    bffApi.listSkills(params),
+);
 
 /**
  * Прочитать скилл по пути.
@@ -27,7 +29,9 @@ export const fetchSkill = createAsyncThunk('skills/fetchSkill', (path: string) =
  *
  * @param {ISkillCreateRequest} payload - данные создания
  */
-export const createSkill = createAsyncThunk('skills/createSkill', (payload: ISkillCreateRequest) => bffApi.createSkill(payload));
+export const createSkill = createAsyncThunk('skills/createSkill', (payload: ISkillCreateRequest) =>
+    bffApi.createSkill(payload),
+);
 
 /**
  * Обновить скилл (бамп версии + запись в историю).
@@ -51,4 +55,6 @@ export const deleteSkill = createAsyncThunk('skills/deleteSkill', (path: string)
  *
  * @param {string} path - относительный путь папки
  */
-export const createSkillDirectory = createAsyncThunk('skills/createSkillDirectory', (path: string) => bffApi.createSkillDirectory(path));
+export const createSkillDirectory = createAsyncThunk('skills/createSkillDirectory', (path: string) =>
+    bffApi.createSkillDirectory(path),
+);

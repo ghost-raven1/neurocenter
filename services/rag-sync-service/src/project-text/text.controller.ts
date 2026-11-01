@@ -1,8 +1,8 @@
 import { BadRequestException, Body, Controller, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ProjectDatabases } from '../rag/project-databases';
-import { textProject, type TextActor } from './text-values';
-import type { TextAdmission } from '../../../shared/project-text-knowledge.cjs';
+import { textProject, type ITextActor } from './text-values';
+import type { ITextAdmission } from '../../../shared/project-text-knowledge.cjs';
 
 /** The existing /internal middleware requires the shared token before these handlers run. */
 @Controller('internal/project-rag/text')
@@ -18,7 +18,7 @@ export class ProjectTextController {
         return this.databases.withProject(this.project(body), (db, id) => db.text.state(id));
     }
     @Post('receipt') async receipt(
-        @Body() body: { projectId: string; requestKey: string; actor: TextActor },
+        @Body() body: { projectId: string; requestKey: string; actor: ITextActor },
         @Res() res: Response,
     ) {
         res.json(
@@ -27,12 +27,14 @@ export class ProjectTextController {
             ),
         );
     }
-    @Post('upload') upload(@Body() body: { projectId: string; input: unknown; requestHash: string; actor: TextActor }) {
+    @Post('upload') upload(
+        @Body() body: { projectId: string; input: unknown; requestHash: string; actor: ITextActor },
+    ) {
         return this.databases.withProject(this.project(body), (db, id) =>
             db.text.upload(id, body.input, body.requestHash, body.actor),
         );
     }
-    @Post('search') search(@Body() body: { projectId: string; input: unknown; admission?: TextAdmission }) {
+    @Post('search') search(@Body() body: { projectId: string; input: unknown; admission?: ITextAdmission }) {
         return this.databases.withProject(this.project(body), (db, id) =>
             db.text.search(id, body.input, body.admission),
         );

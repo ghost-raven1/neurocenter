@@ -1,14 +1,14 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { hub } from '../../bridge/state.js';
-import { roleMcpApi, type RoleMcpIdentity } from './api.js';
+import { roleMcpApi, type IRoleMcpIdentity } from './api.js';
 import { sendRoleMcpResult } from './receipts.js';
 import { roleMcpTarget } from './target.js';
-import { connectRoleMcp, type RoleMcpPort } from './client.js';
+import { connectRoleMcp, type IRoleMcpPort } from './client.js';
 import { SYSTEM_ROLE_MCP_LIMITS as limits, type RoleMcpSessionContext, type RoleMcpCallContext } from './contract.js';
-import type { RoleMcpLocalSession } from './local-session.js';
+import type { IRoleMcpLocalSession } from './local-session.js';
 import { roleMcpLifecycleSupported, RoleMcpCleanupError } from './owned-process.js';
 
-export interface SessionJob {
+export interface ISessionJob {
     id: string;
     lease: string;
     project_id?: string | null;
@@ -16,22 +16,22 @@ export interface SessionJob {
     requestId?: string;
     recoveryOnly?: boolean;
 }
-interface Dependencies {
-    context: (job: SessionJob) => Promise<RoleMcpSessionContext>;
-    next: (job: SessionJob) => Promise<RoleMcpCallContext | { closed: true } | null>;
-    dispatch: (job: SessionJob, call: RoleMcpCallContext) => Promise<unknown>;
-    result: (job: SessionJob, call: RoleMcpCallContext, value: unknown) => Promise<unknown>;
+interface IDependencies {
+    context: (job: ISessionJob) => Promise<RoleMcpSessionContext>;
+    next: (job: ISessionJob) => Promise<RoleMcpCallContext | { closed: true } | null>;
+    dispatch: (job: ISessionJob, call: RoleMcpCallContext) => Promise<unknown>;
+    result: (job: ISessionJob, call: RoleMcpCallContext, value: unknown) => Promise<unknown>;
     target: typeof roleMcpTarget;
     connect: typeof connectRoleMcp;
-    identity?: RoleMcpIdentity;
-    ownership?: RoleMcpLocalSession;
+    identity?: IRoleMcpIdentity;
+    ownership?: IRoleMcpLocalSession;
 }
 /** One queue lease owns the browser session. A disconnected dispatch is never replayed by a new worker. */
 export async function runSystemRoleMcpJob(
-    job: SessionJob,
+    job: ISessionJob,
     deviceId: string,
     authorize: () => Promise<unknown>,
-    dependencies: Partial<Dependencies> = {},
+    dependencies: Partial<IDependencies> = {},
     signal?: AbortSignal,
 ) {
     if (!roleMcpLifecycleSupported() || job.recoveryOnly)
@@ -41,7 +41,7 @@ export async function runSystemRoleMcpJob(
     signal?.addEventListener('abort', externalAbort, { once: true });
     if (signal?.aborted) externalAbort();
     const body = { jobId: job.id, lease: job.lease },
-        deps: Dependencies = {
+        deps: IDependencies = {
             context: () => roleMcpApi('context', body, controller.signal, dependencies.identity),
             next: () => roleMcpApi('next', body, controller.signal, dependencies.identity),
             dispatch: (_job, call) =>
@@ -59,7 +59,7 @@ export async function runSystemRoleMcpJob(
             ...dependencies,
         };
     const site = hub();
-    let port: RoleMcpPort | undefined,
+    let port: IRoleMcpPort | undefined,
         target: Awaited<ReturnType<typeof roleMcpTarget>> | undefined,
         pending = false;
     const timer = setTimeout(

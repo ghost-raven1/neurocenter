@@ -4,7 +4,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { ragUiReady } from './contract.js';
 const exec = promisify(execFile);
-interface BrowserCommand {
+interface IBrowserCommand {
     file: string;
     args: string[];
     exists: string;
@@ -17,7 +17,7 @@ export function browserWindowCommands(
     url: string,
     platform: string,
     env: NodeJS.ProcessEnv = process.env,
-): BrowserCommand[] {
+): IBrowserCommand[] {
     const port = Number(new URL(url).port);
     ragUiReady({ type: 'neurocenter-rag-ui-ready', url, port });
     if (platform === 'darwin')
@@ -91,7 +91,7 @@ export async function openRagBrowserWindow(url: string): Promise<void> {
     );
 }
 /** Первый browser instance остаётся приложением пользователя; после startup его не ждём и не завершаем. */
-export async function dispatchBrowserWindow(command: Pick<BrowserCommand, 'file' | 'args'>): Promise<void> {
+export async function dispatchBrowserWindow(command: Pick<IBrowserCommand, 'file' | 'args'>): Promise<void> {
     const child = spawn(command.file, command.args, {
         shell: false,
         detached: true,

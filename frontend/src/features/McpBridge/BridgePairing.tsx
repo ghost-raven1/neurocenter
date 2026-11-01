@@ -1,77 +1,199 @@
-import {Alert,Modal,Space,Spin,Typography} from 'antd';
-import {useEffect,useRef,useState,type FC} from 'react';
-import {useHistory,useLocation} from 'react-router-dom';
-import {useSelector} from 'react-redux';
-import type {RootState} from '../../store';
-import {errorMessage} from '../../common/utils/errorMessage';
-import {bridgeApi,type IBridgePair} from './api';
-import {waitForComputer} from './pairingProgress';
-import {FeatureAvailabilityNotice,useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
-import {startQueryUrl} from '../../modules/Start/startQuery';
+import { Alert, Modal, Space, Spin, Typography } from 'antd';
+import { useEffect, useRef, useState, type FC } from 'react';
+import { useHistory, useLocation } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import type { TRootState } from '../../store';
+import { errorMessage } from '../../common/utils/errorMessage';
+import { bridgeApi, type IBridgePair } from './api';
+import { waitForComputer } from './pairingProgress';
+import { FeatureAvailabilityNotice, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
+import { startQueryUrl } from '../../modules/Start/startQuery';
 
-type Phase='checking'|'review'|'approving'|'waiting'|'connected'|'error';
+type TPhase = 'checking' | 'review' | 'approving' | 'waiting' | 'connected' | 'error';
 
 /** Подтверждение и живой отчёт возвращают в основной мастер перед проверкой OpenCode. */
-export const BridgePairing:FC<{onConnected:(id:string)=>void}>=({onConnected})=>{
-    const location=useLocation();const history=useHistory();
-    const availability=useFeatureAvailability('computer_connections');
-    const role=useSelector((state:RootState)=>state.userBlock.user?.activeRole);
-    const code=new URLSearchParams(location.search).get('connect')||'';
-    const [info,setInfo]=useState<IBridgePair>();const [phase,setPhase]=useState<Phase>('checking');
-    const [error,setError]=useState('');const [attempt,setAttempt]=useState(0);
-    const approving=useRef(false);
-    useEffect(()=>{
-        let current=true;setInfo(undefined);setError('');setPhase('checking');
-        if(code){void bridgeApi.pair(code).then(value=>{if(current){setInfo(value);setPhase(value.approved?'waiting':'review');}}).catch(cause=>{if(current){setError(errorMessage(cause,'Не удалось проверить ссылку подключения.'));setPhase('error');}});}
-        return ()=>{current=false;};
-    },[code]);
-    useEffect(()=>{
-        if(phase!=='waiting'||!info){return;}
-        const controller=new AbortController();setError('');
-        void waitForComputer(info.fingerprint,bridgeApi.devices,controller.signal).then(device=>{
-            if(!controller.signal.aborted){setPhase('connected');onConnected(device.id);}
-        }).catch(cause=>{if(!controller.signal.aborted){setError(errorMessage(cause,'Не удалось дождаться компьютера.'));}});
-        return ()=>controller.abort();
-    },[phase,info,attempt,onConnected]);
-    const busy=phase==='checking'||phase==='approving';
-    const close=():void=>{
-        if(approving.current){return;}
-        const params=new URLSearchParams(location.search);params.delete('connect');
-        history.replace(location.pathname+(params.size?'?'+params.toString():'')+location.hash);
-    };
-    const approve=async():Promise<void>=>{
-        if(phase!=='review'||!info||approving.current||!availability.enabled){return;}
-        approving.current=true;
-        setPhase('approving');setError('');
-        try{await bridgeApi.approve(code);setPhase('waiting');}
-        catch(cause){setError(errorMessage(cause,'Не удалось подтвердить компьютер.'));setPhase('error');}
-        finally{approving.current=false;}
-    };
-    const next=():void=>{
-        if(phase==='connected'||phase==='error'){
-            const params=new URLSearchParams(location.search);params.delete('connect');
-            history.replace(startQueryUrl(params.toString(),{setup:true,step:phase==='connected'?1:0,addComputer:false},location.hash));
+export const BridgePairing: FC<{ onConnected: (id: string) => void }> = ({ onConnected }) => {
+    const location = useLocation();
+    const history = useHistory();
+    const availability = useFeatureAvailability('computer_connections');
+    const role = useSelector((state: TRootState) => state.userBlock.user?.activeRole);
+    const code = new URLSearchParams(location.search).get('connect') || '';
+    const [info, setInfo] = useState<IBridgePair>();
+    const [phase, setPhase] = useState<TPhase>('checking');
+    const [error, setError] = useState('');
+    const [attempt, setAttempt] = useState(0);
+    const approving = useRef(false);
+    useEffect(() => {
+        let current = true;
+        setInfo(undefined);
+        setError('');
+        setPhase('checking');
+        if (code) {
+            void bridgeApi
+                .pair(code)
+                .then((value) => {
+                    if (current) {
+                        setInfo(value);
+                        setPhase(value.approved ? 'waiting' : 'review');
+                    }
+                })
+                .catch((cause) => {
+                    if (current) {
+                        setError(errorMessage(cause, 'Не удалось проверить ссылку подключения.'));
+                        setPhase('error');
+                    }
+                });
         }
-        else if(phase==='waiting'&&error){setAttempt(value=>value+1);}
-        else{void approve();}
+        return () => {
+            current = false;
+        };
+    }, [code]);
+    useEffect(() => {
+        if (phase !== 'waiting' || !info) {
+            return;
+        }
+        const controller = new AbortController();
+        setError('');
+        void waitForComputer(info.fingerprint, bridgeApi.devices, controller.signal)
+            .then((device) => {
+                if (!controller.signal.aborted) {
+                    setPhase('connected');
+                    onConnected(device.id);
+                }
+            })
+            .catch((cause) => {
+                if (!controller.signal.aborted) {
+                    setError(errorMessage(cause, 'Не удалось дождаться компьютера.'));
+                }
+            });
+        return () => controller.abort();
+    }, [phase, info, attempt, onConnected]);
+    const busy = phase === 'checking' || phase === 'approving';
+    const close = (): void => {
+        if (approving.current) {
+            return;
+        }
+        const params = new URLSearchParams(location.search);
+        params.delete('connect');
+        history.replace(location.pathname + (params.size ? '?' + params.toString() : '') + location.hash);
     };
-    return <Modal open={!!code} title={phase==='connected'?'Компьютер подключён':'Подключение компьютера'}
-        onCancel={close} onOk={next} cancelText={phase==='waiting'?'Закрыть':'Отмена'}
-        okText={phase==='connected'?'К OpenCode':phase==='error'?'Вернуться к подключению':phase==='waiting'?(error?'Проверить снова':'Ждём ответ компьютера…'):'Подключить компьютер'}
-        okButtonProps={{disabled:busy||(phase==='waiting'&&!error)||phase==='review'&&!availability.enabled,loading:phase==='approving'}}
-        closable={phase!=='approving'} maskClosable={phase!=='approving'} keyboard={phase!=='approving'}>
-        {phase==='review'&&<FeatureAvailabilityNotice features={['computer_connections']}/>}
-        {phase==='checking'?<Space role="status"><Spin size="small"/>Проверяем ссылку подключения…</Space>:null}
-        {info&&<>
-            <Typography.Paragraph><Typography.Text strong>{info.name}</Typography.Text></Typography.Paragraph>
-            {['review','approving'].includes(phase)&&<>
-                <Typography.Paragraph>Вы начали подключение на этом компьютере? Сверьте отпечаток с терминалом и подтвердите доступ. Мост сможет выполнять задания в выбранных вами папках с ролью «{role}».</Typography.Paragraph>
-                <Typography.Paragraph type="secondary">Отпечаток: <Typography.Text code style={{overflowWrap:'anywhere'}}>{info.fingerprint}</Typography.Text></Typography.Paragraph>
-            </>}
-            {phase==='waiting'&&!error&&<Alert type="info" showIcon message="Подтверждено. Дожидаемся ответа компьютера…" description="Мост подключится автоматически. Повторять установку или вводить код не нужно."/>}
-            {phase==='connected'&&<Alert type="success" showIcon message="Подключение подтверждено" description="Далее проверьте OpenCode или установите его через мост, затем настройте провайдеров и папку проекта."/>}
-        </>}
-        {error&&<Alert role="alert" type={phase==='waiting'?'warning':'error'} showIcon message={error}
-            description={phase==='error'&&info?'Если мост подключён к другому профилю, войдите в тот профиль. Для переноса сначала отключите компьютер там, затем заново выполните команду подключения.':undefined}/>}
-    </Modal>;
+    const approve = async (): Promise<void> => {
+        if (phase !== 'review' || !info || approving.current || !availability.enabled) {
+            return;
+        }
+        approving.current = true;
+        setPhase('approving');
+        setError('');
+        try {
+            await bridgeApi.approve(code);
+            setPhase('waiting');
+        } catch (cause) {
+            setError(errorMessage(cause, 'Не удалось подтвердить компьютер.'));
+            setPhase('error');
+        } finally {
+            approving.current = false;
+        }
+    };
+    const next = (): void => {
+        if (phase === 'connected' || phase === 'error') {
+            const params = new URLSearchParams(location.search);
+            params.delete('connect');
+            history.replace(
+                startQueryUrl(
+                    params.toString(),
+                    { setup: true, step: phase === 'connected' ? 1 : 0, addComputer: false },
+                    location.hash,
+                ),
+            );
+        } else if (phase === 'waiting' && error) {
+            setAttempt((value) => value + 1);
+        } else {
+            void approve();
+        }
+    };
+    return (
+        <Modal
+            open={!!code}
+            title={phase === 'connected' ? 'Компьютер подключён' : 'Подключение компьютера'}
+            onCancel={close}
+            onOk={next}
+            cancelText={phase === 'waiting' ? 'Закрыть' : 'Отмена'}
+            okText={
+                phase === 'connected'
+                    ? 'К OpenCode'
+                    : phase === 'error'
+                      ? 'Вернуться к подключению'
+                      : phase === 'waiting'
+                        ? error
+                            ? 'Проверить снова'
+                            : 'Ждём ответ компьютера…'
+                        : 'Подключить компьютер'
+            }
+            okButtonProps={{
+                disabled: busy || (phase === 'waiting' && !error) || (phase === 'review' && !availability.enabled),
+                loading: phase === 'approving',
+            }}
+            closable={phase !== 'approving'}
+            maskClosable={phase !== 'approving'}
+            keyboard={phase !== 'approving'}
+        >
+            {phase === 'review' && <FeatureAvailabilityNotice features={['computer_connections']} />}
+            {phase === 'checking' ? (
+                <Space role="status">
+                    <Spin size="small" />
+                    Проверяем ссылку подключения…
+                </Space>
+            ) : null}
+            {info && (
+                <>
+                    <Typography.Paragraph>
+                        <Typography.Text strong>{info.name}</Typography.Text>
+                    </Typography.Paragraph>
+                    {['review', 'approving'].includes(phase) && (
+                        <>
+                            <Typography.Paragraph>
+                                Вы начали подключение на этом компьютере? Сверьте отпечаток с терминалом и подтвердите
+                                доступ. Мост сможет выполнять задания в выбранных вами папках с ролью «{role}».
+                            </Typography.Paragraph>
+                            <Typography.Paragraph type="secondary">
+                                Отпечаток:{' '}
+                                <Typography.Text code style={{ overflowWrap: 'anywhere' }}>
+                                    {info.fingerprint}
+                                </Typography.Text>
+                            </Typography.Paragraph>
+                        </>
+                    )}
+                    {phase === 'waiting' && !error && (
+                        <Alert
+                            type="info"
+                            showIcon
+                            message="Подтверждено. Дожидаемся ответа компьютера…"
+                            description="Мост подключится автоматически. Повторять установку или вводить код не нужно."
+                        />
+                    )}
+                    {phase === 'connected' && (
+                        <Alert
+                            type="success"
+                            showIcon
+                            message="Подключение подтверждено"
+                            description="Далее проверьте OpenCode или установите его через мост, затем настройте провайдеров и папку проекта."
+                        />
+                    )}
+                </>
+            )}
+            {error && (
+                <Alert
+                    role="alert"
+                    type={phase === 'waiting' ? 'warning' : 'error'}
+                    showIcon
+                    message={error}
+                    description={
+                        phase === 'error' && info
+                            ? 'Если мост подключён к другому профилю, войдите в тот профиль. Для переноса сначала отключите компьютер там, затем заново выполните команду подключения.'
+                            : undefined
+                    }
+                />
+            )}
+        </Modal>
+    );
 };

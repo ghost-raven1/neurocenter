@@ -4,9 +4,9 @@ import {
     ChatObjectStorage,
     chatObjectDigest,
     chatS3Configuration,
-    type ChatObjectReference,
+    type IChatObjectReference,
 } from '../model-chat/chat-object-storage';
-import type { AttachmentRow, DiscussionAttachment } from './discussions.types';
+import type { IAttachmentRow, IDiscussionAttachment } from './discussions.interfaces';
 
 export const DISCUSSION_FILE_LIMIT = 10 * 1024 * 1024;
 const names: Record<string, string> = {
@@ -64,7 +64,7 @@ export function discussionFileContent(bytes: Buffer, mediaType: string): void {
                         })();
     if (!valid) throw new BadRequestException('Содержимое не соответствует типу файла.');
 }
-export function discussionAttachmentView(row: AttachmentRow): DiscussionAttachment {
+export function discussionAttachmentView(row: IAttachmentRow): IDiscussionAttachment {
     return {
         id: row.id,
         name: row.name,
@@ -130,7 +130,7 @@ export class DiscussionsStorage {
             this.receiving--;
         }
     }
-    reference(row: AttachmentRow): ChatObjectReference {
+    reference(row: IAttachmentRow): IChatObjectReference {
         return {
             storage_id: row.storage_id,
             bucket: row.bucket,
@@ -145,7 +145,7 @@ export class DiscussionsStorage {
         owner: string,
         target: string,
         bytes: Buffer,
-    ): Pick<AttachmentRow, 'storage_id' | 'bucket' | 'object_key' | 'sha256'> {
+    ): Pick<IAttachmentRow, 'storage_id' | 'bucket' | 'object_key' | 'sha256'> {
         if (!this.objects) throw new ServiceUnavailableException(this.unavailableReason);
         const hash = chatObjectDigest(target),
             targetUuid = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`;
@@ -156,7 +156,7 @@ export class DiscussionsStorage {
             sha256: chatObjectDigest(bytes),
         };
     }
-    async put(row: AttachmentRow, bytes: Buffer, signal?: AbortSignal): Promise<string | null> {
+    async put(row: IAttachmentRow, bytes: Buffer, signal?: AbortSignal): Promise<string | null> {
         await this.ready();
         const reference = this.reference(row);
         // Recover a previous uncertain PUT before sending bytes again to a versioned bucket.
@@ -185,12 +185,12 @@ export class DiscussionsStorage {
         await this.objects!.read({ ...reference, version_id: version }, signal);
         return version;
     }
-    async read(row: AttachmentRow, signal?: AbortSignal): Promise<Buffer> {
+    async read(row: IAttachmentRow, signal?: AbortSignal): Promise<Buffer> {
         await this.ready();
         await this.objects!.assertPrivate(this.reference(row), signal);
         return this.objects!.read(this.reference(row), signal);
     }
-    async remove(row: AttachmentRow): Promise<void> {
+    async remove(row: IAttachmentRow): Promise<void> {
         await this.ready();
         await this.objects!.remove(this.reference(row));
     }

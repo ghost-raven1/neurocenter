@@ -2,32 +2,32 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { publicationHash } from '../publication/publication-validation';
-import type { LearningAnalysisInput } from '../../../shared/project-learning.cjs';
+import type { ILearningAnalysisInput } from '../../../shared/project-learning.cjs';
 import { authorizeLearning } from './learning-access';
 import { rollbackLearningTransaction } from './learning-transaction';
 import { modelFromRow, type IModelRow } from '../models/model-history';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
-import type { AnalysisRow, AnalysisSnapshot } from './learning-analysis.types';
+import type { IAnalysisRow, IAnalysisSnapshot } from './learning-analysis.interfaces';
 
 const identity = () => randomUUID();
-export const analysisRequestHash = (projectId: string, input: LearningAnalysisInput): string =>
+export const analysisRequestHash = (projectId: string, input: ILearningAnalysisInput): string =>
     publicationHash({ projectId, input });
 /** Durable queue owns inference idempotency independently from the later learning mutation. */
 export class LearningAnalysisRepository {
     constructor(readonly pool: Pool) {}
-    async byKey(projectId: string, actor: string, key: string): Promise<AnalysisRow | null> {
+    async byKey(projectId: string, actor: string, key: string): Promise<IAnalysisRow | null> {
         return (
             (
-                await this.pool.query<AnalysisRow>(
+                await this.pool.query<IAnalysisRow>(
                     'SELECT * FROM project_learning_analyses WHERE project_id=$1 AND actor_email=$2 AND request_key=$3',
                     [projectId, actor, key],
                 )
             ).rows[0] ?? null
         );
     }
-    async get(projectId: string, id: string): Promise<AnalysisRow> {
+    async get(projectId: string, id: string): Promise<IAnalysisRow> {
         const row = (
-            await this.pool.query<AnalysisRow>(
+            await this.pool.query<IAnalysisRow>(
                 'SELECT * FROM project_learning_analyses WHERE project_id=$1 AND id=$2',
                 [projectId, id],
             )
@@ -35,7 +35,7 @@ export class LearningAnalysisRepository {
         if (!row) throw new NotFoundException('Анализ не найден в этом проекте.');
         return row;
     }
-    async enqueue(snapshot: AnalysisSnapshot, input: LearningAnalysisInput, modelPin: string): Promise<AnalysisRow> {
+    async enqueue(snapshot: IAnalysisSnapshot, input: ILearningAnalysisInput, modelPin: string): Promise<IAnalysisRow> {
         const db = await this.pool.connect(),
             hash = analysisRequestHash(snapshot.projectId, input);
         let discard = false;
@@ -46,7 +46,7 @@ export class LearningAnalysisRepository {
                 'learning-analysis:' + snapshot.actor.email + ':' + input.requestKey,
             ]);
             const previous = (
-                await db.query<AnalysisRow>(
+                await db.query<IAnalysisRow>(
                     'SELECT * FROM project_learning_analyses WHERE actor_email=$1 AND request_key=$2',
                     [snapshot.actor.email, input.requestKey],
                 )
@@ -78,7 +78,7 @@ export class LearningAnalysisRepository {
             if (active) throw new ConflictException('В этом проекте уже выполняется анализ. Дождитесь его результата.');
             const epoch = await this.authorizeModel(db, snapshot.projectId, input.modelId!, modelPin);
             const row = (
-                await db.query<AnalysisRow>(
+                await db.query<IAnalysisRow>(
                     `INSERT INTO project_learning_analyses(id,project_id,actor_email,actor_role,request_key,mutation_key,request_hash,model_id,model_pin,model_epoch,source_revision,input,experiences)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb) RETURNING *`,
                     [
@@ -116,7 +116,7 @@ export class LearningAnalysisRepository {
         try {
             await db.query('BEGIN');
             const rows = (
-                await db.query<AnalysisRow>(
+                await db.query<IAnalysisRow>(
                     "SELECT * FROM project_learning_analyses WHERE state='running' AND lease_until<clock_timestamp() ORDER BY lease_until,id LIMIT 10 FOR UPDATE SKIP LOCKED",
                 )
             ).rows;
@@ -136,8 +136,8 @@ export class LearningAnalysisRepository {
             db.release(discard);
         }
     }
-    async claim(workerId: string): Promise<AnalysisRow | null> {
-        const { rows } = await this.pool.query<AnalysisRow>(
+    async claim(workerId: string): Promise<IAnalysisRow | null> {
+        const { rows } = await this.pool.query<IAnalysisRow>(
             `WITH next AS (SELECT id FROM project_learning_analyses WHERE state='queued' ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1)
    UPDATE project_learning_analyses a SET state='running',worker_id=$1,lease_until=now()+interval '120 seconds',started_at=now(),updated_at=now()
    FROM next WHERE a.id=next.id RETURNING a.*`,
@@ -145,7 +145,7 @@ export class LearningAnalysisRepository {
         );
         return rows[0] ?? null;
     }
-    async complete(row: AnalysisRow, hypothesisIds: string[]): Promise<boolean> {
+    async complete(row: IAnalysisRow, hypothesisIds: string[]): Promise<boolean> {
         const result = await this.pool.query(
             `UPDATE project_learning_analyses SET state='completed',hypothesis_ids=$3::jsonb,worker_id=NULL,lease_until=NULL,
    finished_at=now(),updated_at=now(),error_code=NULL,error_message=NULL WHERE id=$1 AND state='running' AND worker_id=$2 AND lease_until>clock_timestamp()`,
@@ -153,14 +153,14 @@ export class LearningAnalysisRepository {
         );
         return result.rowCount === 1;
     }
-    async fail(row: AnalysisRow, state: 'failed' | 'unknown', code: string, message: string): Promise<void> {
+    async fail(row: IAnalysisRow, state: 'failed' | 'unknown', code: string, message: string): Promise<void> {
         await this.pool.query(
             `UPDATE project_learning_analyses SET state=$3,error_code=$4,error_message=$5,worker_id=NULL,lease_until=NULL,finished_at=now(),updated_at=now()
    WHERE id=$1 AND state='running' AND worker_id=$2`,
             [row.id, row.worker_id, state, code, message],
         );
     }
-    async current(row: AnalysisRow): Promise<void> {
+    async current(row: IAnalysisRow): Promise<void> {
         const db = await this.pool.connect();
         let discard = false;
         try {
@@ -176,7 +176,7 @@ export class LearningAnalysisRepository {
             db.release(discard);
         }
     }
-    async authorizeLease(db: Pick<PoolClient, 'query'>, row: AnalysisRow): Promise<void> {
+    async authorizeLease(db: Pick<PoolClient, 'query'>, row: IAnalysisRow): Promise<void> {
         const live = (
             await db.query(
                 "SELECT id FROM project_learning_analyses WHERE id=$1 AND state='running' AND worker_id=$2 AND lease_until>clock_timestamp() FOR SHARE",
@@ -185,7 +185,7 @@ export class LearningAnalysisRepository {
         ).rows[0];
         if (!live) throw new ConflictException('Аренда анализа завершилась.');
     }
-    async authorizeResult(db: Pick<PoolClient, 'query'>, row: AnalysisRow): Promise<void> {
+    async authorizeResult(db: Pick<PoolClient, 'query'>, row: IAnalysisRow): Promise<void> {
         await this.authorizeModel(db, row.project_id, row.model_id, row.model_pin, row.model_epoch);
         await this.authorizeLease(db, row);
     }
@@ -211,7 +211,7 @@ export class LearningAnalysisRepository {
         return assignment.assignment_epoch;
     }
     /** The private mutation UUID and exact persisted hypotheses disambiguate a lost COMMIT reply. */
-    private async reconcileReceipt(db: PoolClient, row: AnalysisRow): Promise<boolean> {
+    private async reconcileReceipt(db: PoolClient, row: IAnalysisRow): Promise<boolean> {
         const receipt = (
             await db.query<{ result: unknown }>(
                 'SELECT result FROM project_learning_requests WHERE actor=$1 AND project_id=$2 AND request_key=$3',
@@ -255,13 +255,13 @@ export class LearningAnalysisRepository {
         return true;
     }
     /** Wait for the original transaction's share lock before deciding a failed write has no receipt. */
-    async reconcile(row: AnalysisRow): Promise<boolean> {
+    async reconcile(row: IAnalysisRow): Promise<boolean> {
         const db = await this.pool.connect();
         let discard = false;
         try {
             await db.query('BEGIN');
             const current = (
-                await db.query<AnalysisRow>('SELECT * FROM project_learning_analyses WHERE id=$1 FOR UPDATE', [row.id])
+                await db.query<IAnalysisRow>('SELECT * FROM project_learning_analyses WHERE id=$1 FOR UPDATE', [row.id])
             ).rows[0];
             if (!current) {
                 await db.query('COMMIT');

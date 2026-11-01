@@ -13,9 +13,9 @@ import {
     object,
     revision,
 } from './agent-validation';
-import type { AgentCard, AgentHeadRow } from './agent.types';
-type Db = Pick<PoolClient, 'query'>;
-export const agentSummary = (card: AgentCard) => ({
+import type { IAgentCard, IAgentHeadRow } from './agent.interfaces';
+type TDb = Pick<PoolClient, 'query'>;
+export const agentSummary = (card: IAgentCard) => ({
     id: card.id,
     name: card.name,
     slug: card.slug,
@@ -27,9 +27,9 @@ export const agentSummary = (card: AgentCard) => ({
 /** Heads are editable; every referenced template version remains immutable. */
 export class AgentRepository {
     constructor(readonly pool: Pool) {}
-    async list(ids?: string[]): Promise<AgentCard[]> {
+    async list(ids?: string[]): Promise<IAgentCard[]> {
         return (
-            await this.pool.query<AgentHeadRow>(
+            await this.pool.query<IAgentHeadRow>(
                 'SELECT * FROM agent_catalog' +
                     (ids ? ' WHERE id=ANY($1::text[])' : '') +
                     ' ORDER BY archived_at NULLS FIRST,name,id',
@@ -38,7 +38,7 @@ export class AgentRepository {
         ).rows.map(agentCard);
     }
     /** Archive metadata may change independently; prompt bytes still come from the exact project pin. */
-    async withArchiveState(cards: AgentCard[]): Promise<AgentCard[]> {
+    async withArchiveState(cards: IAgentCard[]): Promise<IAgentCard[]> {
         const heads = (
             await this.pool.query<{ id: string; archived_at: Date | null }>(
                 'SELECT id,archived_at FROM agent_catalog WHERE id=ANY($1::text[])',
@@ -48,9 +48,9 @@ export class AgentRepository {
         const states = new Map(heads.map((row) => [row.id, row.archived_at?.toISOString() ?? null]));
         return cards.map((card) => ({ ...card, archivedAt: states.get(card.id) ?? null }));
     }
-    async assigned(projectIds: string[]): Promise<AgentCard[]> {
+    async assigned(projectIds: string[]): Promise<IAgentCard[]> {
         return (
-            await this.pool.query<AgentHeadRow>(
+            await this.pool.query<IAgentHeadRow>(
                 `SELECT DISTINCT ON(v.agent_id) v.agent_id AS id,v.slug,v.name,v.definition,v.version,v.manifest,
             h.archived_at,v.created_at,v.created_at AS updated_at FROM project_agents a
             JOIN agent_catalog_versions v ON v.agent_id=a.agent_id AND v.version=a.version AND v.manifest=a.manifest
@@ -59,15 +59,15 @@ export class AgentRepository {
             )
         ).rows.map(agentCard);
     }
-    async get(id: string, db: Db = this.pool): Promise<AgentCard> {
+    async get(id: string, db: TDb = this.pool): Promise<IAgentCard> {
         agentId(id);
-        const row = (await db.query<AgentHeadRow>('SELECT * FROM agent_catalog WHERE id=$1', [id])).rows[0];
+        const row = (await db.query<IAgentHeadRow>('SELECT * FROM agent_catalog WHERE id=$1', [id])).rows[0];
         if (!row) throw new NotFoundException('Агент отсутствует в каталоге.');
         return agentCard(row);
     }
-    async pinned(id: string, version: number, manifest: string, db: Db = this.pool): Promise<AgentCard> {
+    async pinned(id: string, version: number, manifest: string, db: TDb = this.pool): Promise<IAgentCard> {
         const row = (
-            await db.query<AgentHeadRow>(
+            await db.query<IAgentHeadRow>(
                 `SELECT v.agent_id AS id,v.slug,v.name,v.definition,v.version,v.manifest,NULL::timestamptz AS archived_at,v.created_at,v.created_at AS updated_at
             FROM agent_catalog_versions v WHERE v.agent_id=$1 AND v.version=$2 AND v.manifest=$3`,
                 [id, version, manifest],
@@ -79,7 +79,7 @@ export class AgentRepository {
             throw new ConflictException('Неизменяемая версия агента повреждена.');
         return card;
     }
-    create(actor: IAccessActor, raw: unknown): Promise<AgentCard> {
+    create(actor: IAccessActor, raw: unknown): Promise<IAgentCard> {
         const { requestKey, ...fields } = object(raw, ['requestKey', 'slug', 'name', 'description', 'definition']),
             input = normalizeCard(fields);
         return agentMutation(this.pool, actor, requestKey, 'agent.create', input, undefined, async (db) => {
@@ -94,7 +94,7 @@ export class AgentRepository {
             return card;
         });
     }
-    update(actor: IAccessActor, id: string, raw: unknown): Promise<AgentCard> {
+    update(actor: IAccessActor, id: string, raw: unknown): Promise<IAgentCard> {
         agentId(id);
         const { requestKey, expectedVersion, ...changes } = object(raw, [
             'requestKey',
@@ -151,18 +151,18 @@ export class AgentRepository {
     }
     /** Source import uses its caller's transaction and exact planned native version. */
     async write(
-        db: Db,
+        db: TDb,
         id: string,
         input: ReturnType<typeof normalizeCard>,
         version: number,
         { snapshot = false }: { snapshot?: boolean } = {},
-    ): Promise<AgentCard> {
+    ): Promise<IAgentCard> {
         const manifest = agentManifest({ id, ...input, version });
         const values = [id, input.slug, input.name, JSON.stringify(input.definition), version, manifest];
         const row = snapshot
             ? undefined
             : (
-                  await db.query<AgentHeadRow>(
+                  await db.query<IAgentHeadRow>(
                       `INSERT INTO agent_catalog(id,slug,name,definition,version,manifest) VALUES($1,$2,$3,$4::jsonb,$5,$6)
             ON CONFLICT(id) DO UPDATE SET slug=EXCLUDED.slug,name=EXCLUDED.name,definition=EXCLUDED.definition,version=EXCLUDED.version,manifest=EXCLUDED.manifest,updated_at=now() RETURNING *`,
                       values,
@@ -185,11 +185,11 @@ export class AgentRepository {
     }
     /** Archive policy changes desired project state; only bridge acknowledgements confirm local removal. */
     async archive(
-        db: Db,
+        db: TDb,
         id: string,
         expectedHash: string,
         { restore = false, removeProjectRefs = false }: { restore?: boolean; removeProjectRefs?: boolean } = {},
-    ): Promise<AgentCard> {
+    ): Promise<IAgentCard> {
         const before = await this.get(id, db);
         if (agentNativeHash(before) !== expectedHash)
             throw new ConflictException('Карточка агента изменилась после проверки последствий.');
@@ -213,7 +213,7 @@ export class AgentRepository {
                 );
         }
         const row = (
-            await db.query<AgentHeadRow>(
+            await db.query<IAgentHeadRow>(
                 'UPDATE agent_catalog SET archived_at=CASE WHEN $2 THEN NULL ELSE now() END,updated_at=now() WHERE id=$1 RETURNING *',
                 [id, restore],
             )

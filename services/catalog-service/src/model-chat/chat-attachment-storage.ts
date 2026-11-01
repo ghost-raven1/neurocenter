@@ -5,19 +5,19 @@ import {
     ChatObjectStorage,
     chatObjectDigest,
     chatS3Configuration,
-    type ChatObjectReference,
+    type IChatObjectReference,
 } from './chat-object-storage';
 
-type Db = Pick<PoolClient, 'query'>;
-export interface ChatStagedObject {
+type TDb = Pick<PoolClient, 'query'>;
+export interface IChatStagedObject {
     id: string;
 }
-interface ObjectRow extends ChatObjectReference {
+interface IObjectRow extends IChatObjectReference {
     id: string;
     state: 'STAGING' | 'LIVE' | 'DELETE' | 'DELETED';
     attempts: number;
 }
-interface StageInput {
+interface IStageInput {
     ownerEmail: string;
     projectId: string | null;
     conversationId: string;
@@ -103,7 +103,7 @@ export class ChatAttachmentStorage {
         await this.collecting?.catch(() => undefined);
     }
     /** Transfer recovery reuses its held session; the durable intent still precedes the attachment activation transaction. */
-    async stage(input: StageInput, signal?: AbortSignal, db: Db = this.pool): Promise<ChatStagedObject> {
+    async stage(input: IStageInput, signal?: AbortSignal, db: TDb = this.pool): Promise<IChatStagedObject> {
         if (!this.objects || !this.usable) throw unavailable(this.unavailableReason);
         if (
             !input.ownerEmail ||
@@ -115,7 +115,7 @@ export class ChatAttachmentStorage {
             throw new ConflictException('Некорректная область или размер файла.');
         signal?.throwIfAborted();
         const id = randomUUID(),
-            row: ObjectRow = {
+            row: IObjectRow = {
                 id,
                 storage_id: this.objects.storageId,
                 bucket: input.projectId ? this.objects.config.projectBucket : this.objects.config.personalBucket,
@@ -154,7 +154,7 @@ export class ChatAttachmentStorage {
         }
     }
     /** Called after attachment INSERT in its transaction, so a rolled-back DB commit leaves a collectible intent. */
-    async activate(db: Db, object: ChatStagedObject): Promise<void> {
+    async activate(db: TDb, object: IChatStagedObject): Promise<void> {
         if (!this.objects || !this.usable) throw unavailable(this.unavailableReason);
         const result = await db.query(
             `UPDATE model_chat_objects SET state='LIVE',lease_until=NULL WHERE id=$1 AND storage_id=$2 AND state='STAGING' AND lease_until>now()
@@ -165,7 +165,7 @@ export class ChatAttachmentStorage {
         if (!result.rowCount)
             throw new ConflictException('Передача файла истекла или была отменена. Загрузите файл повторно.');
     }
-    async abandon(object: ChatStagedObject, db: Db = this.pool): Promise<void> {
+    async abandon(object: IChatStagedObject, db: TDb = this.pool): Promise<void> {
         await db.query(
             "UPDATE model_chat_objects SET state='DELETE',lease_until=NULL,next_attempt_at=now() WHERE id=$1 AND state='STAGING' AND NOT EXISTS(SELECT 1 FROM model_chat_attachments WHERE object_id=$1)",
             [object.id],
@@ -174,7 +174,7 @@ export class ChatAttachmentStorage {
     async read(objectId: string, signal?: AbortSignal): Promise<Buffer> {
         if (!this.objects || !this.usable) throw unavailable(this.unavailableReason);
         const row = (
-            await this.pool.query<ObjectRow>("SELECT * FROM model_chat_objects WHERE id=$1 AND state='LIVE'", [
+            await this.pool.query<IObjectRow>("SELECT * FROM model_chat_objects WHERE id=$1 AND state='LIVE'", [
                 objectId,
             ])
         ).rows[0];
@@ -208,7 +208,7 @@ export class ChatAttachmentStorage {
             discard = false;
             if (!locked) return 0;
             const rows = (
-                await db.query<ObjectRow>(
+                await db.query<IObjectRow>(
                     `SELECT * FROM model_chat_objects WHERE
                 ((state IN ('DELETE','DELETED') AND next_attempt_at<=now()) OR (state='STAGING' AND lease_until<=now()))
                 AND NOT EXISTS(SELECT 1 FROM model_chat_attachments WHERE object_id=model_chat_objects.id)

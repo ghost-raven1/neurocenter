@@ -5,9 +5,9 @@ import { atomicText, syncDirectory } from './atomic-file.js';
 import { hub, jobContext, readState, stateDir } from './state.js';
 import { readBoundedUtf8 } from './read-bounded.js';
 import type {
-    PhysicalDirectory,
-    WorkspaceBindingResult,
-    WorkspaceInstanceRegistry,
+    IPhysicalDirectory,
+    IWorkspaceBindingResult,
+    IWorkspaceInstanceRegistry,
 } from './workspace-instance.model.js';
 import { safeTarget, workspaceDirectory } from './workspace-paths.js';
 import { saveCompletion } from './completions.js';
@@ -16,7 +16,7 @@ import {
     assertMemoryOwnershipHandoffs,
     assertPreparedMemoryOwnership,
     finishMemoryOwnershipHandoffs,
-    type MemoryOwnershipHandoff,
+    type IMemoryOwnershipHandoff,
 } from '../features/project-learning-memory-sync/workspace-handoff.js';
 
 export const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -25,8 +25,8 @@ const exactKeys = (value: object, keys: string[]) => Object.keys(value).sort().j
 export const registryFile = () => path.join(stateDir(), 'workspace-instances.json');
 
 /** Повреждение приватного реестра не превращает чужой marker в новую доверенную привязку. */
-export async function readInstanceRegistry(): Promise<WorkspaceInstanceRegistry> {
-    const value = await readState<WorkspaceInstanceRegistry>('workspace-instances');
+export async function readInstanceRegistry(): Promise<IWorkspaceInstanceRegistry> {
+    const value = await readState<IWorkspaceInstanceRegistry>('workspace-instances');
     if (value === undefined) {
         return { version: 1, instances: {} };
     }
@@ -125,19 +125,19 @@ export async function withWorkspaceIdentityLock<T>(action: () => Promise<T>): Pr
     }
 }
 
-interface IdentityChange {
+interface IIdentityChange {
     file: string;
     before: string | null;
     after: string;
 }
-interface IdentityJournal {
+interface IIdentityJournal {
     version: 1;
     state: 'prepared' | 'committed';
-    target: { realpath: string; physical: PhysicalDirectory };
-    changes: IdentityChange[];
-    result: WorkspaceBindingResult;
+    target: { realpath: string; physical: IPhysicalDirectory };
+    changes: IIdentityChange[];
+    result: IWorkspaceBindingResult;
     job?: { id: string; lease: string; deviceId?: string };
-    memoryOwnership?: MemoryOwnershipHandoff[];
+    memoryOwnership?: IMemoryOwnershipHandoff[];
 }
 const pendingFile = () => path.join(stateDir(), 'workspace-identity-pending.json');
 const committedFailure = (cause: unknown): Error =>
@@ -159,14 +159,14 @@ export async function optionalText(file: string, limit = 1048576): Promise<strin
 /** Только явная запись восстанавливает прерванный commit; обычный heartbeat ничего не меняет. */
 export async function recoverWorkspaceIdentity(
     failOnRolledBackJob = false,
-): Promise<WorkspaceBindingResult | undefined> {
+): Promise<IWorkspaceBindingResult | undefined> {
     const raw = await optionalText(pendingFile(), 8 * 1048576);
     if (raw === null) {
         return;
     }
-    let journal: IdentityJournal;
+    let journal: IIdentityJournal;
     try {
-        journal = JSON.parse(raw) as IdentityJournal;
+        journal = JSON.parse(raw) as IIdentityJournal;
         if (
             journal.version !== 1 ||
             !['prepared', 'committed'].includes(journal.state) ||
@@ -293,10 +293,10 @@ export async function recoverWorkspaceIdentity(
 
 /** Три записи фиксируются с приватным undo-журналом; неизвестные сторонние правки не затираются. */
 export async function commitWorkspaceIdentity(
-    changes: IdentityChange[],
-    target: IdentityJournal['target'],
-    result: WorkspaceBindingResult,
-    memoryOwnership: MemoryOwnershipHandoff[] = [],
+    changes: IIdentityChange[],
+    target: IIdentityJournal['target'],
+    result: IWorkspaceBindingResult,
+    memoryOwnership: IMemoryOwnershipHandoff[] = [],
 ): Promise<void> {
     const assertTarget = async () => {
         if (
@@ -317,7 +317,7 @@ export async function commitWorkspaceIdentity(
     }
     assertMemoryOwnershipHandoffs(memoryOwnership, result);
     await assertPreparedMemoryOwnership(memoryOwnership);
-    const journal: IdentityJournal = {
+    const journal: IIdentityJournal = {
         version: 1,
         state: 'prepared',
         target,
@@ -362,7 +362,7 @@ export async function commitWorkspaceIdentity(
 
 /** Одинаковый результат фиксируется до сетевой доставки и не содержит локальных путей. */
 export async function saveWorkspaceBindingCompletion(
-    result: WorkspaceBindingResult,
+    result: IWorkspaceBindingResult,
     job = jobContext.getStore(),
 ): Promise<void> {
     if (job) {
@@ -376,6 +376,6 @@ export async function saveWorkspaceBindingCompletion(
 }
 
 /** Worker явно восстанавливает журнал перед доставкой подтверждений; heartbeat остаётся чтением. */
-export async function recoverPendingWorkspaceIdentity(): Promise<WorkspaceBindingResult | undefined> {
+export async function recoverPendingWorkspaceIdentity(): Promise<IWorkspaceBindingResult | undefined> {
     return withWorkspaceIdentityLock(recoverWorkspaceIdentity);
 }

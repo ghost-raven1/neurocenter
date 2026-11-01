@@ -19,10 +19,10 @@ import type { Request, Response } from 'express';
 import { assertInternal } from '../access/access.controller';
 import type { IAccessActor } from '../access/access.model';
 import { DeviceStore } from './device-store';
-import type { BridgePresence } from './device-report';
+import type { IBridgePresence } from './device-report';
 import { DeviceJobs, JobInput } from './device-jobs';
 import { DeviceInstallations } from './device-installations';
-import { completeDeviceJob, type DeviceCompletion } from './device-completion';
+import { completeDeviceJob, type IDeviceCompletion } from './device-completion';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
 import { approvedRuntimeArtifact } from './runtime-job-artifact';
 import { DeviceEmbeddingService } from '../models/device-embedding.service';
@@ -116,7 +116,7 @@ export class DeviceController {
     ) {
         return this.devices.heartbeat(await this.device(req), input);
     }
-    @Post('internal/device-channel/presence') async presence(@Req() req: Request, @Body() input: BridgePresence) {
+    @Post('internal/device-channel/presence') async presence(@Req() req: Request, @Body() input: IBridgePresence) {
         return this.devices.presence(await this.device(req), input);
     }
     @Post('internal/device-channel/jobs/claim') async claim(@Req() req: Request) {
@@ -262,7 +262,7 @@ export class DeviceController {
     @Post('internal/device-channel/jobs/:id/complete') async complete(
         @Req() req: Request,
         @Param('id') id: string,
-        @Body() input: DeviceCompletion,
+        @Body() input: IDeviceCompletion,
     ) {
         assertInternal(req.headers['x-neurocenter-internal']);
         const token = String(req.headers.authorization || '').replace(/^Bearer /, '');

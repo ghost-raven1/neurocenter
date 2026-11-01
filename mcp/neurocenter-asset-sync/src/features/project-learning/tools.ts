@@ -67,23 +67,23 @@ export const projectLearningProposeSchema = z
         experienceIds: z.array(z.string().uuid()).min(1).max(50),
     })
     .strict();
-export type ProjectLearningContextInput = z.infer<typeof projectLearningContextSchema>;
-export type ProjectLearningRecordInput = z.infer<typeof projectLearningRecordSchema>;
-export type ProjectLearningProposeInput = z.infer<typeof projectLearningProposeSchema>;
+export type TProjectLearningContextInput = z.infer<typeof projectLearningContextSchema>;
+export type TProjectLearningRecordInput = z.infer<typeof projectLearningRecordSchema>;
+export type TProjectLearningProposeInput = z.infer<typeof projectLearningProposeSchema>;
 export const REPORTED_LEARNING_NOTE =
     'Запись получена от MCP как сообщение об опыте, а не независимое подтверждение результата. Гипотезы не активны; новое знание принимает человек.';
 
 const unavailable = () =>
     new Error('Проектное обучение требует подтверждённой локальной папки v2. Свяжите её на странице «Проекты».');
 async function identity(
-    input: ProjectLearningContextInput,
+    input: TProjectLearningContextInput,
     cwd: string,
 ): Promise<IRagProjectIdentity & { projectKey: string; bindingId: string; instanceId: string }> {
     const initial = (await readRagProjectIdentity({ project: input.project }, cwd)).value;
     if (!initial.projectKey || !verifiedRagProjectIdentity(initial, initial.projectKey)) throw unavailable();
     return initial as IRagProjectIdentity & { projectKey: string; bindingId: string; instanceId: string };
 }
-async function current(input: ProjectLearningContextInput, cwd: string, expected: IRagProjectIdentity): Promise<void> {
+async function current(input: TProjectLearningContextInput, cwd: string, expected: IRagProjectIdentity): Promise<void> {
     const checked = await identity(input, cwd);
     if (!verifiedRagProjectIdentity(checked, expected.projectKey!, expected)) throw unavailable();
 }
@@ -94,7 +94,7 @@ const envelope = (value: { projectKey: string; bindingId: string; instanceId: st
 });
 
 /** Only the server's human-approved, project-scoped bundle is returned as working knowledge. */
-export async function projectLearningContext(raw: ProjectLearningContextInput, cwd: string): Promise<LearningContext> {
+export async function projectLearningContext(raw: TProjectLearningContextInput, cwd: string): Promise<LearningContext> {
     const input = projectLearningContextSchema.parse(raw),
         target = await identity(input, cwd);
     const response = await api<unknown>('learning/context', envelope(target));
@@ -130,7 +130,7 @@ function mutationResponse(
 }
 
 /** Reported observations cannot approve themselves, change prompts or grant tool permissions. */
-export async function projectLearningRecord(raw: ProjectLearningRecordInput, cwd: string) {
+export async function projectLearningRecord(raw: TProjectLearningRecordInput, cwd: string) {
     const { project: folder, ...body } = projectLearningRecordSchema.parse(raw),
         input = normalizeLearningExperienceInput(body),
         target = await identity({ project: folder }, cwd);
@@ -141,7 +141,7 @@ export async function projectLearningRecord(raw: ProjectLearningRecordInput, cwd
 }
 
 /** A hypothesis is an unreviewed proposal linked to existing experience, never an active lesson. */
-export async function projectLearningPropose(raw: ProjectLearningProposeInput, cwd: string) {
+export async function projectLearningPropose(raw: TProjectLearningProposeInput, cwd: string) {
     const { project: folder, ...body } = projectLearningProposeSchema.parse(raw),
         input = normalizeLearningHypothesisInput(body),
         target = await identity({ project: folder }, cwd);

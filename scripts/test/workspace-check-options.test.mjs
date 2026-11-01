@@ -2,42 +2,76 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
-import {test} from 'node:test';
-import {fileURLToPath} from 'node:url';
-import {workspacePackages} from '../workspace/check-plan.mjs';
+import { spawnSync } from 'node:child_process';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { workspacePackages } from '../workspace/check-plan.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const packageId = directory => directory === 'mcp/neurocenter-asset-sync' ? 'bridge' : path.posix.basename(directory);
+const packageId = (directory) =>
+    directory === 'mcp/neurocenter-asset-sync' ? 'bridge' : path.posix.basename(directory);
 
 /** Run the real CLI against an owned checkout; intercept every child before it can execute. */
-async function fixture(t, args, {withPackages = true, packageFolders = workspacePackages} = {}) {
+async function fixture(t, args, { withPackages = true, packageFolders = workspacePackages } = {}) {
     const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter check options ')));
-    t.after(() => fs.rm(directory, {recursive: true, force: true}));
-    const checkout = path.join(directory, 'checkout'), workspace = path.join(checkout, 'scripts/workspace');
-    const callsFile = path.join(directory, 'calls.jsonl'), npm = path.join(directory, 'npm-cli.js');
-    await fs.mkdir(workspace, {recursive: true});
-    for (const name of ['check.mjs','check-plan.mjs','check-report.mjs','check-node-reporter.mjs','check-source.mjs','check-process.mjs','isolated-build-process.mjs','isolated-build-source.mjs','node-runtime.mjs']) {
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const checkout = path.join(directory, 'checkout'),
+        workspace = path.join(checkout, 'scripts/workspace');
+    const callsFile = path.join(directory, 'calls.jsonl'),
+        npm = path.join(directory, 'npm-cli.js');
+    await fs.mkdir(workspace, { recursive: true });
+    for (const name of [
+        'check.mjs',
+        'check-plan.mjs',
+        'check-report.mjs',
+        'check-node-reporter.mjs',
+        'check-source.mjs',
+        'check-process.mjs',
+        'isolated-build-process.mjs',
+        'isolated-build-source.mjs',
+        'node-runtime.mjs',
+    ]) {
         await fs.copyFile(path.join(root, 'scripts/workspace', name), path.join(workspace, name));
     }
-    if (withPackages) for (const folder of packageFolders) {
-        await fs.mkdir(path.join(checkout, folder), {recursive: true});
-        await fs.writeFile(path.join(checkout, folder, 'package.json'), JSON.stringify({scripts: {
-            lint: 'fixture', ...(packageId(folder) === 'frontend' ? {} : {'format:check': 'fixture'}), typecheck: 'fixture', build: 'fixture', ...(['frontend', 'bridge'].includes(packageId(folder)) ? {test: 'vitest run'} : {}),
-        }}));
-    }
-    for (const folder of ['scripts/test', 'scripts/catalog-plugins/test', 'scripts/catalog-plugins/recipes/test', 'scripts/agent-kit/test']) {
-        await fs.mkdir(path.join(checkout, folder), {recursive: true});
+    if (withPackages)
+        for (const folder of packageFolders) {
+            await fs.mkdir(path.join(checkout, folder), { recursive: true });
+            await fs.writeFile(
+                path.join(checkout, folder, 'package.json'),
+                JSON.stringify({
+                    scripts: {
+                        lint: 'fixture',
+                        ...(packageId(folder) === 'frontend' ? {} : { 'format:check': 'fixture' }),
+                        typecheck: 'fixture',
+                        build: 'fixture',
+                        ...(['frontend', 'bridge'].includes(packageId(folder)) ? { test: 'vitest run' } : {}),
+                    },
+                }),
+            );
+        }
+    for (const folder of [
+        'scripts/test',
+        'scripts/catalog-plugins/test',
+        'scripts/catalog-plugins/recipes/tests',
+        'scripts/catalog-plugins/integration/test',
+        'scripts/agent-kit/test',
+    ]) {
+        await fs.mkdir(path.join(checkout, folder), { recursive: true });
     }
     await fs.writeFile(npm, '');
     const executor = path.join(directory, 'execute.mjs');
-    await fs.writeFile(executor, `import fs from 'node:fs';
+    await fs.writeFile(
+        executor,
+        `import fs from 'node:fs';
         const output=process.argv.find(value=>value.startsWith('--outputFile='));
         if(output)fs.writeFileSync(output.slice('--outputFile='.length),JSON.stringify({success:true,numPassedTests:1,numFailedTests:0,numPendingTests:0,numTodoTests:0,numTotalTests:1,numFailedTestSuites:0}));
         const nodeOutput=process.argv.find(value=>value.startsWith('--test-reporter-destination=')&&!value.endsWith('=stdout'));
-        if(nodeOutput)fs.writeFileSync(nodeOutput.slice('--test-reporter-destination='.length),JSON.stringify({schemaVersion:1,success:true,counts:{tests:1,passed:1,failed:0,skipped:0,todo:0,cancelled:0}}));`);
+        if(nodeOutput)fs.writeFileSync(nodeOutput.slice('--test-reporter-destination='.length),JSON.stringify({schemaVersion:1,success:true,counts:{tests:1,passed:1,failed:0,skipped:0,todo:0,cancelled:0}}));`,
+    );
     const preload = path.join(directory, 'intercept.mjs');
-    await fs.writeFile(preload, `import child from 'node:child_process';
+    await fs.writeFile(
+        preload,
+        `import child from 'node:child_process';
         import fs from 'node:fs';
         import {syncBuiltinESMExports} from 'node:module';
         const record=(command,args,options)=>fs.appendFileSync(${JSON.stringify(callsFile)},JSON.stringify({command,args,cwd:options?.cwd??null,tls:options?.env?.NODE_TLS_REJECT_UNAUTHORIZED,strict:options?.env?.NPM_CONFIG_STRICT_SSL,npmStrict:options?.env?.npm_config_strict_ssl})+'\\n');
@@ -48,15 +82,34 @@ async function fixture(t, args, {withPackages = true, packageFolders = workspace
             if(args[0]==='-p')return {status:0,stdout:JSON.stringify({version:process.versions.node,binary:process.execPath})};
             throw Error('Unexpected synchronous command in CLI fixture.');
         };
-        syncBuiltinESMExports();`);
+        syncBuiltinESMExports();`,
+    );
     const result = spawnSync(process.execPath, ['--import', preload, path.join(workspace, 'check.mjs'), ...args], {
         // The full plan starts many real Node children, even though each command is intercepted.
-        cwd: checkout, encoding: 'utf8', timeout: 30000,
-        env: {NODE_BIN: process.execPath, NPM_CLI_JS: npm, PATH: path.dirname(process.execPath),NODE_TLS_REJECT_UNAUTHORIZED:'1',NPM_CONFIG_STRICT_SSL:'true',npm_config_strict_ssl:'true'},
+        cwd: checkout,
+        encoding: 'utf8',
+        timeout: 30000,
+        env: {
+            NODE_BIN: process.execPath,
+            NPM_CLI_JS: npm,
+            PATH: path.dirname(process.execPath),
+            NODE_TLS_REJECT_UNAUTHORIZED: '1',
+            NPM_CONFIG_STRICT_SSL: 'true',
+            npm_config_strict_ssl: 'true',
+        },
     });
     assert.equal(result.error, undefined);
-    const exists = async filename => fs.access(filename).then(() => true, error => {if (error.code === 'ENOENT') return false; throw error;});
-    const calls = await exists(callsFile) ? (await fs.readFile(callsFile, 'utf8')).trim().split('\n').map(JSON.parse) : [];
+    const exists = async (filename) =>
+        fs.access(filename).then(
+            () => true,
+            (error) => {
+                if (error.code === 'ENOENT') return false;
+                throw error;
+            },
+        );
+    const calls = (await exists(callsFile))
+        ? (await fs.readFile(callsFile, 'utf8')).trim().split('\n').map(JSON.parse)
+        : [];
     const hasRun = await exists(path.join(checkout, '.run'));
     let report;
     if (hasRun) {
@@ -64,107 +117,198 @@ async function fixture(t, args, {withPackages = true, packageFolders = workspace
         const filename = path.join(checkout, '.run/check', reports[0], 'report.json');
         if (await exists(filename)) report = JSON.parse(await fs.readFile(filename, 'utf8'));
     }
-    return {...result, calls, hasRun, report, checkout};
+    return { ...result, calls, hasRun, report, checkout };
 }
 
-for (const flag of ['--help', '-h']) test('check '+flag+' needs no manifests, runtime, npm or output directory', async t => {
-    const value = await fixture(t, [flag], {withPackages: false});
-    assert.equal(value.status, 0, value.stderr);
-    assert.match(value.stdout, /--package/); assert.match(value.stdout, /--step/);
-    assert.equal(value.hasRun, false); assert.deepEqual(value.calls, []);
-});
+for (const flag of ['--help', '-h'])
+    test('check ' + flag + ' needs no manifests, runtime, npm or output directory', async (t) => {
+        const value = await fixture(t, [flag], { withPackages: false });
+        assert.equal(value.status, 0, value.stderr);
+        assert.match(value.stdout, /--package/);
+        assert.match(value.stdout, /--step/);
+        assert.equal(value.hasRun, false);
+        assert.deepEqual(value.calls, []);
+    });
 
-for (const args of [['--unknown'], ['--package'], ['--step'], ['--package', 'services/catalog-service'],
-    ['--package', '../frontend'], ['--package', 'unknown'], ['--step', 'contracts'], ['--step', 'unknown'],
-    ['--help', '--package', 'frontend'], ['--package=frontend'], ['--package', 'frontend', '--step', 'test', '--unknown']]) {
-    test('check rejects '+args.join(' ')+' before runtime resolution and filesystem outputs', async t => {
-        const value = await fixture(t, args, {withPackages: false});
-        assert.equal(value.status, 1); assert.match(value.stderr, /Неизвестный параметр|Некорректное значение/);
-        assert.equal(value.hasRun, false); assert.deepEqual(value.calls, []);
+for (const args of [
+    ['--unknown'],
+    ['--package'],
+    ['--step'],
+    ['--package', 'services/catalog-service'],
+    ['--package', '../frontend'],
+    ['--package', 'unknown'],
+    ['--step', 'contracts'],
+    ['--step', 'unknown'],
+    ['--help', '--package', 'frontend'],
+    ['--package=frontend'],
+    ['--package', 'frontend', '--step', 'test', '--unknown'],
+]) {
+    test('check rejects ' + args.join(' ') + ' before runtime resolution and filesystem outputs', async (t) => {
+        const value = await fixture(t, args, { withPackages: false });
+        assert.equal(value.status, 1);
+        assert.match(value.stderr, /Неизвестный параметр|Некорректное значение/);
+        assert.equal(value.hasRun, false);
+        assert.deepEqual(value.calls, []);
     });
 }
 
-test('package and step selection execute only their intersection, without shared contracts or Compose', async t => {
-    const value = await fixture(t, ['--package', 'frontend', '--step', 'test'], {packageFolders: ['frontend']});
-    assert.equal(value.status, 0, value.stderr); assert.equal(value.report.success, true);
-    assert.equal(value.report.schemaVersion, 3); assert.equal(value.report.state, 'passed');
-    assert.deepEqual(value.report.plannedSteps, ['frontend: test']); assert.ok(value.report.finishedAt);
-    assert.deepEqual(value.report.steps.map(step => step.name), ['frontend: test']);
-    assert.deepEqual(value.report.selection, {packages: ['frontend'], steps: ['test']});
-    const commands = value.calls.filter(call => call.args[0] !== '-p');
-    assert.equal(commands.length, 1); assert.equal(commands[0].cwd, path.join(value.checkout, 'frontend'));
-    assert.equal(commands[0].args[2], 'test'); assert.equal(commands[0].command, process.execPath);
-    assert.deepEqual(value.report.steps[0].tests, {passed: 1, failed: 0, skipped: 0, todo: 0});
+test('package and step selection execute only their intersection, without shared contracts or Compose', async (t) => {
+    const value = await fixture(t, ['--package', 'frontend', '--step', 'test'], { packageFolders: ['frontend'] });
+    assert.equal(value.status, 0, value.stderr);
+    assert.equal(value.report.success, true);
+    assert.equal(value.report.schemaVersion, 3);
+    assert.equal(value.report.state, 'passed');
+    assert.deepEqual(value.report.plannedSteps, ['frontend: test']);
+    assert.ok(value.report.finishedAt);
+    assert.deepEqual(
+        value.report.steps.map((step) => step.name),
+        ['frontend: test'],
+    );
+    assert.deepEqual(value.report.selection, { packages: ['frontend'], steps: ['test'] });
+    const commands = value.calls.filter((call) => call.args[0] !== '-p');
+    assert.equal(commands.length, 1);
+    assert.equal(commands[0].cwd, path.join(value.checkout, 'frontend'));
+    assert.equal(commands[0].args[2], 'test');
+    assert.equal(commands[0].command, process.execPath);
+    assert.deepEqual(value.report.steps[0].tests, { passed: 1, failed: 0, skipped: 0, todo: 0 });
 });
 
-test('all eight canonical package IDs select their own builds and duplicate selectors run once', async t => {
+test('all eight canonical package IDs select their own builds and duplicate selectors run once', async (t) => {
     for (const folder of workspacePackages) {
-        const id = packageId(folder), value = await fixture(t, ['--package', id, '--package', id, '--step', 'build', '--step', 'build']);
+        const id = packageId(folder),
+            value = await fixture(t, ['--package', id, '--package', id, '--step', 'build', '--step', 'build']);
         assert.equal(value.status, 0, value.stderr);
-        assert.deepEqual(value.report.steps.map(step => step.name), [folder+': build']);
-        assert.equal(value.calls.filter(call => call.args[0] !== '-p').length, 1);
-        const build=value.calls.find(call=>call.args[0]!=='-p');
-        assert.equal(build.tls,'0');assert.equal(build.strict,'false');assert.equal(build.npmStrict,'false');
+        assert.deepEqual(
+            value.report.steps.map((step) => step.name),
+            [folder + ': build'],
+        );
+        assert.equal(value.calls.filter((call) => call.args[0] !== '-p').length, 1);
+        const build = value.calls.find((call) => call.args[0] !== '-p');
+        assert.equal(build.tls, '0');
+        assert.equal(build.strict, 'false');
+        assert.equal(build.npmStrict, 'false');
     }
 });
 
-test('step-only selection covers the eight packages without contracts or Compose', async t => {
+test('step-only selection covers the eight packages without contracts or Compose', async (t) => {
     const value = await fixture(t, ['--step', 'typecheck']);
     assert.equal(value.status, 0, value.stderr);
-    assert.deepEqual(value.report.steps.map(step => step.name), workspacePackages.map(folder => folder+': typecheck'));
-    assert.equal(value.calls.filter(call => call.args[0] !== '-p').length, 8);
+    assert.deepEqual(
+        value.report.steps.map((step) => step.name),
+        workspacePackages.map((folder) => folder + ': typecheck'),
+    );
+    assert.equal(value.calls.filter((call) => call.args[0] !== '-p').length, 8);
 });
 
-test('package-only selection retains normal phase order and excludes every other package', async t => {
+test('package-only selection retains normal phase order and excludes every other package', async (t) => {
     const value = await fixture(t, ['--package', 'frontend']);
     assert.equal(value.status, 0, value.stderr);
-    assert.deepEqual(value.report.steps.map(step => step.name), ['frontend: lint', 'frontend: typecheck', 'frontend: build', 'frontend: test']);
-    const commands=value.calls.filter(call=>call.args[0]!=='-p');
-    assert.deepEqual(commands.map(call=>call.tls),['1','1','0','1']);
-    assert.deepEqual(commands.map(call=>call.strict),['true','true','false','true']);
+    assert.deepEqual(
+        value.report.steps.map((step) => step.name),
+        ['frontend: lint', 'frontend: typecheck', 'frontend: build', 'frontend: test'],
+    );
+    const commands = value.calls.filter((call) => call.args[0] !== '-p');
+    assert.deepEqual(
+        commands.map((call) => call.tls),
+        ['1', '1', '0', '1'],
+    );
+    assert.deepEqual(
+        commands.map((call) => call.strict),
+        ['true', 'true', 'false', 'true'],
+    );
 });
 
-test('multiple package and step selectors retain workspace phase order without implicit builds', async t => {
-    const value = await fixture(t, ['--package', 'bridge', '--package', 'frontend', '--step', 'test', '--step', 'typecheck']);
+test('multiple package and step selectors retain workspace phase order without implicit builds', async (t) => {
+    const value = await fixture(t, [
+        '--package',
+        'bridge',
+        '--package',
+        'frontend',
+        '--step',
+        'test',
+        '--step',
+        'typecheck',
+    ]);
     assert.equal(value.status, 0, value.stderr);
-    assert.deepEqual(value.report.steps.map(step => step.name), ['frontend: typecheck', 'mcp/neurocenter-asset-sync: typecheck',
-        'frontend: test', 'mcp/neurocenter-asset-sync: test']);
-    assert.equal(value.calls.filter(call => call.args[0] !== '-p').length, 4);
+    assert.deepEqual(
+        value.report.steps.map((step) => step.name),
+        [
+            'frontend: typecheck',
+            'mcp/neurocenter-asset-sync: typecheck',
+            'frontend: test',
+            'mcp/neurocenter-asset-sync: test',
+        ],
+    );
+    assert.equal(value.calls.filter((call) => call.args[0] !== '-p').length, 4);
 });
 
-test('an empty selected test plan fails before runtime and outputs', async t => {
+test('an empty selected test plan fails before runtime and outputs', async (t) => {
     const value = await fixture(t, ['--package', 'api-gateway', '--step', 'test']);
-    assert.equal(value.status, 1); assert.match(value.stderr, /.+/);
-    assert.equal(value.hasRun, false); assert.deepEqual(value.calls, []);
+    assert.equal(value.status, 1);
+    assert.match(value.stderr, /.+/);
+    assert.equal(value.hasRun, false);
+    assert.deepEqual(value.calls, []);
 });
 
-test('full check starts with the generation gate then preserves package phases and shared checks', async t => {
+test('full check starts with the generation gate then preserves package phases and shared checks', async (t) => {
     const value = await fixture(t, []);
-    assert.equal(value.status, 0, value.stderr); assert.equal(value.report.success, true);
+    assert.equal(value.status, 0, value.stderr);
+    assert.equal(value.report.success, true);
     assert.equal(value.report.steps[0].name, 'Agent kit: актуальность генерации');
-    assert.deepEqual(value.calls.find(call => call.args[0] === 'scripts/agent-kit/generate.mjs').args, ['scripts/agent-kit/generate.mjs', '--check']);
-    assert.deepEqual(value.report.steps.slice(1, 9).map(step => step.name), workspacePackages.map(folder => folder+': lint'));
-    assert.deepEqual(value.report.steps.slice(9, 16).map(step => step.name), workspacePackages.filter(folder => packageId(folder) !== 'frontend').map(folder => folder+': format:check'));
-    assert.deepEqual(value.report.steps.slice(16, 24).map(step => step.name), workspacePackages.map(folder => folder+': typecheck'));
-    assert.deepEqual(value.report.steps.slice(24, 32).map(step => step.name), workspacePackages.map(folder => folder+': build'));
-    assert.deepEqual(value.report.plannedSteps, value.report.steps.map(step => step.name));
-    assert.deepEqual(value.report.steps.slice(-3).map(step => step.name), ['Общие контракты, production и упаковка', 'Compose: dev', 'Compose: локальные эмбеддинги']);
+    assert.deepEqual(value.calls.find((call) => call.args[0] === 'scripts/agent-kit/generate.mjs').args, [
+        'scripts/agent-kit/generate.mjs',
+        '--check',
+    ]);
+    assert.deepEqual(
+        value.report.steps.slice(1, 9).map((step) => step.name),
+        workspacePackages.map((folder) => folder + ': lint'),
+    );
+    assert.deepEqual(
+        value.report.steps.slice(9, 16).map((step) => step.name),
+        workspacePackages
+            .filter((folder) => packageId(folder) !== 'frontend')
+            .map((folder) => folder + ': format:check'),
+    );
+    assert.deepEqual(
+        value.report.steps.slice(16, 24).map((step) => step.name),
+        workspacePackages.map((folder) => folder + ': typecheck'),
+    );
+    assert.deepEqual(
+        value.report.steps.slice(24, 32).map((step) => step.name),
+        workspacePackages.map((folder) => folder + ': build'),
+    );
+    assert.deepEqual(
+        value.report.plannedSteps,
+        value.report.steps.map((step) => step.name),
+    );
+    assert.deepEqual(
+        value.report.steps.slice(-3).map((step) => step.name),
+        ['Общие контракты, production и упаковка', 'Compose: dev', 'Compose: локальные эмбеддинги'],
+    );
 });
 
-test('lint-only selection runs every package lint without implicit builds or warning escalation', async t => {
+test('lint-only selection runs every package lint without implicit builds or warning escalation', async (t) => {
     const value = await fixture(t, ['--step', 'lint']);
     assert.equal(value.status, 0, value.stderr);
-    assert.deepEqual(value.report.steps.map(step => step.name), workspacePackages.map(folder => folder+': lint'));
-    const commands=value.calls.filter(call=>call.args[0]!=='-p');
-    assert.equal(commands.length,8);
-    assert.ok(commands.every(call=>call.args.slice(1).join(' ')==='run lint'));
+    assert.deepEqual(
+        value.report.steps.map((step) => step.name),
+        workspacePackages.map((folder) => folder + ': lint'),
+    );
+    const commands = value.calls.filter((call) => call.args[0] !== '-p');
+    assert.equal(commands.length, 8);
+    assert.ok(commands.every((call) => call.args.slice(1).join(' ') === 'run lint'));
 });
 
-test('format:check runs configured services and skips frontend without writing format', async t => {
+test('format:check runs configured services and skips frontend without writing format', async (t) => {
     const value = await fixture(t, ['--step', 'format:check']);
     assert.equal(value.status, 0, value.stderr);
-    assert.deepEqual(value.report.steps.map(step => step.name), workspacePackages.filter(folder => packageId(folder) !== 'frontend').map(folder => folder+': format:check'));
-    const commands=value.calls.filter(call=>call.args[0]!=='-p');
-    assert.equal(commands.length,7);
-    assert.ok(commands.every(call=>call.args.slice(1).join(' ')==='run format:check'));
+    assert.deepEqual(
+        value.report.steps.map((step) => step.name),
+        workspacePackages
+            .filter((folder) => packageId(folder) !== 'frontend')
+            .map((folder) => folder + ': format:check'),
+    );
+    const commands = value.calls.filter((call) => call.args[0] !== '-p');
+    assert.equal(commands.length, 7);
+    assert.ok(commands.every((call) => call.args.slice(1).join(' ') === 'run format:check'));
 });

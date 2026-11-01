@@ -27,7 +27,7 @@ export interface ISkillDirectoryAuditEvent extends ISkillAuditIdentity {
     after: { directory: true };
 }
 
-export type ISkillAuditEvent = ISkillFileAuditEvent | ISkillDirectoryAuditEvent;
+export type TSkillAuditEvent = ISkillFileAuditEvent | ISkillDirectoryAuditEvent;
 
 /** Проверяет весь пакет до записи; точный повтор UUID разрешён, разные данные одного UUID отвергаются. */
-export function normalizeSkillAuditEvents(raw: unknown): ISkillAuditEvent[];
+export function normalizeSkillAuditEvents(raw: unknown): TSkillAuditEvent[];

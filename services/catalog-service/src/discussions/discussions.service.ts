@@ -11,7 +11,7 @@ import type { PoolClient } from 'pg';
 import { readFeatures } from '../../../shared/feature-client.cjs';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { DiscussionsRepository } from './discussions.repository';
-import { DiscussionsPolicy, type DiscussionActor } from './discussions.policy';
+import { DiscussionsPolicy, type IDiscussionActor } from './discussions.policy';
 import { DiscussionsStorage, discussionAttachmentView } from './discussions.storage';
 import {
     discussionAttachmentIds,
@@ -21,7 +21,7 @@ import {
     discussionUuid,
     discussionVersion,
 } from './discussions.validation';
-import type { AttachmentRow, CommentRow, DiscussionComment, DiscussionTarget } from './discussions.types';
+import type { IAttachmentRow, ICommentRow, IDiscussionComment, IDiscussionTarget } from './discussions.interfaces';
 const hash = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const iso = (value: string | Date): string => new Date(value).toISOString();
 
@@ -35,7 +35,7 @@ export class DiscussionsService {
     ) {}
     /** Counts every visible reply in this target, independently of pagination and deleted parent tombstones. */
     private async commentCount(
-        target: DiscussionTarget,
+        target: IDiscussionTarget,
         db: Pick<PoolClient, 'query'> = this.repository.pool,
     ): Promise<number> {
         return Number(
@@ -48,15 +48,15 @@ export class DiscussionsService {
         );
     }
     async view(
-        row: CommentRow,
-        actor: DiscussionActor,
+        row: ICommentRow,
+        actor: IDiscussionActor,
         db: Pick<PoolClient, 'query'> = this.repository.pool,
-    ): Promise<DiscussionComment> {
+    ): Promise<IDiscussionComment> {
         const own = actor.email === row.author_email || actor.activeRole === 'Главный админ';
         const attachments = row.deleted_at
             ? []
             : (
-                  await db.query<AttachmentRow>(
+                  await db.query<IAttachmentRow>(
                       "SELECT * FROM discussion_attachments WHERE comment_id=$1 AND state='READY' ORDER BY created_at,id",
                       [row.id],
                   )
@@ -109,7 +109,7 @@ export class DiscussionsService {
             boundary = anchor.boundary;
         }
         const rows = (
-            await this.repository.pool.query<CommentRow>(
+            await this.repository.pool.query<ICommentRow>(
                 `SELECT * FROM discussion_comments WHERE target_type=$1 AND target_id=$2
             AND ($3::timestamptz IS NULL OR (created_at,id)>($3::timestamptz,$4::uuid)) ORDER BY created_at,id LIMIT 51`,
                 [target.type, target.id, boundary, cursor?.id ?? null],
@@ -126,7 +126,7 @@ export class DiscussionsService {
         } catch {
             /* History remains readable during flag-service outages. */
         }
-        const items: DiscussionComment[] = [];
+        const items: IDiscussionComment[] = [];
         for (const row of visible) items.push(await this.view(row, actor));
         const totalCount = await this.commentCount(target);
         const current = await this.policy.actor(this.repository.pool, this.policy.input(req));
@@ -151,11 +151,11 @@ export class DiscussionsService {
             ...(this.storage.unavailableReason ? { attachmentsUnavailableReason: this.storage.unavailableReason } : {}),
         };
     }
-    async read(req: Request, id: string): Promise<DiscussionComment> {
+    async read(req: Request, id: string): Promise<IDiscussionComment> {
         discussionUuid(id);
         const actor = await this.policy.actor(this.repository.pool, this.policy.input(req)),
             row = await this.row(id);
-        const target: DiscussionTarget = { type: row.target_type, id: row.target_id };
+        const target: IDiscussionTarget = { type: row.target_type, id: row.target_id };
         await this.policy.target(this.repository.pool, actor, target);
         const view = await this.view(row, actor),
             current = await this.policy.actor(this.repository.pool, this.policy.input(req));
@@ -172,16 +172,16 @@ export class DiscussionsService {
         id: string,
         db: Pick<PoolClient, 'query'> = this.repository.pool,
         lock = false,
-    ): Promise<CommentRow> {
+    ): Promise<ICommentRow> {
         const row = (
-            await db.query<CommentRow>('SELECT * FROM discussion_comments WHERE id=$1' + (lock ? ' FOR UPDATE' : ''), [
+            await db.query<ICommentRow>('SELECT * FROM discussion_comments WHERE id=$1' + (lock ? ' FOR UPDATE' : ''), [
                 id,
             ])
         ).rows[0];
         if (!row) throw new NotFoundException('Комментарий не найден.');
         return row;
     }
-    async create(req: Request, raw: unknown): Promise<DiscussionComment> {
+    async create(req: Request, raw: unknown): Promise<IDiscussionComment> {
         const input = discussionObject(raw, [
                 'targetType',
                 'targetId',
@@ -204,7 +204,7 @@ export class DiscussionsService {
                 'discussion:' + actor.email + ':' + request,
             ]);
             const prior = (
-                await db.query<CommentRow>(
+                await db.query<ICommentRow>(
                     'SELECT * FROM discussion_comments WHERE author_email=$1 AND request_key=$2',
                     [actor.email, request],
                 )
@@ -224,7 +224,7 @@ export class DiscussionsService {
             }
             const files = attachmentIds.length
                 ? (
-                      await db.query<AttachmentRow>(
+                      await db.query<IAttachmentRow>(
                           'SELECT * FROM discussion_attachments WHERE id=ANY($1::uuid[]) FOR UPDATE',
                           [attachmentIds],
                       )
@@ -244,7 +244,7 @@ export class DiscussionsService {
                 throw new ConflictException('Вложения удалены, заняты другим комментарием или ещё не загружены.');
             const id = randomUUID(),
                 row = (
-                    await db.query<CommentRow>(
+                    await db.query<ICommentRow>(
                         `INSERT INTO discussion_comments(id,target_type,target_id,parent_id,body,author_email,author_name,request_key,request_hash)
                 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
                         [
@@ -268,7 +268,7 @@ export class DiscussionsService {
             return this.view(row, actor, db);
         });
     }
-    async update(req: Request, id: string, raw: unknown): Promise<DiscussionComment> {
+    async update(req: Request, id: string, raw: unknown): Promise<IDiscussionComment> {
         discussionUuid(id);
         const input = discussionObject(raw, ['body', 'expectedVersion']),
             body = discussionBody(input.body),
@@ -280,12 +280,12 @@ export class DiscussionsService {
         await this.change(req, id, discussionVersion(Number(expected)), null);
         return { ok: true };
     }
-    private async change(req: Request, id: string, version: number, body: string | null): Promise<DiscussionComment> {
+    private async change(req: Request, id: string, version: number, body: string | null): Promise<IDiscussionComment> {
         const identity = this.policy.input(req);
         return this.repository.transaction(async (db) => {
             const actor = await this.policy.actor(db, identity, true),
                 row = await this.row(id, db, true),
-                target: DiscussionTarget = { type: row.target_type, id: row.target_id };
+                target: IDiscussionTarget = { type: row.target_type, id: row.target_id };
             await this.policy.target(db, actor, target, body !== null);
             if (row.author_email !== actor.email && actor.activeRole !== 'Главный админ')
                 throw new ForbiddenException('Изменять комментарий может автор или главный администратор.');
@@ -297,7 +297,7 @@ export class DiscussionsService {
             }
             if (body !== null) await requireFeatureEnabled('discussions');
             const saved = (
-                await db.query<CommentRow>(
+                await db.query<ICommentRow>(
                     `UPDATE discussion_comments SET body=$2,version=version+1,updated_at=now(),deleted_at=CASE WHEN $3 THEN now() ELSE NULL END WHERE id=$1 RETURNING *`,
                     [id, body ?? '', body === null],
                 )

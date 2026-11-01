@@ -21,7 +21,7 @@ import {
     removePrivateConfiguration,
 } from '../local-configuration/private-store.js';
 import { normalizeHostedProfile, profileKey } from '../rag-hosted/profile.js';
-import { matchesRestoreProof, restoreDirectoryProof, type RestoreDirectoryProof } from './restore-proof.js';
+import { matchesRestoreProof, restoreDirectoryProof, type IRestoreDirectoryProof } from './restore-proof.js';
 
 const directory = () => path.join(stateDir(), 'rag-restores');
 const journalPath = (root: string) => path.join(directory(), hash(root) + '.json');
@@ -81,7 +81,7 @@ const schema = z
             .optional(),
     })
     .strict();
-type RestoreIntent = z.infer<typeof schema>;
+type TRestoreIntent = z.infer<typeof schema>;
 const alive = (pid: number) => {
     try {
         process.kill(pid, 0);
@@ -98,7 +98,7 @@ const uncertain = (cause: unknown) =>
         { localChangesCommitted: true, restoreRecoveryPending: true, cause },
     );
 
-async function readIntent(root: string): Promise<RestoreIntent | undefined> {
+async function readIntent(root: string): Promise<TRestoreIntent | undefined> {
     try {
         await recoveryDirectory(directory(), false);
         return schema.parse(JSON.parse(await readBoundedUtf8(journalPath(root), 16 * 1024 * 1024)));
@@ -110,7 +110,7 @@ async function readIntent(root: string): Promise<RestoreIntent | undefined> {
     }
 }
 
-async function assertIntent(intent: RestoreIntent, root: string): Promise<void> {
+async function assertIntent(intent: TRestoreIntent, root: string): Promise<void> {
     if (
         intent.root !== root ||
         path.resolve(root) !== root ||
@@ -170,10 +170,10 @@ async function assertIntent(intent: RestoreIntent, root: string): Promise<void> 
     }
 }
 
-async function finish(intent: RestoreIntent, recovery = false, final = false): Promise<void> {
+async function finish(intent: TRestoreIntent, recovery = false, final = false): Promise<void> {
     await assertIntent(intent, intent.root);
     const proof = (target: string) => restoreDirectoryProof(target, intent.lock);
-    const remove = async (target: string, expected: RestoreDirectoryProof) => {
+    const remove = async (target: string, expected: IRestoreDirectoryProof) => {
         const current = await proof(target);
         if (!current) {
             return;

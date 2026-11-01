@@ -1,10 +1,10 @@
 import { HttpException } from '@nestjs/common';
 import fs from 'node:fs/promises';
 import { CapacityError, getCapacityStatus, reserveBytes } from '../../../../shared/capacity.cjs';
-import type { GgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
+import type { IGgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
 
 /** Existing bytes need a fresh physical floor, not a second reservation for the same file. */
-export async function assertGgufCapacity(root: string, limits: GgufImportPolicy): Promise<void> {
+export async function assertGgufCapacity(root: string, limits: IGgufImportPolicy): Promise<void> {
     try {
         const [disk, info] = await Promise.all([fs.statfs(root, { bigint: true }), fs.stat(root)]),
             snapshot = getCapacityStatus();

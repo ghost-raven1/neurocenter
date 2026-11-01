@@ -1,49 +1,49 @@
 import { BadRequestException } from '@nestjs/common';
 import type {
-    RemoteRuntimeAsset,
-    RuntimeAdapter,
-    RuntimeSource,
-    RuntimeTarget,
+    IRemoteRuntimeAsset,
+    TRuntimeAdapter,
+    IRuntimeSource,
+    TRuntimeTarget,
 } from '../../../shared/tool-runtime-source.cjs';
-import type { PythonSourcePlan } from '../../../shared/python-source-plan.cjs';
+import type { IPythonSourcePlan } from '../../../shared/python-source-plan.cjs';
 import { validateRuntimeSource } from '../../../shared/tool-runtime-source.cjs';
 import { portablePath } from '../../../shared/runtime-artifacts.cjs';
 export const uploadLimit = 256 * 1024 ** 2;
 export const uploadId = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
-export interface UploadIntent {
+export interface IUploadIntent {
     requestKey: string;
     name: string;
     bytes: number;
     sha256: string;
 }
-export interface UploadBuildSource {
+export interface IUploadBuildSource {
     type: 'upload';
     uploadId: string;
     sha256: string;
     bytes: number;
     entrypoint: string;
 }
-export interface UploadChoice {
+export interface IUploadChoice {
     entrypoint: string;
-    adapter: RuntimeAdapter;
-    targets: RuntimeTarget[];
+    adapter: TRuntimeAdapter;
+    targets: TRuntimeTarget[];
     runtimeEntrypoint?: string;
-    python?: PythonSourcePlan;
-    runtimeAssets?: Partial<Record<RuntimeTarget, RemoteRuntimeAsset>>;
+    python?: IPythonSourcePlan;
+    runtimeAssets?: Partial<Record<TRuntimeTarget, IRemoteRuntimeAsset>>;
 }
-export interface UploadMetadata {
+export interface IUploadMetadata {
     candidates: string[];
-    choices: UploadChoice[];
+    choices: IUploadChoice[];
     entrypoint: string;
     name?: string;
     description?: string;
-    supportedTargets?: RuntimeTarget[];
-    adapter?: RuntimeAdapter;
+    supportedTargets?: TRuntimeTarget[];
+    adapter?: TRuntimeAdapter;
     requiresEntrypointChoice: boolean;
     runnableKinds: ['mcp'];
 }
-export interface UploadRow {
+export interface IUploadRow {
     id: string;
     actor: string;
     request_key: string;
@@ -55,16 +55,16 @@ export interface UploadRow {
     state: 'WAITING' | 'UPLOADING' | 'READY' | 'CANCELLED';
     auth_epoch: string;
     lease_token: string | null;
-    metadata: UploadMetadata | null;
+    metadata: IUploadMetadata | null;
     created_at: Date;
     expires_at: Date;
     updated_at: Date;
 }
-export interface PinnedUploadSource extends UploadBuildSource {
-    format: UploadRow['format'];
-    runtimeSource: RuntimeSource;
+export interface IPinnedUploadSource extends IUploadBuildSource {
+    format: IUploadRow['format'];
+    runtimeSource: IRuntimeSource;
 }
-export const uploadView = (row: UploadRow) => ({
+export const uploadView = (row: IUploadRow) => ({
     id: row.id,
     requestKey: row.request_key,
     name: row.name,
@@ -75,7 +75,7 @@ export const uploadView = (row: UploadRow) => ({
     ...(row.metadata ? { metadata: row.metadata } : {}),
 });
 /** Binary bytes never enter the JSON control plane. */
-export function validateUploadIntent(value: unknown): UploadIntent {
+export function validateUploadIntent(value: unknown): IUploadIntent {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new BadRequestException('Нужны имя, размер, SHA-256 и UUID загрузки.');
     const raw = value as Record<string, unknown>;
@@ -97,9 +97,9 @@ export function validateUploadIntent(value: unknown): UploadIntent {
         );
     if (/\.(?:sh|bash|zsh|bat|cmd|ps1)$/i.test(raw.name))
         throw new BadRequestException('Сценарий установки не является автономной поставкой.');
-    return raw as unknown as UploadIntent;
+    return raw as unknown as IUploadIntent;
 }
-export function validateUploadBuildSource(value: Record<string, unknown>): UploadBuildSource {
+export function validateUploadBuildSource(value: Record<string, unknown>): IUploadBuildSource {
     if (
         Object.keys(value).some((key) => !['type', 'uploadId', 'sha256', 'bytes', 'entrypoint'].includes(key)) ||
         value.type !== 'upload' ||
@@ -121,7 +121,7 @@ export function validateUploadBuildSource(value: Record<string, unknown>): Uploa
         entrypoint: value.entrypoint,
     };
 }
-export function uploadRuntime(choice: UploadChoice): RuntimeSource {
+export function uploadRuntime(choice: IUploadChoice): IRuntimeSource {
     const app = { directory: '.', entrypoint: choice.entrypoint };
     return validateRuntimeSource({
         type: 'runtime',

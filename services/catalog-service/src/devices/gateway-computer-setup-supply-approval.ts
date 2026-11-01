@@ -1,13 +1,13 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
-import { normalizeOpenCodeInstallSupply, type OpenCodeInstallSupply } from '../../../shared/opencode-cli-install.cjs';
+import { normalizeOpenCodeInstallSupply, type IOpenCodeInstallSupply } from '../../../shared/opencode-cli-install.cjs';
 import { ComputerSetupSupplyApproval } from './computer-setup-supply-approval';
 
 /** Device reports cannot authorize bytes; only the configured Gateway's canonical supply may. */
 @Injectable()
 export class GatewayComputerSetupSupplyApproval extends ComputerSetupSupplyApproval {
     private readonly base = (process.env.API_GATEWAY_URL || 'http://localhost:4000').replace(/\/+$/, '');
-    async requireOpenCode(value: OpenCodeInstallSupply, signal?: AbortSignal): Promise<void> {
+    async requireOpenCode(value: IOpenCodeInstallSupply, signal?: AbortSignal): Promise<void> {
         try {
             const supply = normalizeOpenCodeInstallSupply(value),
                 token = process.env.NEUROCENTER_INTERNAL_TOKEN;

@@ -1,12 +1,12 @@
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
+import { MODEL_TOKEN_QUOTA_DEFAULT_PERIOD_MS } from './model-token-quotas.constants';
 import {
-    MODEL_TOKEN_QUOTA_DEFAULT_PERIOD_MS,
-    type ModelTokenQuotaCounters,
-    type ModelTokenQuotaInput,
-    type ModelTokenQuotaPolicy,
-} from './model-token-quotas.types';
+    type IModelTokenQuotaCounters,
+    type IModelTokenQuotaInput,
+    type IModelTokenQuotaPolicy,
+} from './model-token-quotas.interfaces';
 
-export interface ModelTokenQuotaPolicyRow {
+export interface IModelTokenQuotaPolicyRow {
     model_id: string;
     user_email: string;
     revision: number | string;
@@ -19,7 +19,7 @@ export interface ModelTokenQuotaPolicyRow {
 }
 const iso = (value: Date | string): string =>
     value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-export const quotaPolicy = (row: ModelTokenQuotaPolicyRow): ModelTokenQuotaPolicy => ({
+export const quotaPolicy = (row: IModelTokenQuotaPolicyRow): IModelTokenQuotaPolicy => ({
     modelId: row.model_id,
     userEmail: row.user_email,
     revision: Number(row.revision),
@@ -40,7 +40,7 @@ export const quotaCoverage = (model: Pick<IModel, 'runtime' | 'capability'>) => 
             : 'Персональный контроль пока проверен для серверных текстовых OpenAI/Ollama-вызовов. Этот канал не объявляется покрытым.',
     };
 };
-export const emptyQuotaCounters = (): ModelTokenQuotaCounters => ({
+export const emptyQuotaCounters = (): IModelTokenQuotaCounters => ({
     actualInputTokens: '0',
     actualOutputTokens: '0',
     chargedTokens: '0',
@@ -56,7 +56,7 @@ export const quotaRequestText = (
     writerEmail: string,
     modelId: string,
     userEmail: string,
-    input: ModelTokenQuotaInput,
+    input: IModelTokenQuotaInput,
 ): string =>
     JSON.stringify({
         writerEmail,

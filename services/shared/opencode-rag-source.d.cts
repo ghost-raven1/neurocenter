@@ -1,6 +1,15 @@
-import type {RuntimeTarget} from './tool-runtime-source.cjs';
+import type { TRuntimeTarget } from './tool-runtime-source.cjs';
 export const RAG_PLUGIN_SOURCE: Readonly<{
-    url: string; commit: string; entrypoint: string; version: string; adapter: 'opencode-rag-plugin';
-    supportedTargets: readonly RuntimeTarget[];
+    url: string;
+    commit: string;
+    entrypoint: string;
+    version: string;
+    adapter: 'opencode-rag-plugin';
+    supportedTargets: readonly TRuntimeTarget[];
 }>;
-export function isPreparedRagRepository(source: {url?: string; commit?: string; subdirectory?: string; entrypoint?: string}): boolean;
+export function isPreparedRagRepository(source: {
+    url?: string;
+    commit?: string;
+    subdirectory?: string;
+    entrypoint?: string;
+}): boolean;

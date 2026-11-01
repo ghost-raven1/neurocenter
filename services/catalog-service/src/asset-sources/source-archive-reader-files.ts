@@ -18,14 +18,14 @@ export const SOURCE_ARCHIVE_LIMITS = Object.freeze({
     pathIdentityBytes: 16 * 1024 ** 2,
     extensionBytes: 64 * 1024,
 });
-export interface SourceArchiveFile {
+export interface ISourceArchiveFile {
     path: string;
     bytes: number;
     sha256: string;
 }
-export interface SourceArchiveResult {
+export interface ISourceArchiveResult {
     rootName?: string;
-    files: Map<string, SourceArchiveFile>;
+    files: Map<string, ISourceArchiveFile>;
 }
 export function archiveFailure(message = 'Архив поставки повреждён или имеет неподдерживаемый формат.'): never {
     throw new BadRequestException(message);
@@ -84,7 +84,7 @@ export class ArchiveStager {
     private readonly names = new Map<string, boolean>();
     private readonly parents = new Set<string>();
     private readonly spellings = new Map<string, string>();
-    readonly files = new Map<string, SourceArchiveFile>();
+    readonly files = new Map<string, ISourceArchiveFile>();
     entries = 0;
     expandedBytes = 0;
     private identityBytes = 0;
@@ -187,7 +187,7 @@ export class ArchiveStager {
             input.destroy();
         }
     }
-    result(): SourceArchiveResult {
+    result(): ISourceArchiveResult {
         if (!this.files.size) archiveFailure('В архиве нет файлов поставки.');
         const names = [...this.files.keys()],
             first = names[0].split('/')[0];

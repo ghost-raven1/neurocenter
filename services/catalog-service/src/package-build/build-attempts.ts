@@ -2,24 +2,24 @@ import { parseBuildDiagnostic } from '../../../shared/package-build-diagnostics.
 import { BuildDiagnosticError } from './build-process';
 import { agentHash, packageAgentRecipe, packageAgentReport } from './package-agent.recipe';
 import { ConflictException } from '@nestjs/common';
-import type { BuildConfiguration } from './package-build.model';
+import type { IBuildConfiguration } from './package-build.model';
 import type { PackageAgentService } from './package-agent.service';
-import type { PackageAgentContext, PackageAgentRuntimeReport } from './package-agent.model';
-import { assertRuntimeCandidate, type BuildRuntimeReport } from './build-runtime';
+import type { IPackageAgentContext, IPackageAgentRuntimeReport } from './package-agent.model';
+import { assertRuntimeCandidate, type IBuildRuntimeReport } from './build-runtime';
 
-interface BuildAttemptContext {
+interface IBuildAttemptContext {
     agent?: PackageAgentService;
-    context: (attempt: number, feedback?: PackageAgentRuntimeReport) => PackageAgentContext;
+    context: (attempt: number, feedback?: IPackageAgentRuntimeReport) => IPackageAgentContext;
     authorize: () => Promise<void>;
-    build: (config: BuildConfiguration, attempt: number) => Promise<string>;
-    verify: (manifest: string, identity: string) => Promise<BuildRuntimeReport>;
-    record: (attempt: number, report: BuildRuntimeReport) => Promise<void>;
+    build: (config: IBuildConfiguration, attempt: number) => Promise<string>;
+    verify: (manifest: string, identity: string) => Promise<IBuildRuntimeReport>;
+    record: (attempt: number, report: IBuildRuntimeReport) => Promise<void>;
     reset: () => Promise<void>;
     identity: (attempt: number) => string;
 }
-export interface VerifiedBuildAttempt {
+export interface IVerifiedBuildAttempt {
     manifest: string;
-    report: BuildRuntimeReport;
+    report: IBuildRuntimeReport;
     identity: string;
 }
 const infrastructureFailures = new Set([
@@ -34,13 +34,13 @@ const infrastructureFailures = new Set([
 
 /** One durable queue owner, bounded paid calls, and no publication of a failed or different candidate. */
 export async function buildVerifiedAttempts(
-    original: BuildConfiguration,
-    context: BuildAttemptContext,
-): Promise<VerifiedBuildAttempt> {
+    original: IBuildConfiguration,
+    context: IBuildAttemptContext,
+): Promise<IVerifiedBuildAttempt> {
     if (original.agent && !context.agent)
         throw new ConflictException('Агент «Упаковщик» недоступен. Создайте ручную сборку или повторите позже.');
     let config = original,
-        feedback: PackageAgentRuntimeReport | undefined,
+        feedback: IPackageAgentRuntimeReport | undefined,
         failedRecipeHash: string | undefined;
     const attempts = original.agent?.maxAttempts ?? 1;
     for (let attempt = 1; attempt <= attempts; attempt++) {

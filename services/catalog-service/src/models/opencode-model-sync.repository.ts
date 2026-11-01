@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { ConflictException } from '@nestjs/common';
-import type { IOpenCodeModelCandidate, IOpenCodeModelScan } from '../../../shared/opencode-model-scan.cjs';
+import type { IOpenCodeModelCandidate, TOpenCodeModelScan } from '../../../shared/opencode-model-scan.cjs';
 import { nextModelRevision, saveModelVersion, type IModelRow } from './model-history';
 import { validateModelCreate } from './model-validation';
 import { remoteModelBaseUrl } from './remote-model-validation';
@@ -11,12 +11,12 @@ import { securityEvent } from '../access/security-events';
 import { resolveOpenCodeIdentity, saveOpenCodeIdentity } from './opencode-model-identity';
 export { openCodeIdentity } from './opencode-model-identity';
 
-export interface OpenCodeSyncSettings {
+export interface IOpenCodeSyncSettings {
     revision: number;
     enabled: boolean;
     transferCredentials: boolean;
 }
-export const defaultOpenCodeSyncSettings: OpenCodeSyncSettings = {
+export const defaultOpenCodeSyncSettings: IOpenCodeSyncSettings = {
     revision: 0,
     enabled: true,
     transferCredentials: false,
@@ -70,7 +70,7 @@ const incomplete = new Set([
 /** Source updates are atomic; only the originating computer may update an untouched auto-owned connection. */
 export class OpenCodeModelSyncRepository {
     constructor(readonly pool: Pool) {}
-    async settings(id: string, db: Pick<PoolClient, 'query'> = this.pool): Promise<OpenCodeSyncSettings> {
+    async settings(id: string, db: Pick<PoolClient, 'query'> = this.pool): Promise<IOpenCodeSyncSettings> {
         const row = (
             await db.query<{ revision: number; enabled: boolean; transfer_credentials: boolean }>(
                 'SELECT * FROM opencode_model_sync_settings WHERE device_id=$1',
@@ -104,8 +104,8 @@ export class OpenCodeModelSyncRepository {
     }
     async sync(
         device: { id: string; email: string },
-        scan: IOpenCodeModelScan,
-        settings: OpenCodeSyncSettings,
+        scan: TOpenCodeModelScan,
+        settings: IOpenCodeSyncSettings,
         credentials: Record<string, string>,
         authorize: (db: PoolClient) => Promise<void>,
     ) {

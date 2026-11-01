@@ -18,12 +18,21 @@ export function readWorkspaceRagConfiguration({ global, workspace }) {
     const merge = (base, override) => {
         const value = { ...base };
         for (const [key, next] of Object.entries(override)) {
-            value[key] = next && typeof next === 'object' && !Array.isArray(next)
-                && value[key] && typeof value[key] === 'object' && !Array.isArray(value[key]) ? merge(value[key], next) : next;
+            value[key] =
+                next &&
+                typeof next === 'object' &&
+                !Array.isArray(next) &&
+                value[key] &&
+                typeof value[key] === 'object' &&
+                !Array.isArray(value[key])
+                    ? merge(value[key], next)
+                    : next;
         }
         return value;
     };
-    return [global, workspace].filter(Boolean).reduce((value, file) => merge(value, readProjectRagConfiguration(file)), {});
+    return [global, workspace]
+        .filter(Boolean)
+        .reduce((value, file) => merge(value, readProjectRagConfiguration(file)), {});
 }
 
 /** Сохраняет конфиг проекта; новый проект использует локальную модель без дополнительных моделей. */
@@ -34,11 +43,27 @@ export function managedRagConfiguration(config, rawConfiguration = {}, root) {
     managed.embedding = { ...managed.embedding, ...managedEmbeddingConfiguration(raw.embedding) };
     if (managed.embedding.provider === 'openai' && !managed.embedding.apiKey) {
         let url;
-        try { url = new URL(managed.embedding.baseUrl); } catch { throw new Error('Проверьте адрес embedding-модели в настройках OpenCodeRAG.'); }
-        if (url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && url.port === '11435'
-            && url.pathname.replace(/\/+$/, '') === '/v1' && !url.username && !url.password && !url.search && !url.hash) managed.embedding.apiKey = 'local';
+        try {
+            url = new URL(managed.embedding.baseUrl);
+        } catch {
+            throw new Error('Проверьте адрес embedding-модели в настройках OpenCodeRAG.');
+        }
+        if (
+            url.protocol === 'http:' &&
+            ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) &&
+            url.port === '11435' &&
+            url.pathname.replace(/\/+$/, '') === '/v1' &&
+            !url.username &&
+            !url.password &&
+            !url.search &&
+            !url.hash
+        )
+            managed.embedding.apiKey = 'local';
     }
-    managed.openCode = { ...managed.openCode, autoIndex: { ...managed.openCode.autoIndex, enabled: raw.openCode?.autoIndex?.enabled ?? true } };
+    managed.openCode = {
+        ...managed.openCode,
+        autoIndex: { ...managed.openCode.autoIndex, enabled: raw.openCode?.autoIndex?.enabled ?? true },
+    };
     for (const name of ['description', 'imageDescription', 'decision', 'reranking']) {
         managed[name] = { ...managed[name], enabled: raw[name]?.enabled ?? false };
     }

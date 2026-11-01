@@ -1,10 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash, createHmac } from 'node:crypto';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import type { IRemoteConnectionRow } from '../models/remote-connection.repository';
 import { remoteModelBaseUrl } from '../models/remote-model-validation';
 import { canStoreModelCredential, openModelCredential, sealModelCredential } from '../models/remote-model-secret';
-import type { RemoteAuthMode, RemoteProviderMutation } from './remote-provider.types';
+import type { TRemoteAuthMode, IRemoteProviderMutation } from './remote-provider.interfaces';
 
 export const providerFence = (modelId: string) => 'neurocenter:remote-provider:model:' + modelId;
 export const credentialFence = (email: string, providerId: string) =>
@@ -24,8 +24,8 @@ export const remoteProviderId = (model: Pick<IModel, 'id' | 'runtime'>, row: Pic
         )
         .digest('hex');
 export function remoteAuthMode(
-    row: Pick<IRemoteConnectionRow, 'credential_kind'> & { auth_mode?: RemoteAuthMode | null },
-): RemoteAuthMode {
+    row: Pick<IRemoteConnectionRow, 'credential_kind'> & { auth_mode?: TRemoteAuthMode | null },
+): TRemoteAuthMode {
     return row.auth_mode ?? (row.credential_kind === 'none' ? 'none' : 'required');
 }
 export const sealUserCredential = (
@@ -48,7 +48,7 @@ export function remoteMutationHash(
     modelId: string,
     email: string,
     action: 'save' | 'delete',
-    input: RemoteProviderMutation,
+    input: IRemoteProviderMutation,
     environment: NodeJS.ProcessEnv = process.env,
 ): string {
     const bytes = JSON.stringify([modelId, email, action, input]);
@@ -60,7 +60,7 @@ export function remoteMutationHash(
         .update(bytes)
         .digest('hex');
 }
-export function remoteProviderMutation(raw: unknown, action: 'save' | 'delete'): RemoteProviderMutation {
+export function remoteProviderMutation(raw: unknown, action: 'save' | 'delete'): IRemoteProviderMutation {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
         throw new BadRequestException('Передайте ревизии личного доступа и ключ повтора.');
     const value = raw as Record<string, unknown>,

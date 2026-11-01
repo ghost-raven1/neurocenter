@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { PhysicalDirectory } from './workspace-instance.model.js';
+import type { IPhysicalDirectory } from './workspace-instance.model.js';
 
 /** Путь и inode проверяются вместе: новый каталог по прежнему адресу не получает старую идентичность. */
-export async function workspaceDirectory(folder: string): Promise<{ realpath: string; physical: PhysicalDirectory }> {
+export async function workspaceDirectory(folder: string): Promise<{ realpath: string; physical: IPhysicalDirectory }> {
     try {
         const realpath = await fs.realpath(folder);
         const stat = await fs.lstat(folder, { bigint: true });

@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { assertInternal } from '../access/access.controller';
 import { ProjectTextKnowledge } from './project-text.service';
-import type { TextUpload, TextSearch } from '../../../shared/project-text-knowledge.cjs';
+import type { ITextUpload, ITextSearch } from '../../../shared/project-text-knowledge.cjs';
 
 /** Browser project authority is independent from the optional semantic embedding service. */
 @Controller('api/projects/:id/knowledge/text')
@@ -11,7 +11,7 @@ export class ProjectTextController {
     @Get() state(@Req() req: Request, @Param('id') id: string) {
         return this.text.state(req, id);
     }
-    @Post('documents') upload(@Req() req: Request, @Param('id') id: string, @Body() input: TextUpload) {
+    @Post('documents') upload(@Req() req: Request, @Param('id') id: string, @Body() input: ITextUpload) {
         return this.text.upload(req, id, input);
     }
     @Get('requests/:key') async receipt(
@@ -22,7 +22,7 @@ export class ProjectTextController {
     ) {
         res.json(await this.text.receipt(req, id, key));
     }
-    @Post('search') search(@Req() req: Request, @Param('id') id: string, @Body() input: TextSearch) {
+    @Post('search') search(@Req() req: Request, @Param('id') id: string, @Body() input: ITextSearch) {
         return this.text.search(req, id, input);
     }
 }

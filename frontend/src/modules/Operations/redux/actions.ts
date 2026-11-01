@@ -8,9 +8,8 @@ import type { IOperationListParams } from '../../../core/api/interfaces';
  *
  * @param {IOperationListParams} params - пагинация + фильтры
  */
-export const fetchOperations = createAsyncThunk(
-    'operations/fetchOperations',
-    async (params: IOperationListParams) => bffApi.listOperations(params),
+export const fetchOperations = createAsyncThunk('operations/fetchOperations', async (params: IOperationListParams) =>
+    bffApi.listOperations(params),
 );
 
 /**

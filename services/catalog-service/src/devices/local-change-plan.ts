@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 
-export interface LocalChangeFile {
+export interface ILocalChangeFile {
     path: string;
     operation: 'add' | 'replace' | 'remove';
     beforeSha256: string | null;
@@ -10,7 +10,7 @@ export interface LocalChangeFile {
     afterBytes: number;
     binary: boolean;
 }
-export interface LocalChangePlan {
+export interface ILocalChangePlan {
     schemaVersion: 1;
     planId: string;
     revision: 1;
@@ -25,10 +25,10 @@ export interface LocalChangePlan {
     checkedAt: string;
     expiresAt: string;
     status: 'prepared';
-    files: LocalChangeFile[];
+    files: ILocalChangeFile[];
     runtimeRepairRequired?: true;
 }
-interface Source {
+interface ISource {
     projectId: string | null;
     bindingId?: string;
     instanceId?: string;
@@ -61,8 +61,8 @@ const iso = (value: unknown): value is string =>
     typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 
 /** Сервер принимает только ограниченные метаданные; исходники и полный diff остаются в MCP. */
-export function assertLocalChangePlan(value: unknown, source: Source): asserts value is LocalChangePlan {
-    const plan = value as LocalChangePlan | null;
+export function assertLocalChangePlan(value: unknown, source: ISource): asserts value is ILocalChangePlan {
+    const plan = value as ILocalChangePlan | null;
     const fail = () => {
         throw new ConflictException(
             'План изменений не соответствует установленному пакету или содержит недопустимые данные.',
@@ -136,7 +136,7 @@ export function assertLocalChangePlan(value: unknown, source: Source): asserts v
 
 export async function saveLocalChangePlan(
     client: PoolClient,
-    job: { id: string; device_id: string; project_id: string | null; email: string; payload: Source },
+    job: { id: string; device_id: string; project_id: string | null; email: string; payload: ISource },
     plan: unknown,
     purpose: 'repair' | 'adopt' | 'restore-local' = 'repair',
     sourceId?: string,

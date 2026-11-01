@@ -8,7 +8,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Client, Pool } from 'pg';
 import { PluginRepository } from '../publication/plugin-repository';
 import { OperationRepository } from '../operations/operation-repository';
-import type { IOperationCreate, IOperationReadScope, IOperationStatePatch } from '../operations/operation.types';
+import type { IOperationCreate, IOperationReadScope, IOperationStatePatch } from '../operations/operation.interfaces';
 import { validateProjectSettings } from './project-validation';
 import { normalizeProjectQuota } from './project-quota';
 import { ProjectSettingsRepository, type IProjectSettingsPatch } from './project-settings-repository';

@@ -8,9 +8,9 @@ import {
     normalizeRoleMcpDiscovery,
     normalizeRoleMcpOutput,
     boundedMcpJson,
-    type RoleMcpSessionContext,
-    type RoleMcpCallContext,
-    type RoleMcpExecutionResult,
+    type IRoleMcpSessionContext,
+    type IRoleMcpCallContext,
+    type TRoleMcpExecutionResult,
 } from '../../../../shared/system-role-mcp.cjs';
 import type { McpHostService } from '../mcp-host/host';
 import { roleHostedPackage } from './package';
@@ -73,8 +73,8 @@ export class SystemRoleMcpGatewayController {
     private async receipt(
         callId: string,
         proof: string,
-        result: RoleMcpExecutionResult,
-    ): Promise<RoleMcpExecutionResult> {
+        result: TRoleMcpExecutionResult,
+    ): Promise<TRoleMcpExecutionResult> {
         const signal = AbortSignal.timeout(5000),
             body = { callId, proof, result };
         for (let attempt = 0; attempt < 2; attempt++) {
@@ -93,7 +93,7 @@ export class SystemRoleMcpGatewayController {
         @Body() body: unknown,
         @Req() req: Request,
         @Res({ passthrough: true }) res: Response,
-    ): Promise<RoleMcpExecutionResult> {
+    ): Promise<TRoleMcpExecutionResult> {
         this.token(token);
         if (!object(body) || Object.keys(body).join(',') !== 'callId' || !uuid(body.callId))
             throw new ForbiddenException();
@@ -110,8 +110,8 @@ export class SystemRoleMcpGatewayController {
         try {
             await requireFeaturesEnabled(['system_role_mcp', 'tool_catalog'], process.env, globalThis.fetch, signal);
             const context = (await this.request('context', { callId: body.callId }, signal)) as {
-                session: RoleMcpSessionContext;
-                call: RoleMcpCallContext;
+                session: IRoleMcpSessionContext;
+                call: IRoleMcpCallContext;
             };
             if (
                 !context?.session ||
@@ -152,7 +152,7 @@ export class SystemRoleMcpGatewayController {
             });
         } catch {
             if (claim) await this.host.closeOperationSession(claim).catch(() => {});
-            const result: RoleMcpExecutionResult = {
+            const result: TRoleMcpExecutionResult = {
                 state: dispatched ? 'unknown' : 'failed',
                 message: dispatched
                     ? 'Результат вызова MCP не подтверждён. Повтор не выполнен.'

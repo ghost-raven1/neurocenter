@@ -1,10 +1,10 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { IAccessActor } from '../access/access.model';
-import type { Device, DeviceStore } from '../devices/device-store';
+import type { IDevice, DeviceStore } from '../devices/device-store';
 import type { DeviceInstallations } from '../devices/device-installations';
 import type { InstallPlans } from '../devices/install-plans';
-import type { Job, JobInput } from '../devices/device-job.model';
+import type { IJob, IJobInput } from '../devices/device-job.model';
 import {
     assertExpectedBinding,
     assertManagedBridge,
@@ -18,14 +18,14 @@ import {
     MEMORY_SYNC_CAPABILITY,
     memoryRecipeSupported,
     normalizeMemorySyncPayload,
-    type MemorySyncPayload,
+    type IMemorySyncPayload,
 } from '../../../shared/project-learning-memory-sync.cjs';
 import type { IPackage } from '../catalog/bundle-package';
 
-type Owners = { store: DeviceStore; installations: DeviceInstallations; plans: InstallPlans };
+type TOwners = { store: DeviceStore; installations: DeviceInstallations; plans: InstallPlans };
 const changed = () =>
     new ConflictException('Знания, привязка или установка Memory изменились. Обновите мастер перед продолжением.');
-function binding(device: Device, projectId: string, expected: unknown, instance: unknown) {
+function binding(device: IDevice, projectId: string, expected: unknown, instance: unknown) {
     assertManagedBridge(device.report);
     assertLocalFeature(device.report, MEMORY_SYNC_CAPABILITY);
     const bindingId = managedBinding(device.report, projectId);
@@ -36,7 +36,7 @@ function binding(device: Device, projectId: string, expected: unknown, instance:
     if (!found?.instanceId || found.instanceId !== instance) throw changed();
     return { bindingId, instanceId: found.instanceId };
 }
-async function context(owners: Owners, actor: IAccessActor, projectId: string) {
+async function context(owners: TOwners, actor: IAccessActor, projectId: string) {
     const repository = new LearningRepository(owners.store.pool);
     return repository.read(actor, projectId, (db) => repository.context(db, projectId));
 }
@@ -48,7 +48,7 @@ function supported(pkg: IPackage) {
 }
 
 /** New work captures an approved snapshot and an exact installed target; graph contents stay on the device. */
-export async function memorySyncJobPayload(owners: Owners, device: Device, input: JobInput, actor: IAccessActor) {
+export async function memorySyncJobPayload(owners: TOwners, device: IDevice, input: IJobInput, actor: IAccessActor) {
     if (input.kind !== MEMORY_SYNC_JOB) return;
     const allowed = [
         'kind',
@@ -80,7 +80,7 @@ export async function memorySyncJobPayload(owners: Owners, device: Device, input
     const bundle = await context(owners, actor, input.projectId);
     if (bundle.revision !== input.expectedLearningRevision || bundle.digest !== input.expectedLearningDigest)
         throw changed();
-    const memory: MemorySyncPayload = normalizeMemorySyncPayload({
+    const memory: IMemorySyncPayload = normalizeMemorySyncPayload({
         schemaVersion: 1,
         projectId: input.projectId,
         ...target,
@@ -98,12 +98,12 @@ export async function memorySyncJobPayload(owners: Owners, device: Device, input
 
 /** Every protected context request repeats the snapshot, target and immutable package checks. */
 export async function assertMemorySyncJob(
-    owners: Owners,
-    device: Device,
-    job: Pick<Job, 'kind' | 'role' | 'email' | 'project_id' | 'payload'>,
+    owners: TOwners,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'role' | 'email' | 'project_id' | 'payload'>,
 ) {
     if (job.kind !== MEMORY_SYNC_JOB) return;
-    let memory: MemorySyncPayload;
+    let memory: IMemorySyncPayload;
     try {
         memory = normalizeMemorySyncPayload(job.payload.memory);
     } catch {

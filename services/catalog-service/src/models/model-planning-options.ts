@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg';
-import type { IModel } from './model.types';
+import type { IModel } from './model.interfaces';
 
-export interface ModelPlanningOptions {
+export interface IModelPlanningOptions {
     contextWindow?: number;
     maxOutputTokens?: number;
 }
@@ -10,10 +10,10 @@ export interface ModelPlanningOptions {
 export async function modelPlanningOptions(
     db: Pick<PoolClient, 'query'>,
     model: IModel,
-): Promise<ModelPlanningOptions> {
+): Promise<IModelPlanningOptions> {
     if (model.runtime === 'device-codex') {
         const row = (
-            await db.query<{ options: ModelPlanningOptions }>(
+            await db.query<{ options: IModelPlanningOptions }>(
                 `SELECT expected_candidate->'options' AS options FROM model_device_connections
             WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL`,
                 [model.id, model.verificationSha256 ?? null],
@@ -22,7 +22,7 @@ export async function modelPlanningOptions(
         return { contextWindow: row?.options?.contextWindow };
     }
     const row = (
-        await db.query<{ options: ModelPlanningOptions }>(
+        await db.query<{ options: IModelPlanningOptions }>(
             'SELECT options FROM model_remote_connections WHERE model_id=$1 AND semantic_sha=$2 AND revoked_at IS NULL ORDER BY revision DESC LIMIT 1',
             [model.id, model.verificationSha256 ?? null],
         )

@@ -8,12 +8,12 @@ export const CONFIGURATION_KINDS = [
     'get-mcp-configuration-status',
 ];
 export const configurationRead = (kind: string) => kind === 'get-mcp-configuration-status';
-export interface ConfigurationRevision {
+export interface IConfigurationRevision {
     assetId: string;
     manifest: string;
     revision: string | null;
 }
-export interface ConfigurationTuple {
+export interface IConfigurationTuple {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -24,13 +24,13 @@ export interface ConfigurationTuple {
     manifest: string;
     schemaDigest: string;
 }
-export interface ConfigurationStatus extends ConfigurationTuple {
+export interface IConfigurationStatus extends IConfigurationTuple {
     ready: boolean;
     missingFieldIds: string[];
     revision: string | null;
     checkedAt: string;
 }
-interface Source {
+interface ISource {
     projectId: string | null;
     bindingId?: unknown;
     instanceId?: unknown;
@@ -62,9 +62,9 @@ export function configurationSchemaDigest(pkg: IPackage): string | undefined {
 export function assertConfigurationReport(
     kind: string,
     value: unknown,
-    source: Source,
+    source: ISource,
     failed = false,
-): asserts value is ConfigurationTuple & Record<string, unknown> {
+): asserts value is IConfigurationTuple & Record<string, unknown> {
     const fail = () => {
         throw new ConflictException(
             'Результат настройки содержит неподдерживаемые данные или относится к другой установке.',
@@ -127,7 +127,7 @@ export function assertConfigurationReport(
 }
 
 /** Ревизии привязаны ко всем настраиваемым MCP внутри одобренного графа. */
-export function validConfigurationRevisions(value: unknown): value is ConfigurationRevision[] {
+export function validConfigurationRevisions(value: unknown): value is IConfigurationRevision[] {
     return (
         Array.isArray(value) &&
         value.length <= 20 &&

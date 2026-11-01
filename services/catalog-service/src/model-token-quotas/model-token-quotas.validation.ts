@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { normalizeEmail } from '../access/access.model';
-import { MODEL_TOKEN_QUOTA_MAX_PERIOD_MS, type ModelTokenQuotaInput } from './model-token-quotas.types';
+import { MODEL_TOKEN_QUOTA_MAX_PERIOD_MS } from './model-token-quotas.constants';
+import { type IModelTokenQuotaInput } from './model-token-quotas.interfaces';
 
 export const quotaRequestKey = (value: unknown): string => {
     if (
@@ -19,7 +20,7 @@ export function quotaUserEmail(value: unknown): string {
     }
 }
 /** Duration is a token-budget policy, independent from the short request-rate window. */
-export function modelTokenQuotaInput(raw: unknown): ModelTokenQuotaInput {
+export function modelTokenQuotaInput(raw: unknown): IModelTokenQuotaInput {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
         throw new BadRequestException('Передайте персональную квоту модели.');
     const v = raw as Record<string, unknown>,

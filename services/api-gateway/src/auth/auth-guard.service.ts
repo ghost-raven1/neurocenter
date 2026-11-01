@@ -2,7 +2,9 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import type { Request } from 'express';
-import { IAuthPayload } from './interfaces';
+import type { IAuthMeResponse, IAuthPayload } from './interfaces';
+
+export type { IAuthPayload } from './interfaces';
 
 /**
  * Auth-guard gateway: единый источник истины — oauth2-bridge (`/auth/me`).

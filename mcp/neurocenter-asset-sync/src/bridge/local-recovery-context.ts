@@ -1,7 +1,7 @@
-import { verify, type Package } from './package.js';
-import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type InstallSet } from './install-set.js';
+import { verify, type IPackage } from './package.js';
+import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type IInstallSet } from './install-set.js';
 import path from 'node:path';
-import { assetBase, assetKey, receiptPath, removalReceipt, sameValue, type Receipt } from './installation-receipt.js';
+import { assetBase, assetKey, receiptPath, removalReceipt, sameValue, type IReceipt } from './installation-receipt.js';
 import { InstallationPlan } from './installation-plan.js';
 import { InstallationLedger, LEDGER_PATH } from './installation-ledger.js';
 import { repairReceipt } from './installation-repair.js';
@@ -10,7 +10,7 @@ import { LocalRecoveryError } from './local-recovery.model.js';
 import { expectedAdoptConnection } from './project-inventory-config.js';
 
 /** Клонируем закреплённый граф до await, чтобы внешняя мутация не меняла выбранные байты. */
-export function freezeRecoveryPackages(pkg: Package, set?: InstallSet) {
+export function freezeRecoveryPackages(pkg: IPackage, set?: IInstallSet) {
     pkg = structuredClone(pkg);
     set = set ? structuredClone(set) : undefined;
     verify(pkg);
@@ -24,8 +24,8 @@ export function freezeRecoveryPackages(pkg: Package, set?: InstallSet) {
     }
     return { pkg, packages: set?.packages ?? [pkg], manifest: set?.manifest ?? pkg.manifest.sha256 };
 }
-export type RecoveryPackages = ReturnType<typeof freezeRecoveryPackages>;
-export async function recoveryContext(projectId: string, root: string, frozen: RecoveryPackages) {
+export type TRecoveryPackages = ReturnType<typeof freezeRecoveryPackages>;
+export async function recoveryContext(projectId: string, root: string, frozen: TRecoveryPackages) {
     const bindingId = await projectBindingId(projectId);
     const instanceId = await projectInstanceId(projectId);
     const bases = frozen.packages.map((member) => assetBase(member).normalize('NFC').toLowerCase());
@@ -74,7 +74,7 @@ export async function recoveryContext(projectId: string, root: string, frozen: R
     if (owner ? owner.manifest !== frozen.manifest || !sameValue(refs, sortedRefs(frozen.packages)) : !leaf) {
         throw new LocalRecoveryError('different-installation');
     }
-    const receipts = new Map<string, Receipt>();
+    const receipts = new Map<string, IReceipt>();
     for (const member of frozen.packages) {
         const raw = await plan.read(receiptPath(member));
         if (!raw) {
@@ -106,7 +106,7 @@ export async function recoveryContext(projectId: string, root: string, frozen: R
             }
             examined.add(item.key);
             const raw = await plan.read('.opencode/neurocenter/receipts/' + item.key + '.json');
-            const other = raw ? (JSON.parse(raw) as Receipt) : undefined;
+            const other = raw ? (JSON.parse(raw) as IReceipt) : undefined;
             if (!other?.files || typeof other.files !== 'object' || Array.isArray(other.files)) {
                 throw new LocalRecoveryError('different-installation');
             }
@@ -147,4 +147,4 @@ export async function recoveryContext(projectId: string, root: string, frozen: R
         );
     return { projectId, root, bindingId, instanceId, plan, receipts, shared, assertIdentity, ...frozen };
 }
-export type RecoveryContext = Awaited<ReturnType<typeof recoveryContext>>;
+export type TRecoveryContext = Awaited<ReturnType<typeof recoveryContext>>;

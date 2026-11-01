@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { load } from 'js-yaml';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { ProbeError } from './model.js';
 
 /** Проверяет описание и локальные ссылки скилла, не импортируя и не запуская его ресурсы. */
-export function checkSkill(pkg: Package): void {
+export function checkSkill(pkg: IPackage): void {
     const file = pkg.files.find((item) => item.path === 'SKILL.md');
     if (!file || file.encoding) {
         throw new ProbeError('needs_configuration', 'invalid-skill');

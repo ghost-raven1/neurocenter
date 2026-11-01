@@ -1,5 +1,5 @@
-import type { ModelDispatchMetrics } from './model-dispatch-metrics';
-import type { ModelTokenQuotaEstimate } from '../model-token-quotas/model-token-quotas.types';
+import type { IModelDispatchMetrics } from './model-dispatch-metrics';
+import type { IModelTokenQuotaEstimate } from '../model-token-quotas/model-token-quotas.interfaces';
 import { quotaUserEmail } from '../model-token-quotas/model-token-quotas.validation';
 import { quotaUnavailable } from '../model-token-quotas/quota-database';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
@@ -15,23 +15,23 @@ import type { Request } from 'express';
 import { createPool } from '../database/pool';
 import { projectLevel } from '../access/access.model';
 import { ModelsService } from '../models/models.service';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { chatUsage } from '../model-chat/chat-context';
 import { currentModelUsage } from './model-usage.context';
 import { ModelUsageRepository } from './model-usage.repository';
 import { modelUsageFilter } from './model-usage.query';
 import { createModelDispatchMetrics, withModelDispatchMetrics } from './model-dispatch-metrics';
 import {
-    type ModelUsageQuery,
-    type ModelUsageRecorder,
-    type ModelUsageResult,
-    type UsageScope,
-    type UsageTerminal,
-} from './model-usage.types';
+    type IModelUsageQuery,
+    type IModelUsageRecorder,
+    type IModelUsageResult,
+    type IUsageScope,
+    type IUsageTerminal,
+} from './model-usage.interfaces';
 
 /** A pending receipt precedes paid work; failed terminal write-back never repeats a completed provider call. */
 @Injectable()
-export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnApplicationShutdown {
+export class ModelUsageService implements IModelUsageRecorder, OnModuleInit, OnApplicationShutdown {
     // Server limits cancel lock/execution waits; pg-pool discards a client after its later read deadline.
     readonly pool = createPool(
         {
@@ -48,7 +48,7 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
     readonly workerId = randomUUID();
     private readonly shutdown = new AbortController();
     private readonly active = new Map<string, Promise<unknown>>();
-    private readonly writebacks = new Map<string, UsageTerminal>();
+    private readonly writebacks = new Map<string, IUsageTerminal>();
     private timer?: NodeJS.Timeout;
     private maintenance?: Promise<void>;
     constructor(private readonly models: ModelsService) {}
@@ -86,7 +86,7 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
     }
     /** One unavailable receipt stays queued without preventing the other known outcomes from being recorded. */
     private async flush(deadline = Infinity): Promise<void> {
-        const batch: [string, UsageTerminal][] = [];
+        const batch: [string, IUsageTerminal][] = [];
         for (const entry of this.writebacks) {
             batch.push(entry);
             if (batch.length === 5) break;
@@ -123,8 +123,8 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
     /** A quota uses the same durable usage UUID and never installs a second paid-attempt ledger. */
     async reserveQuota(
         model: IModel,
-        estimate: ModelTokenQuotaEstimate,
-        metrics: ModelDispatchMetrics | undefined,
+        estimate: IModelTokenQuotaEstimate,
+        metrics: IModelDispatchMetrics | undefined,
         signal?: AbortSignal,
     ): Promise<boolean> {
         if (!metrics?.usageId || metrics.workerId !== this.workerId) throw quotaUnavailable();
@@ -138,11 +138,15 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
             signal,
         );
     }
-    async claimQuota(metrics: ModelDispatchMetrics | undefined, enforce: boolean, signal?: AbortSignal): Promise<void> {
+    async claimQuota(
+        metrics: IModelDispatchMetrics | undefined,
+        enforce: boolean,
+        signal?: AbortSignal,
+    ): Promise<void> {
         if (!metrics?.usageId || metrics.workerId !== this.workerId) throw quotaUnavailable();
         await this.repository.claimQuota(this.workerId, metrics.usageId, enforce, signal);
     }
-    async releaseQuota(metrics: ModelDispatchMetrics | undefined): Promise<void> {
+    async releaseQuota(metrics: IModelDispatchMetrics | undefined): Promise<void> {
         if (metrics?.usageId && metrics.workerId === this.workerId)
             await this.repository.releaseQuota(this.workerId, metrics.usageId);
     }
@@ -167,7 +171,7 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
         metrics.usageId = id;
         metrics.workerId = this.workerId;
         const started = performance.now();
-        let terminal: UsageTerminal = { status: 'error', inputTokens: null, outputTokens: null, latencyMs: 0 };
+        let terminal: IUsageTerminal = { status: 'error', inputTokens: null, outputTokens: null, latencyMs: 0 };
         metrics.progress = async (active) => {
             try {
                 await this.repository.dispatchProgress(
@@ -246,7 +250,7 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
             this.active.delete(id);
         }
     }
-    async report(req: Request, query: ModelUsageQuery): Promise<ModelUsageResult> {
+    async report(req: Request, query: IModelUsageQuery): Promise<IModelUsageResult> {
         if (req.headers['x-neurocenter-device-id'])
             throw new ForbiddenException('Журнал доступен пользователю в интерфейсе.');
         const actor = await this.models.actor(req),
@@ -254,7 +258,7 @@ export class ModelUsageService implements ModelUsageRecorder, OnModuleInit, OnAp
         await requireFeaturesEnabled(['model_usage']);
         if (!['Главный админ', 'Админ проекта', 'Разработчик'].includes(actor.activeRole))
             throw new ForbiddenException('Для просмотра журнала нужна рабочая роль.');
-        const scope: UsageScope = {
+        const scope: IUsageScope = {
             all: actor.activeRole === 'Главный админ',
             actor: actor.activeRole === 'Разработчик' ? actor.email : null,
             viewerEmail: actor.email,

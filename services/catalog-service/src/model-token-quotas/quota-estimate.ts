@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import {
     MODEL_TOKEN_QUOTA_DEFAULT_OUTPUT_ESTIMATE,
     MODEL_TOKEN_QUOTA_ESTIMATE_VERSION,
-    type ModelTokenQuotaEstimate,
-} from './model-token-quotas.types';
+} from './model-token-quotas.constants';
+import { type IModelTokenQuotaEstimate } from './model-token-quotas.interfaces';
 import { quotaCoverage } from './model-token-quotas.model';
 
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -14,7 +14,7 @@ export function estimateModelTokens(
     model: IModel,
     endpoint: 'chat' | 'embed',
     body: Record<string, unknown>,
-): ModelTokenQuotaEstimate {
+): IModelTokenQuotaEstimate {
     const bytes = Buffer.byteLength(JSON.stringify(body), 'utf8'),
         messages = Array.isArray(body.messages) ? body.messages.length : 0;
     const inputTokens = Math.max(1, Math.ceil(bytes / 2) + messages * 6 + 3),

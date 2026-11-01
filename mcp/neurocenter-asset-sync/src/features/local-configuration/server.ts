@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { randomBytes } from 'node:crypto';
 import { configurationPage } from './page.js';
 import { configurationStatus, readConfiguration, saveConfiguration } from './state.js';
-import type { ConfigurationContext } from './context.js';
+import type { TConfigurationContext } from './context.js';
 import { validateConfigurationValues } from './schema.js';
 import { projectLocalEmbeddingFields } from './project-local-embedding.js';
 const active = new Map<string, { expiresAt: string; close: () => void }>();
@@ -36,7 +36,7 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 /** Loopback живёт отдельно от очереди. Ни URL, ни токен, ни введённые данные не выходят на сервер площадки. */
 export async function startConfigurationSession(
-    context: ConfigurationContext,
+    context: TConfigurationContext,
     preparationId: string,
     expiresAt: string,
     authorizeSave: () => Promise<void>,

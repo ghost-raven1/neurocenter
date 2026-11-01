@@ -8,7 +8,18 @@
 export type TOperationState = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'CONFLICT';
 
 /** Тип операции. */
-export type TOperationType = 'UPLOAD' | 'VERIFY' | 'DOWNLOAD' | 'SYNC' | 'RELEASE' | 'DELETE' | 'INSTALL' | 'CATALOG' | 'PROJECT' | 'BUILD' | 'MODEL';
+export type TOperationType =
+    | 'UPLOAD'
+    | 'VERIFY'
+    | 'DOWNLOAD'
+    | 'SYNC'
+    | 'RELEASE'
+    | 'DELETE'
+    | 'INSTALL'
+    | 'CATALOG'
+    | 'PROJECT'
+    | 'BUILD'
+    | 'MODEL';
 
 /** Статус проекта. */
 export type TProjectState = 'ACTIVE' | 'ARCHIVED' | 'LOCKED';
@@ -49,7 +60,11 @@ export interface IRagProjectSummary {
     snapshotHash?: string | null;
 }
 
-export interface IRagIndexProfile { provider: string; model: string; dimension: number; }
+export interface IRagIndexProfile {
+    provider: string;
+    model: string;
+    dimension: number;
+}
 
 /** Детальная сводка develop-индекса RAG по projectKey. */
 export interface IRagSummary extends IRagProjectSummary {
@@ -57,7 +72,13 @@ export interface IRagSummary extends IRagProjectSummary {
 }
 
 /** Действующее ограничение полезных данных серверной базы знаний. */
-export interface IRagQuota {usedBytes:number;limitBytes:number;revision:number;maximumBytes:number;availableBytes:number;}
+export interface IRagQuota {
+    usedBytes: number;
+    limitBytes: number;
+    revision: number;
+    maximumBytes: number;
+    availableBytes: number;
+}
 
 /** Результат bootstrap-индексации (локальная LanceDB → develop-индекс pgvector). */
 export interface IRagBootstrapResult {
@@ -136,13 +157,6 @@ export interface IProjectListParams {
     query?: string;
 }
 
-/** Пин скилла в профиле. */
-export interface ISkillPin {
-    id: string;
-    version: number;
-    manifest: string;
-}
-
 /** Запись истории изменений скилла. */
 export interface ISkillHistoryEntry {
     version: number;
@@ -179,7 +193,11 @@ export interface ISkillMeta {
 }
 
 /** Ресурс версии скилла: текст UTF-8 или канонический base64. */
-export interface ISkillResource {path: string; content: string; encoding?: 'utf8' | 'base64';}
+export interface ISkillResource {
+    path: string;
+    content: string;
+    encoding?: 'utf8' | 'base64';
+}
 
 /** Скилл как файл: путь (без расширения), метаданные, markdown-тело. */
 export interface ISkillFile {
@@ -190,10 +208,21 @@ export interface ISkillFile {
 }
 
 /** Файл уже сохранён; подтверждение записи аудита может прийти позже. */
-export interface ISkillMutationReceipt { audit?: { state: 'pending' }; }
+export interface ISkillMutationReceipt {
+    audit?: { state: 'pending' };
+}
+
 export interface ISkillMutationResult extends ISkillFile, ISkillMutationReceipt {}
-export interface ISkillDeleteResult extends ISkillMutationReceipt { ok: true; path: string; }
-export interface ISkillDirectoryResult extends ISkillMutationReceipt { ok: true; path: string; }
+
+export interface ISkillDeleteResult extends ISkillMutationReceipt {
+    ok: true;
+    path: string;
+}
+
+export interface ISkillDirectoryResult extends ISkillMutationReceipt {
+    ok: true;
+    path: string;
+}
 
 /** Лёгкое представление скилла для списка. */
 export interface ISkillListSummary {
@@ -217,7 +246,9 @@ export interface ISkillCreateRequest {
     slug: string;
     name: string;
     body: string;
-    meta?: Partial<Pick<ISkillMeta, 'description' | 'projectId' | 'mcp' | 'plugins' | 'specialization' | 'tags' | 'dependencies'>>;
+    meta?: Partial<
+        Pick<ISkillMeta, 'description' | 'projectId' | 'mcp' | 'plugins' | 'specialization' | 'tags' | 'dependencies'>
+    >;
 }
 
 /** Параметры обновления скилла. */
@@ -226,7 +257,9 @@ export interface ISkillUpdateRequest {
     expectedVersion?: number;
     body?: string;
     name?: string;
-    meta?: Partial<Pick<ISkillMeta, 'description' | 'projectId' | 'mcp' | 'plugins' | 'specialization' | 'tags' | 'dependencies'>>;
+    meta?: Partial<
+        Pick<ISkillMeta, 'description' | 'projectId' | 'mcp' | 'plugins' | 'specialization' | 'tags' | 'dependencies'>
+    >;
     note?: string;
 }
 
@@ -254,15 +287,25 @@ export interface IOperation {
     startedAt: string | null;
     finishedAt: string | null;
     error: string | null;
-    systemRole?: {agentId:'agent-ai-admin'|'agent-autoconfigurator'|'agent-indexer'|'agent-packager'|'agent-coordinator';runId:string;phase:string};
+    systemRole?: {
+        agentId: 'agent-ai-admin' | 'agent-autoconfigurator' | 'agent-indexer' | 'agent-packager' | 'agent-coordinator';
+        runId: string;
+        phase: string;
+    };
     bridgeJob?: { kind: string; retrySupported: boolean; minimumLevel: number };
     actions?: {
-        executor: 'bridge'|'rag-reindex'|'model-hosting'|'tool-build'|'system-role'|'history'; digest: string;
-        retry: {supported:boolean;reason?:string}; cancel: {supported:boolean;reason?:string};
+        executor: 'bridge' | 'rag-reindex' | 'model-hosting' | 'tool-build' | 'system-role' | 'history';
+        digest: string;
+        retry: { supported: boolean; reason?: string };
+        cancel: { supported: boolean; reason?: string };
     };
 }
 
-export interface IOperationActionResult {operationId:string;state:TOperationState;message:string;}
+export interface IOperationActionResult {
+    operationId: string;
+    state: TOperationState;
+    message: string;
+}
 
 /** Детали операции. */
 export interface IOperationDetail extends IOperation {
@@ -281,8 +324,8 @@ export interface IOperationListParams {
 
 /** Событие аудита. */
 export interface IAuditEvent {
-    source?: 'operation'|'security';
-    details?: {before:unknown;after:unknown}|null;
+    source?: 'operation' | 'security';
+    details?: { before: unknown; after: unknown } | null;
     id: string;
     at: string;
     actor: string;
@@ -338,7 +381,10 @@ export interface IAiPluginVersion {
     author: string;
     note: string;
     createdAt: string;
-    metadata?: Pick<IAiPlugin, 'kind' | 'description' | 'compatibility' | 'tags' | 'origin' | 'revision' | 'dependencies'>;
+    metadata?: Pick<
+        IAiPlugin,
+        'kind' | 'description' | 'compatibility' | 'tags' | 'origin' | 'revision' | 'dependencies'
+    >;
 }
 
 /** Файл self-verified delivery-пакета. */
@@ -375,7 +421,7 @@ export interface IProjectAsset {
 /** Конфигурация подключения MCP/плагина (stdio/remote). */
 export interface IAiPluginConfig {
     /** Платформенные комплекты и схема локальных параметров проверяются при редактировании и сервером. */
-    extra?: {runtimeArtifacts?: unknown; localConfiguration?: unknown};
+    extra?: { runtimeArtifacts?: unknown; localConfiguration?: unknown };
     headers?: Record<string, string>;
     transport?: string;
     command?: string;
@@ -446,8 +492,6 @@ export interface ILocalProjectsImportResult {
     total: number;
     createdNames: string[];
 }
-
-
 
 /** Решение внешнего сервиса прав. */
 export interface IAccessDecision {

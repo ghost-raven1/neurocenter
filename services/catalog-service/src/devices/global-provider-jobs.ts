@@ -11,27 +11,27 @@ import {
     globalProvidersLimits,
 } from '../../../shared/opencode-local-providers.cjs';
 import { roleLevel } from '../access/access.model';
-import { digest, type Device } from './device-store';
-import type { Job, JobInput } from './device-job.model';
-import type { DeviceCompletion } from './device-completion';
+import { digest, type IDevice } from './device-store';
+import type { IJob, IJobInput } from './device-job.model';
+import type { IDeviceCompletion } from './device-completion';
 import { recordDeviceOperation } from './device-operations';
 
-type GlobalProviderJob = Pick<Job, 'kind' | 'payload' | 'project_id' | 'device_id' | 'email' | 'role'>;
-type Database = Pick<PoolClient, 'query'>;
+type TGlobalProviderJob = Pick<IJob, 'kind' | 'payload' | 'project_id' | 'device_id' | 'email' | 'role'>;
+type TDatabase = Pick<PoolClient, 'query'>;
 const kinds: readonly string[] = [OPENCODE_GLOBAL_PROVIDERS_READ_JOB, OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB];
 const minimum = (kind: string) => (kind === OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB ? 2 : 1);
 const capability = (_kind: string) => OPENCODE_GLOBAL_PROVIDERS_CAPABILITY;
 
 /** Receipt-only identity never starts work or reads a result; current credentials must bind an already terminal lease. */
 export async function globalProvidersReceiptIdentity(
-    db: Database,
+    db: TDatabase,
     token: unknown,
     id: string,
     lease: unknown,
-): Promise<Device | undefined> {
+): Promise<IDevice | undefined> {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token) || typeof lease !== 'string' || !lease) return;
     return (
-        await db.query<Device>(
+        await db.query<IDevice>(
             `SELECT device.* FROM bridge_devices device JOIN bridge_jobs job ON job.device_id=device.id
         WHERE device.token_hash=$1 AND job.id=$2 AND job.lease=$3 AND job.kind=ANY($4::text[]) AND job.email=device.email
         AND job.project_id IS NULL AND job.started_at IS NOT NULL AND job.state IN ('succeeded','failed','cancelled')`,
@@ -42,7 +42,7 @@ export async function globalProvidersReceiptIdentity(
 
 /** Match revoke's device-before-job lock order, including replay and cancellation; other kinds are unaffected. */
 export async function lockGlobalProvidersCompletionDevice(
-    db: Database,
+    db: TDatabase,
     deviceId: string,
     id: string,
     lease: string,
@@ -68,7 +68,7 @@ export function assertGlobalProvidersInput(input: unknown): void {
 }
 
 /** Read-only CLI observation belongs to an owned device, independent of a project or folder. */
-export function assertGlobalProvidersJob(device: Device, job: GlobalProviderJob): void {
+export function assertGlobalProvidersJob(device: IDevice, job: TGlobalProviderJob): void {
     if (!kinds.includes(job.kind)) return;
     if (
         job.project_id !== null ||
@@ -100,8 +100,8 @@ export function assertGlobalProvidersJob(device: Device, job: GlobalProviderJob)
 
 /** A browser selects a computer and a request identity; it never selects a local executable. */
 export function globalProvidersJobPayload(
-    device: Device,
-    input: JobInput,
+    device: IDevice,
+    input: IJobInput,
     role: string,
 ): Record<string, unknown> | undefined {
     if (!kinds.includes(input.kind)) return;
@@ -129,9 +129,9 @@ export function globalProvidersJobPayload(
 }
 
 /** Membership rows and their projects stay locked through the first completion's commit. */
-async function freshGlobalProvidersAccess(db: Database, job: GlobalProviderJob): Promise<Device> {
+async function freshGlobalProvidersAccess(db: TDatabase, job: TGlobalProviderJob): Promise<IDevice> {
     const device = (
-        await db.query<Device>(
+        await db.query<IDevice>(
             'SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR SHARE',
             [job.device_id, job.email],
         )
@@ -160,15 +160,15 @@ async function freshGlobalProvidersAccess(db: Database, job: GlobalProviderJob):
 }
 
 /** Called under the enqueue device lock, after exact receipt lookup and fresh feature checks. */
-export async function assertGlobalProvidersAdmission(db: Database, job: GlobalProviderJob): Promise<void> {
+export async function assertGlobalProvidersAdmission(db: TDatabase, job: TGlobalProviderJob): Promise<void> {
     if (kinds.includes(job.kind)) await freshGlobalProvidersAccess(db, job);
 }
 
 /** The final read fences a cancelled lease, revoked role and changed device after async checks. */
 export async function assertGlobalProvidersAuthority(
-    db: Database,
-    device: Device,
-    job: Job,
+    db: TDatabase,
+    device: IDevice,
+    job: IJob,
     requestToken?: string,
 ): Promise<void> {
     if (!kinds.includes(job.kind)) return;
@@ -218,9 +218,9 @@ export async function assertGlobalProvidersAuthority(
 
 /** Static messages and strict receipts prevent local process output from entering shared history. */
 export async function completeGlobalProviders(
-    db: Database,
-    job: GlobalProviderJob & { id: string; state: string; result: unknown },
-    input: DeviceCompletion,
+    db: TDatabase,
+    job: TGlobalProviderJob & { id: string; state: string; result: unknown },
+    input: IDeviceCompletion,
 ) {
     if (!kinds.includes(job.kind)) return;
     if (job.state === 'cancelled') return { ok: true as const, repeated: true, cancelled: true };
@@ -285,8 +285,8 @@ export async function completeGlobalProviders(
 
 /** A private window outlives its opening ACK; every operation obtains a fresh device/account/role permit. */
 export async function authorizeGlobalProvidersSession(
-    store: { pool: Database },
-    device: Device,
+    store: { pool: TDatabase },
+    device: IDevice,
     input: unknown,
     requireEnabled: () => Promise<unknown>,
     bearer: string,
@@ -304,7 +304,7 @@ export async function authorizeGlobalProvidersSession(
     )
         throw new BadRequestException('Разрешение принимает только сохранённое задание открытия.');
     const job = (
-        await store.pool.query<Job>(
+        await store.pool.query<IJob>(
             `SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3 AND kind=$4 AND project_id IS NULL AND state IN ('running','succeeded')`,
             [body.jobId, device.id, device.email, OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB],
         )

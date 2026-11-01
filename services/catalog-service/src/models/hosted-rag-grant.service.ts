@@ -1,17 +1,17 @@
 import { ConflictException, Injectable, type OnModuleInit } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
-import { DeviceStore, type Device } from '../devices/device-store';
+import { DeviceStore, type IDevice } from '../devices/device-store';
 import { DeviceInstallations } from '../devices/device-installations';
 import { InstallPlans } from '../devices/install-plans';
 import { assertRagInstallation } from '../devices/rag-installation-authority';
 import { readHostedRagGrant } from '../devices/hosted-rag-grants';
 import { backfillHostedRagGrants } from '../devices/hosted-rag-grant-backfill';
 import type { PoolClient } from 'pg';
-import type { Job } from '../devices/device-job.model';
+import type { IJob } from '../devices/device-job.model';
 import { ProjectEmbeddingService } from './project-embedding.service';
 import { readPinnedModel } from './model-history';
 import { assertProjectEmbeddingModel } from './project-embedding.validation';
-import type { IConfiguredProjectEmbedding, IDeviceEmbeddingContext } from './project-embedding.types';
+import type { IConfiguredProjectEmbedding, IDeviceEmbeddingContext } from './project-embedding.interfaces';
 
 /** Разрешение current и historical использует один путь с живыми проверками каждого batch. */
 @Injectable()
@@ -30,9 +30,9 @@ export class HostedRagGrantService implements OnModuleInit {
         })());
     }
     /** Использует ту же транзакцию: DDL блокировки не ждут чтения через второй pool connection. */
-    async validateMigration(job: Job, db: Pick<PoolClient, 'query'>): Promise<void> {
+    async validateMigration(job: IJob, db: Pick<PoolClient, 'query'>): Promise<void> {
         const device = (
-            await db.query<Device>(
+            await db.query<IDevice>(
                 'SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now()',
                 [job.device_id, job.email],
             )
@@ -69,7 +69,7 @@ export class HostedRagGrantService implements OnModuleInit {
     async onModuleInit() {
         await this.ready();
     }
-    async require(device: Device, input: IDeviceEmbeddingContext): Promise<IConfiguredProjectEmbedding> {
+    async require(device: IDevice, input: IDeviceEmbeddingContext): Promise<IConfiguredProjectEmbedding> {
         await this.ready();
         const grant = await readHostedRagGrant(this.devices.pool, device, input);
         await assertRagInstallation(

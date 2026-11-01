@@ -15,9 +15,9 @@ import { SkillAssetClient, type ISkillSnapshot } from './skill-adapter';
 import { authorizeImportActor } from './import-worker';
 import { securityEvent } from '../access/security-events';
 
-type Kind = 'mcp' | 'plugin' | 'skill' | 'model' | 'agent';
+type TKind = 'mcp' | 'plugin' | 'skill' | 'model' | 'agent';
 interface ITarget {
-    kind: Kind;
+    kind: TKind;
     id: string;
     name: string;
     version: number;
@@ -67,7 +67,7 @@ export class AssetManagementService implements OnModuleInit {
     async onModuleInit(): Promise<void> {
         await this.source.catalogReady();
     }
-    private target(raw: unknown): { kind: Kind; id: string } {
+    private target(raw: unknown): { kind: TKind; id: string } {
         const input = raw as Partial<ITarget>;
         if (
             !input ||
@@ -83,9 +83,9 @@ export class AssetManagementService implements OnModuleInit {
         if (input.kind === 'skill' && !/^common\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.id)) {
             throw new BadRequestException('Выберите общий скилл.');
         }
-        return input as { kind: Kind; id: string };
+        return input as { kind: TKind; id: string };
     }
-    private async snapshot(client: PoolClient, input: { kind: Kind; id: string }): Promise<IImpact> {
+    private async snapshot(client: PoolClient, input: { kind: TKind; id: string }): Promise<IImpact> {
         let target: ITarget;
         if (input.kind === 'skill') {
             const card = await this.skills.inspect(input.id);

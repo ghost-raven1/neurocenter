@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import type { BigIntStats } from 'node:fs';
 
 /** Содержимое и права получены из одного проверенного открытого файла. */
-export interface BoundedSnapshot {
+export interface IBoundedSnapshot {
     bytes: Buffer;
     fingerprint: string;
     mode: number;
@@ -12,7 +12,7 @@ export const fileFingerprint = (stat: BigIntStats): string =>
     [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(':');
 
 /** Чтение не открывает FIFO, не следует за leaf-симлинком и обнаруживает подмену inode/снимка. */
-export async function readBoundedSnapshot(file: string, maximum: number): Promise<BoundedSnapshot> {
+export async function readBoundedSnapshot(file: string, maximum: number): Promise<IBoundedSnapshot> {
     if (!Number.isSafeInteger(maximum) || maximum < 0) {
         throw new Error('Некорректный лимит чтения файла.');
     }

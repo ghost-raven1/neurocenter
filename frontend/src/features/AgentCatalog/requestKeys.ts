@@ -7,7 +7,10 @@ export function createAgentRequestKeys(generate: () => string = createBridgeRequ
         forRequest: (operation: string, body: unknown): string => {
             const fingerprint = JSON.stringify([operation, body]);
             let key = keys.get(fingerprint);
-            if (!key) { key = generate(); keys.set(fingerprint, key); }
+            if (!key) {
+                key = generate();
+                keys.set(fingerprint, key);
+            }
             return key;
         },
         clear: (): void => keys.clear(),

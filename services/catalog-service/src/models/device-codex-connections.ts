@@ -10,12 +10,12 @@ import type { PoolClient } from 'pg';
 import {
     DEVICE_CODEX_CAPABILITY,
     deviceCodexCandidateIdentity,
-    type DeviceCodexSource,
-    type DeviceCodexRequest,
+    type TDeviceCodexSource,
+    type IDeviceCodexRequest,
 } from '../../../shared/device-codex-inference.cjs';
 import type { IOpenCodeModelCandidate } from '../../../shared/opencode-model-scan.cjs';
 import { projectLevel, type IAccessActor } from '../access/access.model';
-import { DeviceStore, type Device } from '../devices/device-store';
+import { DeviceStore, type IDevice } from '../devices/device-store';
 import { DeviceArtifacts } from '../devices/device-artifacts';
 import { assertManagedBridge, managedBinding, assertPackageBridge } from '../devices/device-compatibility';
 import { assertLocalFeature } from '../devices/local-change-jobs';
@@ -26,18 +26,18 @@ import type { IPackage } from '../catalog/bundle-package';
 import { ModelsService } from './models.service';
 import { modelFromRow, saveModelVersion, type IModelRow } from './model-history';
 import { projectEmbeddingPin } from './project-embedding.validation';
-import type { IModel } from './model.types';
-type Db = Pick<PoolClient, 'query'>;
-export interface DeviceCodexConnection {
+import type { IModel } from './model.interfaces';
+type TDb = Pick<PoolClient, 'query'>;
+export interface IDeviceCodexConnection {
     model_id: string;
     device_id: string;
     owner_email: string;
     revision: number;
-    source: DeviceCodexSource;
+    source: TDeviceCodexSource;
     expected_candidate: unknown;
     connector_package: IPackage;
     semantic_sha: string;
-    options: DeviceCodexRequest['options'];
+    options: IDeviceCodexRequest['options'];
     revoked_at: unknown;
 }
 /** Owns immutable device/model identity and non-inference availability checks. */
@@ -47,9 +47,9 @@ export class DeviceCodexConnections {
         private readonly devices: DeviceStore,
         private readonly artifacts: DeviceArtifacts,
     ) {}
-    async read(id: string, db: Db = this.models.pool): Promise<DeviceCodexConnection> {
+    async read(id: string, db: TDb = this.models.pool): Promise<IDeviceCodexConnection> {
         const row = (
-            await db.query<DeviceCodexConnection>(
+            await db.query<IDeviceCodexConnection>(
                 'SELECT * FROM model_device_connections WHERE model_id=$1 AND revoked_at IS NULL',
                 [id],
             )
@@ -61,12 +61,12 @@ export class DeviceCodexConnections {
         return row;
     }
     async assertCurrent(
-        connection: DeviceCodexConnection,
+        connection: IDeviceCodexConnection,
         actor: IAccessActor,
         projectId: string | null,
         model: IModel,
-        db: Db = this.models.pool,
-    ): Promise<Device> {
+        db: TDb = this.models.pool,
+    ): Promise<IDevice> {
         if (connection.owner_email !== actor.email)
             throw new ForbiddenException('Codex доступен только владельцу авторизации на подключённом компьютере.');
         const claims = await this.devices.access.claims(actor.email);
@@ -109,7 +109,7 @@ export class DeviceCodexConnections {
         )
             throw new ConflictException('Модель больше не назначена проекту.');
         const device = (
-            await db.query<Device>(
+            await db.query<IDevice>(
                 `SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>clock_timestamp()
    AND (paused_until IS NULL OR paused_until<clock_timestamp()) AND last_seen>clock_timestamp()-interval '2 minutes' FOR SHARE`,
                 [connection.device_id, actor.email],
@@ -162,9 +162,9 @@ export class DeviceCodexConnections {
     }
     async importModel(
         req: Request,
-        device: Device,
+        device: IDevice,
         candidate: IOpenCodeModelCandidate,
-        source: DeviceCodexSource,
+        source: TDeviceCodexSource,
         projectId: string | null,
         name: string,
         expiresAt: string,
@@ -188,7 +188,7 @@ export class DeviceCodexConnections {
             throw new BadRequestException(
                 'Codex не поддерживает перенос температуры, topP и лимита ответа. Удалите эти параметры в OpenCode и прочитайте конфигурацию заново.',
             );
-        const options: DeviceCodexRequest['options'] = {
+        const options: IDeviceCodexRequest['options'] = {
             store: false,
             ...(supplied.reasoningEffort === undefined ? {} : { reasoningEffort: supplied.reasoningEffort }),
         };

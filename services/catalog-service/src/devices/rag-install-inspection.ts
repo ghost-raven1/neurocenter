@@ -7,10 +7,10 @@ import { verifyPackage, type IPackage } from '../catalog/bundle-package';
 import { supportsHostedRag } from './hosted-rag-jobs';
 import { verifyInstallationSet, type IInstallationSet } from './installation-set';
 import { recordDeviceOperation } from './device-operations';
-import type { Device } from './device-store';
+import type { IDevice } from './device-store';
 
-type Database = Pick<PoolClient, 'query'>;
-interface SourceJob {
+type TDatabase = Pick<PoolClient, 'query'>;
+interface ISourceJob {
     id: string;
     device_id: string;
     email: string;
@@ -20,7 +20,7 @@ interface SourceJob {
     state: string;
     payload: Record<string, unknown>;
 }
-interface Continuation {
+interface IContinuation {
     schemaVersion: 1;
     installJobId: string;
     position: number;
@@ -55,8 +55,8 @@ function packages(payload: Record<string, unknown>): IPackage[] {
     }
 }
 
-function continuation(value: unknown): Continuation {
-    const marker = value as Continuation;
+function continuation(value: unknown): IContinuation {
+    const marker = value as IContinuation;
     if (
         !marker ||
         typeof marker !== 'object' ||
@@ -88,15 +88,15 @@ function binding(
     );
 }
 
-async function parent(db: Database, id: string, lock = false): Promise<SourceJob> {
+async function parent(db: TDatabase, id: string, lock = false): Promise<ISourceJob> {
     const value = (
-        await db.query<SourceJob>('SELECT * FROM bridge_jobs WHERE id=$1' + (lock ? ' FOR UPDATE' : ''), [id])
+        await db.query<ISourceJob>('SELECT * FROM bridge_jobs WHERE id=$1' + (lock ? ' FOR UPDATE' : ''), [id])
     ).rows[0];
     if (!value || value.kind !== 'install' || value.state !== 'succeeded') throw invalid();
     return value;
 }
 
-function assertSource(job: SourceJob, source: SourceJob, marker: Continuation): IPackage[] {
+function assertSource(job: ISourceJob, source: ISourceJob, marker: IContinuation): IPackage[] {
     const members = packages(source.payload),
         pkg = members[marker.position];
     if (
@@ -119,7 +119,7 @@ function assertSource(job: SourceJob, source: SourceJob, marker: Continuation): 
 }
 
 /** Claim and pre-read authorization retain the original folder instance and frozen delivery bytes. */
-export async function assertRagAutoInspection(db: Database, device: Device, job: SourceJob): Promise<void> {
+export async function assertRagAutoInspection(db: TDatabase, device: IDevice, job: ISourceJob): Promise<void> {
     if (job.payload.autoRagInspection === undefined) return;
     const marker = continuation(job.payload.autoRagInspection),
         source = await parent(db, marker.installJobId);
@@ -134,8 +134,8 @@ export async function assertRagAutoInspection(db: Database, device: Device, job:
 
 /** A completion replaces its one active queue slot with at most one read-only successor. */
 export async function continueRagInstallationInspection(
-    db: Database,
-    job: SourceJob,
+    db: TDatabase,
+    job: ISourceJob,
     state: 'succeeded' | 'failed',
 ): Promise<boolean> {
     let source = job,
@@ -165,7 +165,7 @@ export async function continueRagInstallationInspection(
     }
     const pkg = members[position];
     if (!pkg) return false;
-    const marker: Continuation = { schemaVersion: 1, installJobId: source.id, position, instanceId };
+    const marker: IContinuation = { schemaVersion: 1, installJobId: source.id, position, instanceId };
     const payload = {
         assetId: pkg.plugin.id,
         assetKind: pkg.plugin.kind,

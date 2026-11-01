@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { chatContext } from '../model-chat/chat-context';
-import type { ChatMessage } from '../model-chat/chat.types';
+import type { IChatMessage } from '../model-chat/chat.interfaces';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { AgentToolsRepository } from './agent-tools.repository';
 import { agentToolAction, agentToolHash, agentToolContext } from './agent-tools.validation';
-import { AGENT_TOOL_LIMITS as limits, type AgentToolScope, type AgentToolStepRow } from './agent-tools.types';
+import { AGENT_TOOL_LIMITS as limits } from './agent-tools.constants';
+import { type IAgentToolScope, type IAgentToolStepRow } from './agent-tools.interfaces';
 
 /** A planner and a tool are each dispatched once. Unknown results stop the loop instead of replaying paid work. */
 export class AgentToolsLoop {
@@ -12,13 +13,13 @@ export class AgentToolsLoop {
         private readonly repository: AgentToolsRepository,
         private readonly feature = () => requireFeatureEnabled('project_agent_tools'),
     ) {}
-    async run(scope: AgentToolScope): Promise<ChatMessage[]> {
+    async run(scope: IAgentToolScope): Promise<IChatMessage[]> {
         const [prompt, capabilities] = agentToolContext(scope.owner.projectId, scope.owner.grant),
-            messages: ChatMessage[] = [...scope.messages, capabilities],
+            messages: IChatMessage[] = [...scope.messages, capabilities],
             deadline = Date.now() + limits.deadlineMs;
         let bytes = 0,
             finished = false;
-        const current = async (db?: Parameters<AgentToolScope['assertCurrent']>[0]) => {
+        const current = async (db?: Parameters<IAgentToolScope['assertCurrent']>[0]) => {
             scope.signal.throwIfAborted();
             if (Date.now() >= deadline) throw new ConflictException('Истёк срок работы инструментов.');
             await scope.assertCurrent(db);
@@ -28,7 +29,7 @@ export class AgentToolsLoop {
             sequence: number,
             action: string,
             input: Record<string, unknown>,
-            work: (step: AgentToolStepRow) => Promise<unknown>,
+            work: (step: IAgentToolStepRow) => Promise<unknown>,
         ) => {
             await this.feature();
             await current();
@@ -41,7 +42,7 @@ export class AgentToolsLoop {
                 throw new ConflictException(
                     'Прежний вызов не подтверждён или остановлен. Новый запрос автоматически не отправлен.',
                 );
-            let step: AgentToolStepRow;
+            let step: IAgentToolStepRow;
             try {
                 step = await this.repository.dispatch(saved.id, current);
             } catch (error) {
@@ -67,7 +68,7 @@ export class AgentToolsLoop {
         for (let n = 0; n < limits.steps; n++) {
             // Project facts may precede the profile; the current phase follows every system instruction, only for planning.
             const afterSystem = messages.map((message) => message.role).lastIndexOf('system') + 1;
-            const planned: ChatMessage[] = [...messages.slice(0, afterSystem), prompt, ...messages.slice(afterSystem)];
+            const planned: IChatMessage[] = [...messages.slice(0, afterSystem), prompt, ...messages.slice(afterSystem)];
             if (chatContext(planned, scope.settings).exceeded)
                 throw new BadRequestException('История и инструменты не помещаются в окно модели.');
             const value = await execute(n * 2 + 1, 'planner', { messageDigest: agentToolHash(planned) }, async () =>

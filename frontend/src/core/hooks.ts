@@ -7,5 +7,4 @@ import type { TRootDispatch } from '../store';
  * В react-redux v9 useDispatch по умолчанию возвращает `Dispatch<UnknownAction>`;
  * здесь переопределяем тип под наш store.
  */
-export const useAppDispatch: () => TRootDispatch =
-    useReduxDispatch as unknown as () => TRootDispatch;
+export const useAppDispatch: () => TRootDispatch = useReduxDispatch as unknown as () => TRootDispatch;

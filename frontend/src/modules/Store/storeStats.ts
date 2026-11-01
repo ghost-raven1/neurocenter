@@ -9,7 +9,7 @@ export interface IComment {
 
 const KEYS = { likes: 'store.likes.v1', comments: 'store.comments.v1' };
 
-const readMap = <T,>(key: string): Record<string, T> => {
+const readMap = <T>(key: string): Record<string, T> => {
     try {
         return JSON.parse(window.localStorage.getItem(key) ?? '{}') as Record<string, T>;
     } catch {
@@ -17,12 +17,12 @@ const readMap = <T,>(key: string): Record<string, T> => {
     }
 };
 
-const writeMap = <T,>(key: string, value: Record<string, T>): void => {
+const writeMap = <T>(key: string, value: Record<string, T>): void => {
     window.localStorage.setItem(key, JSON.stringify(value));
 };
 
 /** Кол-во лайков приложения (клиентская статистика). */
-export const getLikeCount = (id: string): number => (readMap<number>(KEYS.likes)[id] ?? 0);
+export const getLikeCount = (id: string): number => readMap<number>(KEYS.likes)[id] ?? 0;
 
 /** Переключить лайк; возвращает новое кол-во лайков. */
 export const toggleLike = (id: string): number => {
@@ -34,13 +34,13 @@ export const toggleLike = (id: string): number => {
 };
 
 /** Комментарии приложения. */
-export const getComments = (id: string): IComment[] => (readMap<IComment[]>(KEYS.comments)[id] ?? []);
+export const getComments = (id: string): IComment[] => readMap<IComment[]>(KEYS.comments)[id] ?? [];
 
 /** Добавить комментарий; возвращает полный список. */
 export const addComment = (id: string, author: string, text: string): IComment[] => {
     const m = readMap<IComment[]>(KEYS.comments);
     const arr = m[id] ?? [];
-    m[id] = [ ...arr, { author, text, at: Date.now() } ];
+    m[id] = [...arr, { author, text, at: Date.now() }];
     writeMap(KEYS.comments, m);
     return m[id];
 };
@@ -62,8 +62,8 @@ export const replyToComment = (id: string, parentIndex: number, author: string, 
     if (!c) {
         return arr;
     }
-    c.replies = [ ...(c.replies ?? []), { author, text, at: Date.now() } ];
-    m[id] = [ ...arr ];
+    c.replies = [...(c.replies ?? []), { author, text, at: Date.now() }];
+    m[id] = [...arr];
     writeMap(KEYS.comments, m);
     return m[id];
 };
@@ -77,7 +77,7 @@ export const deleteReply = (id: string, parentIndex: number, replyIndex: number)
         return arr;
     }
     c.replies = c.replies.filter((_, i) => i !== replyIndex);
-    m[id] = [ ...arr ];
+    m[id] = [...arr];
     writeMap(KEYS.comments, m);
     return m[id];
 };

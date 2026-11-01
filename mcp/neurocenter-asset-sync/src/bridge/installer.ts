@@ -1,6 +1,6 @@
 import { localRagUi } from '../features/rag-ui/contract.js';
 import { projectFolder, projectBindingId } from './workspace.js';
-import { verify, type Package } from './package.js';
+import { verify, type IPackage } from './package.js';
 import { assetBase, assetKey } from './installation-receipt.js';
 import { withProjectFiles, commitChanges } from './installation-files.js';
 import { InstallationPlan } from './installation-plan.js';
@@ -10,13 +10,13 @@ import { CONFIG_PATHS } from './installation-files.js';
 import { parse, type ParseError } from 'jsonc-parser';
 import { isHostedMcpUrl, requestHostedMcpConnection } from '../features/mcp-host/connect.js';
 import { verifyHostedMcpChannel } from '../features/mcp-host/verify.js';
-import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type InstallSet } from './install-set.js';
+import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type IInstallSet } from './install-set.js';
 
-type Authorize = () => Promise<unknown>;
-type Progress = (percent: number, message: string) => Promise<unknown>;
+type TAuthorize = () => Promise<unknown>;
+type TProgress = (percent: number, message: string) => Promise<unknown>;
 
 /** Ставит только в явную привязку проекта; чужие файлы и ручные изменения не затирает. */
-export async function install(projectId: string, pkg: Package, authorize: Authorize, progress: Progress) {
+export async function install(projectId: string, pkg: IPackage, authorize: TAuthorize, progress: TProgress) {
     verify(pkg);
     if (packageDependencies(pkg).length) {
         throw new Error('Для зависимостей требуется полный набор установки.');
@@ -25,7 +25,7 @@ export async function install(projectId: string, pkg: Package, authorize: Author
 }
 
 /** Весь закреплённый граф получает один lock, одну авторизацию и одну файловую транзакцию. */
-export async function installSet(projectId: string, set: InstallSet, authorize: Authorize, progress: Progress) {
+export async function installSet(projectId: string, set: IInstallSet, authorize: TAuthorize, progress: TProgress) {
     verifyInstallSet(set);
     const root = set.packages.find((pkg) => pkg.plugin.kind === set.root.kind && pkg.plugin.id === set.root.id)!;
     return installPackages(projectId, set.packages, root, set.manifest, authorize, progress, true);
@@ -33,11 +33,11 @@ export async function installSet(projectId: string, set: InstallSet, authorize: 
 
 async function installPackages(
     projectId: string,
-    packages: Package[],
-    pkg: Package,
+    packages: IPackage[],
+    pkg: IPackage,
     manifest: string,
-    authorize: Authorize,
-    progress: Progress,
+    authorize: TAuthorize,
+    progress: TProgress,
     multiple: boolean,
 ) {
     return withProjectFiles(projectId, async (root) => {

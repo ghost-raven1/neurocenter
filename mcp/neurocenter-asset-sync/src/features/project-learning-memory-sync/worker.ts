@@ -1,5 +1,5 @@
 import { api, hub } from '../../bridge/state.js';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import {
     memoryDigest,
     memoryNamespace,
@@ -10,28 +10,28 @@ import {
     type MemorySyncResult,
 } from './contract.js';
 import { memoryTarget } from './target.js';
-import { connectMemory, type MemoryPort } from './memory-client.js';
+import { connectMemory, type IMemoryPort } from './memory-client.js';
 import { projectMemory } from './projection.js';
 import { journalKey, projectionStorage, publicMemoryResult, saveMemoryCheckpoint } from './receipts.js';
 import { recoverWorkspaceIdentity, withWorkspaceIdentityLock } from '../../bridge/workspace-identity-state.js';
 import { withProjectFiles } from '../../bridge/installation-files.js';
 
-interface MemoryJob {
+interface IMemoryJob {
     id: string;
     lease: string;
-    payload: { memory?: unknown; package?: Package };
+    payload: { memory?: unknown; package?: IPackage };
 }
-interface Dependencies {
-    context: (job: MemoryJob) => Promise<unknown>;
+interface IDependencies {
+    context: (job: IMemoryJob) => Promise<unknown>;
     target: typeof memoryTarget;
     connect: typeof connectMemory;
 }
 /** Source changes stop the plan; explicit retry reconciles only the previously recorded owned mutations. */
 export async function runLearningMemoryJob(
-    job: MemoryJob,
+    job: IMemoryJob,
     deviceId: string,
     authorize: () => Promise<unknown>,
-    dependencies: Partial<Dependencies> = {},
+    dependencies: Partial<IDependencies> = {},
 ) {
     return withWorkspaceIdentityLock(async () => {
         const recovered = await recoverWorkspaceIdentity();
@@ -42,13 +42,13 @@ export async function runLearningMemoryJob(
 }
 /** Projection and identity handoff share the cross-process lock; old jobs cannot mutate during migration. */
 async function runLockedLearningMemoryJob(
-    job: MemoryJob,
+    job: IMemoryJob,
     deviceId: string,
     authorize: () => Promise<unknown>,
-    dependencies: Partial<Dependencies>,
+    dependencies: Partial<IDependencies>,
 ) {
     const payload = normalizeMemorySyncPayload(job.payload.memory),
-        deps: Dependencies = {
+        deps: IDependencies = {
             context: (value) => api('learning-memory/context', { jobId: value.id, lease: value.lease }),
             target: memoryTarget,
             connect: connectMemory,
@@ -59,7 +59,7 @@ async function runLockedLearningMemoryJob(
         planDigest = memoryDigest([site, payload]);
     let counts = { applied: 0, removed: 0, remaining: 1 },
         result = publicMemoryResult(payload, planDigest, counts, false, 'unavailable'),
-        port: MemoryPort | undefined;
+        port: IMemoryPort | undefined;
     const checkpoint = async (next: MemorySyncResult) => {
         await saveMemoryCheckpoint({ id: job.id, lease: job.lease, deviceId, payload, result: next });
         result = next;
@@ -92,7 +92,7 @@ async function runLockedLearningMemoryJob(
         await current();
         const context: MemorySyncContext = normalizeMemorySyncContext(await deps.context(job));
         if (memoryDigest(context.payload) !== memoryDigest(payload)) throw new Error('Контекст Memory изменился.');
-        const target = await deps.target(payload, context.package as Package, deviceId);
+        const target = await deps.target(payload, context.package as IPackage, deviceId);
         const check = async () => {
             await current();
             await target.assertCurrent();

@@ -1,26 +1,26 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
-import type { AgentDefinition } from '../../../shared/project-agents.cjs';
-import type { StartAgentTrial, AgentTrialReceipt, AgentTrialStatus } from './agent-readiness.types';
+import type { IAgentDefinition } from '../../../shared/project-agents.cjs';
+import type { IStartAgentTrial, IAgentTrialReceipt, TAgentTrialStatus } from './agent-readiness.interfaces';
 
-export type TrialDb = Pick<PoolClient, 'query'>;
-export interface TrialSnapshot {
-    definition: AgentDefinition;
+export type TTrialDb = Pick<PoolClient, 'query'>;
+export interface ITrialSnapshot {
+    definition: IAgentDefinition;
     agentPin: string;
     nonce: string;
     toolPin: string | null;
 }
-export interface TrialRow {
+export interface ITrialRow {
     id: string;
     project_id: string;
     agent_id: string;
     owner_email: string;
     request_id: string;
     request_hash: string;
-    request: StartAgentTrial;
-    snapshot: TrialSnapshot;
-    receipt: AgentTrialReceipt;
-    status: AgentTrialStatus;
+    request: IStartAgentTrial;
+    snapshot: ITrialSnapshot;
+    receipt: IAgentTrialReceipt;
+    status: TAgentTrialStatus;
     revision: number;
     lease_token: string;
     lease_until: Date | null;
@@ -28,12 +28,12 @@ export interface TrialRow {
     created_at: Date;
     finished_at: Date | null;
 }
-export const trialPending = (row: Pick<TrialRow, 'status'>): boolean =>
+export const trialPending = (row: Pick<ITrialRow, 'status'>): boolean =>
     row.status === 'queued' || row.status === 'running';
 export class AgentTrialRepository {
     constructor(readonly pool: Pool) {}
     /** Неизвестный откат уничтожает сессию, чтобы expire не зафиксировал прерванную вставку. */
-    async transaction<T>(action: (db: TrialDb) => Promise<T>): Promise<T> {
+    async transaction<T>(action: (db: TTrialDb) => Promise<T>): Promise<T> {
         const db = await this.pool.connect();
         let discard = false;
         try {
@@ -51,9 +51,9 @@ export class AgentTrialRepository {
             db.release(discard);
         }
     }
-    async prior(owner: string, request: string, db: TrialDb = this.pool): Promise<TrialRow | undefined> {
+    async prior(owner: string, request: string, db: TTrialDb = this.pool): Promise<ITrialRow | undefined> {
         return (
-            await db.query<TrialRow>('SELECT * FROM agent_readiness_trials WHERE owner_email=$1 AND request_id=$2', [
+            await db.query<ITrialRow>('SELECT * FROM agent_readiness_trials WHERE owner_email=$1 AND request_id=$2', [
                 owner,
                 request,
             ])
@@ -64,11 +64,11 @@ export class AgentTrialRepository {
         project: string,
         agent: string,
         id: string,
-        db: TrialDb = this.pool,
+        db: TTrialDb = this.pool,
         lock = false,
-    ): Promise<TrialRow> {
+    ): Promise<ITrialRow> {
         const row = (
-            await db.query<TrialRow>(
+            await db.query<ITrialRow>(
                 'SELECT * FROM agent_readiness_trials WHERE owner_email=$1 AND project_id=$2 AND agent_id=$3 AND id=$4' +
                     (lock ? ' FOR UPDATE' : ''),
                 [owner, project, agent, id],
@@ -77,9 +77,9 @@ export class AgentTrialRepository {
         if (!row) throw new NotFoundException('Испытание не найдено.');
         return row;
     }
-    async latest(owner: string, project: string): Promise<TrialRow[]> {
+    async latest(owner: string, project: string): Promise<ITrialRow[]> {
         return (
-            await this.pool.query<TrialRow>(
+            await this.pool.query<ITrialRow>(
                 'SELECT DISTINCT ON(agent_id) * FROM agent_readiness_trials WHERE owner_email=$1 AND project_id=$2 ORDER BY agent_id,created_at DESC,id DESC',
                 [owner, project],
             )
@@ -95,26 +95,26 @@ export class AgentTrialRepository {
         );
     }
     async insert(
-        db: TrialDb,
+        db: TTrialDb,
         row: {
             id: string;
             owner: string;
             project: string;
             agent: string;
             hash: string;
-            input: StartAgentTrial;
-            snapshot: TrialSnapshot;
-            receipt: AgentTrialReceipt;
+            input: IStartAgentTrial;
+            snapshot: ITrialSnapshot;
+            receipt: IAgentTrialReceipt;
             lease: string;
         },
-    ): Promise<TrialRow> {
+    ): Promise<ITrialRow> {
         const active = await db.query(
             "SELECT 1 FROM agent_readiness_trials WHERE owner_email=$1 AND project_id=$2 AND agent_id=$3 AND status IN ('queued','running')",
             [row.owner, row.project, row.agent],
         );
         if (active.rowCount) throw new ConflictException('Ваше испытание этого агента уже выполняется.');
         return (
-            await db.query<TrialRow>(
+            await db.query<ITrialRow>(
                 `INSERT INTO agent_readiness_trials(id,project_id,agent_id,owner_email,request_id,request_hash,request,snapshot,receipt,lease_token,lease_until,message)
             VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10,now()+interval '100 seconds','Испытание ожидает запуска.') RETURNING *`,
                 [
@@ -133,13 +133,13 @@ export class AgentTrialRepository {
         ).rows[0];
     }
     async save(
-        db: TrialDb,
-        row: TrialRow,
-        status: AgentTrialStatus,
-        receipt: AgentTrialReceipt,
+        db: TTrialDb,
+        row: ITrialRow,
+        status: TAgentTrialStatus,
+        receipt: IAgentTrialReceipt,
         message: string,
-    ): Promise<TrialRow> {
-        const result = await db.query<TrialRow>(
+    ): Promise<ITrialRow> {
+        const result = await db.query<ITrialRow>(
             `UPDATE agent_readiness_trials SET status=$4,receipt=$5::jsonb,message=$6,revision=revision+1,
             finished_at=CASE WHEN $4 IN ('queued','running') THEN NULL ELSE now() END,lease_until=CASE WHEN $4 IN ('queued','running') THEN lease_until ELSE NULL END
             WHERE id=$1 AND lease_token=$2 AND revision=$3 AND status IN ('queued','running') AND lease_until>now() RETURNING *`,
@@ -152,7 +152,7 @@ export class AgentTrialRepository {
         id: string,
         lease: string,
         status: 'failed' | 'cancelled' | 'interrupted',
-        receipt: AgentTrialReceipt,
+        receipt: IAgentTrialReceipt,
         message: string,
     ): Promise<void> {
         await this.transaction((db) =>

@@ -19,7 +19,10 @@ const requestOwners = new WeakMap<AxiosRequestConfig, unknown>();
  * @param {TUnauthorizedHandler} handler - колбэк обработки 401
  * @returns void
  */
-export const setUnauthorizedHandler = (handler: TUnauthorizedHandler, readOwner: () => unknown = () => undefined): void => {
+export const setUnauthorizedHandler = (
+    handler: TUnauthorizedHandler,
+    readOwner: () => unknown = () => undefined,
+): void => {
     unauthorizedHandler = handler;
     currentOwner = readOwner;
 };
@@ -31,16 +34,25 @@ const instance: AxiosInstance = Axios.create({
 });
 
 // Identity хранится только в памяти: профиль не добавляется к HTTP-заголовкам или config.
-instance.interceptors.request.use(config => {
-    requestOwners.set(config, currentOwner());
-    return config;
-}, undefined, { synchronous: true });
+instance.interceptors.request.use(
+    (config) => {
+        requestOwners.set(config, currentOwner());
+        return config;
+    },
+    undefined,
+    { synchronous: true },
+);
 
 instance.interceptors.response.use(
-    response => response,
+    (response) => response,
     (error: AxiosError) => {
-        if (error.response?.status === 401 && error.config && !error.config.skipUnauthorizedHandler
-            && requestOwners.has(error.config) && Object.is(requestOwners.get(error.config), currentOwner())) {
+        if (
+            error.response?.status === 401 &&
+            error.config &&
+            !error.config.skipUnauthorizedHandler &&
+            requestOwners.has(error.config) &&
+            Object.is(requestOwners.get(error.config), currentOwner())
+        ) {
             unauthorizedHandler();
         }
 

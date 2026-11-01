@@ -3,7 +3,7 @@ import { configurationConnection } from '../features/local-configuration/launche
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse, parseTree, type Node, type ParseError } from 'jsonc-parser';
-import type { Package } from './package.js';
+import type { IPackage } from './package.js';
 import { assetBase } from './installation-receipt.js';
 
 /** Неоднозначные повторные ключи JSONC не становятся доказательством владения. */
@@ -38,7 +38,7 @@ export function parseProjectConfig(source: string): Record<string, unknown> {
     return config;
 }
 /** Ожидаемое подключение вычисляется только из одобренного пакета, без запуска команды. */
-export function expectedAdoptConnection(root: string, pkg: Package): unknown {
+export function expectedAdoptConnection(root: string, pkg: IPackage): unknown {
     const configured = configurationConnection(root, pkg);
     if (configured) {
         return configured;
@@ -95,7 +95,7 @@ export function expectedAdoptConnection(root: string, pkg: Package): unknown {
         ...(config.env ? { environment: config.env } : {}),
     };
 }
-export function configSpecInside(value: unknown, root: string, pkg: Package): boolean {
+export function configSpecInside(value: unknown, root: string, pkg: IPackage): boolean {
     if (typeof value !== 'string') {
         return false;
     }

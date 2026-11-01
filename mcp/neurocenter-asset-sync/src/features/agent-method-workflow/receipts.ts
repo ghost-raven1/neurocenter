@@ -6,17 +6,17 @@ import { readPrivateConfiguration, writePrivateConfiguration } from '../local-co
 import {
     closeRoleMcpProcess,
     findRoleMcpProcess,
-    type RoleMcpProcessJournal,
+    type IRoleMcpProcessJournal,
 } from '../system-role-mcp/owned-process.js';
-import type { RoleMcpOwner } from '../system-role-mcp/session-journal.js';
-import type { Completion } from '../../bridge/completions.js';
+import type { IRoleMcpOwner } from '../system-role-mcp/session-journal.js';
+import type { ICompletion } from '../../bridge/completions.js';
 import {
     AGENT_METHOD_WORKFLOW_PROTOCOL,
     normalizeAgentMethodWorkflowResult,
     type AgentMethodWorkflowResult,
 } from './contract.js';
 
-export interface MethodReceipt {
+export interface IMethodReceipt {
     schemaVersion: 1;
     jobId: string;
     lease: string;
@@ -25,14 +25,14 @@ export interface MethodReceipt {
     payloadHash: string;
     state: 'started' | 'completed';
     result: AgentMethodWorkflowResult;
-    process?: { nonce: string; receipt: string; owner?: RoleMcpOwner };
+    process?: { nonce: string; receipt: string; owner?: IRoleMcpOwner };
 }
-type Pointer = Omit<MethodReceipt, 'state' | 'process' | 'schemaVersion'>;
+type TPointer = Omit<IMethodReceipt, 'state' | 'process' | 'schemaVersion'>;
 const indexName = 'agent-method-workflow-pending';
 const receiptKey = (id: string) => hash('agent-method-workflow:' + id);
 const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
-async function pointers(): Promise<Pointer[]> {
-    const value = (await readState<Pointer[]>(indexName)) ?? [];
+async function pointers(): Promise<TPointer[]> {
+    const value = (await readState<TPointer[]>(indexName)) ?? [];
     if (
         !Array.isArray(value) ||
         value.length > 64 ||
@@ -51,8 +51,8 @@ async function pointers(): Promise<Pointer[]> {
     for (const pointer of value) normalizeAgentMethodWorkflowResult(pointer.result);
     return value;
 }
-export async function readMethodReceipt(workflowId: string): Promise<MethodReceipt | undefined> {
-    const receipt = await readPrivateConfiguration<MethodReceipt>(receiptKey(workflowId));
+export async function readMethodReceipt(workflowId: string): Promise<IMethodReceipt | undefined> {
+    const receipt = await readPrivateConfiguration<IMethodReceipt>(receiptKey(workflowId));
     if (
         receipt &&
         (receipt.schemaVersion !== 1 ||
@@ -64,7 +64,7 @@ export async function readMethodReceipt(workflowId: string): Promise<MethodRecei
     return receipt;
 }
 /** The durable index precedes the private marker; no process may receive its execution permit before both are fsynced. */
-export async function writeMethodReceipt(receipt: MethodReceipt, previous: MethodReceipt | undefined): Promise<void> {
+export async function writeMethodReceipt(receipt: IMethodReceipt, previous: IMethodReceipt | undefined): Promise<void> {
     normalizeAgentMethodWorkflowResult(receipt.result);
     const pending = await pointers(),
         found = pending.find((row) => row.workflowId === receipt.workflowId);
@@ -84,7 +84,7 @@ export async function writeMethodReceipt(receipt: MethodReceipt, previous: Metho
     await syncDirectory(path.join(stateDir(), 'local-configuration'));
 }
 /** Only an exact nonce, birth, UID and owned wrapper may be closed after a crash. */
-export async function stopReceiptProcess(receipt: MethodReceipt): Promise<void> {
+export async function stopReceiptProcess(receipt: IMethodReceipt): Promise<void> {
     const running = receipt.process;
     if (!running) return;
     const expected = path.join(stateDir(), 'agent-method-processes', running.nonce + '.json');
@@ -94,9 +94,9 @@ export async function stopReceiptProcess(receipt: MethodReceipt): Promise<void> 
     if (owner) await closeRoleMcpProcess(owner, running.nonce, running.receipt);
 }
 export async function methodProcessJournal(
-    receipt: MethodReceipt,
-    save: (next: MethodReceipt) => Promise<void>,
-): Promise<RoleMcpProcessJournal> {
+    receipt: IMethodReceipt,
+    save: (next: IMethodReceipt) => Promise<void>,
+): Promise<IRoleMcpProcessJournal> {
     const { randomUUID } = await import('node:crypto'),
         nonce = randomUUID(),
         directory = path.join(stateDir(), 'agent-method-processes');
@@ -113,7 +113,7 @@ export async function methodProcessJournal(
         },
     };
 }
-export function methodCompletionSummary(receipt: MethodReceipt): Pick<Completion, 'state' | 'result' | 'message'> {
+export function methodCompletionSummary(receipt: IMethodReceipt): Pick<ICompletion, 'state' | 'result' | 'message'> {
     return {
         state: receipt.result.state === 'succeeded' ? 'succeeded' : 'failed',
         result: { protocol: AGENT_METHOD_WORKFLOW_PROTOCOL, workflowId: receipt.workflowId },
@@ -126,7 +126,7 @@ export function methodCompletionSummary(receipt: MethodReceipt): Pick<Completion
     };
 }
 /** Recovery delivers the stored result; a started marker can never grant a second runtime dispatch. */
-export async function recoverMethodCompletions(save: (value: Completion) => Promise<void>): Promise<void> {
+export async function recoverMethodCompletions(save: (value: ICompletion) => Promise<void>): Promise<void> {
     for (const pointer of await pointers()) {
         let receipt = await readMethodReceipt(pointer.workflowId);
         if (
@@ -143,7 +143,7 @@ export async function recoverMethodCompletions(save: (value: Completion) => Prom
                 state: 'unknown',
                 failure: { code: 'UNKNOWN_OUTCOME', action: 'inspect-workspace' },
             };
-            const completed: MethodReceipt = { schemaVersion: 1, ...pointer, state: 'completed', result };
+            const completed: IMethodReceipt = { schemaVersion: 1, ...pointer, state: 'completed', result };
             await writeMethodReceipt(completed, receipt);
             receipt = completed;
         }

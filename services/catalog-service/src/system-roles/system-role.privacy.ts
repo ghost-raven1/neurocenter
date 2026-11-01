@@ -4,7 +4,7 @@ import { roleObject } from './system-role.validation';
 const reserved = /\[NC_PRIVATE_[0-9]+\]/g;
 const privateKey = /(?:api.?key|token|secret|password|authorization|credential|headers|^env$)/i;
 const owns = (value: object, key: string): boolean => Object.prototype.hasOwnProperty.call(value, key);
-export interface PrivateProjection {
+export interface IPrivateProjection {
     content: string;
     slots: Record<string, unknown>;
     paths: Record<string, string[]>;
@@ -14,7 +14,7 @@ export function roleProjection(
     value: string | Record<string, unknown>,
     json = false,
     visibleStrings: readonly string[] = [],
-): PrivateProjection {
+): IPrivateProjection {
     if (JSON.stringify(value).match(reserved))
         throw new ConflictException('Выбранный текст содержит зарезервированный маркер приватности.');
     const slots: Record<string, unknown> = {},
@@ -50,7 +50,7 @@ export function roleProjection(
     return { content: JSON.stringify(visit(value, []), null, 2), slots, paths };
 }
 /** Private fragments must remain exactly once and at their original JSON path; the model cannot relocate credentials. */
-export function restoreRoleProjection(content: string, projection: PrivateProjection, json = false): string {
+export function restoreRoleProjection(content: string, projection: IPrivateProjection, json = false): string {
     const markers = content.match(reserved) ?? [];
     if (
         markers.length !== Object.keys(projection.slots).length ||

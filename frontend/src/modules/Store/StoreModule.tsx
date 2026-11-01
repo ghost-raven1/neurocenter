@@ -25,8 +25,6 @@ export default class StoreModule extends ModuleBase {
      * @returns список компонент-роутов
      */
     public getRoute(): ReactNode[] {
-        return [
-            <ProtectedRoute key="store" name={STORE_ROUTE} path={baseRoutes.store} render={() => <Store />} />,
-        ];
+        return [<ProtectedRoute key="store" name={STORE_ROUTE} path={baseRoutes.store} render={() => <Store />} />];
     }
 }

@@ -10,9 +10,9 @@ export const contract = createRequire(import.meta.url)(
     fileURLToPath(source),
 ) as typeof import('../../../../../services/shared/opencode-local-providers.cjs');
 export type {
-    GlobalProvidersLimits,
-    OpenCodeGlobalProvidersInventory,
-    OpenCodeGlobalProvidersResult,
-    GlobalProvider,
-    GlobalProvidersIssue,
+    IGlobalProvidersLimits as GlobalProvidersLimits,
+    IOpenCodeGlobalProvidersInventory as OpenCodeGlobalProvidersInventory,
+    TOpenCodeGlobalProvidersResult as OpenCodeGlobalProvidersResult,
+    IGlobalProvider as GlobalProvider,
+    TGlobalProvidersIssue as GlobalProvidersIssue,
 } from '../../../../../services/shared/opencode-local-providers.cjs';

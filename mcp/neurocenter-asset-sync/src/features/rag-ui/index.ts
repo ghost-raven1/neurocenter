@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { verify, type Package } from '../../bridge/package.js';
+import { verify, type IPackage } from '../../bridge/package.js';
 import { projectFolder, projectBindingId, projectInstanceId } from '../../bridge/workspace.js';
 import { inspectInstallation } from '../../bridge/installation-inspection.js';
 import { assertInspectionIdentity } from '../../bridge/inspection-identity.js';
@@ -8,15 +8,15 @@ import { parseLocalConfiguration, readMcpConfiguration } from '../local-configur
 import { packageEnvironment } from '../runtime-probe/profile.js';
 import { localRagUi } from './contract.js';
 import { openRagBrowserWindow } from './browser-window.js';
-import { startRagUiProcess, type UiProcess } from './process.js';
+import { startRagUiProcess, type IUiProcess } from './process.js';
 
-interface Session {
-    process: UiProcess;
+interface ISession {
+    process: IUiProcess;
     key: string;
     root: string;
     timer: NodeJS.Timeout;
 }
-const sessions = new Map<string, Session>();
+const sessions = new Map<string, ISession>();
 export const RAG_UI_NOTE = 'Локальный интерфейс готов; система приняла запрос на отдельное окно браузера.';
 /** Остановка не трогает браузеры, чужие PID или UI других worker. */
 export async function closeRagUis(): Promise<void> {
@@ -39,7 +39,7 @@ export async function closeOwnRagUi(projectId: string): Promise<void> {
 }
 /** Только текущая квитанция, физический экземпляр папки и полностью проверенный SHA-архив. */
 export async function openRagUi(
-    input: { projectId: string; bindingId: string; instanceId: string; pkg: Package },
+    input: { projectId: string; bindingId: string; instanceId: string; pkg: IPackage },
     authorize: () => Promise<void>,
 ) {
     const pkg = structuredClone(input.pkg);

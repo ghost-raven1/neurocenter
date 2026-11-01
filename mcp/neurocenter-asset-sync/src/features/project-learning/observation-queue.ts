@@ -2,28 +2,28 @@ import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { api, stateDir, readState, type Credentials } from '../../bridge/state.js';
+import { api, stateDir, readState, type ICredentials } from '../../bridge/state.js';
 import { syncDirectory } from '../../bridge/atomic-file.js';
-import { fileFingerprint, readBoundedSnapshot, type BoundedSnapshot } from '../../bridge/read-bounded.js';
+import { fileFingerprint, readBoundedSnapshot, type IBoundedSnapshot } from '../../bridge/read-bounded.js';
 import { projectBindingId, projectFolder, projectInstanceId } from '../../bridge/workspace.js';
 import { normalizeLearningObservedExperienceInput, type LearningObservedExperienceInput } from './contract.js';
 import { learningQueueLockFile, withLearningQueueLock } from './queue-lock.js';
 
 const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 export const LEARNING_QUEUE_LIMIT = { entries: 200, bytes: 1024 * 1024, entryBytes: 16384 };
-export interface LearningQueueTarget {
+export interface ILearningQueueTarget {
     projectId: string;
     bindingId: string;
     instanceId: string;
 }
-interface Observation {
+interface IObservation {
     schemaVersion: 1;
-    target: LearningQueueTarget;
+    target: ILearningQueueTarget;
     input: LearningObservedExperienceInput;
 }
 const queueError = () => new Error('Приватная очередь наблюдений недоступна, повреждена или заполнена.');
 export const learningQueueRoot = () => path.join(stateDir(), 'learning-observations');
-const validTarget = (target: LearningQueueTarget) =>
+const validTarget = (target: ILearningQueueTarget) =>
     !!target &&
     typeof target.projectId === 'string' &&
     /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(target.projectId) &&
@@ -53,14 +53,18 @@ async function privateDirectory(directory: string, create: boolean): Promise<boo
         throw queueError();
     return true;
 }
-async function queueDirectory(root: string, target: LearningQueueTarget, create: boolean): Promise<string | undefined> {
+async function queueDirectory(
+    root: string,
+    target: ILearningQueueTarget,
+    create: boolean,
+): Promise<string | undefined> {
     if (!path.isAbsolute(root) || !validTarget(target)) throw queueError();
     if (!(await privateDirectory(root, create))) return;
     const directory = path.join(root, target.bindingId);
     return (await privateDirectory(directory, create)) ? directory : undefined;
 }
 
-function parseObservation(raw: string, target: LearningQueueTarget): Observation {
+function parseObservation(raw: string, target: ILearningQueueTarget): IObservation {
     let value: unknown;
     try {
         value = JSON.parse(raw);
@@ -74,7 +78,7 @@ function parseObservation(raw: string, target: LearningQueueTarget): Observation
         Object.keys(value).sort().join(',') !== 'input,schemaVersion,target'
     )
         throw queueError();
-    const record = value as Observation;
+    const record = value as IObservation;
     if (
         record.schemaVersion !== 1 ||
         !record.target ||
@@ -89,7 +93,7 @@ function parseObservation(raw: string, target: LearningQueueTarget): Observation
 }
 
 const staging = /^\.[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\.tmp$/;
-async function syncSnapshot(file: string, snapshot: BoundedSnapshot): Promise<void> {
+async function syncSnapshot(file: string, snapshot: IBoundedSnapshot): Promise<void> {
     const handle = await fs.open(file, constants.O_RDWR | (constants.O_NOFOLLOW ?? 0));
     try {
         if (fileFingerprint(await handle.stat({ bigint: true })) !== snapshot.fingerprint) throw queueError();
@@ -104,7 +108,7 @@ async function syncSnapshot(file: string, snapshot: BoundedSnapshot): Promise<vo
     }
 }
 /** No publisher writes a staging file outside the queue lock; complete interrupted payloads keep their original UUID. */
-async function recoverStaging(directory: string, target: LearningQueueTarget): Promise<void> {
+async function recoverStaging(directory: string, target: ILearningQueueTarget): Promise<void> {
     let changed = false;
     for (const name of await fs.readdir(directory)) {
         if (!staging.test(name)) continue;
@@ -140,7 +144,7 @@ async function recoverStaging(directory: string, target: LearningQueueTarget): P
 
 /** Atomic immutable UUID files retain exactly the same append payload after an offline or lost-ACK retry. */
 export async function enqueueLearningObservation(
-    target: LearningQueueTarget,
+    target: ILearningQueueTarget,
     value: unknown,
     root = learningQueueRoot(),
 ): Promise<void> {
@@ -187,7 +191,7 @@ export async function enqueueLearningObservation(
     });
 }
 
-async function current(target: LearningQueueTarget): Promise<void> {
+async function current(target: ILearningQueueTarget): Promise<void> {
     await projectFolder(target.projectId);
     if (
         (await projectBindingId(target.projectId)) !== target.bindingId ||
@@ -198,7 +202,7 @@ async function current(target: LearningQueueTarget): Promise<void> {
 
 /** A receipt is checked before local removal; error/timeout leaves the immutable item available for replay. */
 export async function flushLearningObservations(
-    target: LearningQueueTarget,
+    target: ILearningQueueTarget,
     root = learningQueueRoot(),
     limit = 4,
 ): Promise<number> {
@@ -221,7 +225,7 @@ export async function flushLearningObservations(
         const record = parseObservation(raw, target);
         if (record.input.requestKey + '.json' !== name) throw queueError();
         await current(target);
-        const credentials = await readState<Credentials>('credentials');
+        const credentials = await readState<ICredentials>('credentials');
         if (!credentials) throw queueError();
         const result = await api<Record<string, unknown>>(
             'learning/observe',

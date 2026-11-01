@@ -1,12 +1,12 @@
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { localRagCore } from '../rag-core/contract.js';
-import { missingConfigurationFields, type LocalConfigurationSchema, type ConfigurationValues } from './schema.js';
+import { missingConfigurationFields, type ILocalConfigurationSchema, type TConfigurationValues } from './schema.js';
 
 /** Defaults существуют только в закреплённом RAG CLI; сохранённые значения и схема не меняются. */
 export function missingLaunchFields(
-    pkg: Package,
-    schema: LocalConfigurationSchema,
-    values: ConfigurationValues,
+    pkg: IPackage,
+    schema: ILocalConfigurationSchema,
+    values: TConfigurationValues,
 ): string[] {
     const missing = missingConfigurationFields(schema, values);
     if (!localRagCore(pkg)) return missing;

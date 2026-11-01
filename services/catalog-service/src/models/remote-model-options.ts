@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import type { IModel } from './model.types';
-import type { IRemoteModelOptions } from './remote-model.types';
+import type { IModel } from './model.interfaces';
+import type { IRemoteModelOptions } from './remote-model.interfaces';
 import { normalizeAdapterParameters } from '../../../shared/adapter-parameters.cjs';
 
 export const REMOTE_MODEL_TIMEOUT_MS = 90000;

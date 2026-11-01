@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { IModel } from './model.types';
+import type { IModel } from './model.interfaces';
 /** Planning budgets stay with their caller; Codex cannot enforce these Ollama/OpenAI wire options. */
 export function automaticModelOptions(
     model: Pick<IModel, 'runtime'>,

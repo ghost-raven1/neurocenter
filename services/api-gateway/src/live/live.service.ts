@@ -6,7 +6,7 @@ import { canonicalAccessRoute } from '../../../shared/access-route.cjs';
 @Injectable()
 export class LiveService implements OnModuleDestroy {
     private io?: Server;
-    
+
     /** Закрывает WebSocket и его таймеры до ожидания завершения HTTP-сервера. */
     async onModuleDestroy(): Promise<void> {
         if (this.io) {

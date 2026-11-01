@@ -1,10 +1,10 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 export type {
-    AgentMethodWorkflowPayload,
-    AgentMethodWorkflowResult,
-    AgentMethodFailureCode,
-    AgentMethodCheck,
+    IAgentMethodWorkflowPayload as AgentMethodWorkflowPayload,
+    IAgentMethodWorkflowResult as AgentMethodWorkflowResult,
+    TAgentMethodFailureCode as AgentMethodFailureCode,
+    IAgentMethodCheck as AgentMethodCheck,
 } from '../../../../../services/shared/agent-method-workflow.cjs';
 const shared = createRequire(import.meta.url)(
     fileURLToPath(

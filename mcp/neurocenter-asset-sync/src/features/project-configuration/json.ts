@@ -21,13 +21,13 @@ export function configurationObject(raw: string | null, strict = false): Record<
         throw Error('Нужен JSON-объект без повторяющихся ключей.');
     return value;
 }
-export interface RagFields {
+export interface IRagFields {
     topK?: number;
     minScore?: number;
     excludeDirs?: string[];
     includeExtensions?: string[];
 }
-export function ragFields(value: Record<string, unknown>): RagFields {
+export function ragFields(value: Record<string, unknown>): IRagFields {
     const retrieval = object(value.retrieval) ? value.retrieval : {},
         indexing = object(value.indexing) ? value.indexing : {};
     return {
@@ -37,7 +37,7 @@ export function ragFields(value: Record<string, unknown>): RagFields {
         includeExtensions: indexing.includeExtensions as string[] | undefined,
     };
 }
-export function validateRagFields(input: unknown): asserts input is RagFields {
+export function validateRagFields(input: unknown): asserts input is IRagFields {
     if (
         !object(input) ||
         Object.keys(input).some((key) => !['topK', 'minScore', 'excludeDirs', 'includeExtensions'].includes(key))
@@ -79,7 +79,7 @@ export function updateRagFields(raw: string | null, input: unknown): string {
     const previous = configurationObject(raw, true);
     validateRagFields(input);
     let text = raw ?? '{}\n';
-    for (const key of Object.keys(input) as Array<keyof RagFields>) {
+    for (const key of Object.keys(input) as Array<keyof IRagFields>) {
         const section = ['topK', 'minScore'].includes(key) ? 'retrieval' : 'indexing';
         if (isDeepStrictEqual(object(previous[section]) ? previous[section][key] : undefined, input[key])) continue;
         text = applyEdits(

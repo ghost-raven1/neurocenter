@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import { recordDeviceOperation } from './device-operations';
 import { publishMethodChatResult } from '../agent-method-workflows/chat-origin';
 
-interface WorkspaceChange {
+interface IWorkspaceChange {
     deviceId: string;
     projectId?: string;
     email: string;
@@ -12,7 +12,7 @@ interface WorkspaceChange {
 const workspaceKinds = ['choose-root', 'bind-project', 'transfer-workspace', 'adopt-workspace'];
 
 /** Смена папки не перенаправляет прежнюю очередь и ждёт завершения начатых действий. */
-export async function guardWorkspaceQueue(client: PoolClient, input: WorkspaceChange): Promise<void> {
+export async function guardWorkspaceQueue(client: PoolClient, input: IWorkspaceChange): Promise<void> {
     if (!workspaceKinds.includes(input.kind)) {
         return;
     }

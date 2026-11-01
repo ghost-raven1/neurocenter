@@ -1,6 +1,10 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import type { Pool } from 'pg';
-import type { BrowserSessionIdentity, BrowserSessionLookup, CreateBrowserSession } from './browser-auth-session.types';
+import type {
+    IBrowserSessionIdentity,
+    TBrowserSessionLookup,
+    ICreateBrowserSession,
+} from './browser-auth-session.interfaces';
 
 /** Uses the existing Catalog pool; each mutation is one committed statement, never an upsert. */
 export class BrowserAuthSessionRepository {
@@ -12,7 +16,7 @@ export class BrowserAuthSessionRepository {
             throw new ServiceUnavailableException('Хранилище сессий временно недоступно.');
         }
     }
-    async create(input: CreateBrowserSession): Promise<{ created: true }> {
+    async create(input: ICreateBrowserSession): Promise<{ created: true }> {
         return this.available(async () => {
             const created = await this.db.query(
                 `INSERT INTO browser_auth_sessions(token_hash,identity,selected_role,created_at,expires_at)
@@ -23,10 +27,10 @@ export class BrowserAuthSessionRepository {
             return { created: true };
         });
     }
-    async find(hash: string): Promise<BrowserSessionLookup> {
+    async find(hash: string): Promise<TBrowserSessionLookup> {
         return this.available(async () => {
             const row = (
-                await this.db.query<{ identity: BrowserSessionIdentity; selected_role: string; expires_at: Date }>(
+                await this.db.query<{ identity: IBrowserSessionIdentity; selected_role: string; expires_at: Date }>(
                     `SELECT identity,selected_role,expires_at FROM browser_auth_sessions
     WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>clock_timestamp()`,
                     [hash],

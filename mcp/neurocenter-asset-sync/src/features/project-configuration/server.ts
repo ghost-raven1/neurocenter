@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import type { ConfigurationContext, Authorize } from './context.js';
+import type { TConfigurationContext, TAuthorize } from './context.js';
 import { ConfigurationEditor } from './engine.js';
 import { configurationPage } from './page.js';
 const active = new Map<string, () => Promise<void>>();
@@ -58,8 +58,8 @@ const safeMessage = (error: unknown) => {
 };
 /** One-use fragment capability, same-origin CSRF, local-only text and a fresh permit for every operation. */
 export async function startConfigurationSession(
-    context: ConfigurationContext,
-    authorize: Authorize,
+    context: TConfigurationContext,
+    authorize: TAuthorize,
     open: (url: string) => Promise<boolean>,
 ): Promise<void> {
     const id = context.descriptor.sessionId;

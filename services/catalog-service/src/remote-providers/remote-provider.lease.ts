@@ -1,23 +1,23 @@
 import { ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import type { IRemoteConnectionRow } from '../models/remote-connection.repository';
-import type { ProviderWireLease } from '../model-usage/model-usage.context';
+import type { IProviderWireLease } from '../model-usage/model-usage.context';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { remoteProviderAuthority } from './remote-provider.authority';
 import { credentialFence, openUserCredential, remoteAuthMode, remoteProviderId } from './remote-provider.identity';
 import { providerConnection, readUserCredential } from './remote-provider.repository';
-import type { RemoteProviderActor } from './remote-provider.types';
+import type { IRemoteProviderActor } from './remote-provider.interfaces';
 
 /** A dedicated short SQL lease holds fresh ACL/provider/key until the literal fetch invocation. */
 export async function remoteProviderLease(
     pool: Pool,
     model: IModel,
     expected: IRemoteConnectionRow,
-    actor: RemoteProviderActor,
+    actor: IRemoteProviderActor,
     signal?: AbortSignal,
     environment: NodeJS.ProcessEnv = process.env,
-): Promise<ProviderWireLease> {
+): Promise<IProviderWireLease> {
     signal?.throwIfAborted();
     await requireFeatureEnabled('personal_remote_provider_credentials');
     signal?.throwIfAborted();

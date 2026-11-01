@@ -1,19 +1,17 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import type { RoleDb } from '../system-roles/system-role.repository';
+import type { TRoleDb } from '../system-roles/system-role.repository';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { assertProjectChatRoomAccess } from '../project-chat/project-chat-room-access';
-import {
-    DEFAULT_PROJECT_CHAT_ROOM,
-    emptyProjectChatRoom,
-    type ProjectChatRoomRow,
-} from '../project-chat/project-chat.types';
-import type { ChatSystemRoleOrigin, ChatSystemRoleOriginRow } from './chat-system-roles.types';
+import { DEFAULT_PROJECT_CHAT_ROOM } from '../project-chat/project-chat.constants';
+import { emptyProjectChatRoom } from '../project-chat/project-chat.utils';
+import { type IProjectChatRoomRow } from '../project-chat/project-chat.interfaces';
+import type { IChatSystemRoleOrigin, IChatSystemRoleOriginRow } from './chat-system-roles.interfaces';
 
 /** Caller first checks current private/project authority; this fence rechecks the original chat and its flags. */
 export async function assertChatSystemRoleSource(
-    db: RoleDb,
+    db: TRoleDb,
     owner: string,
-    origin: ChatSystemRoleOrigin,
+    origin: IChatSystemRoleOrigin,
 ): Promise<void> {
     let feature: 'model_chat' | 'group_chat' | 'project_chat';
     if (origin.kind === 'model-chat') {
@@ -29,7 +27,7 @@ export async function assertChatSystemRoleSource(
         feature = chat.mode === 'group' ? 'group_chat' : 'model_chat';
     } else {
         const stored = (
-            await db.query<ProjectChatRoomRow>(
+            await db.query<IProjectChatRoomRow>(
                 'SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2 FOR SHARE',
                 [origin.projectId, origin.originId],
             )
@@ -56,13 +54,13 @@ export async function assertChatSystemRoleSource(
 
 /** Legacy dialogs have no origin. Existing receipts/history bypass this new-work gate. */
 export async function assertChatSystemRoleOrigin(
-    db: RoleDb,
+    db: TRoleDb,
     dialogId: string,
     owner: string,
     projectId: string | null,
 ): Promise<void> {
     const row = (
-        await db.query<ChatSystemRoleOriginRow>(
+        await db.query<IChatSystemRoleOriginRow>(
             'SELECT * FROM chat_system_role_origins WHERE dialog_id=$1 AND owner_email=$2 FOR SHARE',
             [dialogId, owner],
         )

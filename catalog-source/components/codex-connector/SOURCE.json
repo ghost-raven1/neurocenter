@@ -6,6 +6,92 @@
   "scope": "Authentication and model transport source closure; delegation and installer excluded",
   "files": [
     {
+      "path": "source/auth-login/auth-login.ts",
+      "sha256": "e18ca5706f16e78c1c5df9bdd1b8f6cafb18fbb531e19122d9ca2cf5ce0a7f54",
+      "bytes": 3085,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/auth-login/interfaces.ts",
+      "sha256": "927ead01cdc4552ed5b8dd9c24b17a5857432282d0613f5406155db784ee7196",
+      "bytes": 259,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/auth-provider/auth-provider.ts",
+      "sha256": "324764b73d648bc1a528290c22a4f88c432e89d42cbbe2a90a145256d18f5620",
+      "bytes": 2770,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/auth-provider/constants.ts",
+      "sha256": "98a4c57ff0de854813efdf24ecef1a7ba18575e15263b9084490273ce0e37fd2",
+      "bytes": 211,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/auth-provider/interfaces.ts",
+      "sha256": "ca824be4c4a80c89e280c1393574663657682cbf80ce55313681012a67b10557",
+      "bytes": 167,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/auth-provider/utils.ts",
+      "sha256": "3f30f03513221657d96e00cd4955c500cc96640780b6dc6f48084e4530b94230",
+      "bytes": 2068,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/auth-session/auth-session.ts",
+      "sha256": "ea53e058269ba20449d8e055926fcbf0a03569e38897925d9bec6a4c242371a2",
+      "bytes": 5435,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/auth-session/constants.ts",
+      "sha256": "50d38538add7d62705242e13195f390159d3d921fc75454451d0291c32042c5f",
+      "bytes": 459,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/auth-session/interfaces.ts",
+      "sha256": "70466d0a867c4123fa69e8557766b80dd58bf95fc12b4872d41c4b0926422232",
+      "bytes": 393,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/connection/connection.ts",
+      "sha256": "346cd17d1c5fa10b0b51ca8603e0a058a5780b3f1db824319745eb3a564cfa4b",
+      "bytes": 5326,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/connection/interfaces.ts",
+      "sha256": "95620a638a9ad1c0e6140a896db736118776549d048915b618bab97ad64c7f30",
+      "bytes": 132,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/constants.ts",
+      "sha256": "ce49d5020820091e78572dda42a0d4bf207568f7da0f466caf32426a99c29e14",
+      "bytes": 140,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/executable.ts",
+      "sha256": "aaf8c57a25da08699d8fad3934621a539733ef9c74ead189a12dc91eea157acc",
+      "bytes": 612,
+      "origin": "application-adapted from pinned upstream"
+    },
+    {
+      "path": "source/interfaces.ts",
+      "sha256": "bc1db86c18e8952a4276f56798456496e7fce3ecd1bcd90e7c30cf18ff8df16a",
+      "bytes": 807,
+      "origin": "application-adapted from pinned upstream"
+    }
+  ],
+  "upstreamFiles": [
+    {
       "path": "source/auth-login.ts",
       "sha256": "3dacea708db56eb332fd123377eeb8ca0e2bd8bf4a7e65cfbc4f596f5ef71cea",
       "bytes": 2661,
@@ -41,5 +127,9 @@
       "bytes": 748,
       "origin": "upstream"
     }
+  ],
+  "adaptations": [
+    "Feature-local modules, extracted contracts and constants",
+    "Neurocenter auth-only environment, cancellation and pagination integration"
   ]
 }

@@ -9,30 +9,19 @@ import { createRequire } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const root = path.resolve(new URL('../../', import.meta.url).pathname);
-const require = createRequire(
-    path.join(root, 'services/catalog-service/package.json'),
-);
+const require = createRequire(path.join(root, 'services/catalog-service/package.json'));
 const { Pool } = require('pg');
 const { io } = await import(
-    path.join(
-        root,
-        'mcp/neurocenter-asset-sync/node_modules/socket.io-client/build/esm/index.js',
-    )
+    path.join(root, 'mcp/neurocenter-asset-sync/node_modules/socket.io-client/build/esm/index.js')
 );
 const base = 'http://localhost:5173';
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-live-'));
 process.env.NEUROCENTER_BRIDGE_HOME = path.join(temp, 'bridge');
 process.env.NEUROCENTER_URL = base;
-const { writeState } = await import(
-    path.join(root, 'mcp/neurocenter-asset-sync/dist/bridge/state.js')
-);
-const { setRoot } = await import(
-    path.join(root, 'mcp/neurocenter-asset-sync/dist/bridge/workspace.js')
-);
+const { writeState } = await import(path.join(root, 'mcp/neurocenter-asset-sync/dist/bridge/state.js'));
+const { setRoot } = await import(path.join(root, 'mcp/neurocenter-asset-sync/dist/bridge/workspace.js'));
 const pool = new Pool({
-    connectionString:
-        process.env.CATALOG_PG_URL ||
-        'postgresql://rag:rag@localhost:5432/catalog',
+    connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
 });
 const login = await fetch(base + '/auth/login', { redirect: 'manual' });
 const cookie = login.headers
@@ -48,29 +37,18 @@ const results = [];
 const events = [];
 let socket;
 let keep = false;
-async function call(
-    method,
-    route,
-    body,
-    expected = 200,
-    deviceRequest = false,
-) {
+async function call(method, route, body, expected = 200, deviceRequest = false) {
     const response = await fetch(base + route, {
         method,
         headers: {
-            'Content-Type': 'application/json', 'X-Neurocenter-Request': '1',
-            ...(deviceRequest
-                ? { Authorization: 'Bearer ' + token }
-                : { Cookie: cookie }),
+            'Content-Type': 'application/json',
+            'X-Neurocenter-Request': '1',
+            ...(deviceRequest ? { Authorization: 'Bearer ' + token } : { Cookie: cookie }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const data = await response.json();
-    assert.equal(
-        response.status,
-        expected,
-        JSON.stringify({ route, status: response.status, data }),
-    );
+    assert.equal(response.status, expected, JSON.stringify({ route, status: response.status, data }));
     return data;
 }
 async function waitFor(predicate, label, timeout = 20000) {
@@ -101,29 +79,19 @@ async function job(input) {
 async function finished(id) {
     return waitFor(async () => {
         const found = (await jobs()).find((item) => item.id === id);
-        return found && !['queued', 'running', 'reconciling'].includes(found.state)
-            ? found
-            : undefined;
+        return found && !['queued', 'running', 'reconciling'].includes(found.state) ? found : undefined;
     }, 'завершения задания ' + id);
 }
 function start() {
-    worker = spawn(
-        process.execPath,
-        [
-            path.join(root, 'mcp/neurocenter-asset-sync/dist/index.js'),
-            '--worker',
-        ],
-        { env: process.env, stdio: 'ignore' },
-    );
+    worker = spawn(process.execPath, [path.join(root, 'mcp/neurocenter-asset-sync/dist/index.js'), '--worker'], {
+        env: process.env,
+        stdio: 'ignore',
+    });
 }
 async function stop() {
     if (worker && worker.exitCode === null) {
         worker.kill('SIGTERM');
-        await waitFor(
-            () => worker.exitCode !== null || worker.signalCode,
-            'остановки MCP',
-            8000,
-        );
+        await waitFor(() => worker.exitCode !== null || worker.signalCode, 'остановки MCP', 8000);
     }
     worker = undefined;
 }
@@ -137,25 +105,11 @@ try {
         reconnectionDelay: 200,
         reconnectionDelayMax: 500,
     });
-    socket.on('section:changed', (payload) =>
-        events.push({ type: 'section', ...payload }),
-    );
-    socket.on('bridge:changed', (payload) =>
-        events.push({ type: 'bridge', ...payload }),
-    );
+    socket.on('section:changed', (payload) => events.push({ type: 'section', ...payload }));
+    socket.on('bridge:changed', (payload) => events.push({ type: 'bridge', ...payload }));
     await waitFor(() => socket.connected, 'соединения браузера');
-    project = await call(
-        'POST',
-        '/api/projects',
-        { name: 'Проверка MCP ' + randomUUID().slice(0, 8) },
-        201,
-    );
-    await call(
-        'POST',
-        `/api/projects/${project.id}/members`,
-        { principalName: email, role: 'Разработчик' },
-        201,
-    );
+    project = await call('POST', '/api/projects', { name: 'Проверка MCP ' + randomUUID().slice(0, 8) }, 201);
+    await call('POST', `/api/projects/${project.id}/members`, { principalName: email, role: 'Разработчик' }, 201);
     const pair = await call(
         'POST',
         '/api/device-channel/pair/start',
@@ -165,35 +119,16 @@ try {
         },
         201,
     );
-    await call(
-        'POST',
-        '/api/device-channel/pair/poll',
-        { deviceCode: pair.deviceCode },
-        201,
-    ).then((value) => assert.equal(value.state, 'pending'));
-    await call('POST', `/api/device-pairs/${pair.userCode}/approve`, {}, 201);
-    const connected = await call(
-        'POST',
-        '/api/device-channel/pair/poll',
-        { deviceCode: pair.deviceCode },
-        201,
+    await call('POST', '/api/device-channel/pair/poll', { deviceCode: pair.deviceCode }, 201).then((value) =>
+        assert.equal(value.state, 'pending'),
     );
+    await call('POST', `/api/device-pairs/${pair.userCode}/approve`, {}, 201);
+    const connected = await call('POST', '/api/device-channel/pair/poll', { deviceCode: pair.deviceCode }, 201);
     device = { id: connected.deviceId };
     token = connected.token;
     await writeState('credentials', { token, deviceId: device.id, email });
-    await call(
-        'POST',
-        '/api/device-channel/pair/poll',
-        { deviceCode: pair.deviceCode },
-        409,
-    );
-    await call(
-        'POST',
-        '/api/platform/users',
-        { email: 'must-not-be-created@example.test' },
-        403,
-        true,
-    );
+    await call('POST', '/api/device-channel/pair/poll', { deviceCode: pair.deviceCode }, 409);
+    await call('POST', '/api/platform/users', { email: 'must-not-be-created@example.test' }, 403, true);
     results.push({
         case: 'Личное подключение одноразовое; ключ MCP не управляет пользователями',
         ok: true,
@@ -203,31 +138,34 @@ try {
     await fs.mkdir(local, { recursive: true });
     await setRoot(workspaces);
     start();
-    await waitFor(async () => (await call('GET', '/api/devices')).find(item => item.id === device.id)?.report.protocolVersion === 2, 'отчёта протокола MCP');
+    await waitFor(
+        async () =>
+            (await call('GET', '/api/devices')).find((item) => item.id === device.id)?.report.protocolVersion === 2,
+        'отчёта протокола MCP',
+    );
     const bind = await job({
         kind: 'bind-project',
         folderName: path.basename(local),
     });
     assert.equal((await finished(bind.id)).state, 'succeeded');
-    await waitFor(async () => (await call('GET', '/api/devices')).find(item => item.id === device.id)?.report.bindings?.some(binding => binding.projectId === project.id && binding.bindingId && binding.valid !== false), 'отчёта привязки папки');
-    const binding = JSON.parse(
-        await fs.readFile(
-            path.join(local, '.opencode/neurocenter.json'),
-            'utf8',
-        ),
+    await waitFor(
+        async () =>
+            (await call('GET', '/api/devices'))
+                .find((item) => item.id === device.id)
+                ?.report.bindings?.some(
+                    (binding) => binding.projectId === project.id && binding.bindingId && binding.valid !== false,
+                ),
+        'отчёта привязки папки',
     );
+    const binding = JSON.parse(await fs.readFile(path.join(local, '.opencode/neurocenter.json'), 'utf8'));
     assert.equal(binding.projectId, project.id);
     results.push({
         case: 'MCP связывает папку с другим названием по серверному ID',
         ok: true,
     });
-    const database =
-        'nc_rag_' +
-        createHash('sha256').update(project.id).digest('hex').slice(0, 32);
+    const database = 'nc_rag_' + createHash('sha256').update(project.id).digest('hex').slice(0, 32);
     const previousDatabases = JSON.parse(
-        await fs
-            .readFile(path.join(root, '.run/bridge-rag-databases.json'), 'utf8')
-            .catch(() => '[]'),
+        await fs.readFile(path.join(root, '.run/bridge-rag-databases.json'), 'utf8').catch(() => '[]'),
     );
     await fs.writeFile(
         path.join(root, '.run/bridge-rag-databases.json'),
@@ -252,9 +190,7 @@ try {
     const restore = await job({ kind: 'restore-rag' });
     const restoreResult = await finished(restore.id);
     assert.equal(restoreResult.state, 'succeeded', restoreResult.message);
-    const lanceRequire = createRequire(
-        path.join(root, 'mcp/neurocenter-asset-sync/package.json'),
-    );
+    const lanceRequire = createRequire(path.join(root, 'mcp/neurocenter-asset-sync/package.json'));
     const lancedb = lanceRequire('@lancedb/lancedb');
     const localDb = await lancedb.connect(path.join(local, '.opencode/rag_db'));
     const table = await localDb.openTable('chunks');
@@ -267,10 +203,7 @@ try {
     const sync = await job({ kind: 'sync-rag' });
     const syncResult = await finished(sync.id);
     assert.equal(syncResult.state, 'succeeded', syncResult.message);
-    const chunks = await call(
-        'GET',
-        '/api/rag/chunks?projectKey=' + project.id,
-    );
+    const chunks = await call('GET', '/api/rag/chunks?projectKey=' + project.id);
     assert.equal(chunks.chunks[0].content, 'Знания с компьютера');
     await call('POST', '/auth/switch-role', { role: 'Главный админ' });
     results.push({
@@ -302,12 +235,7 @@ try {
         201,
     );
     plugins.push(plugin.id);
-    await call(
-        'POST',
-        `/api/projects/${project.id}/assets`,
-        { assetId: plugin.id, assetKind: 'mcp' },
-        201,
-    );
+    await call('POST', `/api/projects/${project.id}/assets`, { assetId: plugin.id, assetKind: 'mcp' }, 201);
     const input = {
         deviceId: device.id,
         projectId: project.id,
@@ -326,12 +254,7 @@ try {
         .update('mcp:' + plugin.id)
         .digest('hex')
         .slice(0, 24);
-    const installed = path.join(
-        local,
-        '.opencode/mcp-bundles',
-        hash,
-        'server.mjs',
-    );
+    const installed = path.join(local, '.opencode/mcp-bundles', hash, 'server.mjs');
     assert.match(await fs.readFile(installed, 'utf8'), /Проверочный сервер/);
     const repeat = await job({
         kind: 'install',
@@ -359,10 +282,7 @@ try {
     });
     const skillResult = await finished(skillJob.id);
     assert.equal(skillResult.state, 'succeeded', skillResult.message);
-    const skillText = await fs.readFile(
-        path.join(local, '.opencode/skills/rag-index-monitor/SKILL.md'),
-        'utf8',
-    );
+    const skillText = await fs.readFile(path.join(local, '.opencode/skills/rag-index-monitor/SKILL.md'), 'utf8');
     assert.match(skillText, /name: "rag-index-monitor"/);
     assert(skillText.includes(skill.body));
     results.push({
@@ -388,12 +308,7 @@ try {
         201,
     );
     plugins.push(extension.id);
-    await call(
-        'POST',
-        `/api/projects/${project.id}/assets`,
-        { assetId: extension.id, assetKind: 'plugin' },
-        201,
-    );
+    await call('POST', `/api/projects/${project.id}/assets`, { assetId: extension.id, assetKind: 'plugin' }, 201);
     const extensionJob = await job({
         kind: 'install',
         assetKind: 'plugin',
@@ -402,14 +317,8 @@ try {
     });
     const extensionResult = await finished(extensionJob.id);
     assert.equal(extensionResult.state, 'succeeded', extensionResult.message);
-    const config = JSON.parse(
-        await fs.readFile(path.join(local, 'opencode.json'), 'utf8'),
-    );
-    assert(
-        config.plugin.some(
-            (item) => item.startsWith('file:') && item.endsWith('/plugin.mjs'),
-        ),
-    );
+    const config = JSON.parse(await fs.readFile(path.join(local, 'opencode.json'), 'utf8'));
+    assert(config.plugin.some((item) => item.startsWith('file:') && item.endsWith('/plugin.mjs')));
     results.push({
         case: 'Плагин записывается отдельным пакетом и подключается через file URL',
         ok: true,
@@ -434,10 +343,7 @@ try {
         kind: 'bind-project',
         folderName: path.basename(local),
     });
-    assert.equal(
-        (await jobs()).find((item) => item.id === offline.id).state,
-        'queued',
-    );
+    assert.equal((await jobs()).find((item) => item.id === offline.id).state, 'queued');
     start();
     assert.equal((await finished(offline.id)).state, 'succeeded');
     results.push({
@@ -449,29 +355,14 @@ try {
     await waitFor(() => socket.connected, 'reconnect браузера');
     await call('PATCH', `/api/projects/${project.id}`, { retention: 22 });
     await waitFor(
-        () =>
-            events
-                .slice(before)
-                .some(
-                    (item) =>
-                        item.type === 'section' &&
-                        item.sections.includes('projects'),
-                ),
+        () => events.slice(before).some((item) => item.type === 'section' && item.sections.includes('projects')),
         'инвалидации после reconnect',
     );
-    assert(
-        events.some(
-            (item) => item.type === 'bridge' && item.deviceId === device.id,
-        ),
-    );
+    assert(events.some((item) => item.type === 'bridge' && item.deviceId === device.id));
     assert(
         events
             .filter((item) => item.type === 'section')
-            .every((item) =>
-                Object.keys(item).every((key) =>
-                    ['type', 'sections', 'at'].includes(key),
-                ),
-            ),
+            .every((item) => Object.keys(item).every((key) => ['type', 'sections', 'at'].includes(key))),
     );
     results.push({
         case: 'WS доставляет статусы владельцу и инвалидации разделов после reconnect',
@@ -479,9 +370,9 @@ try {
     });
     await stop();
     await call('POST', '/auth/switch-role', { role: 'Разработчик' });
-    const activeSync=await job({kind:'sync-rag'});
-    const claimedSync=await call('POST','/api/device-channel/jobs/claim',{},201,true);
-    assert.equal(claimedSync.id,activeSync.id);
+    const activeSync = await job({ kind: 'sync-rag' });
+    const claimedSync = await call('POST', '/api/device-channel/jobs/claim', {}, 201, true);
+    assert.equal(claimedSync.id, activeSync.id);
     const revoked = await job({
         kind: 'install',
         assetId: plugin.id,
@@ -491,15 +382,28 @@ try {
     await call('POST', '/auth/switch-role', { role: 'Главный админ' });
     const members = await call('GET', `/api/projects/${project.id}/members`);
     const member = members.find((item) => item.principalName === email);
+    await call('DELETE', `/api/projects/${project.id}/members/${encodeURIComponent(member.userId)}`, {
+        expectedRole: member.role,
+    });
+    const deniedSync = await fetch(base + '/api/rag/chunks?projectKey=' + project.id, {
+        headers: {
+            authorization: 'Bearer ' + token,
+            'x-neurocenter-job-id': activeSync.id,
+            'x-neurocenter-job-lease': claimedSync.lease,
+        },
+    });
+    assert.equal(deniedSync.status, 403);
     await call(
-        'DELETE',
-        `/api/projects/${project.id}/members/${encodeURIComponent(member.userId)}`,
-        { expectedRole: member.role },
+        'POST',
+        `/api/device-channel/jobs/${activeSync.id}/progress`,
+        { lease: claimedSync.lease, state: 'failed', message: 'Проверка: роль отозвана во время синхронизации' },
+        201,
+        true,
     );
-    const deniedSync=await fetch(base+'/api/rag/chunks?projectKey='+project.id,{headers:{authorization:'Bearer '+token,'x-neurocenter-job-id':activeSync.id,'x-neurocenter-job-lease':claimedSync.lease}});
-    assert.equal(deniedSync.status,403);
-    await call('POST',`/api/device-channel/jobs/${activeSync.id}/progress`,{lease:claimedSync.lease,state:'failed',message:'Проверка: роль отозвана во время синхронизации'},201,true);
-    results.push({case:'Каждая порция синхронизации проверяет исходную роль задания даже у MCP главного админа',ok:true});
+    results.push({
+        case: 'Каждая порция синхронизации проверяет исходную роль задания даже у MCP главного админа',
+        ok: true,
+    });
     start();
     assert.equal((await finished(revoked.id)).state, 'failed');
     results.push({
@@ -542,31 +446,21 @@ try {
 } finally {
     socket?.disconnect();
     await stop();
-    await call('POST', '/auth/switch-role', { role: 'Главный админ' }).catch(
-        () => undefined,
-    );
+    await call('POST', '/auth/switch-role', { role: 'Главный админ' }).catch(() => undefined);
     if (!keep) {
         if (project) {
-            await call('DELETE', '/api/projects/' + project.id).catch(
-                () => undefined,
-            );
+            await call('DELETE', '/api/projects/' + project.id).catch(() => undefined);
         }
         for (const id of plugins) {
-            await call('DELETE', '/api/ai-plugins/' + id).catch(
-                () => undefined,
-            );
+            await call('DELETE', '/api/ai-plugins/' + id).catch(() => undefined);
         }
         if (device) {
             await pool.query(
                 "DELETE FROM operations WHERE operation_id IN (SELECT 'bridge-'||id FROM bridge_jobs WHERE device_id=$1)",
                 [device.id],
             );
-            await pool.query('DELETE FROM bridge_jobs WHERE device_id=$1', [
-                device.id,
-            ]);
-            await pool.query('DELETE FROM bridge_devices WHERE id=$1', [
-                device.id,
-            ]);
+            await pool.query('DELETE FROM bridge_jobs WHERE device_id=$1', [device.id]);
+            await pool.query('DELETE FROM bridge_devices WHERE id=$1', [device.id]);
         }
         await fs.rm(temp, { recursive: true, force: true });
     }

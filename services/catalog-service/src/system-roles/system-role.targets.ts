@@ -6,7 +6,7 @@ import type { RemoteConnectionService } from '../models/remote-connection.servic
 import type { ProjectChatService } from '../project-chat/project-chat.service';
 import { remoteModelOptions, assertRemoteModelOptions } from '../models/remote-model-options';
 import { allowRequest } from '../access/access-policy';
-import type { AgentOverrides } from '../agents/agent.types';
+import type { TAgentOverrides } from '../agents/agent.interfaces';
 import type { SystemRolePolicy } from './system-role.policy';
 import {
     ROLE_BUDGET,
@@ -17,23 +17,23 @@ import {
 } from './system-role.definitions';
 import { acceptedPreviousDefinition, previousRoleDefinitionPin } from './system-role.previous-contract';
 import { acceptedLegacyDefinition, legacyRoleDefinitionPin } from './system-role.legacy-contract';
-import { restoreRoleProjection, roleProjection, type PrivateProjection } from './system-role.privacy';
+import { restoreRoleProjection, roleProjection, type IPrivateProjection } from './system-role.privacy';
 import { readRolePackageSource } from './system-role.package-source';
 import { readRoleDialogContext } from './system-role.dialog-context';
 import { coordinatorContext } from './system-role.coordinator';
-import type { SystemRoleMcpAccess } from '../system-role-mcp/system-role-mcp.types';
+import type { ISystemRoleMcpAccess } from '../system-role-mcp/system-role-mcp.interfaces';
 import type { ModelChatProjectContext } from '../model-chat/chat-project-context';
 import type {
-    RoleApplyReceipt,
-    RolePrepared,
-    RoleRunRow,
-    RoleSelection,
-    RoleTargetSelection,
-    RoleTargetSnapshot,
-    SystemRoleId,
-} from './system-role.types';
+    IRoleApplyReceipt,
+    IRolePrepared,
+    IRoleRunRow,
+    IRoleSelection,
+    IRoleTargetSelection,
+    IRoleTargetSnapshot,
+    TSystemRoleId,
+} from './system-role.interfaces';
 
-type Skill = { body: string; meta: { version: number; [key: string]: unknown } };
+type TSkill = { body: string; meta: { version: number; [key: string]: unknown } };
 const changed = (): never => {
     throw new ConflictException('Выбранная версия изменилась. Подготовьте и просмотрите контекст заново.');
 };
@@ -46,7 +46,7 @@ export class SystemRoleTargets {
         private readonly connections: RemoteConnectionService,
         private readonly request: typeof fetch = globalThis.fetch,
         private readonly chats?: ProjectChatService,
-        private readonly mcp?: SystemRoleMcpAccess,
+        private readonly mcp?: ISystemRoleMcpAccess,
         private readonly projectContext?: ModelChatProjectContext,
         private readonly guidanceEnabled = false,
     ) {}
@@ -64,7 +64,7 @@ export class SystemRoleTargets {
             .slice(0, 50)
             .map((card) => ({ kind: 'agent', id: card.id, name: card.name }));
     }
-    private async skill(req: Request, id: string, method = 'GET', body?: unknown): Promise<Skill> {
+    private async skill(req: Request, id: string, method = 'GET', body?: unknown): Promise<TSkill> {
         const actor = await this.policy.models.actor(req),
             path = '/api/skills/' + id;
         if (
@@ -112,7 +112,7 @@ export class SystemRoleTargets {
             } finally {
                 reader.releaseLock();
             }
-            const value = JSON.parse(Buffer.concat(parts).toString()) as Skill;
+            const value = JSON.parse(Buffer.concat(parts).toString()) as TSkill;
             if (!value || typeof value.body !== 'string' || !value.meta || !Number.isSafeInteger(value.meta.version))
                 throw Error('invalid');
             return value;
@@ -123,7 +123,7 @@ export class SystemRoleTargets {
             );
         }
     }
-    async read(req: Request, selection: RoleSelection, target: RoleTargetSelection): Promise<RoleTargetSnapshot> {
+    async read(req: Request, selection: IRoleSelection, target: IRoleTargetSelection): Promise<IRoleTargetSnapshot> {
         const actor = await this.policy.actor(req, selection.projectId),
             main = actor.activeRole === 'Главный админ';
         let version = 0,
@@ -280,12 +280,12 @@ export class SystemRoleTargets {
     /** Only Runner supplies acceptedRun; new admissions always use current definitions and fresh authority. */
     async prepare(
         req: Request,
-        id: SystemRoleId,
-        selection: RoleSelection,
-        acceptedMcp?: RolePrepared['mcp'],
-        accepted?: Pick<RolePrepared, 'projectContext' | 'guidance'>,
-        acceptedRun?: RoleRunRow,
-    ): Promise<RolePrepared> {
+        id: TSystemRoleId,
+        selection: IRoleSelection,
+        acceptedMcp?: IRolePrepared['mcp'],
+        accepted?: Pick<IRolePrepared, 'projectContext' | 'guidance'>,
+        acceptedRun?: IRoleRunRow,
+    ): Promise<IRolePrepared> {
         const legacy =
             acceptedRun?.agent_id === id && acceptedRun.snapshot === accepted
                 ? acceptedLegacyDefinition(acceptedRun)
@@ -308,7 +308,7 @@ export class SystemRoleTargets {
             ...(selection.mcp?.length ? { mcp: selection.mcp } : {}),
             ...(selection.textContext ? { textContext: selection.textContext } : {}),
         };
-        const targets: RoleTargetSnapshot[] = [];
+        const targets: IRoleTargetSnapshot[] = [];
         for (const target of selection.targets) targets.push(await this.read(req, selection, target));
         if (selection.mcp?.length && !acceptedMcp && !this.mcp)
             throw new ConflictException(
@@ -412,10 +412,10 @@ export class SystemRoleTargets {
             ...(guidance ? { guidance } : {}),
         };
     }
-    replacement(target: RoleTargetSnapshot, content: string): string {
+    replacement(target: IRoleTargetSnapshot, content: string): string {
         const restored = restoreRoleProjection(
             content,
-            target.before.projection as unknown as PrivateProjection,
+            target.before.projection as unknown as IPrivateProjection,
             target.kind === 'adapter',
         );
         if (target.kind === 'adapter') remoteModelOptions(JSON.parse(restored));
@@ -423,12 +423,12 @@ export class SystemRoleTargets {
     }
     async write(
         req: Request,
-        prepared: RolePrepared,
-        target: RoleTargetSnapshot,
+        prepared: IRolePrepared,
+        target: IRoleTargetSnapshot,
         replacement: string,
         key: string,
-        rollback?: RoleApplyReceipt,
-    ): Promise<RoleApplyReceipt> {
+        rollback?: IRoleApplyReceipt,
+    ): Promise<IRoleApplyReceipt> {
         const selected = prepared.selection.targets.find((item) => item.kind === target.kind && item.id === target.id)!;
         const current = await this.read(req, prepared.selection, selected);
         if (
@@ -446,7 +446,7 @@ export class SystemRoleTargets {
             expectedOptions: unknown;
         if (target.kind === 'agent') {
             if (prepared.selection.projectId) {
-                const previous = (rollback ? target : current).before.assignment as { overrides: AgentOverrides };
+                const previous = (rollback ? target : current).before.assignment as { overrides: TAgentOverrides };
                 const patch = {
                     overrides: rollback ? previous.overrides : { ...previous.overrides, prompt: text },
                     expectedRevision: current.version,

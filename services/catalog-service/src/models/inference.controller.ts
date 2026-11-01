@@ -18,8 +18,8 @@ import { projectEmbeddingPin } from './project-embedding.validation';
 import { remoteModelOptions } from './remote-model-options';
 import { withModelUsage } from '../model-usage/model-usage.context';
 
-type Json = Record<string, unknown>;
-const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
+type TJson = Record<string, unknown>;
+const object = (value: unknown): value is TJson => !!value && typeof value === 'object' && !Array.isArray(value);
 const invalid = (): never => {
     throw new BadRequestException(
         'Некорректный запрос модели. Допустимы текст, локальные PNG/JPEG и ограниченный размер запроса.',
@@ -27,7 +27,7 @@ const invalid = (): never => {
 };
 
 /** Сетевые URL картинок и произвольные параметры runtime не проходят в общий хостинг. */
-export function modelInferenceBody(endpoint: 'embed' | 'chat', input: unknown, openai = false): Json {
+export function modelInferenceBody(endpoint: 'embed' | 'chat', input: unknown, openai = false): TJson {
     if (!object(input) || Buffer.byteLength(JSON.stringify(input)) > 8 * 1024 * 1024) {
         return invalid();
     }

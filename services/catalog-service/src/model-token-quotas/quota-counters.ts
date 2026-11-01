@@ -1,16 +1,16 @@
 import type { PoolClient } from 'pg';
-import type { ModelTokenQuotaPolicy, ModelTokenQuotaCounters } from './model-token-quotas.types';
+import type { IModelTokenQuotaPolicy, IModelTokenQuotaCounters } from './model-token-quotas.interfaces';
 
-export interface QuotaBalance extends ModelTokenQuotaCounters {
+export interface IQuotaBalance extends IModelTokenQuotaCounters {
     unpricedUnknownCalls: number;
 }
 /** Active/unknown quota holds survive a period boundary; only authoritative settled charges age out. */
 export async function quotaCounters(
     db: Pick<PoolClient, 'query'>,
-    policy: ModelTokenQuotaPolicy,
+    policy: IModelTokenQuotaPolicy,
     clock: string,
     excludeId: string | null = null,
-): Promise<QuotaBalance> {
+): Promise<IQuotaBalance> {
     const row = (
         await db.query<{
             input: string | null;

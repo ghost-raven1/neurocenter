@@ -19,7 +19,7 @@ const digest = (value: unknown): string =>
     createHash('sha256')
         .update(JSON.stringify(canonical(value)))
         .digest('hex');
-type Db = Pick<PoolClient, 'query'>;
+type TDb = Pick<PoolClient, 'query'>;
 const semantic = (candidate: IOpenCodeModelCandidate): string =>
     digest([
         candidate.provider,
@@ -34,13 +34,13 @@ const semantic = (candidate: IOpenCodeModelCandidate): string =>
 export const openCodeIdentity = (candidate: IOpenCodeModelCandidate): string =>
     'model-opencode-' + semantic(candidate).slice(0, 40);
 /** Every importer takes the same provider-before-model order as manual configuration and dispatch. */
-async function protectedIdentity(db: Db, id: string): Promise<string> {
+async function protectedIdentity(db: TDb, id: string): Promise<string> {
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [providerFence(id)]);
     return id;
 }
 
 /** Reuse an earlier proven import once; a durable alias then preserves subsequent manual edits and historical IDs. */
-export async function resolveOpenCodeIdentity(db: Db, candidate: IOpenCodeModelCandidate): Promise<string> {
+export async function resolveOpenCodeIdentity(db: TDb, candidate: IOpenCodeModelCandidate): Promise<string> {
     await db.query('SELECT pg_advisory_xact_lock_shared(72465381)');
     const identity = semantic(candidate);
     await db.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:opencode-model-identity:'||$1,0))", [
@@ -107,7 +107,7 @@ export async function resolveOpenCodeIdentity(db: Db, candidate: IOpenCodeModelC
     return oldId;
 }
 /** Called in the same transaction as card creation; the FK prevents dangling identity aliases. */
-export async function saveOpenCodeIdentity(db: Db, candidate: IOpenCodeModelCandidate, id: string): Promise<void> {
+export async function saveOpenCodeIdentity(db: TDb, candidate: IOpenCodeModelCandidate, id: string): Promise<void> {
     const identity = semantic(candidate);
     await db.query(
         'INSERT INTO opencode_model_identities(identity_sha,model_id) VALUES($1,$2) ON CONFLICT(identity_sha) DO NOTHING',

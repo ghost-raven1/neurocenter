@@ -5,7 +5,7 @@ import { publicationHash } from '../publication/publication-validation';
 import { validateModelDescriptor, validateModelId } from '../models/model-validation';
 import { nextModelRevision, saveModelVersion, type IModelRow } from '../models/model-history';
 import { securityEvent } from '../access/security-events';
-import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-types';
+import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-interfaces';
 
 export const modelAssetHash = (row: IModelRow): string =>
     publicationHash({

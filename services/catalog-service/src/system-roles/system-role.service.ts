@@ -7,7 +7,7 @@ import {
     type OnApplicationShutdown,
     type OnModuleInit,
 } from '@nestjs/common';
-import type { SystemRoleMcpAccess } from '../system-role-mcp/system-role-mcp.types';
+import type { ISystemRoleMcpAccess } from '../system-role-mcp/system-role-mcp.interfaces';
 import type { Request } from 'express';
 import { AgentsService } from '../agents/agents.service';
 import { CatalogService } from '../catalog/catalog.service';
@@ -32,7 +32,7 @@ import { acceptedLegacyDefinition } from './system-role.legacy-contract';
 import { acceptedPreviousDefinition } from './system-role.previous-contract';
 import { HelpService } from '../help/help.service';
 import { SystemRoleGuidance } from './system-role.guidance';
-import { SystemRoleRepository, type RoleDb, type RoleExecutionLane } from './system-role.repository';
+import { SystemRoleRepository, type TRoleDb, type TRoleExecutionLane } from './system-role.repository';
 import { SystemRolePolicy } from './system-role.policy';
 import { SystemRoleTargets } from './system-role.targets';
 import { SystemRoleRunner, SystemRoleStepTimeout } from './system-role.runner';
@@ -41,12 +41,12 @@ import { ModelChatProjectContext } from '../model-chat/chat-project-context';
 import { SystemRoleApplication } from './system-role.apply';
 import { notifyRoleOperations } from './system-role.operations';
 import { roleAction, roleRequestId, roleSelection, startRoleRun } from './system-role.validation';
-import type { RoleRunRow, RoleRunView, SystemRoleId } from './system-role.types';
+import type { IRoleRunRow, IRoleRunView, TSystemRoleId } from './system-role.interfaces';
 
 /** Server-owned admission hooks bind a dialog receipt to this queue in the same transaction. */
-export interface RoleAdmissionReceipt {
-    before(db: RoleDb): Promise<void>;
-    accepted(db: RoleDb, row: RoleRunRow): Promise<void>;
+export interface IRoleAdmissionReceipt {
+    before(db: TRoleDb): Promise<void>;
+    accepted(db: TRoleDb, row: IRoleRunRow): Promise<void>;
 }
 
 /** Builtins share a durable owner, with one active request per transport. Restart never replays paid work. */
@@ -58,7 +58,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
     private readonly runner: SystemRoleRunner;
     private readonly application: SystemRoleApplication;
     private readonly active = new Map<string, AbortController>();
-    private readonly lanes = new Set<RoleExecutionLane>();
+    private readonly lanes = new Set<TRoleExecutionLane>();
     private readonly tasks = new Set<Promise<void>>();
     private timer?: ReturnType<typeof setInterval>;
     private drainTask?: Promise<void>;
@@ -72,7 +72,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         connections: RemoteConnectionService,
         runtime: ModelRuntime,
         chats: ProjectChatService,
-        @Optional() @Inject('SYSTEM_ROLE_MCP') readonly mcp?: SystemRoleMcpAccess,
+        @Optional() @Inject('SYSTEM_ROLE_MCP') readonly mcp?: ISystemRoleMcpAccess,
         @Optional() help?: HelpService,
     ) {
         this.repository = new SystemRoleRepository(models.pool);
@@ -121,7 +121,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         await this.drainTask;
         await Promise.allSettled([...this.tasks]); // At most one tracked task per transport.
     }
-    private role(id: string): SystemRoleId {
+    private role(id: string): TSystemRoleId {
         return systemRole(id).id;
     }
     private project(value?: string): string | null {
@@ -206,7 +206,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
             ...(prepared.guidance ? { guidance: prepared.guidance } : {}),
         };
     }
-    async start(req: Request, agentId: string, raw: unknown, receipt?: RoleAdmissionReceipt): Promise<RoleRunView> {
+    async start(req: Request, agentId: string, raw: unknown, receipt?: IRoleAdmissionReceipt): Promise<IRoleRunView> {
         const id = this.role(agentId),
             input = startRoleRun(id, raw),
             actor = await this.policy.actor(req, input.projectId),
@@ -250,17 +250,17 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         this.wake();
         return this.view(row);
     }
-    async list(req: Request, agentId: string, projectId?: string): Promise<RoleRunView[]> {
+    async list(req: Request, agentId: string, projectId?: string): Promise<IRoleRunView[]> {
         const id = this.role(agentId),
             project = this.project(projectId),
             actor = await this.policy.actor(req, project, 1);
         return (await this.repository.list(actor.email, id, project)).map((row) => this.view(row, actor));
     }
-    async detail(req: Request, agentId: string, runId: string): Promise<RoleRunView> {
+    async detail(req: Request, agentId: string, runId: string): Promise<IRoleRunView> {
         const row = await this.owned(req, agentId, runId);
         return this.view(row, await this.policy.read(req, row));
     }
-    async request(req: Request, agentId: string, requestId: string, expectedHash?: string): Promise<RoleRunView> {
+    async request(req: Request, agentId: string, requestId: string, expectedHash?: string): Promise<IRoleRunView> {
         const id = this.role(agentId),
             actor = await this.models.actor(req),
             row = await this.repository.existing(actor.email, roleRequestId(requestId));
@@ -269,14 +269,14 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
             throw new ConflictException('Ключ запроса относится к другому запуску.');
         return this.view(row, await this.policy.read(req, row));
     }
-    private async owned(req: Request, agentId: string, runId: string): Promise<RoleRunRow> {
+    private async owned(req: Request, agentId: string, runId: string): Promise<IRoleRunRow> {
         const id = this.role(agentId),
             row = await this.repository.get(roleRequestId(runId));
         if (!row || row.agent_id !== id) throw new NotFoundException('Запуск системного агента не найден.');
         await this.policy.read(req, row);
         return row;
     }
-    async cancel(req: Request, agentId: string, runId: string, raw: unknown): Promise<RoleRunView> {
+    async cancel(req: Request, agentId: string, runId: string, raw: unknown): Promise<IRoleRunView> {
         const action = roleAction(raw),
             row = await this.owned(req, agentId, runId);
         const saved = await this.repository.transaction(async (db) => {
@@ -298,21 +298,21 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         void notifyRoleOperations();
         return this.view(saved, await this.policy.read(req, saved));
     }
-    async apply(req: Request, agentId: string, runId: string, raw: unknown, rollback = false): Promise<RoleRunView> {
+    async apply(req: Request, agentId: string, runId: string, raw: unknown, rollback = false): Promise<IRoleRunView> {
         const action = roleAction(raw),
             row = await this.owned(req, agentId, runId);
         const saved = await this.application.apply(req, row, action.expectedRevision, action.requestId, rollback);
         void notifyRoleOperations();
         return this.view(saved);
     }
-    private view(row: RoleRunRow, actor?: IModelActor): RoleRunView {
+    private view(row: IRoleRunRow, actor?: IModelActor): IRoleRunView {
         const manage =
             !actor ||
             (row.project_id
                 ? projectLevel(actor.claims, actor.activeRole, row.project_id) >= 3
                 : actor.activeRole === 'Главный админ');
         const currentDefinition = row.request.expectedDefinitionPin === roleDefinitionPin(row.agent_id);
-        const prepareAgain: RoleRunView['prepareAgain'] =
+        const prepareAgain: IRoleRunView['prepareAgain'] =
             !currentDefinition &&
             manage &&
             actor?.email === row.actor &&
@@ -407,7 +407,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
             /* Durable leases expire safely; a scheduler fault never replays old model work. */
         }
     }
-    private async run(row: RoleRunRow): Promise<void> {
+    private async run(row: IRoleRunRow): Promise<void> {
         const controller = new AbortController(),
             timeout = setTimeout(
                 () => controller.abort(new Error('System role deadline.')),
@@ -431,7 +431,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
             void notifyRoleOperations();
         }
     }
-    private async fail(row: RoleRunRow, interrupted: boolean, cause?: unknown): Promise<void> {
+    private async fail(row: IRoleRunRow, interrupted: boolean, cause?: unknown): Promise<void> {
         await this.repository.transaction(async (db) => {
             const current = await this.repository.get(row.id, db, true);
             if (current?.state === 'running' && current.lease_token === row.lease_token) {

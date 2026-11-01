@@ -2,14 +2,14 @@ import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common'
 import {
     validRagWriteGrant,
     ragWriteAdmissionUncertain,
-    type RagWriteAuthorizationPhase,
+    type TRagWriteAuthorizationPhase,
 } from '../../../shared/rag-write-authorization.cjs';
 import type { IProjectRagContext } from './project-rag-context';
 
 /** Every first mutation asks Catalog afresh; grants are neither cached nor persisted for a later retry. */
 export async function authorizeRagWrite(
     value: { id: string; payloadHash: string; context: IProjectRagContext },
-    phase: RagWriteAuthorizationPhase,
+    phase: TRagWriteAuthorizationPhase,
 ): Promise<void> {
     const base = (process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/+$/, '');
     let response: Response, body: unknown;

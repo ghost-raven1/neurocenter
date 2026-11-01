@@ -23,9 +23,9 @@ export const {
     roleMcpCommand,
 } = contract;
 export type {
-    RoleMcpTarget,
-    RoleMcpSessionContext,
-    RoleMcpCallContext,
-    RoleMcpTool,
-    RoleMcpOutput,
+    TRoleMcpTarget as RoleMcpTarget,
+    IRoleMcpSessionContext as RoleMcpSessionContext,
+    IRoleMcpCallContext as RoleMcpCallContext,
+    IRoleMcpTool as RoleMcpTool,
+    IRoleMcpOutput as RoleMcpOutput,
 } from '../../../../../services/shared/system-role-mcp.cjs';

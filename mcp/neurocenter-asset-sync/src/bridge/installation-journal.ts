@@ -2,9 +2,9 @@ import path from 'node:path';
 import { hash, stateDir } from './state.js';
 import { installationReadLimit, JOURNAL_BYTES_LIMIT } from './installation-limits.js';
 import { canonicalV4 } from './package.js';
-import type { PackageRef } from './install-set.js';
+import type { IPackageRef } from './install-set.js';
 
-export interface FileChange {
+export interface IFileChange {
     relative: string;
     before: string | null;
     after: string | null;
@@ -13,36 +13,36 @@ export interface FileChange {
     /** Отсутствие поля в старом журнале означает неизвестные исходные права. */
     beforeMode?: number;
 }
-export interface ChangeIdentity {
+export interface IChangeIdentity {
     action: 'install' | 'uninstall';
     assetKey: string;
     manifest: string;
     result?: Record<string, unknown>;
-    recovery?: RecoveryDescriptor;
+    recovery?: IRecoveryDescriptor;
 }
-export interface RecoveryDescriptor {
+export interface IRecoveryDescriptor {
     schemaVersion: 1;
     projectId: string;
     instanceId: string;
     bindingId: string;
-    asset: PackageRef;
+    asset: IPackageRef;
     installationManifest: string;
-    packages: PackageRef[];
+    packages: IPackageRef[];
     createdAt: string;
 }
-export interface Journal extends ChangeIdentity {
+export interface IJournal extends IChangeIdentity {
     version: 1;
     root: string;
     id: string;
     state: 'prepared' | 'committed' | 'rolled-back';
-    changes: FileChange[];
+    changes: IFileChange[];
     job?: { id: string; lease: string; deviceId?: string };
 }
 export const journalDirectory = (root: string): string => path.join(stateDir(), 'file-changes', hash(root));
 
 /** Новые копии имеют точную привязку; прежние журналы v1 по-прежнему читаются без неё. */
-export function validateRecovery(value: RecoveryDescriptor): void {
-    const ref = (item: PackageRef): boolean =>
+export function validateRecovery(value: IRecoveryDescriptor): void {
+    const ref = (item: IPackageRef): boolean =>
         !!item &&
         Object.keys(item).sort().join(',') === 'id,kind,manifest,version' &&
         ['skill', 'mcp', 'plugin'].includes(item.kind) &&
@@ -89,7 +89,7 @@ export function validateRecovery(value: RecoveryDescriptor): void {
 }
 
 /** Ограничения действуют до pending.json, а не только при чтении после аварии. */
-export function validateChanges(changes: FileChange[]): void {
+export function validateChanges(changes: IFileChange[]): void {
     if (!Array.isArray(changes) || changes.length > 512) {
         throw new Error('Журнал превышает лимит 512 изменений.');
     }
@@ -150,7 +150,7 @@ export function validateChanges(changes: FileChange[]): void {
     }
 }
 
-export function encodeJournal(journal: Journal): string {
+export function encodeJournal(journal: IJournal): string {
     if (journal.recovery !== undefined) {
         validateRecovery(journal.recovery);
         if (
@@ -168,14 +168,14 @@ export function encodeJournal(journal: Journal): string {
 }
 
 /** Повреждённый журнал не разрешает откат или импорт произвольных локальных путей. */
-export function parseJournal(text: string, root: string): Journal {
+export function parseJournal(text: string, root: string): IJournal {
     const damaged = () =>
         new Error('Повреждён локальный журнал установки. Проверьте резервную копию: ' + journalDirectory(root));
     try {
         if (Buffer.byteLength(text) > JOURNAL_BYTES_LIMIT) {
             throw damaged();
         }
-        const journal = JSON.parse(text) as Journal | null;
+        const journal = JSON.parse(text) as IJournal | null;
         if (
             !journal ||
             typeof journal !== 'object' ||

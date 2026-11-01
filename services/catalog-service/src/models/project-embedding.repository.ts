@@ -2,11 +2,11 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
-import type { IProjectEmbeddingSelection } from './project-embedding.types';
+import type { IProjectEmbeddingSelection } from './project-embedding.interfaces';
 import { assertProjectEmbeddingModel, projectEmbeddingPin } from './project-embedding.validation';
 import { readPinnedModel } from './model-history';
 
-interface Row {
+interface IRow {
     project_id: string;
     revision: number | string;
     model_id: string | null;
@@ -16,12 +16,12 @@ interface Row {
     active_snapshot: string | null;
     data_revision: number | string;
 }
-type Queryable = Pick<PoolClient, 'query'>;
+type TQueryable = Pick<PoolClient, 'query'>;
 
 /** CAS-выбор и его аудит сохраняются одной транзакцией; очистка не сбрасывает ревизию. */
 export class ProjectEmbeddingRepository {
     constructor(private readonly pool: Pool) {}
-    private async selection(db: Queryable, projectId: string, row?: Row): Promise<IProjectEmbeddingSelection> {
+    private async selection(db: TQueryable, projectId: string, row?: IRow): Promise<IProjectEmbeddingSelection> {
         const current = row?.model_id && row.model_pin ? await readPinnedModel(db, row.model_id, row.model_pin) : null;
         const modelPin = row?.model_pin ?? null;
         const dimension = Number(row?.dimension ?? 0);
@@ -60,8 +60,8 @@ export class ProjectEmbeddingRepository {
             return { ...result, blocker: 'Снимок закреплённой модели повреждён. Выберите проверенную модель.' };
         return result;
     }
-    async read(projectId: string, db: Queryable = this.pool): Promise<IProjectEmbeddingSelection> {
-        const { rows } = await db.query<Row>('SELECT * FROM project_embedding_settings WHERE project_id=$1', [
+    async read(projectId: string, db: TQueryable = this.pool): Promise<IProjectEmbeddingSelection> {
+        const { rows } = await db.query<IRow>('SELECT * FROM project_embedding_settings WHERE project_id=$1', [
             projectId,
         ]);
         return this.selection(db, projectId, rows[0]);
@@ -70,7 +70,7 @@ export class ProjectEmbeddingRepository {
         projectId: string,
         expectedRevision: number,
         actor: string,
-        authorize: (db: Queryable) => Promise<unknown>,
+        authorize: (db: TQueryable) => Promise<unknown>,
     ): Promise<IProjectEmbeddingSelection> {
         const client = await this.pool.connect();
         try {
@@ -78,7 +78,7 @@ export class ProjectEmbeddingRepository {
             if (!(await client.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE', [projectId])).rows.length)
                 throw new NotFoundException('Проект удалён.');
             await authorize(client);
-            const { rows } = await client.query<Row>(
+            const { rows } = await client.query<IRow>(
                 'SELECT * FROM project_embedding_settings WHERE project_id=$1 FOR UPDATE',
                 [projectId],
             );
@@ -95,13 +95,13 @@ export class ProjectEmbeddingRepository {
             const next = revision + 1;
             if (!Number.isSafeInteger(next))
                 throw new ConflictException('Ревизия настроек превышает допустимый диапазон.');
-            const saved = await client.query<Row>(
+            const saved = await client.query<IRow>(
                 `INSERT INTO project_embedding_settings(project_id,revision,model_id,model_pin,dimension,updated_by,active_generation)
                 VALUES($1,$2,NULL,NULL,NULL,$3,$4) ON CONFLICT(project_id) DO UPDATE SET revision=EXCLUDED.revision,
                 model_id=EXCLUDED.model_id,model_pin=EXCLUDED.model_pin,dimension=EXCLUDED.dimension,updated_by=EXCLUDED.updated_by,updated_at=now() RETURNING *`,
                 [projectId, next, actor, initialGeneration(projectId)],
             );
-            const summary = (row?: Row) => ({
+            const summary = (row?: IRow) => ({
                 revision: Number(row?.revision ?? 0),
                 modelId: row?.model_id ?? null,
                 modelPin: row?.model_pin ?? null,

@@ -4,8 +4,8 @@ import { parseLocalConfiguration } from '../devices/mcp-config-schema';
 import {
     normalizeRuntimeArtifacts,
     validateRuntimeArtifactEntrypoints,
-    type RuntimeArtifact,
-    type RuntimeArtifactEntry,
+    type IRuntimeArtifact,
+    type IRuntimeArtifactEntry,
 } from '../../../shared/runtime-artifacts.cjs';
 import { localRagUi } from '../../../shared/rag-ui-contract.cjs';
 import { localRagCore } from '../../../shared/rag-core-contract.cjs';
@@ -185,7 +185,7 @@ export function publicationRuntimeExtra(
 export function assertLocalUiInventory(
     config: IAiPluginConfig | null | undefined,
     kind: string,
-    entries: RuntimeArtifactEntry[],
+    entries: IRuntimeArtifactEntry[],
 ): void {
     const core = localRagCore({ schemaVersion: 5, plugin: { kind }, config });
     if (core && !entries.some((entry) => entry.path === core.entrypoint && entry.size > 0)) {
@@ -196,7 +196,7 @@ export function assertLocalUiInventory(
 /** Старые необязательные поля не должны противоречить авторитетной платформенной точке входа. */
 export function validateArtifactLaunchFields(
     source: Record<string, unknown>,
-    artifacts: RuntimeArtifact[],
+    artifacts: IRuntimeArtifact[],
     localMcp = false,
 ): void {
     if (source.entrypoint !== undefined && !artifacts.every((item) => item.entrypoint === source.entrypoint)) {

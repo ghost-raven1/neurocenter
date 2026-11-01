@@ -5,8 +5,8 @@ import {
     compileProjectAgents,
     normalizeProjectAgentsPayload,
 } from '../../../shared/project-agents.cjs';
-import type { Device, DeviceStore } from '../devices/device-store';
-import type { Job } from '../devices/device-job.model';
+import type { IDevice, DeviceStore } from '../devices/device-store';
+import type { IJob } from '../devices/device-job.model';
 import { assertAgentCompletionAccess } from './agent-completion-access';
 import { assertAgentConfigurationJob } from './agent-jobs';
 const uuid = (value: unknown): value is string =>
@@ -14,7 +14,7 @@ const uuid = (value: unknown): value is string =>
 /** Approves exact native bytes under the original job lease; retries never replace an earlier mapping. */
 export async function compileAgentJob(
     store: DeviceStore,
-    device: Device,
+    device: IDevice,
     value: unknown,
     authorize: (id: string, lease: string) => Promise<unknown>,
 ) {
@@ -36,7 +36,7 @@ export async function compileAgentJob(
     try {
         await db.query('BEGIN');
         const job = (
-            await db.query<Job>(
+            await db.query<IJob>(
                 `SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3 AND lease=$4
             AND kind=$5 AND state='running' AND lease_until>now() FOR UPDATE`,
                 [input.jobId, device.id, device.email, input.lease, PROJECT_AGENTS_JOB],
@@ -44,7 +44,7 @@ export async function compileAgentJob(
         ).rows[0];
         if (!job) throw new ConflictException('Аренда настройки агентов изменилась. Повторите действие.');
         const fresh = (
-            await db.query<Device>(
+            await db.query<IDevice>(
                 'SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR SHARE',
                 [device.id, device.email],
             )

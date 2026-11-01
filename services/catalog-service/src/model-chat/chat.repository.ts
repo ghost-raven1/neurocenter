@@ -2,42 +2,42 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { CHAT_TOTAL_BYTES, chatChanged } from './chat-validation';
-import type { AttachmentRow, ConversationRow, TurnRow, ChatTurn } from './chat.types';
-import type { ChatHistory } from './chat.types';
-import type { ChatBatch, ChatCheckpoint, ChatSourceTurn } from './chat-compaction';
-import type { ChatResponseRow } from './chat-group.types';
+import type { IAttachmentRow, IConversationRow, ITurnRow, IChatTurn } from './chat.interfaces';
+import type { IChatHistory } from './chat.interfaces';
+import type { IChatBatch, IChatCheckpoint, TChatSourceTurn } from './chat-compaction';
+import type { IChatResponseRow } from './chat-group.interfaces';
 import { projectExecutionState } from './chat-execution-state';
 
-export type ChatDb = Pick<PoolClient, 'query'>;
-export interface ChatRows {
-    conversation: ConversationRow;
-    turns: TurnRow[];
-    attachments: AttachmentRow[];
-    history: ChatHistory;
+export type TChatDb = Pick<PoolClient, 'query'>;
+export interface IChatRows {
+    conversation: IConversationRow;
+    turns: ITurnRow[];
+    attachments: IAttachmentRow[];
+    history: IChatHistory;
 }
-export interface ChatSourceRows {
-    turns: ChatSourceTurn[];
+export interface IChatSourceRows {
+    turns: TChatSourceTurn[];
     omittedBytes: number;
     omittedRequestBytes: number;
     omittedMessages: number;
     overflow: boolean;
 }
-export type ChatAuthorize = (db?: ChatDb) => Promise<unknown>;
+export type TChatAuthorize = (db?: TChatDb) => Promise<unknown>;
 
 /** Row locks serialize every mutation; private rows are never selected by an untrusted owner ID. */
 export class ChatRepository {
     constructor(readonly pool: Pool) {}
-    async list(owner: string, modelId: string | undefined, projectId: string | null): Promise<ConversationRow[]> {
+    async list(owner: string, modelId: string | undefined, projectId: string | null): Promise<IConversationRow[]> {
         return (
-            await this.pool.query<ConversationRow>(
+            await this.pool.query<IConversationRow>(
                 'SELECT * FROM model_chat_conversations WHERE owner_email=$1 AND ($2::text IS NULL OR model_id=$2) AND project_id IS NOT DISTINCT FROM $3 ORDER BY updated_at DESC,id',
                 [owner, modelId ?? null, projectId],
             )
         ).rows;
     }
-    async peek(owner: string, id: string): Promise<ConversationRow> {
+    async peek(owner: string, id: string): Promise<IConversationRow> {
         const row = (
-            await this.pool.query<ConversationRow>(
+            await this.pool.query<IConversationRow>(
                 'SELECT * FROM model_chat_conversations WHERE id=$1 AND owner_email=$2',
                 [id, owner],
             )
@@ -51,9 +51,9 @@ export class ChatRepository {
         projectId: string | null,
         pin: string,
         title: string,
-        authorize: ChatAuthorize,
+        authorize: TChatAuthorize,
         group: { mode: 'model' | 'group'; agentIds: string[] } = { mode: 'model', agentIds: [] },
-    ): Promise<ConversationRow> {
+    ): Promise<IConversationRow> {
         return this.transaction(async (db) => {
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['model-chat-owner:' + owner]);
             await authorize(db);
@@ -62,7 +62,7 @@ export class ChatRepository {
                     .rows[0].total,
             );
             if (count >= 100) throw new ConflictException('Можно сохранить до 100 диалогов. Удалите ненужный диалог.');
-            const result = await db.query<ConversationRow>(
+            const result = await db.query<IConversationRow>(
                 'INSERT INTO model_chat_conversations(id,owner_email,model_id,project_id,model_pin,title,mode,agent_ids) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
                 [randomUUID(), owner, modelId, projectId, pin, title, group.mode, group.agentIds],
             );
@@ -73,12 +73,12 @@ export class ChatRepository {
     async owned<T>(
         owner: string,
         id: string,
-        authorize: ChatAuthorize,
-        action: (db: ChatDb, row: ConversationRow) => Promise<T>,
+        authorize: TChatAuthorize,
+        action: (db: TChatDb, row: IConversationRow) => Promise<T>,
     ): Promise<T> {
         return this.transaction(async (db) => {
             const row = (
-                await db.query<ConversationRow>(
+                await db.query<IConversationRow>(
                     'SELECT * FROM model_chat_conversations WHERE id=$1 AND owner_email=$2 FOR UPDATE',
                     [id, owner],
                 )
@@ -105,7 +105,7 @@ export class ChatRepository {
             return result;
         });
     }
-    async rows(db: ChatDb, row: ConversationRow, before?: string, limit = 50, drafts = true): Promise<ChatRows> {
+    async rows(db: TChatDb, row: IConversationRow, before?: string, limit = 50, drafts = true): Promise<IChatRows> {
         const cursor = before
             ? (
                   await db.query<{ position: string }>(
@@ -134,7 +134,7 @@ export class ChatRepository {
             bytes += size;
         }
         const turns = (
-            await db.query<TurnRow>(
+            await db.query<ITurnRow>(
                 'SELECT * FROM model_chat_turns WHERE conversation_id=$1 AND id=ANY($2::uuid[]) ORDER BY position',
                 [row.id, selected],
             )
@@ -143,8 +143,8 @@ export class ChatRepository {
             const contexts = (
                 await db.query<{
                     turn_id: string;
-                    selection: NonNullable<TurnRow['text_context']>['selection'];
-                    evidence: NonNullable<TurnRow['text_context']>['evidence'];
+                    selection: NonNullable<ITurnRow['text_context']>['selection'];
+                    evidence: NonNullable<ITurnRow['text_context']>['evidence'];
                 }>(
                     'SELECT c.turn_id,c.selection,c.evidence FROM model_chat_text_contexts c JOIN model_chat_turns t ON t.id=c.turn_id WHERE t.conversation_id=$1 AND c.turn_id=ANY($2::uuid[])',
                     [row.id, selected],
@@ -156,7 +156,7 @@ export class ChatRepository {
             }
         }
         const responses = (
-            await db.query<ChatResponseRow>(
+            await db.query<IChatResponseRow>(
                 "SELECT id,conversation_id,turn_id,agent_id,snapshot-'definition' AS snapshot,request_id,status,processing_stage,answer,error FROM model_chat_agent_responses WHERE conversation_id=$1 AND turn_id=ANY($2::uuid[]) ORDER BY created_at,id",
                 [row.id, selected],
             )
@@ -171,7 +171,7 @@ export class ChatRepository {
             nextCursor: candidates.length > selected.length ? (turns[0]?.id ?? null) : null,
         };
         const attachments = (
-            await db.query<AttachmentRow>(
+            await db.query<IAttachmentRow>(
                 `SELECT id,conversation_id,request_id,request_hash,name,media_type,bytes,text_bytes,pages,warning,created_at,deleted_at FROM model_chat_attachments a
             WHERE conversation_id=$1 AND deleted_at IS NULL AND (EXISTS(SELECT 1 FROM model_chat_turns t WHERE t.id=ANY($2::uuid[]) AND a.id=ANY(t.attachment_ids))
             OR $3 AND NOT EXISTS(SELECT 1 FROM model_chat_turns t WHERE t.conversation_id=$1 AND t.removed_at IS NULL AND a.id=ANY(t.attachment_ids))) ORDER BY created_at,id`,
@@ -180,10 +180,10 @@ export class ChatRepository {
         ).rows;
         return { conversation: row, turns, attachments, history };
     }
-    async checkpoint(db: ChatDb, id: string, pin?: string): Promise<ChatCheckpoint | null> {
+    async checkpoint(db: TChatDb, id: string, pin?: string): Promise<IChatCheckpoint | null> {
         return (
             (
-                await db.query<ChatCheckpoint>(
+                await db.query<IChatCheckpoint>(
                     'SELECT * FROM model_chat_compactions WHERE conversation_id=$1 AND ($2::text IS NULL OR model_pin=$2) ORDER BY created_at DESC,id DESC LIMIT 1',
                     [id, pin ?? null],
                 )
@@ -191,9 +191,9 @@ export class ChatRepository {
         );
     }
     /** Context-only projection includes immutable partial discussion answers; terminal SQL history is never rewritten. Overflow fences inference. */
-    async sources(db: ChatDb, id: string, checkpoint: ChatCheckpoint | null): Promise<ChatSourceRows> {
+    async sources(db: TChatDb, id: string, checkpoint: IChatCheckpoint | null): Promise<IChatSourceRows> {
         const result = await db.query<
-            ChatSourceTurn & { omitted_bytes: string; omitted_request_bytes: string; omitted_messages: string }
+            TChatSourceTurn & { omitted_bytes: string; omitted_request_bytes: string; omitted_messages: string }
         >(
             `WITH source_turns AS (
             SELECT turn.*,partial.content AS partial_content FROM model_chat_turns turn LEFT JOIN LATERAL (
@@ -227,15 +227,20 @@ export class ChatRepository {
             overflow: omittedMessages > 0,
         };
     }
-    async tail(db: ChatDb, id: string): Promise<TurnRow | undefined> {
+    async tail(db: TChatDb, id: string): Promise<ITurnRow | undefined> {
         return (
-            await db.query<TurnRow>(
+            await db.query<ITurnRow>(
                 'SELECT * FROM model_chat_turns WHERE conversation_id=$1 AND removed_at IS NULL ORDER BY position DESC LIMIT 1',
                 [id],
             )
         ).rows[0];
     }
-    async stage(db: ChatDb, row: ConversationRow, turn: TurnRow, stage: TurnRow['processing_stage']): Promise<void> {
+    async stage(
+        db: TChatDb,
+        row: IConversationRow,
+        turn: ITurnRow,
+        stage: ITurnRow['processing_stage'],
+    ): Promise<void> {
         const updated = await db.query(
             "UPDATE model_chat_turns SET processing_stage=$4 WHERE conversation_id=$1 AND id=$2 AND request_id=$3 AND status='pending' AND removed_at IS NULL",
             [row.id, turn.id, turn.request_id, stage],
@@ -244,17 +249,17 @@ export class ChatRepository {
         turn.processing_stage = stage;
     }
     async saveCheckpoint(
-        db: ChatDb,
-        row: ConversationRow,
-        turn: TurnRow,
-        previous: ChatCheckpoint | null,
-        batch: ChatBatch,
+        db: TChatDb,
+        row: IConversationRow,
+        turn: ITurnRow,
+        previous: IChatCheckpoint | null,
+        batch: IChatBatch,
         summary: string,
-        usage: NonNullable<ChatTurn['answer']>['usage'],
+        usage: NonNullable<IChatTurn['answer']>['usage'],
         modelPin = row.model_pin,
-    ): Promise<ChatCheckpoint> {
+    ): Promise<IChatCheckpoint> {
         const last = batch.consumed.at(-1);
-        const result = await db.query<ChatCheckpoint>(
+        const result = await db.query<IChatCheckpoint>(
             `INSERT INTO model_chat_compactions(id,conversation_id,previous_id,through_turn_id,through_position,through_role,through_offset,through_complete,source_sha256,model_pin,summary,usage,created_for_turn,request_id)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14) RETURNING *`,
             [
@@ -277,7 +282,7 @@ export class ChatRepository {
         await this.bump(db, row);
         return result.rows[0];
     }
-    async covered(db: ChatDb, id: string, checkpoint: ChatCheckpoint | null): Promise<number> {
+    async covered(db: TChatDb, id: string, checkpoint: IChatCheckpoint | null): Promise<number> {
         if (!checkpoint) return 0;
         return Number(
             (
@@ -288,9 +293,9 @@ export class ChatRepository {
             ).rows[0].n,
         );
     }
-    async bump(db: ChatDb, row: ConversationRow): Promise<void> {
+    async bump(db: TChatDb, row: IConversationRow): Promise<void> {
         const changed = (
-            await db.query<ConversationRow>(
+            await db.query<IConversationRow>(
                 'UPDATE model_chat_conversations SET revision=revision+1,updated_at=now() WHERE id=$1 RETURNING *',
                 [row.id],
             )
@@ -298,20 +303,20 @@ export class ChatRepository {
         if (!changed) throw new NotFoundException('Диалог удалён.');
         Object.assign(row, changed);
     }
-    revision(row: ConversationRow, expected: number): void {
+    revision(row: IConversationRow, expected: number): void {
         if (row.revision !== expected) throw chatChanged();
     }
-    async priorTurn(db: ChatDb, conversation: string, requestId: string): Promise<TurnRow | undefined> {
+    async priorTurn(db: TChatDb, conversation: string, requestId: string): Promise<ITurnRow | undefined> {
         return (
-            await db.query<TurnRow>(
+            await db.query<ITurnRow>(
                 'SELECT * FROM model_chat_turns WHERE conversation_id=$1 AND $2::uuid=ANY(request_ids)',
                 [conversation, requestId],
             )
         ).rows[0];
     }
     async addTurn(
-        db: ChatDb,
-        row: ConversationRow,
+        db: TChatDb,
+        row: IConversationRow,
         input: {
             requestId: string;
             hash: string;
@@ -319,13 +324,13 @@ export class ChatRepository {
             attachmentIds: string[];
             text: string;
             targetAgentIds?: string[];
-            research?: import('./chat-research.types').ChatResearchRequest | null;
-            agentTools?: import('../agent-tools/agent-tools.types').AgentToolGrant;
-            textContext?: TurnRow['text_context'];
+            research?: import('./chat-research.interfaces').IChatResearchRequest | null;
+            agentTools?: import('../agent-tools/agent-tools.interfaces').IAgentToolGrant;
+            textContext?: ITurnRow['text_context'];
         },
-    ): Promise<TurnRow> {
+    ): Promise<ITurnRow> {
         const turn = (
-            await db.query<TurnRow>(
+            await db.query<ITurnRow>(
                 `INSERT INTO model_chat_turns(id,conversation_id,request_id,request_ids,request_hash,prompt,attachment_ids,input_text,status,lease_until,target_agent_ids,research_request,agent_tools_request)
             VALUES($1,$2,$3,ARRAY[$3::uuid],$4,$5,$6,$7,'pending',now()+interval '20 minutes',$8,$9::jsonb,$10::jsonb) RETURNING *`,
                 [
@@ -358,9 +363,9 @@ export class ChatRepository {
         await this.bump(db, row);
         return turn;
     }
-    async attachment(db: ChatDb, conversation: string, id: string): Promise<AttachmentRow> {
+    async attachment(db: TChatDb, conversation: string, id: string): Promise<IAttachmentRow> {
         const row = (
-            await db.query<AttachmentRow>(
+            await db.query<IAttachmentRow>(
                 'SELECT id,conversation_id,request_id,request_hash,name,media_type,bytes,text,text_bytes,pages,warning,created_at,deleted_at FROM model_chat_attachments WHERE conversation_id=$1 AND id=$2 AND deleted_at IS NULL',
                 [conversation, id],
             )
@@ -368,17 +373,17 @@ export class ChatRepository {
         if (!row) throw new NotFoundException('Вложение не найдено в этом диалоге.');
         return row;
     }
-    async priorAttachment(db: ChatDb, conversation: string, requestId: string): Promise<AttachmentRow | undefined> {
+    async priorAttachment(db: TChatDb, conversation: string, requestId: string): Promise<IAttachmentRow | undefined> {
         return (
-            await db.query<AttachmentRow>(
+            await db.query<IAttachmentRow>(
                 'SELECT id,request_hash,deleted_at FROM model_chat_attachments WHERE conversation_id=$1 AND request_id=$2',
                 [conversation, requestId],
             )
         ).rows[0];
     }
     async addAttachment(
-        db: ChatDb,
-        row: ConversationRow,
+        db: TChatDb,
+        row: IConversationRow,
         input: {
             requestId: string;
             hash: string;
@@ -433,7 +438,7 @@ export class ChatRepository {
     ): Promise<boolean> {
         return this.transaction(async (db) => {
             const row = (
-                await db.query<ConversationRow>('SELECT * FROM model_chat_conversations WHERE id=$1 FOR UPDATE', [
+                await db.query<IConversationRow>('SELECT * FROM model_chat_conversations WHERE id=$1 FOR UPDATE', [
                     conversation,
                 ])
             ).rows[0];
@@ -455,10 +460,10 @@ export class ChatRepository {
         });
     }
     async finish(
-        db: ChatDb,
-        row: ConversationRow,
-        turn: TurnRow,
-        answer: NonNullable<ChatTurn['answer']>,
+        db: TChatDb,
+        row: IConversationRow,
+        turn: ITurnRow,
+        answer: NonNullable<IChatTurn['answer']>,
     ): Promise<boolean> {
         const result = await db.query(
             "UPDATE model_chat_turns SET status='done',answer=$4::jsonb,error=NULL,lease_until=NULL WHERE conversation_id=$1 AND id=$2 AND request_id=$3 AND status='pending' AND removed_at IS NULL AND lease_until>now()",
@@ -467,7 +472,7 @@ export class ChatRepository {
         if (result.rowCount) await this.bump(db, row);
         return !!result.rowCount;
     }
-    private async transaction<T>(action: (db: ChatDb) => Promise<T>): Promise<T> {
+    private async transaction<T>(action: (db: TChatDb) => Promise<T>): Promise<T> {
         const db = await this.pool.connect();
         let discard = false;
         try {

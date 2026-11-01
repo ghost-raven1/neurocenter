@@ -22,7 +22,7 @@ export const INSPECTION_ISSUES = [
     'inspection-failed',
     'runtime-path-unverified',
 ] as const;
-export interface InstallationInspection {
+export interface IInstallationInspection {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -36,7 +36,7 @@ export interface InstallationInspection {
     status: 'synced' | 'modified' | 'missing' | 'unknown';
     issues: Array<(typeof INSPECTION_ISSUES)[number]>;
 }
-interface Source {
+interface ISource {
     projectId: string | null;
     bindingId?: string;
     package?: { plugin?: { id: string; kind?: string; version: number }; manifest?: { sha256: string } };
@@ -59,10 +59,10 @@ const fields = [
 /** Принимает только результат исходной сверки без файлов, путей, настроек и обещания запуска. */
 export function assertInstallationInspection(
     value: unknown,
-    source: Source,
+    source: ISource,
     failed = false,
-): asserts value is InstallationInspection {
-    const result = value as InstallationInspection | null;
+): asserts value is IInstallationInspection {
+    const result = value as IInstallationInspection | null;
     const pkg = source.package;
     if (
         !result ||

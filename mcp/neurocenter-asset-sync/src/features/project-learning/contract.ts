@@ -15,9 +15,9 @@ export const {
     normalizeLearningContext,
 } = shared;
 export type {
-    LearningContext,
-    LearningExperienceInput,
-    LearningObservedExperienceInput,
-    LearningHypothesisInput,
-    LearningMutationResult,
+    ILearningContext as LearningContext,
+    ILearningExperienceInput as LearningExperienceInput,
+    TLearningObservedExperienceInput as LearningObservedExperienceInput,
+    ILearningHypothesisInput as LearningHypothesisInput,
+    ILearningMutationResult as LearningMutationResult,
 } from '../../../../../services/shared/project-learning.cjs';

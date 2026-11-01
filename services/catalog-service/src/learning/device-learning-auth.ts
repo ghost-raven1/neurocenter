@@ -7,10 +7,10 @@ import {
 } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { projectLevel } from '../access/access.model';
-import type { Device, DeviceStore } from '../devices/device-store';
+import type { IDevice, DeviceStore } from '../devices/device-store';
 import { managedBinding } from '../devices/device-compatibility';
 
-export interface DeviceLearningEnvelope {
+export interface IDeviceLearningEnvelope {
     projectId: string;
     bindingId: string;
     instanceId: string;
@@ -20,7 +20,7 @@ const plain = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 
 /** The device cannot select a server origin, actor, approval operation or arbitrary target folder. */
-export function deviceLearningEnvelope(value: unknown, write = false): DeviceLearningEnvelope {
+export function deviceLearningEnvelope(value: unknown, write = false): IDeviceLearningEnvelope {
     if (
         !plain(value) ||
         Object.keys(value).some(
@@ -35,16 +35,16 @@ export function deviceLearningEnvelope(value: unknown, write = false): DeviceLea
         (write && !Object.prototype.hasOwnProperty.call(value, 'input'))
     )
         throw new BadRequestException('Передайте точную привязку проекта и допустимое сообщение обучения.');
-    return value as unknown as DeviceLearningEnvelope;
+    return value as unknown as IDeviceLearningEnvelope;
 }
 
 /** A shared device row lock closes revocation and rebind races until the learning transaction commits. */
 export async function authorizeDeviceLearning(
     db: Pick<PoolClient, 'query'>,
-    original: Device,
-    target: DeviceLearningEnvelope,
+    original: IDevice,
+    target: IDeviceLearningEnvelope,
 ): Promise<void> {
-    const { rows } = await db.query<Device>(
+    const { rows } = await db.query<IDevice>(
         `SELECT id,email,role,report FROM bridge_devices
         WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>clock_timestamp() FOR SHARE`,
         [original.id, original.email],
@@ -66,10 +66,10 @@ export async function authorizeDeviceLearning(
 /** Fresh project rights are checked on every call, independent of the bridge's cached heartbeat. */
 export async function currentLearningDevice(
     devices: DeviceStore,
-    original: Device,
-    target: DeviceLearningEnvelope,
+    original: IDevice,
+    target: IDeviceLearningEnvelope,
     minimum: number,
-): Promise<Device> {
+): Promise<IDevice> {
     const device = await devices.owned({ email: original.email, activeRole: original.role }, original.id);
     const claims = await devices.access.claims(device.email);
     if (

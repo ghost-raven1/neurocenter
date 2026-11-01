@@ -1,75 +1,117 @@
-import {test} from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {spawnSync} from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import InventoryReporter from '../coverage/inventory-reporter.mjs';
-import {reconcileTestFileInventory} from '../coverage/test-file-inventory.mjs';
-import {copyCoverageRuntime} from './coverage-runtime.fixture.mjs';
-import {nodeTestFiles} from '../workspace/check-plan.mjs';
+import { reconcileTestFileInventory } from '../coverage/test-file-inventory.mjs';
+import { copyCoverageRuntime } from './coverage-runtime.fixture.mjs';
+import { nodeTestFiles } from '../workspace/check-plan.mjs';
 
-const cwd=path.resolve('synthetic coverage project');
-const inventory=moduleIds=>({schemaVersion:1,phase:'before-collection',cwd,moduleIds});
-const report=files=>({testResults:files.map(name=>({name}))});
-const check=(planned,reported,excluded=[])=>reconcileTestFileInventory({inventory:inventory(planned),report:report(reported),cwd,excluded});
+const cwd = path.resolve('synthetic coverage project');
+const inventory = (moduleIds) => ({ schemaVersion: 1, phase: 'before-collection', cwd, moduleIds });
+const report = (files) => ({ testResults: files.map((name) => ({ name })) });
+const check = (planned, reported, excluded = []) =>
+    reconcileTestFileInventory({ inventory: inventory(planned), report: report(reported), cwd, excluded });
 
-test('A missing workspace-bounds result is incomplete even when every other selected file passed',()=>{
- const planned=['test/worker-heartbeat.test.ts','test/workspace-bounds.test.ts'];
- const result=check(planned,['test/worker-heartbeat.test.ts']);
- assert.equal(result.complete,false);assert.equal(result.expectedFileCount,2);assert.equal(result.reportedFileCount,1);
- assert.deepEqual(result.missingFiles,[path.join(cwd,planned[1])]);assert.deepEqual(result.unexpectedFiles,[]);
+test('A missing workspace-bounds result is incomplete even when every other selected file passed', () => {
+    const planned = ['test/worker-heartbeat.test.ts', 'test/workspace-bounds.test.ts'];
+    const result = check(planned, ['test/worker-heartbeat.test.ts']);
+    assert.equal(result.complete, false);
+    assert.equal(result.expectedFileCount, 2);
+    assert.equal(result.reportedFileCount, 1);
+    assert.deepEqual(result.missingFiles, [path.join(cwd, planned[1])]);
+    assert.deepEqual(result.unexpectedFiles, []);
 });
-test('Resolved selection honors legitimate exclusions and normalizes absolute, relative and dot paths',()=>{
- const selected='test/worker-heartbeat.test.ts',excluded='test/restore-rag-db.test.ts';
- const result=check([path.join(cwd,selected)],['./test/../test/worker-heartbeat.test.ts'],[excluded]);
- assert.equal(result.complete,true);assert.deepEqual(result.expectedFiles,result.reportedFiles);
- assert.deepEqual(result.excludedFiles,[path.join(cwd,excluded)]);assert.deepEqual(result.missingFiles,[]);
+test('Resolved selection honors legitimate exclusions and normalizes absolute, relative and dot paths', () => {
+    const selected = 'test/worker-heartbeat.test.ts',
+        excluded = 'test/restore-rag-db.test.ts';
+    const result = check([path.join(cwd, selected)], ['./test/../test/worker-heartbeat.test.ts'], [excluded]);
+    assert.equal(result.complete, true);
+    assert.deepEqual(result.expectedFiles, result.reportedFiles);
+    assert.deepEqual(result.excludedFiles, [path.join(cwd, excluded)]);
+    assert.deepEqual(result.missingFiles, []);
 });
-test('An excluded or unrelated returned file is unexpected instead of being silently accepted',()=>{
- const result=check(['test/selected.test.ts'],['test/selected.test.ts','test/excluded.test.ts'],['test/excluded.test.ts']);
- assert.equal(result.complete,false);assert.deepEqual(result.unexpectedFiles,[path.join(cwd,'test/excluded.test.ts')]);
+test('An excluded or unrelated returned file is unexpected instead of being silently accepted', () => {
+    const result = check(
+        ['test/selected.test.ts'],
+        ['test/selected.test.ts', 'test/excluded.test.ts'],
+        ['test/excluded.test.ts'],
+    );
+    assert.equal(result.complete, false);
+    assert.deepEqual(result.unexpectedFiles, [path.join(cwd, 'test/excluded.test.ts')]);
 });
-test('Duplicate receipts cannot hide a missing selected file or inflate apparent completion',()=>{
- const result=check(['test/one.test.ts','test/two.test.ts'],['test/one.test.ts','./test/one.test.ts']);
- assert.equal(result.complete,false);assert.deepEqual(result.duplicateReportedFiles,[path.join(cwd,'test/one.test.ts')]);
- assert.deepEqual(result.missingFiles,[path.join(cwd,'test/two.test.ts')]);
- assert.equal(check(['test/one.test.ts','./test/one.test.ts'],['test/one.test.ts']).complete,false);
+test('Duplicate receipts cannot hide a missing selected file or inflate apparent completion', () => {
+    const result = check(['test/one.test.ts', 'test/two.test.ts'], ['test/one.test.ts', './test/one.test.ts']);
+    assert.equal(result.complete, false);
+    assert.deepEqual(result.duplicateReportedFiles, [path.join(cwd, 'test/one.test.ts')]);
+    assert.deepEqual(result.missingFiles, [path.join(cwd, 'test/two.test.ts')]);
+    assert.equal(check(['test/one.test.ts', './test/one.test.ts'], ['test/one.test.ts']).complete, false);
 });
-test('Missing, malformed, wrong-phase and foreign-root inventory are fail closed',()=>{
- for(const planned of [null,{},inventory([]),{...inventory(['test/one.test.ts']),phase:'after-collection'},
-  {...inventory(['test/one.test.ts']),cwd:path.resolve('another project')},inventory(['test/one.test.ts',null])]){
-  assert.equal(reconcileTestFileInventory({inventory:planned,report:report(['test/one.test.ts']),cwd}).complete,false);
- }
- assert.equal(reconcileTestFileInventory({inventory:inventory(['test/one.test.ts']),report:null,cwd}).complete,false);
- assert.equal(check(['test/one.test.ts'],[null]).complete,false);
+test('Missing, malformed, wrong-phase and foreign-root inventory are fail closed', () => {
+    for (const planned of [
+        null,
+        {},
+        inventory([]),
+        { ...inventory(['test/one.test.ts']), phase: 'after-collection' },
+        { ...inventory(['test/one.test.ts']), cwd: path.resolve('another project') },
+        inventory(['test/one.test.ts', null]),
+    ]) {
+        assert.equal(
+            reconcileTestFileInventory({ inventory: planned, report: report(['test/one.test.ts']), cwd }).complete,
+            false,
+        );
+    }
+    assert.equal(
+        reconcileTestFileInventory({ inventory: inventory(['test/one.test.ts']), report: null, cwd }).complete,
+        false,
+    );
+    assert.equal(check(['test/one.test.ts'], [null]).complete, false);
 });
-test('A failed collection file is present even with zero assertions; failure status remains the runner responsibility',()=>{
- const result=reconcileTestFileInventory({inventory:inventory(['test/one.test.ts']),report:{testResults:[{name:path.join(cwd,'test/one.test.ts'),status:'failed',assertionResults:[]}]},cwd});
- assert.equal(result.complete,true);assert.deepEqual(result.missingFiles,[]);
+test('A failed collection file is present even with zero assertions; failure status remains the runner responsibility', () => {
+    const result = reconcileTestFileInventory({
+        inventory: inventory(['test/one.test.ts']),
+        report: { testResults: [{ name: path.join(cwd, 'test/one.test.ts'), status: 'failed', assertionResults: [] }] },
+        cwd,
+    });
+    assert.equal(result.complete, true);
+    assert.deepEqual(result.missingFiles, []);
 });
-test('The start reporter writes exact planned modules privately before a subsequent collection failure',async t=>{
- const directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-inventory-reporter-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));
- const filename=path.join(directory,'selection.json'),before=process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE;
- t.after(()=>{if(before===undefined)delete process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE;else process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE=before;});
- process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE=filename;
- const reporter=new InventoryReporter(),moduleId=path.join(cwd,'test/workspace-bounds.test.ts');
- await reporter.onTestRunStart([{moduleId}]);
- const saved=JSON.parse(await fs.readFile(filename,'utf8'));assert.equal(saved.phase,'before-collection');
- assert.deepEqual(saved.moduleIds,[moduleId]);assert.equal(saved.cwd,process.cwd());assert.equal((await fs.stat(filename)).mode&0o777,0o600);
- const bytes=await fs.readFile(filename);await assert.rejects(reporter.onTestRunStart([{moduleId:'/changed.test.ts'}]),{code:'EEXIST'});
- assert.deepEqual(await fs.readFile(filename),bytes,'existing inventory evidence must not be overwritten');
- delete process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE;await assert.rejects(reporter.onTestRunStart([]),/explicit absolute/);
- process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE='relative.json';await assert.rejects(reporter.onTestRunStart([]),/explicit absolute/);
+test('The start reporter writes exact planned modules privately before a subsequent collection failure', async (t) => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-inventory-reporter-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const filename = path.join(directory, 'selection.json'),
+        before = process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE;
+    t.after(() => {
+        if (before === undefined) delete process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE;
+        else process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE = before;
+    });
+    process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE = filename;
+    const reporter = new InventoryReporter(),
+        moduleId = path.join(cwd, 'test/workspace-bounds.test.ts');
+    await reporter.onTestRunStart([{ moduleId }]);
+    const saved = JSON.parse(await fs.readFile(filename, 'utf8'));
+    assert.equal(saved.phase, 'before-collection');
+    assert.deepEqual(saved.moduleIds, [moduleId]);
+    assert.equal(saved.cwd, process.cwd());
+    assert.equal((await fs.stat(filename)).mode & 0o777, 0o600);
+    const bytes = await fs.readFile(filename);
+    await assert.rejects(reporter.onTestRunStart([{ moduleId: '/changed.test.ts' }]), { code: 'EEXIST' });
+    assert.deepEqual(await fs.readFile(filename), bytes, 'existing inventory evidence must not be overwritten');
+    delete process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE;
+    await assert.rejects(reporter.onTestRunStart([]), /explicit absolute/);
+    process.env.NEUROCENTER_COVERAGE_INVENTORY_FILE = 'relative.json';
+    await assert.rejects(reporter.onTestRunStart([]), /explicit absolute/);
 });
 
-test('The inventory safety tests participate in the normal npm check discovery',()=>{
- const root=fileURLToPath(new URL('../../',import.meta.url));
- assert.ok(nodeTestFiles(root).includes('scripts/test/coverage-inventory.test.mjs'));
+test('The inventory safety tests participate in the normal npm check discovery', () => {
+    const root = fileURLToPath(new URL('../../', import.meta.url));
+    assert.ok(nodeTestFiles(root).includes('scripts/test/coverage-inventory.test.mjs'));
 });
 
-const syntheticVitest=String.raw`
+const syntheticVitest = String.raw`
 import fs from 'node:fs/promises';import path from 'node:path';
 if(!process.argv.includes('--maxWorkers='+process.env.EXPECTED_MAX_WORKERS))throw Error('Actual worker limit differs from the requested limit.');
 const scenario=process.env.SYNTHETIC_COVERAGE_CASE,cwd=process.cwd(),selected=path.join(cwd,'test/selected.test.ts'),missing=path.join(cwd,'test/workspace-bounds.test.ts');
@@ -85,50 +127,145 @@ await fs.writeFile(path.join(process.env.NEUROCENTER_COVERAGE_DIR,'coverage-fina
 // Every synthetic worker exits0; the actual copied coverage runner must independently reject bad receipts.
 `;
 
-for(const scenario of ['success','missing','suite-failed','todo','invalid-todo'])test('Actual runner preserves evidence and '+scenario+' receipts determine completion independently of worker exit0',async t=>{
- const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-runner-')));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const tools=path.join(root,'scripts/coverage'),pkg=path.join(root,'services/feature-flags-service'),output=path.join(root,'output');
- await Promise.all([fs.mkdir(path.join(pkg,'node_modules/vitest'),{recursive:true}),fs.mkdir(path.join(pkg,'src'),{recursive:true}),fs.mkdir(path.join(pkg,'test'),{recursive:true})]);
- await copyCoverageRuntime(root,'run');
- const policyFile=path.join(tools,'unit-safe-profile.mjs'),policy=await fs.readFile(policyFile,'utf8');
- await fs.writeFile(policyFile,policy.replace(/export async function validateUnitSafeProfile[\s\S]*$/,'export async function validateUnitSafeProfile() {}\n'));
- // The classifier has its own real-policy fixture tests; this fixture admits only synthetic worker receipts.
- // Provenance is synthetic here; all runner orchestration, report validation, inventory and rendering are unchanged.
- await fs.writeFile(path.join(tools,'source-identity.mjs'),"export const sourceIdentity=()=>({head:'a'.repeat(40),status:'',trackedDiffSha256:'b'.repeat(64),untrackedContentSha256:'c'.repeat(64)});\n");
- await fs.writeFile(path.join(pkg,'src/entry.ts'),'export const value=1;\n');
- for(const file of ['selected.test.ts','workspace-bounds.test.ts','excluded-db.test.ts'])await fs.writeFile(path.join(pkg,'test',file),'// synthetic test file\n');
- await fs.writeFile(path.join(pkg,'node_modules/vitest/vitest.mjs'),syntheticVitest);
- await fs.mkdir(path.join(root,'scripts/production'),{recursive:true});await fs.writeFile(path.join(root,'scripts/production/cli.mjs'),'throw Error("Must never execute an inventoried production CLI");\n');
- await fs.mkdir(path.join(root,'bridge-dist'),{recursive:true});await fs.writeFile(path.join(root,'bridge-dist/install.sh'),'#!/bin/bash\nexit 99\n');
- assert.equal(spawnSync('git',['init','--quiet'],{cwd:root}).status,0);
- const workers=scenario==='success'?1:2;
- const result=spawnSync(process.execPath,[path.join(tools,'run.mjs'),'--package','feature-flags-service',...(workers===1?['--max-workers','1']:[]),'--output',output],{cwd:root,env:{PATH:path.dirname(process.execPath)+path.delimiter+process.env.PATH,SYNTHETIC_COVERAGE_CASE:scenario,EXPECTED_MAX_WORKERS:String(workers)},encoding:'utf8',timeout:15000});
- assert.equal(result.error,undefined);assert.equal(result.signal,null);assert.equal(result.status,['success','todo'].includes(scenario)?0:1,result.stdout+'\n'+result.stderr);
- const manifest=JSON.parse(await fs.readFile(path.join(output,'manifest.json'),'utf8')),item=manifest.packages[0];
- assert.equal(manifest.limits.maxWorkers,workers);assert.ok(item.command.includes('--maxWorkers='+workers));
- assert.equal(item.exitCode,0);assert.equal(manifest.complete,scenario==='success');assert.equal(manifest.suiteCompletion,scenario==='success');
- assert.equal(manifest.denominator.allWorkspaceSourcesIncluded,false);
- const sources=manifest.sourceInventory.files;
- assert.equal(sources.find(file=>file.path==='scripts/production/cli.mjs').measurement,'unrepresented');
- assert.equal(sources.find(file=>file.path==='bridge-dist/install.sh').measurement,'unsupported-runtime');
- assert.equal(sources.find(file=>file.path==='services/feature-flags-service/src/entry.ts').measurement,'represented');
- assert.match(await fs.readFile(path.join(output,'source-inventory.md'),'utf8'),/bridge-dist\/install\.sh/);
- assert.equal(item.todo,scenario==='todo'?1:scenario==='invalid-todo'?null:0);
- assert.equal(item.passed,scenario==='invalid-todo'?null:1);assert.equal(item.failed,scenario==='invalid-todo'?null:0);assert.equal(item.testFileInventory.complete,scenario!=='missing');
- assert.equal(item.reportValidation.ok,!['suite-failed','invalid-todo'].includes(scenario));assert.deepEqual(item.excludedInfrastructureSuites,['test/excluded-db.test.ts']);
- if(scenario==='missing')assert.deepEqual(item.testFileInventory.missingFiles,[path.join(pkg,'test/workspace-bounds.test.ts')]);
- const rawReport=JSON.parse(await fs.readFile(path.join(output,'feature-flags-service/test-results.json'),'utf8'));
- assert.equal(rawReport.numFailedTests,0);assert.equal(rawReport.numFailedTestSuites,scenario==='suite-failed'?1:0);
- assert.equal(rawReport.testResults.length,scenario==='suite-failed'?2:1);
- assert.equal(JSON.parse(await fs.readFile(path.join(output,'feature-flags-service/test-file-inventory.json'),'utf8')).phase,'before-collection');
-});
+for (const scenario of ['success', 'missing', 'suite-failed', 'todo', 'invalid-todo'])
+    test(
+        'Actual runner preserves evidence and ' +
+            scenario +
+            ' receipts determine completion independently of worker exit0',
+        async (t) => {
+            const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'nc-coverage-runner-')));
+            t.after(() => fs.rm(root, { recursive: true, force: true }));
+            const tools = path.join(root, 'scripts/coverage'),
+                pkg = path.join(root, 'services/feature-flags-service'),
+                output = path.join(root, 'output');
+            await Promise.all([
+                fs.mkdir(path.join(pkg, 'node_modules/vitest'), { recursive: true }),
+                fs.mkdir(path.join(pkg, 'src'), { recursive: true }),
+                fs.mkdir(path.join(pkg, 'test'), { recursive: true }),
+            ]);
+            await copyCoverageRuntime(root, 'run');
+            const policyFile = path.join(tools, 'unit-safe-profile.mjs'),
+                policy = await fs.readFile(policyFile, 'utf8');
+            await fs.writeFile(
+                policyFile,
+                policy.replace(
+                    /export async function validateUnitSafeProfile[\s\S]*$/,
+                    'export async function validateUnitSafeProfile() {}\n',
+                ),
+            );
+            // The classifier has its own real-policy fixture tests; this fixture admits only synthetic worker receipts.
+            // Provenance is synthetic here; all runner orchestration, report validation, inventory and rendering are unchanged.
+            await fs.writeFile(
+                path.join(tools, 'source-identity.mjs'),
+                "export const sourceIdentity=()=>({head:'a'.repeat(40),status:'',trackedDiffSha256:'b'.repeat(64),untrackedContentSha256:'c'.repeat(64)});\n",
+            );
+            await fs.writeFile(path.join(pkg, 'src/entry.ts'), 'export const value=1;\n');
+            for (const file of ['selected.test.ts', 'workspace-bounds.test.ts', 'excluded-db.test.ts'])
+                await fs.writeFile(path.join(pkg, 'test', file), '// synthetic test file\n');
+            await fs.writeFile(path.join(pkg, 'node_modules/vitest/vitest.mjs'), syntheticVitest);
+            await fs.mkdir(path.join(root, 'scripts/production'), { recursive: true });
+            await fs.writeFile(
+                path.join(root, 'scripts/production/cli.mjs'),
+                'throw Error("Must never execute an inventoried production CLI");\n',
+            );
+            await fs.mkdir(path.join(root, 'bridge-dist'), { recursive: true });
+            await fs.writeFile(path.join(root, 'bridge-dist/install.sh'), '#!/bin/bash\nexit 99\n');
+            assert.equal(spawnSync('git', ['init', '--quiet'], { cwd: root }).status, 0);
+            const workers = scenario === 'success' ? 1 : 2;
+            const result = spawnSync(
+                process.execPath,
+                [
+                    path.join(tools, 'run.mjs'),
+                    '--package',
+                    'feature-flags-service',
+                    ...(workers === 1 ? ['--max-workers', '1'] : []),
+                    '--output',
+                    output,
+                ],
+                {
+                    cwd: root,
+                    env: {
+                        PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH,
+                        SYNTHETIC_COVERAGE_CASE: scenario,
+                        EXPECTED_MAX_WORKERS: String(workers),
+                    },
+                    encoding: 'utf8',
+                    timeout: 15000,
+                },
+            );
+            assert.equal(result.error, undefined);
+            assert.equal(result.signal, null);
+            assert.equal(
+                result.status,
+                ['success', 'todo'].includes(scenario) ? 0 : 1,
+                result.stdout + '\n' + result.stderr,
+            );
+            const manifest = JSON.parse(await fs.readFile(path.join(output, 'manifest.json'), 'utf8')),
+                item = manifest.packages[0];
+            assert.equal(manifest.limits.maxWorkers, workers);
+            assert.ok(item.command.includes('--maxWorkers=' + workers));
+            assert.equal(item.exitCode, 0);
+            assert.equal(manifest.complete, scenario === 'success');
+            assert.equal(manifest.suiteCompletion, scenario === 'success');
+            assert.equal(manifest.denominator.allWorkspaceSourcesIncluded, false);
+            const sources = manifest.sourceInventory.files;
+            assert.equal(
+                sources.find((file) => file.path === 'scripts/production/cli.mjs').measurement,
+                'unrepresented',
+            );
+            assert.equal(
+                sources.find((file) => file.path === 'bridge-dist/install.sh').measurement,
+                'unsupported-runtime',
+            );
+            assert.equal(
+                sources.find((file) => file.path === 'services/feature-flags-service/src/entry.ts').measurement,
+                'represented',
+            );
+            assert.match(
+                await fs.readFile(path.join(output, 'source-inventory.md'), 'utf8'),
+                /bridge-dist\/install\.sh/,
+            );
+            assert.equal(item.todo, scenario === 'todo' ? 1 : scenario === 'invalid-todo' ? null : 0);
+            assert.equal(item.passed, scenario === 'invalid-todo' ? null : 1);
+            assert.equal(item.failed, scenario === 'invalid-todo' ? null : 0);
+            assert.equal(item.testFileInventory.complete, scenario !== 'missing');
+            assert.equal(item.reportValidation.ok, !['suite-failed', 'invalid-todo'].includes(scenario));
+            assert.deepEqual(item.excludedInfrastructureSuites, ['test/excluded-db.test.ts']);
+            if (scenario === 'missing')
+                assert.deepEqual(item.testFileInventory.missingFiles, [
+                    path.join(pkg, 'test/workspace-bounds.test.ts'),
+                ]);
+            const rawReport = JSON.parse(
+                await fs.readFile(path.join(output, 'feature-flags-service/test-results.json'), 'utf8'),
+            );
+            assert.equal(rawReport.numFailedTests, 0);
+            assert.equal(rawReport.numFailedTestSuites, scenario === 'suite-failed' ? 1 : 0);
+            assert.equal(rawReport.testResults.length, scenario === 'suite-failed' ? 2 : 1);
+            assert.equal(
+                JSON.parse(
+                    await fs.readFile(path.join(output, 'feature-flags-service/test-file-inventory.json'), 'utf8'),
+                ).phase,
+                'before-collection',
+            );
+        },
+    );
 
-test('Invalid worker limits fail before creating a report or starting any test worker',async t=>{
- const root=fileURLToPath(new URL('../../',import.meta.url)),directory=await fs.mkdtemp(path.join(os.tmpdir(),'nc-coverage-workers-'));
- t.after(()=>fs.rm(directory,{recursive:true,force:true}));
- for(const [index,value]of [undefined,'0','3','-1','01','1.5','many'].entries()){
-  const output=path.join(directory,'output-'+index),args=[path.join(root,'scripts/coverage/run.mjs'),'--output',output,'--max-workers',...(value===undefined?[]:[value])];
-  const result=spawnSync(process.execPath,args,{cwd:root,encoding:'utf8',timeout:15000});
-  assert.equal(result.status,1);assert.match(result.stderr,/--max-workers must be 1 or 2/);await assert.rejects(fs.stat(output),{code:'ENOENT'});
- }
+test('Invalid worker limits fail before creating a report or starting any test worker', async (t) => {
+    const root = fileURLToPath(new URL('../../', import.meta.url)),
+        directory = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-coverage-workers-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    for (const [index, value] of [undefined, '0', '3', '-1', '01', '1.5', 'many'].entries()) {
+        const output = path.join(directory, 'output-' + index),
+            args = [
+                path.join(root, 'scripts/coverage/run.mjs'),
+                '--output',
+                output,
+                '--max-workers',
+                ...(value === undefined ? [] : [value]),
+            ];
+        const result = spawnSync(process.execPath, args, { cwd: root, encoding: 'utf8', timeout: 15000 });
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, /--max-workers must be 1 or 2/);
+        await assert.rejects(fs.stat(output), { code: 'ENOENT' });
+    }
 });

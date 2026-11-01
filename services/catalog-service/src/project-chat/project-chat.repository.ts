@@ -2,19 +2,18 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { IAccessActor } from '../access/access.model';
-import type { ChatAgentSnapshot } from '../model-chat/chat-group.types';
-import { ProjectChatPolicy, type ProjectChatActor } from './project-chat.policy';
+import type { IChatAgentSnapshot } from '../model-chat/chat-group.interfaces';
+import { ProjectChatPolicy, type IProjectChatActor } from './project-chat.policy';
 import { assertProjectChatRoomAccess } from './project-chat-room-access';
+import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.constants';
+import { projectChatRoomId, emptyProjectChatRoom } from './project-chat.utils';
 import {
-    DEFAULT_PROJECT_CHAT_ROOM,
-    projectChatRoomId,
-    emptyProjectChatRoom,
-    type ProjectChatDb,
-    type ProjectChatMessageRow,
-    type ProjectChatRoomRow,
-    type ProjectChatRoomKey,
-    type ProjectChatTransport,
-} from './project-chat.types';
+    type TProjectChatDb,
+    type IProjectChatMessageRow,
+    type IProjectChatRoomRow,
+    type IProjectChatRoomKey,
+    type TProjectChatTransport,
+} from './project-chat.interfaces';
 
 /** Short transactions serialize room state; inference never holds a connection or row lock. */
 export class ProjectChatRepository {
@@ -42,13 +41,13 @@ export class ProjectChatRepository {
         }
     }
     async room(
-        db: ProjectChatDb,
+        db: TProjectChatDb,
         projectId: string,
         write = false,
         roomId = DEFAULT_PROJECT_CHAT_ROOM,
-    ): Promise<ProjectChatRoomRow> {
+    ): Promise<IProjectChatRoomRow> {
         const row = (
-            await db.query<ProjectChatRoomRow>(
+            await db.query<IProjectChatRoomRow>(
                 'SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2 ' +
                     (write ? 'FOR UPDATE' : 'FOR SHARE'),
                 [projectId, roomId],
@@ -62,7 +61,7 @@ export class ProjectChatRepository {
         actor: IAccessActor,
         minimum: number,
         write: boolean,
-        action: (db: ProjectChatDb, room: ProjectChatRoomRow, current: ProjectChatActor) => Promise<T>,
+        action: (db: TProjectChatDb, room: IProjectChatRoomRow, current: IProjectChatActor) => Promise<T>,
         recovery = false,
         roomId = DEFAULT_PROJECT_CHAT_ROOM,
     ): Promise<T> {
@@ -78,23 +77,23 @@ export class ProjectChatRepository {
             return result;
         });
     }
-    async ensure(db: ProjectChatDb, room: ProjectChatRoomRow): Promise<void> {
+    async ensure(db: TProjectChatDb, room: IProjectChatRoomRow): Promise<void> {
         if (room.revision) return;
         Object.assign(
             room,
             (
-                await db.query<ProjectChatRoomRow>(
+                await db.query<IProjectChatRoomRow>(
                     'INSERT INTO project_chat_rooms(project_id,id) VALUES($1,$2) RETURNING *',
                     [room.project_id, projectChatRoomId(room)],
                 )
             ).rows[0],
         );
     }
-    async bump(db: ProjectChatDb, room: ProjectChatRoomRow): Promise<void> {
+    async bump(db: TProjectChatDb, room: IProjectChatRoomRow): Promise<void> {
         Object.assign(
             room,
             (
-                await db.query<ProjectChatRoomRow>(
+                await db.query<IProjectChatRoomRow>(
                     'UPDATE project_chat_rooms SET revision=revision+1,updated_at=now() WHERE project_id=$1 AND id=$2 RETURNING *',
                     [room.project_id, projectChatRoomId(room)],
                 )
@@ -102,13 +101,13 @@ export class ProjectChatRepository {
         );
     }
     async message(
-        db: ProjectChatDb,
+        db: TProjectChatDb,
         projectId: string,
         id: string,
         roomId = DEFAULT_PROJECT_CHAT_ROOM,
-    ): Promise<ProjectChatMessageRow> {
+    ): Promise<IProjectChatMessageRow> {
         const row = (
-            await db.query<ProjectChatMessageRow>(
+            await db.query<IProjectChatMessageRow>(
                 'SELECT * FROM project_chat_messages WHERE project_id=$1 AND id=$2 AND room_id=$3',
                 [projectId, id, roomId],
             )
@@ -116,15 +115,15 @@ export class ProjectChatRepository {
         if (!row) throw new NotFoundException('Сообщение не найдено в этом чате проекта.');
         return row;
     }
-    async page(db: ProjectChatDb, projectId: string, before?: string, limit = 50, roomId = DEFAULT_PROJECT_CHAT_ROOM) {
+    async page(db: TProjectChatDb, projectId: string, before?: string, limit = 50, roomId = DEFAULT_PROJECT_CHAT_ROOM) {
         const cursor = before ? await this.message(db, projectId, before, roomId) : null;
         const candidates = (
-            await db.query<ProjectChatMessageRow>(
+            await db.query<IProjectChatMessageRow>(
                 'SELECT * FROM project_chat_messages WHERE project_id=$1 AND room_id=$4 AND ($2::bigint IS NULL OR position<$2) ORDER BY position DESC LIMIT $3',
                 [projectId, cursor?.position ?? null, limit + 1, roomId],
             )
         ).rows;
-        const selected: ProjectChatMessageRow[] = [];
+        const selected: IProjectChatMessageRow[] = [];
         let bytes = 0;
         for (const row of candidates.slice(0, limit)) {
             const size = Buffer.byteLength(row.content) + 2048;
@@ -142,14 +141,14 @@ export class ProjectChatRepository {
         };
     }
     async prior(
-        db: ProjectChatDb,
+        db: TProjectChatDb,
         projectId: string,
         actor: string,
         key: string,
         roomId = DEFAULT_PROJECT_CHAT_ROOM,
-    ): Promise<ProjectChatMessageRow | undefined> {
+    ): Promise<IProjectChatMessageRow | undefined> {
         return (
-            await db.query<ProjectChatMessageRow>(
+            await db.query<IProjectChatMessageRow>(
                 'SELECT * FROM project_chat_messages WHERE project_id=$1 AND author_email=$2 AND request_key=$3 AND room_id=$4',
                 [projectId, actor, key, roomId],
             )
@@ -157,10 +156,10 @@ export class ProjectChatRepository {
     }
     /** The project transaction fence reserves one existing queue slot for the other transport. */
     async assertQueueCapacity(
-        db: ProjectChatDb,
+        db: TProjectChatDb,
         projectId: string,
         author: string,
-        transports: readonly ProjectChatTransport[],
+        transports: readonly TProjectChatTransport[],
     ): Promise<void> {
         const queued = (
             await db.query<{
@@ -199,22 +198,22 @@ export class ProjectChatRepository {
         }
     }
     async add(
-        db: ProjectChatDb,
-        room: ProjectChatRoomRow,
-        actor: ProjectChatActor,
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        actor: IProjectChatActor,
         input: {
             requestKey: string;
             hash: string;
             prompt: string;
             replyToId: string | null;
-            agentTools?: import('../agent-tools/agent-tools.types').AgentToolGrant;
+            agentTools?: import('../agent-tools/agent-tools.interfaces').IAgentToolGrant;
         },
-        snapshots: ChatAgentSnapshot[],
+        snapshots: IChatAgentSnapshot[],
     ) {
         const id = randomUUID(),
             generation = randomUUID();
         const source = (
-            await db.query<ProjectChatMessageRow>(
+            await db.query<IProjectChatMessageRow>(
                 `INSERT INTO project_chat_messages(id,project_id,room_id,kind,content,author_email,author_name,author_role,reply_to_id,status,request_key,request_hash,target_agent_ids,generation,agent_tools_request)
             VALUES($1,$2,$13,'user',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$14::jsonb) RETURNING *`,
                 [
@@ -245,13 +244,13 @@ export class ProjectChatRepository {
         return source;
     }
     async children(
-        db: ProjectChatDb,
+        db: TProjectChatDb,
         projectId: string,
         id: string,
         roomId = DEFAULT_PROJECT_CHAT_ROOM,
-    ): Promise<ProjectChatMessageRow[]> {
+    ): Promise<IProjectChatMessageRow[]> {
         return (
-            await db.query<ProjectChatMessageRow>(
+            await db.query<IProjectChatMessageRow>(
                 'SELECT * FROM project_chat_messages WHERE project_id=$1 AND source_message_id=$2 AND room_id=$3 ORDER BY position',
                 [projectId, id, roomId],
             )
@@ -270,7 +269,7 @@ export class ProjectChatRepository {
             )
                 return null;
             const source = (
-                await db.query<ProjectChatMessageRow>(
+                await db.query<IProjectChatMessageRow>(
                     "SELECT * FROM project_chat_messages WHERE project_id=$1 AND room_id=$2 AND kind='user' AND status='queued' ORDER BY position LIMIT 1 FOR UPDATE",
                     [projectId, roomId],
                 )
@@ -279,7 +278,7 @@ export class ProjectChatRepository {
             const room = await this.room(db, projectId, true, source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM);
             const generation = randomUUID();
             const updated = (
-                await db.query<ProjectChatMessageRow>(
+                await db.query<IProjectChatMessageRow>(
                     "UPDATE project_chat_messages SET status='running',lease_until=now()+interval '15 minutes',generation=$3,error=NULL WHERE project_id=$1 AND (id=$2 OR source_message_id=$2) AND room_id=$4 AND status='queued' RETURNING *",
                     [projectId, source.id, generation, roomId],
                 )
@@ -294,7 +293,7 @@ export class ProjectChatRepository {
         });
     }
     /** Expired attempts are failed, never replayed against a provider automatically. */
-    async recover(): Promise<ProjectChatRoomKey[]> {
+    async recover(): Promise<IProjectChatRoomKey[]> {
         const projects = (
             await this.pool.query<{ project_id: string }>(
                 "SELECT DISTINCT project_id FROM project_chat_messages WHERE status='running' AND lease_until<=now()",
@@ -312,16 +311,16 @@ export class ProjectChatRepository {
             });
         return this.queuedRooms();
     }
-    async queuedRooms(projectId?: string): Promise<ProjectChatRoomKey[]> {
+    async queuedRooms(projectId?: string): Promise<IProjectChatRoomKey[]> {
         return (
-            await this.pool.query<ProjectChatRoomKey>(
+            await this.pool.query<IProjectChatRoomKey>(
                 `SELECT DISTINCT project_id AS "projectId",room_id AS "roomId" FROM project_chat_messages
             WHERE kind='user' AND status='queued' AND ($1::text IS NULL OR project_id=$1) ORDER BY "projectId","roomId"`,
                 [projectId ?? null],
             )
         ).rows;
     }
-    async assertRunning(db: ProjectChatDb, projectId: string, sourceId: string, generation: string): Promise<void> {
+    async assertRunning(db: TProjectChatDb, projectId: string, sourceId: string, generation: string): Promise<void> {
         if (
             !(
                 await db.query(

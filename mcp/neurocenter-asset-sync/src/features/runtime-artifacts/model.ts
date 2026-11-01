@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import type { RuntimeArtifact, RuntimeArtifactEntry } from '../../../../../services/shared/runtime-artifacts.cjs';
+import type { IRuntimeArtifact, IRuntimeArtifactEntry } from '../../../../../services/shared/runtime-artifacts.cjs';
 
 // В исходниках и автономном архиве используется один и тот же проверенный TAR-парсер.
 const moduleUrl = new URL(
@@ -20,7 +20,7 @@ export const {
     validateRuntimeArtifactEntrypoints,
     inspectRuntimeArchive,
 } = shared;
-export type { RuntimeArtifact, RuntimeArtifactEntry };
+export type { IRuntimeArtifact as RuntimeArtifact, IRuntimeArtifactEntry as RuntimeArtifactEntry };
 
 /** Linux различает glibc и musl; неизвестная платформа не подменяется похожей. */
 export function runtimeArtifactTarget(

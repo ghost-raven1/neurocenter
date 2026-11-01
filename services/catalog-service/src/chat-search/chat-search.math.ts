@@ -1,13 +1,14 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { validateModelId } from '../models/model-validation';
-import { CHAT_SEARCH_CHUNK, type ChatSearchInput } from './chat-search.types';
+import { CHAT_SEARCH_CHUNK } from './chat-search.constants';
+import { type IChatSearchInput } from './chat-search.interfaces';
 const uuid = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
 export const chatSearchHash = (value: unknown): string =>
     createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** Consent and a pinned embedding model apply to one explicit bounded operation. */
-export function chatSearchInput(raw: unknown, kind: 'index' | 'search'): ChatSearchInput {
+export function chatSearchInput(raw: unknown, kind: 'index' | 'search'): IChatSearchInput {
     const value = raw as Record<string, unknown>,
         max = kind === 'index' ? 32 : 20;
     if (

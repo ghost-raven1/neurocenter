@@ -2,11 +2,11 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { isDeepStrictEqual } from 'node:util';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
-import { SYSTEM_ROLE_MCP_CAPABILITY, roleMcpProducer, type RoleMcpTarget } from '../../../shared/system-role-mcp.cjs';
+import { SYSTEM_ROLE_MCP_CAPABILITY, roleMcpProducer, type TRoleMcpTarget } from '../../../shared/system-role-mcp.cjs';
 import { normalizeRuntimeArtifacts } from '../../../shared/runtime-artifacts.cjs';
 import { projectAssetColumns, checkedProjectPackage, type IProjectPinRow } from '../catalog/project-asset-pins';
 import type { IPackage } from '../catalog/bundle-package';
-import { DeviceStore, type Device } from '../devices/device-store';
+import { DeviceStore, type IDevice } from '../devices/device-store';
 import { DeviceInstallations } from '../devices/device-installations';
 import { InstallPlans } from '../devices/install-plans';
 import { assertManagedBridge, managedBinding } from '../devices/device-compatibility';
@@ -37,7 +37,7 @@ export class SystemRoleMcpPolicy {
     }
     async package(
         project: string,
-        target: Pick<RoleMcpTarget, 'assetId' | 'assetKind' | 'version' | 'manifest'>,
+        target: Pick<TRoleMcpTarget, 'assetId' | 'assetKind' | 'version' | 'manifest'>,
         db: Pick<PoolClient, 'query'> = this.models.pool,
     ): Promise<IPackage> {
         const row = (
@@ -116,7 +116,7 @@ export class SystemRoleMcpPolicy {
     async target(
         req: Request,
         project: string,
-        target: RoleMcpTarget,
+        target: TRoleMcpTarget,
         db: Pick<PoolClient, 'query'> = this.models.pool,
     ): Promise<{ package: IPackage; installSet?: IInstallationSet }> {
         return this.targetForActor(await this.roles.actor(req, project), project, target, db);
@@ -125,7 +125,7 @@ export class SystemRoleMcpPolicy {
     async targetForActor(
         actor: IModelActor,
         project: string,
-        target: RoleMcpTarget,
+        target: TRoleMcpTarget,
         db: Pick<PoolClient, 'query'> = this.models.pool,
     ): Promise<{ package: IPackage; installSet?: IInstallationSet }> {
         const pkg = await this.package(project, target, db);
@@ -134,7 +134,7 @@ export class SystemRoleMcpPolicy {
             return { package: pkg };
         }
         const device = (
-            await db.query<Device>(
+            await db.query<IDevice>(
                 `SELECT id,email,role,name,fingerprint,last_seen,report,revoked FROM bridge_devices
             WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>clock_timestamp() FOR SHARE`,
                 [target.deviceId, actor.email],

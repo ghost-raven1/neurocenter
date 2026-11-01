@@ -15,10 +15,10 @@ import {
     snapshotUuid,
 } from './snapshot-repository';
 import { SnapshotSigner } from './snapshot-signature';
-import type { SnapshotCommand, SnapshotHead, SnapshotProfileInput, SnapshotRow } from './snapshot-types';
+import type { ISnapshotCommand, ISnapshotHead, ISnapshotProfileInput, ISnapshotRow } from './snapshot-interfaces';
 import { snapshotManifestHash } from '../../../shared/project-snapshot.cjs';
 
-export const snapshotSignedPayload = (row: SnapshotRow) => ({
+export const snapshotSignedPayload = (row: ISnapshotRow) => ({
     purpose: 'project-snapshot',
     schemaVersion: 1,
     projectId: row.project_id,
@@ -33,7 +33,7 @@ export class SnapshotCommands {
         private readonly signer: SnapshotSigner,
         private readonly catalog: CatalogService,
     ) {}
-    private async verified(row: SnapshotRow): Promise<void> {
+    private async verified(row: ISnapshotRow): Promise<void> {
         if (
             row.status !== 'VERIFIED' ||
             !row.manifest ||
@@ -47,7 +47,7 @@ export class SnapshotCommands {
         projectId: string,
         id: string,
         actor: IAccessActor,
-        input: SnapshotCommand & SnapshotHead,
+        input: ISnapshotCommand & ISnapshotHead,
         kind: 'activate' | 'rollback',
     ) {
         snapshotInput(input, ['requestKey', 'expectedHeadId', 'expectedHeadRevision']);
@@ -81,7 +81,7 @@ export class SnapshotCommands {
         projectId: string,
         id: string,
         actor: IAccessActor,
-        input: SnapshotCommand & { expectedManifest: string | null; gracePeriodHours?: number },
+        input: ISnapshotCommand & { expectedManifest: string | null; gracePeriodHours?: number },
     ) {
         snapshotInput(input, ['requestKey', 'expectedManifest', 'gracePeriodHours']);
         const grace = input.gracePeriodHours ?? 24;
@@ -125,7 +125,7 @@ export class SnapshotCommands {
             },
         );
     }
-    async cancel(projectId: string, id: string, actor: IAccessActor, input: SnapshotCommand) {
+    async cancel(projectId: string, id: string, actor: IAccessActor, input: ISnapshotCommand) {
         snapshotInput(input, ['requestKey']);
         return this.repository.command(
             projectId,
@@ -171,7 +171,7 @@ export class SnapshotCommands {
             }));
         });
     }
-    async release(projectId: string, actor: IAccessActor, input: SnapshotProfileInput) {
+    async release(projectId: string, actor: IAccessActor, input: ISnapshotProfileInput) {
         snapshotInput(input, [
             'requestKey',
             'snapshotId',

@@ -2,7 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
 import { transitionDeviceJobs } from './device-job-transition';
 import { SNAPSHOT_JOB_KIND } from './project-snapshot-jobs';
-interface SnapshotJob {
+interface ISnapshotJob {
     kind: string;
     id: string;
     project_id: string | null;
@@ -14,7 +14,7 @@ interface SnapshotJob {
 /** A bridge confirms upload only; the independent SDK verifier owns VERIFIED. */
 export async function assertSnapshotCompletion(
     client: PoolClient,
-    job: SnapshotJob,
+    job: ISnapshotJob,
     result: Record<string, unknown>,
     failed: boolean,
 ): Promise<void> {

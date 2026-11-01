@@ -2,38 +2,40 @@ export const DEVICE_CODEX_PROTOCOL: 'device-codex-inference-v1';
 export const DEVICE_CODEX_CAPABILITY: typeof DEVICE_CODEX_PROTOCOL;
 export const DEVICE_CODEX_DISPATCH_CAPABILITY: 'device-codex-dispatch-features-v1';
 export const DEVICE_CODEX_JOB: 'infer-device-codex';
-export type DeviceCodexSource = {
-    scope: 'global';
-} | {
-    scope: 'project';
-    projectId: string;
-    bindingId: string;
-    instanceId: string;
-};
-export interface DeviceCodexPayload {
+export type TDeviceCodexSource =
+    | {
+          scope: 'global';
+      }
+    | {
+          scope: 'project';
+          projectId: string;
+          bindingId: string;
+          instanceId: string;
+      };
+export interface IDeviceCodexPayload {
     protocol: typeof DEVICE_CODEX_PROTOCOL;
     callId: string;
     modelId: string;
     modelPin: string;
     connectionRevision: number;
-    source: DeviceCodexSource;
+    source: TDeviceCodexSource;
     deadlineAt: string;
     /** Immutable feature gates checked only before the first physical dispatch marker. */
-    dispatchOnlyFeatures?: import('./feature-flags.cjs').FeatureFlagKey[];
+    dispatchOnlyFeatures?: import('./feature-flags.cjs').TFeatureFlagKey[];
 }
-export interface DeviceCodexMessage {
+export interface IDeviceCodexMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
     images?: string[];
 }
-export interface DeviceCodexRequest {
-    messages: DeviceCodexMessage[];
+export interface IDeviceCodexRequest {
+    messages: IDeviceCodexMessage[];
     options: {
         reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
         store?: false;
     };
 }
-export interface DeviceCodexCandidate {
+export interface IDeviceCodexCandidate {
     provider: string;
     configKey?: string;
     model: string;
@@ -42,17 +44,17 @@ export interface DeviceCodexCandidate {
     baseUrl: string | null;
     options?: import('./opencode-model-scan.cjs').IOpenCodeModelOptions;
 }
-export interface DeviceCodexContext extends DeviceCodexRequest {
+export interface IDeviceCodexContext extends IDeviceCodexRequest {
     protocol: typeof DEVICE_CODEX_PROTOCOL;
     callId: string;
     model: string;
     capability: 'chat' | 'vision';
-    source: DeviceCodexSource;
-    expectedCandidate: DeviceCodexCandidate;
+    source: TDeviceCodexSource;
+    expectedCandidate: IDeviceCodexCandidate;
     connectorPackage: Record<string, unknown>;
     deadlineAt: string;
 }
-export interface DeviceCodexResponse {
+export interface IDeviceCodexResponse {
     model: string;
     done: true;
     done_reason: 'stop' | 'length';
@@ -64,20 +66,30 @@ export interface DeviceCodexResponse {
     eval_count: number | null;
     usage_reported: boolean;
 }
-export type DeviceCodexResult = {
-    protocol: typeof DEVICE_CODEX_PROTOCOL;
-    callId: string;
-    response: DeviceCodexResponse;
-} | {
-    protocol: typeof DEVICE_CODEX_PROTOCOL;
-    callId: string;
-    error: {
-        code: 'cancelled' | 'deadline' | 'authorization' | 'unavailable' | 'response' | 'unknown-after-send' | 'runtime-cache-full' | 'disk-full';
-    };
-};
-export function normalizeDeviceCodexPayload(value: unknown): DeviceCodexPayload;
-export function deviceCodexCandidateIdentity(candidate: DeviceCodexCandidate): DeviceCodexCandidate;
-export function normalizeDeviceCodexRequest(value: unknown, capability: 'chat' | 'vision'): DeviceCodexRequest;
-export function normalizeDeviceCodexContext(value: unknown): DeviceCodexContext;
-export function normalizeDeviceCodexResult(value: unknown): DeviceCodexResult;
+export type TDeviceCodexResult =
+    | {
+          protocol: typeof DEVICE_CODEX_PROTOCOL;
+          callId: string;
+          response: IDeviceCodexResponse;
+      }
+    | {
+          protocol: typeof DEVICE_CODEX_PROTOCOL;
+          callId: string;
+          error: {
+              code:
+                  | 'cancelled'
+                  | 'deadline'
+                  | 'authorization'
+                  | 'unavailable'
+                  | 'response'
+                  | 'unknown-after-send'
+                  | 'runtime-cache-full'
+                  | 'disk-full';
+          };
+      };
+export function normalizeDeviceCodexPayload(value: unknown): IDeviceCodexPayload;
+export function deviceCodexCandidateIdentity(candidate: IDeviceCodexCandidate): IDeviceCodexCandidate;
+export function normalizeDeviceCodexRequest(value: unknown, capability: 'chat' | 'vision'): IDeviceCodexRequest;
+export function normalizeDeviceCodexContext(value: unknown): IDeviceCodexContext;
+export function normalizeDeviceCodexResult(value: unknown): TDeviceCodexResult;
 export function deviceCodexResultDigest(value: unknown): string;

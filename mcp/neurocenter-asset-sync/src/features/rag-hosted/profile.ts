@@ -1,37 +1,37 @@
 import fs from 'node:fs/promises';
 import { isDeepStrictEqual } from 'node:util';
 import { hash, hub } from '../../bridge/state.js';
-import { verify, type Package } from '../../bridge/package.js';
+import { verify, type IPackage } from '../../bridge/package.js';
 import { projectFolder, projectBindingId, projectInstanceId } from '../../bridge/workspace.js';
 import { inspectInstallation } from '../../bridge/installation-inspection.js';
 import { readPrivateConfiguration } from '../local-configuration/private-store.js';
-export interface HostedSelection {
+export interface IHostedSelection {
     revision: number;
     modelPin: string;
     profile: { provider: 'openai'; model: string; dimension: number };
     model: unknown;
 }
-interface HostedWorkspace {
+interface IHostedWorkspace {
     server: string;
     root: string;
     projectId: string;
     bindingId: string;
     instanceId: string;
 }
-export interface HostedGrant {
-    pkg: Package;
-    selection: HostedSelection;
+export interface IHostedGrant {
+    pkg: IPackage;
+    selection: IHostedSelection;
     key: string;
 }
-export interface HostedProfile extends HostedWorkspace {
+export interface IHostedProfile extends IHostedWorkspace {
     schemaVersion: 2;
     relay: { port: number };
-    grants: HostedGrant[];
+    grants: IHostedGrant[];
 }
 /** Отдельный grant остаётся совместимым с уже запущенным legacy-клиентом. */
-export interface HostedRequestProfile extends HostedWorkspace {
-    pkg: Package;
-    selection: HostedSelection;
+export interface IHostedRequestProfile extends IHostedWorkspace {
+    pkg: IPackage;
+    selection: IHostedSelection;
     relay: { port: number; key: string };
 }
 const invalid = () => new Error('Приватное подключение RAG повреждено. Подключите модель повторно.');
@@ -41,16 +41,16 @@ const exact = (value: unknown, keys: string[]): value is Record<string, unknown>
     !Array.isArray(value) &&
     Object.keys(value).length === keys.length &&
     keys.every((key) => Object.hasOwn(value, key));
-export const grantIdentity = (pkg: Package): string => pkg.plugin.kind + ':' + pkg.plugin.id;
-export const supportsHostedGrants = (pkg: Package): boolean =>
+export const grantIdentity = (pkg: IPackage): string => pkg.plugin.kind + ':' + pkg.plugin.id;
+export const supportsHostedGrants = (pkg: IPackage): boolean =>
     (pkg.config?.extra?.hostedEmbedding as { profileSchemaVersion?: unknown } | undefined)?.profileSchemaVersion === 2;
 /** Legacy читается без записи; миграция выполняется только явным подключением с CAS. */
-export function normalizeHostedProfile(value: unknown): HostedProfile {
-    const raw = value as HostedWorkspace & {
+export function normalizeHostedProfile(value: unknown): IHostedProfile {
+    const raw = value as IHostedWorkspace & {
         schemaVersion: number;
-        grants: HostedGrant[];
-        pkg: Package;
-        selection: HostedSelection;
+        grants: IHostedGrant[];
+        pkg: IPackage;
+        selection: IHostedSelection;
         relay: { port: number; key: string };
     };
     if (
@@ -58,9 +58,9 @@ export function normalizeHostedProfile(value: unknown): HostedProfile {
         ![1, 2].includes(raw.schemaVersion) ||
         !['server', 'root', 'projectId', 'bindingId', 'instanceId'].every(
             (key) =>
-                typeof raw[key as keyof HostedWorkspace] === 'string' &&
-                raw[key as keyof HostedWorkspace].length > 0 &&
-                raw[key as keyof HostedWorkspace].length <= 32768,
+                typeof raw[key as keyof IHostedWorkspace] === 'string' &&
+                raw[key as keyof IHostedWorkspace].length > 0 &&
+                raw[key as keyof IHostedWorkspace].length <= 32768,
         ) ||
         !exact(raw, [
             'schemaVersion',
@@ -119,7 +119,7 @@ export function normalizeHostedProfile(value: unknown): HostedProfile {
         grants,
     });
 }
-export function requestProfile(profile: HostedProfile, grant: HostedGrant): HostedRequestProfile {
+export function requestProfile(profile: IHostedProfile, grant: IHostedGrant): IHostedRequestProfile {
     return {
         server: profile.server,
         root: profile.root,
@@ -133,7 +133,7 @@ export function requestProfile(profile: HostedProfile, grant: HostedGrant): Host
 }
 export const profileKey = (server: string, root: string, instanceId: string): string =>
     hash(JSON.stringify([server, root, instanceId]));
-export function validateSelection(value: HostedSelection): void {
+export function validateSelection(value: IHostedSelection): void {
     if (
         !value ||
         !Number.isSafeInteger(value.revision) ||
@@ -150,7 +150,7 @@ export function validateSelection(value: HostedSelection): void {
         throw new Error('Выбранная серверная модель не подтверждена. Обновите настройку проекта.');
 }
 /** Удаление, смена версии и перенос папки немедленно закрывают доступ к relay. */
-export async function assertHostedInstallation(profile: HostedRequestProfile): Promise<void> {
+export async function assertHostedInstallation(profile: IHostedRequestProfile): Promise<void> {
     validateSelection(profile.selection);
     verify(profile.pkg);
     if (
@@ -166,8 +166,8 @@ export async function assertHostedInstallation(profile: HostedRequestProfile): P
     if (inspection.state !== 'checked' || inspection.status !== 'synced')
         throw new Error('Сначала проверьте или восстановите установленный OpenCodeRAG.');
 }
-async function usableGrants(profile: HostedProfile, pkg?: Package): Promise<HostedGrant[]> {
-    const usable: HostedGrant[] = [];
+async function usableGrants(profile: IHostedProfile, pkg?: IPackage): Promise<IHostedGrant[]> {
+    const usable: IHostedGrant[] = [];
     for (const grant of [...profile.grants].reverse()) {
         if (
             pkg &&
@@ -188,17 +188,17 @@ async function usableGrants(profile: HostedProfile, pkg?: Package): Promise<Host
     return usable;
 }
 /** Отозванный сосед не блокирует действующий grant и не даёт ему заимствовать ключ. */
-export async function usableHostedGrant(profile: HostedProfile): Promise<HostedGrant> {
+export async function usableHostedGrant(profile: IHostedProfile): Promise<IHostedGrant> {
     return (await usableGrants(profile))[0]!;
 }
-export function sameSelection(a: HostedSelection, b: HostedSelection): boolean {
+export function sameSelection(a: IHostedSelection, b: IHostedSelection): boolean {
     return a.revision === b.revision && a.modelPin === b.modelPin && isDeepStrictEqual(a.profile, b.profile);
 }
 /** Публичное представление содержит только identity индекса, без локального или серверного секрета. */
 export async function readHostedRagEmbedding(
     root: string,
     projectId?: string,
-    pkg?: Package,
+    pkg?: IPackage,
 ): Promise<{ provider: 'openai'; model: string; baseUrl: string; vectorDimension: number } | undefined> {
     const real = await fs.realpath(root);
     let marker: { projectId?: string; instanceId?: string; server?: string };

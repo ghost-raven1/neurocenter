@@ -18,7 +18,7 @@ import { ModelRuntime } from './model-runtime';
 import { modelFromRow, readPinnedModel, type IModelRow } from './model-history';
 import { assertProjectEmbeddingModel, projectEmbeddingPin } from './project-embedding.validation';
 import { ProjectRagCoordinator } from './project-rag-coordinator';
-import type { IReindexRow, IProjectReindexPlan, IGenerationReceipt } from './project-reindex.types';
+import type { IReindexRow, IProjectReindexPlan, IGenerationReceipt } from './project-reindex.interfaces';
 import { DeviceJobs } from '../devices/device-jobs';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { withModelUsage } from '../model-usage/model-usage.context';
@@ -104,7 +104,7 @@ export class ProjectReindexService implements OnModuleInit, OnModuleDestroy {
             !(sha(input.requestKey) || uuid(input.requestKey))
         )
             throw new BadRequestException('Передайте актуальную модель, pin, ревизию выбора и ключ повтора.');
-        let connection: import('./project-reindex.types').IReindexConnectionTarget | undefined;
+        let connection: import('./project-reindex.interfaces').IReindexConnectionTarget | undefined;
         if (input.connection !== undefined) {
             const value = input.connection as Record<string, unknown>;
             if (

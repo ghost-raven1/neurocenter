@@ -1,6 +1,6 @@
 import type { IOperation, IOperationDetail } from '../catalog/dto';
 import { deviceJobRetryPolicy } from '../devices/device-job-retry';
-import type { IOperationRow } from './operation.types';
+import type { IOperationRow } from './operation.interfaces';
 
 export function toOperation(row: IOperationRow): IOperation {
     const retryPolicy = row.bridge_job_kind ? deviceJobRetryPolicy(row.bridge_job_kind) : undefined;

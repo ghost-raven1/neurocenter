@@ -19,7 +19,7 @@ import {
     discussionFileName,
 } from './discussions.storage';
 import { discussionTarget, discussionUuid } from './discussions.validation';
-import type { AttachmentRow } from './discussions.types';
+import type { IAttachmentRow } from './discussions.interfaces';
 
 /** Durable upload intents and tombstones keep failed uploads collectible without exposing object keys. */
 @Injectable()
@@ -69,7 +69,7 @@ export class DiscussionAttachments implements OnModuleInit, OnModuleDestroy {
                     'attachment:' + current.email + ':' + request,
                 ]);
                 const prior = (
-                    await db.query<AttachmentRow>(
+                    await db.query<IAttachmentRow>(
                         'SELECT * FROM discussion_attachments WHERE owner_email=$1 AND request_key=$2 FOR UPDATE',
                         [current.email, request],
                     )
@@ -101,7 +101,7 @@ export class DiscussionAttachments implements OnModuleInit, OnModuleDestroy {
                 const id = randomUUID(),
                     object = this.storage.intent(id, current.email, target.type + ':' + target.id, bytes);
                 return (
-                    await db.query<AttachmentRow>(
+                    await db.query<IAttachmentRow>(
                         `INSERT INTO discussion_attachments(id,target_type,target_id,owner_email,name,media_type,bytes,sha256,storage_id,bucket,object_key,state,request_key)
                     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'UPLOADING',$12) RETURNING *`,
                         [
@@ -138,7 +138,7 @@ export class DiscussionAttachments implements OnModuleInit, OnModuleDestroy {
                         'Этот файл уже загружается. Дождитесь завершения и повторите с тем же ключом.',
                     );
                 const current = (
-                    await lease.query<AttachmentRow>('SELECT * FROM discussion_attachments WHERE id=$1', [row.id])
+                    await lease.query<IAttachmentRow>('SELECT * FROM discussion_attachments WHERE id=$1', [row.id])
                 ).rows[0];
                 if (current?.state === 'READY') return discussionAttachmentView(current);
                 if (current?.state !== 'UPLOADING')
@@ -150,7 +150,7 @@ export class DiscussionAttachments implements OnModuleInit, OnModuleDestroy {
                     await this.policy.target(db, fresh, target, true);
                     await requireFeaturesEnabled(['discussions', 'discussion_attachments']);
                     const saved = (
-                        await db.query<AttachmentRow>(
+                        await db.query<IAttachmentRow>(
                             "UPDATE discussion_attachments SET state='READY',version_id=$2 WHERE id=$1 AND state='UPLOADING' RETURNING *",
                             [row.id, version],
                         )
@@ -182,11 +182,11 @@ export class DiscussionAttachments implements OnModuleInit, OnModuleDestroy {
             this.active.delete(controller);
         }
     }
-    private async visible(req: Request, id: string): Promise<AttachmentRow> {
+    private async visible(req: Request, id: string): Promise<IAttachmentRow> {
         discussionUuid(id);
         const actor = await this.policy.actor(this.repository.pool, this.policy.input(req));
         const row = (
-            await this.repository.pool.query<AttachmentRow>('SELECT * FROM discussion_attachments WHERE id=$1', [id])
+            await this.repository.pool.query<IAttachmentRow>('SELECT * FROM discussion_attachments WHERE id=$1', [id])
         ).rows[0];
         if (!row || row.state !== 'READY' || (!row.comment_id && row.owner_email !== actor.email))
             throw new NotFoundException('Вложение не найдено.');
@@ -215,7 +215,7 @@ export class DiscussionAttachments implements OnModuleInit, OnModuleDestroy {
         await this.repository.transaction(async (db) => {
             const actor = await this.policy.actor(db, identity, true),
                 row = (
-                    await db.query<AttachmentRow>('SELECT * FROM discussion_attachments WHERE id=$1 FOR UPDATE', [id])
+                    await db.query<IAttachmentRow>('SELECT * FROM discussion_attachments WHERE id=$1 FOR UPDATE', [id])
                 ).rows[0];
             if (!row || row.owner_email !== actor.email) throw new NotFoundException('Черновое вложение не найдено.');
             await this.policy.target(db, actor, { type: row.target_type, id: row.target_id });
@@ -236,7 +236,7 @@ export class DiscussionAttachments implements OnModuleInit, OnModuleDestroy {
                 );
             });
             const rows = (
-                await this.repository.pool.query<AttachmentRow>(
+                await this.repository.pool.query<IAttachmentRow>(
                     "SELECT * FROM discussion_attachments WHERE state='DELETED' AND comment_id IS NULL ORDER BY created_at,id LIMIT 10",
                 )
             ).rows;
@@ -254,7 +254,7 @@ export class DiscussionAttachments implements OnModuleInit, OnModuleDestroy {
                     discard = false;
                     if (!held) continue;
                     const current = (
-                        await lease.query<AttachmentRow>(
+                        await lease.query<IAttachmentRow>(
                             "SELECT * FROM discussion_attachments WHERE id=$1 AND state='DELETED' AND comment_id IS NULL",
                             [row.id],
                         )

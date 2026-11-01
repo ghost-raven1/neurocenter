@@ -9,9 +9,9 @@ import {
     normalizeOpenCodeCliResult,
 } from '../../../shared/computer-setup.cjs';
 import { roleLevel } from '../access/access.model';
-import { digest, type Device } from './device-store';
-import type { Job, JobInput } from './device-job.model';
-import type { DeviceCompletion } from './device-completion';
+import { digest, type IDevice } from './device-store';
+import type { IJob, IJobInput } from './device-job.model';
+import type { IDeviceCompletion } from './device-completion';
 import { recordDeviceOperation } from './device-operations';
 import {
     OPENCODE_CLI_INSTALL_JOB,
@@ -23,8 +23,8 @@ import {
     normalizeOpenCodeInstallResult,
 } from '../../../shared/opencode-cli-install.cjs';
 
-type ComputerJob = Pick<Job, 'kind' | 'payload' | 'project_id' | 'device_id' | 'email' | 'role'>;
-type Database = Pick<PoolClient, 'query'>;
+type TComputerJob = Pick<IJob, 'kind' | 'payload' | 'project_id' | 'device_id' | 'email' | 'role'>;
+type TDatabase = Pick<PoolClient, 'query'>;
 const kinds: readonly string[] = [OPENCODE_CLI_INSPECT_JOB, OPENCODE_CLI_INSTALL_JOB];
 const minimum = (kind: string) => (kind === OPENCODE_CLI_INSTALL_JOB ? 2 : 1);
 const capability = (kind: string) =>
@@ -32,14 +32,14 @@ const capability = (kind: string) =>
 
 /** Receipt-only identity never starts work or reads a result; current credentials must bind an already terminal lease. */
 export async function computerSetupReceiptIdentity(
-    db: Database,
+    db: TDatabase,
     token: unknown,
     id: string,
     lease: unknown,
-): Promise<Device | undefined> {
+): Promise<IDevice | undefined> {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token) || typeof lease !== 'string' || !lease) return;
     return (
-        await db.query<Device>(
+        await db.query<IDevice>(
             `SELECT device.* FROM bridge_devices device JOIN bridge_jobs job ON job.device_id=device.id
         WHERE device.token_hash=$1 AND job.id=$2 AND job.lease=$3 AND job.kind=ANY($4::text[]) AND job.email=device.email
         AND job.project_id IS NULL AND job.started_at IS NOT NULL AND job.state IN ('succeeded','failed','cancelled')`,
@@ -50,7 +50,7 @@ export async function computerSetupReceiptIdentity(
 
 /** Match revoke's device-before-job lock order, including replay and cancellation; other kinds are unaffected. */
 export async function lockComputerSetupCompletionDevice(
-    db: Database,
+    db: TDatabase,
     deviceId: string,
     id: string,
     lease: string,
@@ -77,7 +77,7 @@ export function assertComputerSetupInput(input: unknown): void {
 }
 
 /** Read-only CLI observation belongs to an owned device, independent of a project or folder. */
-export function assertComputerSetupJob(device: Device, job: ComputerJob): void {
+export function assertComputerSetupJob(device: IDevice, job: TComputerJob): void {
     if (!kinds.includes(job.kind)) return;
     if (
         job.project_id !== null ||
@@ -119,8 +119,8 @@ export function assertComputerSetupJob(device: Device, job: ComputerJob): void {
 
 /** A browser selects a computer and a request identity; it never selects a local executable. */
 export function computerSetupJobPayload(
-    device: Device,
-    input: JobInput,
+    device: IDevice,
+    input: IJobInput,
     role: string,
 ): Record<string, unknown> | undefined {
     if (!kinds.includes(input.kind)) return;
@@ -154,9 +154,9 @@ export function computerSetupJobPayload(
 }
 
 /** Membership rows and their projects stay locked through the first completion's commit. */
-async function freshComputerAccess(db: Database, job: ComputerJob): Promise<Device> {
+async function freshComputerAccess(db: TDatabase, job: TComputerJob): Promise<IDevice> {
     const device = (
-        await db.query<Device>(
+        await db.query<IDevice>(
             'SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR SHARE',
             [job.device_id, job.email],
         )
@@ -185,15 +185,15 @@ async function freshComputerAccess(db: Database, job: ComputerJob): Promise<Devi
 }
 
 /** Called under the enqueue device lock, after exact receipt lookup and fresh feature checks. */
-export async function assertComputerSetupAdmission(db: Database, job: ComputerJob): Promise<void> {
+export async function assertComputerSetupAdmission(db: TDatabase, job: TComputerJob): Promise<void> {
     if (kinds.includes(job.kind)) await freshComputerAccess(db, job);
 }
 
 /** The final read fences a cancelled lease, revoked role and changed device after async checks. */
 export async function assertComputerSetupAuthority(
-    db: Database,
-    device: Device,
-    job: Job,
+    db: TDatabase,
+    device: IDevice,
+    job: IJob,
     requestToken?: string,
 ): Promise<void> {
     if (!kinds.includes(job.kind)) return;
@@ -253,9 +253,9 @@ export async function assertComputerSetupAuthority(
 
 /** Static messages and strict receipts prevent local process output from entering shared history. */
 export async function completeComputerSetup(
-    db: Database,
-    job: ComputerJob & { id: string; state: string; result: unknown },
-    input: DeviceCompletion,
+    db: TDatabase,
+    job: TComputerJob & { id: string; state: string; result: unknown },
+    input: IDeviceCompletion,
 ) {
     if (!kinds.includes(job.kind)) return;
     if (job.state === 'cancelled') return { ok: true as const, repeated: true, cancelled: true };

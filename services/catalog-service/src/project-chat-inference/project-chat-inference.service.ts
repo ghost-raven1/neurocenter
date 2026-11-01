@@ -1,7 +1,7 @@
 import { AgentToolsService } from '../agent-tools/agent-tools.service';
 import { agentToolContext } from '../agent-tools/agent-tools.validation';
 import { ModelChatProjectContext } from '../model-chat/chat-project-context';
-import type { PreparedProjectContext } from '../model-chat/chat-project-context.types';
+import type { IPreparedProjectContext } from '../model-chat/chat-project-context.interfaces';
 import { modelPlanningOptions } from '../models/model-planning-options';
 import { automaticModelOptions } from '../models/model-runtime-options';
 import { BadRequestException, ConflictException, Injectable, Optional } from '@nestjs/common';
@@ -10,35 +10,35 @@ import { projectLevel } from '../access/access.model';
 import { isDeepStrictEqual } from 'node:util';
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
 import { ChatGroup } from '../model-chat/chat-group';
-import type { ChatAgentSnapshot, ChatParticipant } from '../model-chat/chat-group.types';
+import type { IChatAgentSnapshot, IChatParticipant } from '../model-chat/chat-group.interfaces';
 import {
     chatContext,
     chatUsage,
     managedChatContextWindow,
     type IChatContextSettings,
 } from '../model-chat/chat-context';
-import type { ConversationRow } from '../model-chat/chat.types';
+import type { IConversationRow } from '../model-chat/chat.interfaces';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { ModelsService } from '../models/models.service';
 import { ModelRuntime } from '../models/model-runtime';
 import { modelInferenceBody } from '../models/inference.controller';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { assertProjectChatRoomAccess } from '../project-chat/project-chat-room-access';
-import { DEFAULT_PROJECT_CHAT_ROOM } from '../project-chat/project-chat.types';
+import { DEFAULT_PROJECT_CHAT_ROOM } from '../project-chat/project-chat.constants';
 import type {
-    ProjectChatDb,
-    ProjectChatInference,
-    ProjectChatMessageRow,
-    ProjectChatRoomRow,
-    ProjectChatTransport,
-} from '../project-chat/project-chat.types';
+    TProjectChatDb,
+    IProjectChatInference,
+    IProjectChatMessageRow,
+    IProjectChatRoomRow,
+    TProjectChatTransport,
+} from '../project-chat/project-chat.interfaces';
 import { projectChatContext } from './project-chat-context';
 import { projectChatModels } from './project-chat-models';
 
 /** Reuses effective project agents and the existing model dispatcher, without reading private chat history. */
 @Injectable()
-export class ProjectChatInferenceService implements ProjectChatInference {
+export class ProjectChatInferenceService implements IProjectChatInference {
     private readonly assignments: ProjectAgentRepository;
     private readonly groups: ChatGroup;
     private readonly localContextWindow = managedChatContextWindow();
@@ -53,12 +53,12 @@ export class ProjectChatInferenceService implements ProjectChatInference {
     async roster(
         req: Request,
         projectId: string,
-        room: ProjectChatRoomRow,
-        db: ProjectChatDb = this.models.pool,
-    ): Promise<ChatParticipant[]> {
+        room: IProjectChatRoomRow,
+        db: TProjectChatDb = this.models.pool,
+    ): Promise<IChatParticipant[]> {
         await projectChatModels(this.models, db).resolveProject(req, projectId, 1);
         const assignments = await this.assignments.assignments(projectId, db);
-        const items: ChatParticipant[] = assignments.map((item) => ({
+        const items: IChatParticipant[] = assignments.map((item) => ({
             agentId: item.agentId,
             name: item.card.name,
             slug: item.card.slug,
@@ -83,10 +83,10 @@ export class ProjectChatInferenceService implements ProjectChatInference {
     async resolve(
         req: Request,
         projectId: string,
-        room: ProjectChatRoomRow,
+        room: IProjectChatRoomRow,
         ids: string[],
-        db: ProjectChatDb = this.models.pool,
-    ): Promise<ChatAgentSnapshot[]> {
+        db: TProjectChatDb = this.models.pool,
+    ): Promise<IChatAgentSnapshot[]> {
         if (!ids.length) return [];
         if (!room.model_id || !room.model_pin)
             throw new ConflictException('Администратор проекта должен выбрать модель и агентов в настройках чата.');
@@ -102,8 +102,8 @@ export class ProjectChatInferenceService implements ProjectChatInference {
     async assert(
         req: Request,
         projectId: string,
-        snapshot: ChatAgentSnapshot,
-        db: ProjectChatDb = this.models.pool,
+        snapshot: IChatAgentSnapshot,
+        db: TProjectChatDb = this.models.pool,
     ): Promise<void> {
         const model = await this.base(req, projectId, snapshot.modelId, snapshot.modelPin, db);
         await db.query('SELECT agent_id FROM project_agents WHERE project_id=$1 AND agent_id=$2 FOR SHARE', [
@@ -125,14 +125,14 @@ export class ProjectChatInferenceService implements ProjectChatInference {
     async transport(
         req: Request,
         projectId: string,
-        snapshot: ChatAgentSnapshot,
-        db: ProjectChatDb = this.models.pool,
-    ): Promise<ProjectChatTransport> {
+        snapshot: IChatAgentSnapshot,
+        db: TProjectChatDb = this.models.pool,
+    ): Promise<TProjectChatTransport> {
         return (await this.base(req, projectId, snapshot.modelId, snapshot.modelPin, db)).runtime === 'device-codex'
             ? 'device-codex'
             : 'server';
     }
-    async infer({ req, projectId, source, response, signal }: Parameters<ProjectChatInference['infer']>[0]) {
+    async infer({ req, projectId, source, response, signal }: Parameters<IProjectChatInference['infer']>[0]) {
         const snapshot = response.snapshot;
         if (
             !snapshot ||
@@ -151,13 +151,13 @@ export class ProjectChatInferenceService implements ProjectChatInference {
             signal,
         );
         let privateRoomId: string | undefined;
-        const authorize = async (beforeCall = true, db: ProjectChatDb = this.models.pool, publication = false) => {
+        const authorize = async (beforeCall = true, db: TProjectChatDb = this.models.pool, publication = false) => {
             signal.throwIfAborted();
             await this.assert(req, projectId, snapshot, db);
             if (beforeCall) await learning.beforeInference();
             else await learning.assertAuthorized(db);
             const room = (
-                await db.query<ProjectChatRoomRow>('SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2', [
+                await db.query<IProjectChatRoomRow>('SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2', [
                     projectId,
                     source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM,
                 ])
@@ -182,7 +182,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
             settings = await this.settings(model);
         const ancestors = await this.ancestors(projectId, source);
         let messages = projectChatContext(snapshot.definition.prompt, source, ancestors, learning.messages, settings);
-        let toolsCurrent: (db?: ProjectChatDb) => Promise<void> = (db) => authorize(false, db, true);
+        let toolsCurrent: (db?: TProjectChatDb) => Promise<void> = (db) => authorize(false, db, true);
         if (source.agent_tools_request) {
             if (!this.agentTools) throw new BadRequestException('Инструменты агентов недоступны.');
             if (
@@ -192,7 +192,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
                 throw new BadRequestException('Сообщение и инструменты не помещаются в окно модели.');
             await this.agentTools.admit(req, projectId, source.agent_tools_request);
             const none = { status: 'none' as const, sources: [] };
-            const project: PreparedProjectContext = source.agent_tools_request.rag
+            const project: IPreparedProjectContext = source.agent_tools_request.rag
                 ? await withModelUsage(
                       {
                           purpose: 'project-search',
@@ -320,7 +320,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
             ...(source.agent_tools_request ? { assertCurrent: toolsCurrent } : {}),
         };
     }
-    private group(db: ProjectChatDb): ChatGroup {
+    private group(db: TProjectChatDb): ChatGroup {
         return new ChatGroup(projectChatModels(this.models, db), this.assignments);
     }
     private async base(
@@ -328,7 +328,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
         projectId: string,
         id: string,
         pin: string,
-        db: ProjectChatDb = this.models.pool,
+        db: TProjectChatDb = this.models.pool,
     ): Promise<IModel> {
         const model = await projectChatModels(this.models, db).getUsable(id, req, projectId);
         if (
@@ -339,7 +339,7 @@ export class ProjectChatInferenceService implements ProjectChatInference {
             throw new ConflictException('Модель чата изменилась или недоступна. Проверьте настройки.');
         return model;
     }
-    private scope(projectId: string, ids: string[], model: IModel): ConversationRow {
+    private scope(projectId: string, ids: string[], model: IModel): IConversationRow {
         return {
             id: projectId,
             owner_email: '',
@@ -362,14 +362,14 @@ export class ProjectChatInferenceService implements ProjectChatInference {
             reservedOutputTokens: row?.options.maxOutputTokens ?? null,
         };
     }
-    private async ancestors(projectId: string, source: ProjectChatMessageRow): Promise<ProjectChatMessageRow[]> {
-        const rows: ProjectChatMessageRow[] = [],
+    private async ancestors(projectId: string, source: IProjectChatMessageRow): Promise<IProjectChatMessageRow[]> {
+        const rows: IProjectChatMessageRow[] = [],
             visited = new Set<string>();
         let id = source.reply_to_id;
         while (id && visited.size < 8 && !visited.has(id)) {
             visited.add(id);
             const row = (
-                await this.models.pool.query<ProjectChatMessageRow>(
+                await this.models.pool.query<IProjectChatMessageRow>(
                     'SELECT * FROM project_chat_messages WHERE project_id=$1 AND id=$2 AND position<$3 AND room_id=$4',
                     [projectId, id, source.position, source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM],
                 )

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { SnapshotService } from '../snapshots/snapshot.service';
-import type { SnapshotCommand, SnapshotHead, SnapshotProfileInput } from '../snapshots/snapshot-types';
+import type { ISnapshotCommand, ISnapshotHead, ISnapshotProfileInput } from '../snapshots/snapshot-interfaces';
 
 /** Real verified images, exact CAS and durable command receipts. */
 @Controller('api/projects/:id')
@@ -11,7 +11,7 @@ export class SnapshotCommandsController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('sid') sid: string,
-        @Body() body: SnapshotCommand & SnapshotHead,
+        @Body() body: ISnapshotCommand & ISnapshotHead,
     ) {
         return this.snapshots.commands.move(id, sid, this.snapshots.actor(req), body, 'activate');
     }
@@ -19,7 +19,7 @@ export class SnapshotCommandsController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('sid') sid: string,
-        @Body() body: SnapshotCommand & SnapshotHead,
+        @Body() body: ISnapshotCommand & ISnapshotHead,
     ) {
         return this.snapshots.commands.move(id, sid, this.snapshots.actor(req), body, 'rollback');
     }
@@ -27,7 +27,7 @@ export class SnapshotCommandsController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('sid') sid: string,
-        @Body() body: SnapshotCommand & { expectedManifest: string | null; gracePeriodHours?: number },
+        @Body() body: ISnapshotCommand & { expectedManifest: string | null; gracePeriodHours?: number },
     ) {
         return this.snapshots.commands.remove(id, sid, this.snapshots.actor(req), body);
     }
@@ -35,14 +35,14 @@ export class SnapshotCommandsController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('sid') sid: string,
-        @Body() body: SnapshotCommand,
+        @Body() body: ISnapshotCommand,
     ) {
         return this.snapshots.commands.cancel(id, sid, this.snapshots.actor(req), body);
     }
     @Post('release-profile') releaseProfile(
         @Req() req: Request,
         @Param('id') id: string,
-        @Body() body: SnapshotProfileInput,
+        @Body() body: ISnapshotProfileInput,
     ) {
         return this.snapshots.commands.release(id, this.snapshots.actor(req), body);
     }

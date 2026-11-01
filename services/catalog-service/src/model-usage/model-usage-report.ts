@@ -1,5 +1,11 @@
 import type { PoolClient } from 'pg';
-import type { ModelUsageItem, ModelUsageResult, UsageFilter, UsagePrivateRoom, UsageScope } from './model-usage.types';
+import type {
+    IModelUsageItem,
+    IModelUsageResult,
+    IUsageFilter,
+    IUsagePrivateRoom,
+    IUsageScope,
+} from './model-usage.interfaces';
 
 const totals = `count(*) AS requests,count(*) FILTER(WHERE status='success') AS success,count(*) FILTER(WHERE status='error') AS error,
 count(*) FILTER(WHERE status='cancelled') AS cancelled,count(*) FILTER(WHERE status='interrupted') AS interrupted,count(*) FILTER(WHERE status='pending') AS pending,
@@ -9,7 +15,7 @@ sum(dispatch_count)::text AS "apiCalls",count(dispatch_count) AS "knownDispatchR
 sum(rate_wait_ms)::text AS "rateWaitMs",avg(provider_latency_ms)::float AS "averageProviderLatencyMs"`;
 
 /** Facets and every aggregate share one authorized period; user filters only narrow that relation. */
-export function modelUsageReportQuery(scope: UsageScope, filter: UsageFilter): { sql: string; values: unknown[] } {
+export function modelUsageReportQuery(scope: IUsageScope, filter: IUsageFilter): { sql: string; values: unknown[] } {
     const values: unknown[] = [filter.days, scope.all, scope.actor, scope.projectIds, scope.viewerEmail],
         where: string[] = [];
     const bind = (value: unknown): string => {
@@ -76,20 +82,20 @@ export function modelUsageReportQuery(scope: UsageScope, filter: UsageFilter): {
     return { sql, values };
 }
 
-type ReportRow = Pick<
-    ModelUsageResult,
+type TReportRow = Pick<
+    IModelUsageResult,
     'summary' | 'byModel' | 'byPurpose' | 'facets' | 'byActor' | 'byProject' | 'byEndpoint' | 'byAgent' | 'series'
 > & {
     windowTo: Date;
-    items: Array<ModelUsageItem & { cursorAt: string }>;
-    privateRooms: UsagePrivateRoom[];
+    items: Array<IModelUsageItem & { cursorAt: string }>;
+    privateRooms: IUsagePrivateRoom[];
 };
 const iso = (value: unknown): string => new Date(value as string | Date).toISOString();
 
 /** One SQL snapshot produces both user detail and totals; history tokens retain PostgreSQL microseconds. */
-export async function readModelUsageReport(db: Pick<PoolClient, 'query'>, scope: UsageScope, filter: UsageFilter) {
+export async function readModelUsageReport(db: Pick<PoolClient, 'query'>, scope: IUsageScope, filter: IUsageFilter) {
     const query = modelUsageReportQuery(scope, filter),
-        row = (await db.query<ReportRow>(query.sql, query.values)).rows[0];
+        row = (await db.query<TReportRow>(query.sql, query.values)).rows[0];
     const { items: raw, windowTo, ...report } = row;
     const items = raw.slice(0, filter.limit).map(({ cursorAt: _cursorAt, ...item }) => ({
         ...item,

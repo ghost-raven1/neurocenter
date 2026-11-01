@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { hash, hub, readState, writeState, stateDir, type Credentials } from '../../bridge/state.js';
-import type { Completion } from '../../bridge/completions.js';
+import { hash, hub, readState, writeState, stateDir, type ICredentials } from '../../bridge/state.js';
+import type { ICompletion } from '../../bridge/completions.js';
 import { syncDirectory } from '../../bridge/atomic-file.js';
 import { readPrivateConfiguration, writePrivateConfiguration } from '../local-configuration/private-store.js';
 import { withRuntimeCacheLock, measureRuntimeCache } from './cache.js';
@@ -13,17 +13,17 @@ import {
     readRuntimeCachePolicy,
     runtimeCachePolicyKey,
     runtimeCacheReceiptKey,
-    type RuntimeCachePolicyReceipt,
+    type IRuntimeCachePolicyReceipt,
 } from './policy-store.js';
 import { updateCleanup } from './update-cleanup.js';
 
-interface PolicyJob {
+interface IPolicyJob {
     id: string;
     lease: string;
     payload: unknown;
 }
 const pendingIndex = 'runtime-cache-policy-pending';
-async function pending(): Promise<RuntimeCachePolicyReceipt[]> {
+async function pending(): Promise<IRuntimeCachePolicyReceipt[]> {
     const value = (await readState<unknown>(pendingIndex)) ?? [];
     if (!Array.isArray(value) || value.length > 200) throw new Error('Повреждён журнал настройки кэша.');
     const receipts = value.map(normalizeRuntimeCacheReceipt);
@@ -38,14 +38,14 @@ const committed = () =>
     );
 
 /** Политика и её квитанция fsync-фиксируются под той же блокировкой, что и загрузка архивов. */
-export async function runRuntimeCachePolicyJob(job: PolicyJob, deviceId: string, authorize: () => Promise<unknown>) {
+export async function runRuntimeCachePolicyJob(job: IPolicyJob, deviceId: string, authorize: () => Promise<unknown>) {
     if (!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(job.id))
         throw new Error('Некорректное задание настройки кэша.');
     const payload = normalizeRuntimeCachePolicyPayload(job.payload),
         payloadHash = hash(JSON.stringify(payload)),
         site = hub();
     const identity = async () => {
-        if (hub() !== site || (await readState<Credentials>('credentials'))?.deviceId !== deviceId)
+        if (hub() !== site || (await readState<ICredentials>('credentials'))?.deviceId !== deviceId)
             throw new Error('Подключение компьютера изменилось.');
     };
     const check = async () => {
@@ -180,7 +180,7 @@ export async function runRuntimeCachePolicyJob(job: PolicyJob, deviceId: string,
 }
 
 /** После аварии доставляется только квитанция; повторной записи политики здесь нет. */
-export async function recoverRuntimeCachePolicyCompletions(save: (value: Completion) => Promise<void>) {
+export async function recoverRuntimeCachePolicyCompletions(save: (value: ICompletion) => Promise<void>) {
     if (!(await pending()).length) return;
     await withRuntimeCacheLock(async () => {
         const policy = await readRuntimeCachePolicy();

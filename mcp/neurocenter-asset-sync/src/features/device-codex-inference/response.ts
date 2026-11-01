@@ -21,10 +21,10 @@ export const CODEX_RESPONSE_FAILURE_REASONS = [
     'unsupported-output',
     'output-limit',
 ] as const;
-export type CodexResponseFailureReason = (typeof CODEX_RESPONSE_FAILURE_REASONS)[number];
+export type TCodexResponseFailureReason = (typeof CODEX_RESPONSE_FAILURE_REASONS)[number];
 /** A closed local reason describes validation, never provider text or generated content. */
 export class CodexResponseFailure extends Error {
-    constructor(readonly reason: CodexResponseFailureReason) {
+    constructor(readonly reason: TCodexResponseFailureReason) {
         super('Ответ Codex не прошёл проверку.');
         this.name = 'CodexResponseFailure';
     }

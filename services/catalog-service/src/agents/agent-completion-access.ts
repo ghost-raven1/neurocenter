@@ -2,7 +2,7 @@ import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { PoolClient } from 'pg';
 import { normalizeProjectAgentsPayload } from '../../../shared/project-agents.cjs';
-import type { Device } from '../devices/device-store';
+import type { IDevice } from '../devices/device-store';
 import { managedBinding } from '../devices/device-compatibility';
 import { agentModelRequirements } from './agent-model-requirements';
 /** A late acknowledgement cannot promote an answer from revoked access, another folder or another model pin. */
@@ -18,7 +18,7 @@ export async function assertAgentCompletionAccess(
 ): Promise<void> {
     const payload = normalizeProjectAgentsPayload(job.payload);
     const device = (
-        await db.query<Device>(
+        await db.query<IDevice>(
             'SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR SHARE',
             [job.device_id, job.email],
         )

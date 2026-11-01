@@ -5,17 +5,17 @@ import type { IAiPluginCreate } from '../catalog/dto';
 import type { AssetSourcesService } from '../asset-sources/asset-sources.service';
 import type { IPreparedLocalAsset } from '../asset-sources/local-asset-ingest';
 import { authorizeImportActor } from '../asset-sources/import-worker';
-import type { BuildRow } from './package-build.model';
+import type { IBuildRow } from './package-build.model';
 import type { PackageBuildRepository } from './package-build.repository';
 import { lockBuildPublication } from './publication-target';
 import { configureBuildPublicationTransaction } from './publication-deadline';
 
-interface PublicationOptions {
+interface IPublicationOptions {
     pool: Pool;
     lease: PoolClient;
     sources: AssetSourcesService;
     repository: PackageBuildRepository;
-    row: BuildRow;
+    row: IBuildRow;
     publication: IAiPluginCreate;
     prepared: IPreparedLocalAsset;
     guard: () => Promise<void>;
@@ -33,7 +33,7 @@ export async function publishBuiltTool({
     prepared,
     guard,
     discard,
-}: PublicationOptions): Promise<void> {
+}: IPublicationOptions): Promise<void> {
     const plugins = new PluginRepository(pool, discard, configureBuildPublicationTransaction),
         target = row.config.publication;
     const finish = async (client: PoolClient, published: Parameters<AssetSourcesService['recordLocal']>[2]) => {

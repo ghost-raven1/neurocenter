@@ -3,17 +3,17 @@ import { isIP } from 'node:net';
 import type { IPackage } from '../catalog/bundle-package';
 
 export const RESEARCH_TOOL_NAMES = ['web_search_exa', 'web_fetch_exa'] as const;
-export type ResearchToolName = (typeof RESEARCH_TOOL_NAMES)[number];
-export interface ResearchExternalSource {
+export type TResearchToolName = (typeof RESEARCH_TOOL_NAMES)[number];
+export interface IResearchExternalSource {
     url: string;
     title?: string;
 }
-export interface ResearchToolOutput {
+export interface IResearchToolOutput {
     text: string;
-    sources: ResearchExternalSource[];
+    sources: IResearchExternalSource[];
 }
-export interface ResearchToolDefinition {
-    name: ResearchToolName;
+export interface IResearchToolDefinition {
+    name: TResearchToolName;
     description: string;
     inputSchema: Record<string, unknown>;
 }
@@ -48,7 +48,7 @@ export function researchPublicUrl(raw: unknown): string | undefined {
 /** Only the approved Gateway transport receives the exact native package, never a user-selected server URL. */
 export class ChatResearchMcpClient {
     private readonly base = (process.env.API_GATEWAY_URL || 'http://localhost:4000').replace(/\/+$/, '');
-    async list(pkg: IPackage, signal: AbortSignal): Promise<ResearchToolDefinition[]> {
+    async list(pkg: IPackage, signal: AbortSignal): Promise<IResearchToolDefinition[]> {
         const data = await this.request('list', { pkg }, signal);
         if (!object(data) || !Array.isArray(data.tools) || data.tools.length !== 2) throw this.invalid();
         const tools = data.tools;
@@ -68,10 +68,10 @@ export class ChatResearchMcpClient {
     }
     async call(
         pkg: IPackage,
-        name: ResearchToolName,
+        name: TResearchToolName,
         args: Record<string, unknown>,
         signal: AbortSignal,
-    ): Promise<ResearchToolOutput> {
+    ): Promise<IResearchToolOutput> {
         if (!RESEARCH_TOOL_NAMES.includes(name)) throw this.invalid();
         const data = await this.request('call', { pkg, name, arguments: args }, signal);
         if (

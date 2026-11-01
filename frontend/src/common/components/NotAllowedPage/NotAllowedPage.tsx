@@ -16,7 +16,11 @@ const NotAllowedPage: FC = () => {
             status="403"
             title="Недостаточно доступа"
             subTitle="Недостаточно прав для просмотра этого раздела."
-            extra={<Button type="primary" onClick={() => history.push('/projects')}>К проектам</Button>}
+            extra={
+                <Button type="primary" onClick={() => history.push('/projects')}>
+                    К проектам
+                </Button>
+            }
         />
     );
 };

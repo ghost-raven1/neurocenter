@@ -6,9 +6,9 @@ import { readBoundedUtf8, readBoundedSnapshot } from './read-bounded.js';
 import { recoveryDirectory, withRecoveryBudget } from './installation-space.js';
 import { atomicText } from './atomic-file.js';
 import { installationReadLimit } from './installation-limits.js';
-import { validateChanges, type FileChange } from './installation-journal.js';
+import { validateChanges, type IFileChange } from './installation-journal.js';
 import { safeTarget } from './workspace.js';
-import type { LocalChangeFile, PrivateLocalChangePlan } from './local-change-plan.model.js';
+import type { ILocalChangeFile, IPrivateLocalChangePlan } from './local-change-plan.model.js';
 
 const JSON_LIMIT = 64 * 1048576;
 const HTML_LIMIT = 256 * 1048576;
@@ -18,11 +18,11 @@ const SHA = /^[a-f0-9]{64}$/;
 const directory = () => path.join(stateDir(), 'local-change-plans');
 const json = (value: unknown) => JSON.stringify(canonicalV4(value));
 const exact = (value: object, names: string[]) => Object.keys(value).sort().join(',') === [...names].sort().join(',');
-const bytes = (change: FileChange, value: string | null): Buffer | null =>
+const bytes = (change: IFileChange, value: string | null): Buffer | null =>
     value === null ? null : Buffer.from(value, change.encoding ?? 'utf8');
 
 /** Сервер видит только пути, размеры и хэши; исходные строки остаются в приватном плане. */
-export function localChangeFiles(changes: FileChange[]): LocalChangeFile[] {
+export function localChangeFiles(changes: IFileChange[]): ILocalChangeFile[] {
     return changes.map((change) => {
         const before = bytes(change, change.before);
         const after = bytes(change, change.after);
@@ -40,7 +40,7 @@ export function localChangeFiles(changes: FileChange[]): LocalChangeFile[] {
         };
     });
 }
-export function localChangeDigest(plan: PrivateLocalChangePlan): string {
+export function localChangeDigest(plan: IPrivateLocalChangePlan): string {
     const { digest: _digest, ...summary } = plan.summary;
     return hash(json({ ...plan, summary }));
 }
@@ -51,7 +51,7 @@ const escape = (value: string): string =>
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
-export function localChangeHtml(plan: PrivateLocalChangePlan): string {
+export function localChangeHtml(plan: IPrivateLocalChangePlan): string {
     const items = plan.changes
         .map((change, index) => {
             const info = plan.summary.files[index]!;
@@ -71,7 +71,7 @@ export function localChangeHtml(plan: PrivateLocalChangePlan): string {
         : '';
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Сравнение локальных изменений</title><style>body{font:15px system-ui;margin:2rem;background:#111827;color:#e5e7eb}section{border-top:1px solid #475569;padding:1rem 0}div{display:flex;gap:1rem}article{width:50%;min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#1e293b;padding:1rem}h2{overflow-wrap:anywhere}@media(max-width:700px){div{display:block}article{width:100%}}</style></head><body><h1>Сравнение локальных изменений</h1><p>План ${escape(plan.summary.planId)}. Действует до ${escape(plan.summary.expiresAt)}.</p><p>Ручные варианты файлов и конфигурации сохранятся в закрытой резервной копии при применении. Меняются только доказанные файлы и подключения инструмента; прочие настройки и комментарии сохраняются. Применение требует отдельного подтверждения.</p>${runtime}${items || '<p>Файлы проекта не требуют изменений.</p>'}</body></html>`;
 }
-function validate(plan: PrivateLocalChangePlan): void {
+function validate(plan: IPrivateLocalChangePlan): void {
     const extras = plan?.purpose === undefined ? [] : ['purpose', 'sourceId'];
     if (
         !plan ||
@@ -218,7 +218,7 @@ function validate(plan: PrivateLocalChangePlan): void {
 }
 
 /** Бюджет планов отдельный; общий lock сериализует резервирование места между проектами. */
-export async function saveLocalChangePlan(plan: PrivateLocalChangePlan, html: string): Promise<void> {
+export async function saveLocalChangePlan(plan: IPrivateLocalChangePlan, html: string): Promise<void> {
     validate(plan);
     const text = JSON.stringify(plan);
     const required = Buffer.byteLength(text) + Buffer.byteLength(html);
@@ -242,7 +242,7 @@ export async function saveLocalChangePlan(plan: PrivateLocalChangePlan, html: st
         await atomicText(path.join(directory(), plan.summary.planId + '.json'), text, 0o600);
     });
 }
-export async function readLocalChangePlan(planId: string): Promise<PrivateLocalChangePlan> {
+export async function readLocalChangePlan(planId: string): Promise<IPrivateLocalChangePlan> {
     if (!UUID.test(planId)) {
         throw new Error('Некорректный ID локального плана.');
     }
@@ -250,7 +250,7 @@ export async function readLocalChangePlan(planId: string): Promise<PrivateLocalC
         await recoveryDirectory(directory(), false);
         const plan = JSON.parse(
             await readBoundedUtf8(path.join(directory(), planId + '.json'), JSON_LIMIT),
-        ) as PrivateLocalChangePlan;
+        ) as IPrivateLocalChangePlan;
         validate(plan);
         if (plan.summary.planId !== planId) {
             throw new Error();
@@ -260,7 +260,7 @@ export async function readLocalChangePlan(planId: string): Promise<PrivateLocalC
         throw new Error('Локальный план отсутствует, повреждён или изменён. Подготовьте сравнение заново.');
     }
 }
-export async function verifyLocalChangeSnapshot(plan: PrivateLocalChangePlan): Promise<void> {
+export async function verifyLocalChangeSnapshot(plan: IPrivateLocalChangePlan): Promise<void> {
     for (const item of plan.snapshots) {
         const file = await safeTarget(plan.root, item.relative);
         const current = await readBoundedSnapshot(file, installationReadLimit(item.relative)).catch(

@@ -6,7 +6,7 @@ import { IRoleRouteProps } from './interfaces';
 
 import { baseRoutes } from '../../../core/baseRoutes';
 import { roleCan } from '../../../features/UserBlock/roles';
-import { RootState } from '../../../store';
+import { TRootState } from '../../../store';
 
 /**
  * RBAC-обёртка маршрута: доступ определяется АКТИВНОЙ РОЛЬЮ через `roleCan`.
@@ -16,7 +16,7 @@ import { RootState } from '../../../store';
  * @component
  */
 const RoleRoute: FC<IRoleRouteProps> = ({ path, minAction, render, exact = false }) => {
-    const user = useSelector((state: RootState) => state.userBlock.user);
+    const user = useSelector((state: TRootState) => state.userBlock.user);
 
     if (user === null) {
         return null;

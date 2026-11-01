@@ -56,7 +56,7 @@ import { reserveCapacity } from '../../../shared/capacity.cjs';
 import {
     resolveRepositorySource,
     validateRepositorySource,
-    type RepositoryInput,
+    type IRepositoryInput,
 } from '../../../shared/repository-source.cjs';
 import { runtimeSourceTargets } from '../../../shared/tool-runtime-source.cjs';
 import { RAG_PLUGIN_SOURCE, isPreparedRagRepository } from '../../../shared/opencode-rag-source.cjs';
@@ -76,8 +76,8 @@ import {
     requestHash,
     validId,
     validateBuildInput,
-    type BuildConfiguration,
-    type BuildRow,
+    type IBuildConfiguration,
+    type IBuildRow,
 } from './package-build.model';
 import { createToolSupply, toolSupplyPlan } from './supply-export';
 import { inspectSkillSource } from './skill-source';
@@ -95,7 +95,7 @@ import { readBundledCatalog } from '../../../shared/bundled-catalog.cjs';
 import { CatalogRebuildCoordinator } from './catalog-rebuild-coordinator';
 import { fenceRebuildInlineAdmission } from './catalog-rebuild-inline';
 
-interface PreparedTool {
+interface IPreparedTool {
     asset: ToolAsset;
     publication: IAiPluginCreate;
     artifacts: Array<{ archivePath: string; descriptor: unknown }>;
@@ -440,7 +440,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         await requireFeaturesEnabled(['tool_builds']);
         return readSourceArchive(input);
     }
-    async repositorySource(actor: IAccessActor, input: Omit<RepositoryInput, 'type'>) {
+    async repositorySource(actor: IAccessActor, input: Omit<IRepositoryInput, 'type'>) {
         await this.requireMain(actor);
         await requireFeaturesEnabled(['tool_builds']);
         try {
@@ -470,7 +470,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         }
         return this.view(actor, await this.repository.findByRequest(actor.email, key));
     }
-    private async view(actor: IAccessActor, row: BuildRow) {
+    private async view(actor: IAccessActor, row: IBuildRow) {
         const evidence = await this.repository.evidence(row.id);
         await this.requireMain(actor);
         return { ...buildView(row), ...evidence };
@@ -614,7 +614,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 'Сборщик запускается или работает на другой реплике. Повторите запрос позже.',
             );
         }
-        let source: BuildConfiguration['source'],
+        let source: IBuildConfiguration['source'],
             agentCandidates: string[] = [];
         if (input.source.type === 'npm') {
             const resolved = await resolveNpmSource(input.source.specifier, input.source.entrypoint);
@@ -685,7 +685,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             agentCandidates = source.files
                 .filter((file) => isSourceEntrypoint(file.path) && file.content.trim())
                 .map((file) => file.path);
-        let config: BuildConfiguration = {
+        let config: IBuildConfiguration = {
             ...configuration,
             source,
             ...(input.agent
@@ -883,7 +883,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         );
     }
 
-    private async execute(row: BuildRow, root: string): Promise<void> {
+    private async execute(row: IBuildRow, root: string): Promise<void> {
         const stage = path.join(root, row.id);
         const cancellation = new BuildCancellation(() => this.repository.get(row.id));
         this.activeBuild = { id: row.id, cancellation };
@@ -1031,7 +1031,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             await this.progress(row.id, 70, 'Импорт проверенных готовых комплектов');
             const { readyManifest } = createRequire(__filename)(
                 path.join(path.dirname(builderScript()), 'manifest.mjs'),
-            ) as { readyManifest: (file: string) => Promise<PreparedTool[]> };
+            ) as { readyManifest: (file: string) => Promise<IPreparedTool[]> };
             const tools = await readyManifest(manifest);
             await assertRuntimeCandidate(manifest, verified.report, verified.identity);
             if (
@@ -1186,7 +1186,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     }
 
     /** Native skill write is journaled before Catalog atomically commits its source receipt and build result. */
-    private async executeSkill(row: BuildRow, stage: string): Promise<void> {
+    private async executeSkill(row: IBuildRow, stage: string): Promise<void> {
         const built = await buildSkillAsset(row.config, stage);
         await this.progress(row.id, 60, 'Проверка SKILL.md, ресурсов и связанной версии ассета');
         const prepared = await this.sources.prepareLocalSkill(built.asset, row.request_key, built.sourceFile, {

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { hash, hub, readState, stateDir, type Workspace } from './state.js';
+import { hash, hub, readState, stateDir, type IWorkspace } from './state.js';
 import { safeTarget, workspaceDirectory as directory } from './workspace-paths.js';
 import {
     commitWorkspaceIdentity,
@@ -15,42 +15,42 @@ import {
 } from './workspace-identity-state.js';
 import {
     WorkspaceIdentityError,
-    type PhysicalDirectory,
-    type VerifyWorkspaceFiles,
-    type WorkspaceBindingInput,
-    type WorkspaceBindingPreparation,
-    type WorkspaceBindingResult,
-    type WorkspaceInstance,
-    type WorkspaceMarker,
-    type WorkspaceVerificationRelease,
+    type IPhysicalDirectory,
+    type TVerifyWorkspaceFiles,
+    type IWorkspaceBindingInput,
+    type IWorkspaceBindingPreparation,
+    type IWorkspaceBindingResult,
+    type IWorkspaceInstance,
+    type IWorkspaceMarker,
+    type TWorkspaceVerificationRelease,
 } from './workspace-instance.model.js';
 import { WorkspaceBindingError, workspaceBindingFailure } from './workspace-binding-error.js';
 import { projectDataSizeReport } from './project-data-size.js';
 
 export type {
-    VerifyWorkspaceFiles,
-    WorkspaceBindingInput,
-    WorkspaceBindingMode,
-    WorkspaceBindingPreparation,
-    WorkspaceBindingResult,
-    WorkspaceFileVerification,
+    TVerifyWorkspaceFiles,
+    IWorkspaceBindingInput,
+    TWorkspaceBindingMode,
+    IWorkspaceBindingPreparation,
+    IWorkspaceBindingResult,
+    IWorkspaceFileVerification,
 } from './workspace-instance.model.js';
 const markerRelative = '.opencode/neurocenter.json';
 const json = (value: unknown) => JSON.stringify(value, null, 2) + '\n';
 const legacyBindingId = (projectId: string, folder: string) => hash(JSON.stringify([hub(), projectId, folder]));
-const bindingId = (instance: WorkspaceInstance) =>
+const bindingId = (instance: IWorkspaceInstance) =>
     hash(JSON.stringify([hub(), instance.projectId, instance.instanceId, instance.bindingNonce]));
-const samePhysical = (first: PhysicalDirectory, second: PhysicalDirectory) =>
+const samePhysical = (first: IPhysicalDirectory, second: IPhysicalDirectory) =>
     JSON.stringify(first) === JSON.stringify(second);
 
-async function markerAt(folder: string): Promise<{ marker?: WorkspaceMarker; raw: string | null; file: string }> {
+async function markerAt(folder: string): Promise<{ marker?: IWorkspaceMarker; raw: string | null; file: string }> {
     try {
         const file = await safeTarget(folder, markerRelative);
         const raw = await optionalText(file, 64 * 1024);
         if (raw === null) {
             return { raw, file };
         }
-        const marker = JSON.parse(raw) as WorkspaceMarker;
+        const marker = JSON.parse(raw) as IWorkspaceMarker;
         if (
             !marker ||
             typeof marker !== 'object' ||
@@ -87,7 +87,7 @@ async function assertNoPendingIdentity(): Promise<void> {
 }
 
 /** Проверяет marker и приватную регистрацию физического каталога без каких-либо записей. */
-export async function workspaceInstanceAt(folder: string, projectId: string): Promise<WorkspaceInstance> {
+export async function workspaceInstanceAt(folder: string, projectId: string): Promise<IWorkspaceInstance> {
     await assertNoPendingIdentity();
     const target = await directory(folder);
     const observedMarker = await markerAt(target.realpath);
@@ -124,7 +124,7 @@ export async function workspaceInstanceAt(folder: string, projectId: string): Pr
 }
 
 async function selectedFolder(projectId: string): Promise<string> {
-    const workspace = await readState<Workspace>('workspace');
+    const workspace = await readState<IWorkspace>('workspace');
     const folder =
         workspace?.bindings && Object.hasOwn(workspace.bindings, projectId) ? workspace.bindings[projectId] : undefined;
     if (typeof folder !== 'string' || !folder) {
@@ -132,7 +132,7 @@ async function selectedFolder(projectId: string): Promise<string> {
     }
     return folder;
 }
-async function selectedInstance(projectId: string): Promise<WorkspaceInstance> {
+async function selectedInstance(projectId: string): Promise<IWorkspaceInstance> {
     const folder = await selectedFolder(projectId);
     const instance = await workspaceInstanceAt(folder, projectId);
     if ((await selectedFolder(projectId)) !== folder) {
@@ -182,7 +182,7 @@ export async function workspaceBindingReport(projectId: string, folder: string) 
         };
     } catch (error) {
         const identityStatus = error instanceof WorkspaceIdentityError ? error.identityStatus : 'unavailable';
-        let missingSource: WorkspaceInstance | undefined;
+        let missingSource: IWorkspaceInstance | undefined;
         if (identityStatus === 'unavailable') {
             try {
                 await fs.lstat(folder);
@@ -209,7 +209,7 @@ export async function workspaceBindingReport(projectId: string, folder: string) 
     }
 }
 
-function validateInput(input: WorkspaceBindingInput): void {
+function validateInput(input: IWorkspaceBindingInput): void {
     if (
         !input ||
         typeof input.projectId !== 'string' ||
@@ -229,10 +229,10 @@ function validateInput(input: WorkspaceBindingInput): void {
     }
 }
 
-async function snapshot(input: WorkspaceBindingInput) {
+async function snapshot(input: IWorkspaceBindingInput) {
     validateInput(input);
     await assertNoPendingIdentity();
-    const workspace = await readState<Workspace>('workspace');
+    const workspace = await readState<IWorkspace>('workspace');
     if (!workspace?.root) {
         throw new WorkspaceBindingError('root-required', 'Сначала выберите общую папку проектов.');
     }
@@ -406,7 +406,7 @@ async function snapshot(input: WorkspaceBindingInput) {
         registryRaw,
         previousBindingId,
     };
-    const preparation: WorkspaceBindingPreparation = {
+    const preparation: IWorkspaceBindingPreparation = {
         ...state.input,
         preparation: hash(JSON.stringify(state)),
         requiresFileVerification: mode !== 'new',
@@ -418,15 +418,15 @@ async function snapshot(input: WorkspaceBindingInput) {
 }
 
 /** Подготовка является чтением: её SHA закрепляет оба физических каталога, marker и приватное состояние. */
-export async function prepareProjectBinding(input: WorkspaceBindingInput): Promise<WorkspaceBindingPreparation> {
+export async function prepareProjectBinding(input: IWorkspaceBindingInput): Promise<IWorkspaceBindingPreparation> {
     return (await snapshot(input)).preparation;
 }
 
 /** Изменение идентичности возможно только после явного preview и внешней проверки закреплённых файлов. */
 export async function commitProjectBinding(
-    prepared: WorkspaceBindingPreparation,
-    verifyFrozenFiles?: VerifyWorkspaceFiles,
-): Promise<WorkspaceBindingResult> {
+    prepared: IWorkspaceBindingPreparation,
+    verifyFrozenFiles?: TVerifyWorkspaceFiles,
+): Promise<IWorkspaceBindingResult> {
     if (!prepared || !/^[a-f0-9]{64}$/.test(prepared.preparation)) {
         throw new WorkspaceBindingError('preparation-stale', 'Сначала подготовьте привязку папки.');
     }
@@ -450,7 +450,7 @@ export async function commitProjectBinding(
             );
         };
         await assertUnchanged();
-        const instance: WorkspaceInstance =
+        const instance: IWorkspaceInstance =
             current.input.mode === 'new' && current.instance
                 ? current.instance
                 : {
@@ -463,7 +463,7 @@ export async function commitProjectBinding(
                       physical: current.target.physical,
                       bindingNonce: randomUUID(),
                   };
-        let release: void | WorkspaceVerificationRelease = undefined;
+        let release: void | TWorkspaceVerificationRelease = undefined;
         try {
             if (current.preparation.requiresFileVerification) {
                 if (!verifyFrozenFiles) {
@@ -486,7 +486,7 @@ export async function commitProjectBinding(
                 await assertUnchanged();
             }
             if (current.input.mode === 'new' && current.instance && current.marker.marker) {
-                const result: WorkspaceBindingResult = {
+                const result: IWorkspaceBindingResult = {
                     projectId: prepared.projectId,
                     folderName: prepared.folderName,
                     mode: 'new',
@@ -520,7 +520,7 @@ export async function commitProjectBinding(
             }
             await fs.mkdir(path.dirname(current.marker.file), { recursive: true });
             await assertUnchanged();
-            const result: WorkspaceBindingResult = {
+            const result: IWorkspaceBindingResult = {
                 projectId: prepared.projectId,
                 folderName: prepared.folderName,
                 mode: current.input.mode,
@@ -570,8 +570,8 @@ export async function bindProject(projectId: string, folderName: string): Promis
 export async function adoptLegacyProject(
     projectId: string,
     folderName: string,
-    verifyFrozenFiles: VerifyWorkspaceFiles,
-): Promise<WorkspaceBindingResult> {
+    verifyFrozenFiles: TVerifyWorkspaceFiles,
+): Promise<IWorkspaceBindingResult> {
     return commitProjectBinding(
         await prepareProjectBinding({ projectId, folderName, mode: 'adopt-legacy' }),
         verifyFrozenFiles,

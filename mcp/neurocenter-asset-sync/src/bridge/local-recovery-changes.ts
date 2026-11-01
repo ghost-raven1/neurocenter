@@ -4,9 +4,9 @@ import { applyEdits, modify, parse, parseTree, type ParseError } from 'jsonc-par
 import { CONFIG_PATHS } from './installation-files.js';
 import { LEDGER_PATH } from './installation-ledger.js';
 import { assetBase, assetKey, receiptPath, sameValue } from './installation-receipt.js';
-import type { Package } from './package.js';
-import type { RecoveryContext } from './local-recovery-context.js';
-import { LocalRecoveryError, type RecoverySource } from './local-recovery.model.js';
+import type { IPackage } from './package.js';
+import type { TRecoveryContext } from './local-recovery-context.js';
+import { LocalRecoveryError, type IRecoverySource } from './local-recovery.model.js';
 
 function config(text: string | null): Record<string, unknown> {
     const errors: ParseError[] = [];
@@ -39,7 +39,7 @@ function config(text: string | null): Record<string, unknown> {
     }
     return value;
 }
-function ownedSpec(value: unknown, root: string, pkg: Package): boolean {
+function ownedSpec(value: unknown, root: string, pkg: IPackage): boolean {
     if (typeof value !== 'string') {
         return false;
     }
@@ -54,7 +54,7 @@ function ownedSpec(value: unknown, root: string, pkg: Package): boolean {
         return false;
     }
 }
-function remap(value: unknown, oldRoot: string, root: string, pkg: Package, depth = 0): unknown {
+function remap(value: unknown, oldRoot: string, root: string, pkg: IPackage, depth = 0): unknown {
     if (depth > 32) {
         throw new LocalRecoveryError('limit-exceeded');
     }
@@ -80,7 +80,7 @@ function remap(value: unknown, oldRoot: string, root: string, pkg: Package, dept
     }
     return value;
 }
-interface Target {
+interface ITarget {
     relative: string;
     after: string | null;
     encoding?: 'base64';
@@ -88,10 +88,10 @@ interface Target {
 
 /** Из полной копии извлекаются только известные payload-файлы и собственные элементы JSONC. */
 export async function recoveryTargets(
-    context: RecoveryContext,
-    source: RecoverySource,
+    context: TRecoveryContext,
+    source: IRecoverySource,
     selected?: string[],
-): Promise<Target[]> {
+): Promise<ITarget[]> {
     if (source.reason !== 'ready') {
         throw new LocalRecoveryError(source.reason);
     }
@@ -126,7 +126,7 @@ export async function recoveryTargets(
         throw new LocalRecoveryError('no-restorable-files');
     }
     const wanted = new Set(selected ?? available);
-    const targets: Target[] = [];
+    const targets: ITarget[] = [];
     for (const change of changes) {
         if (!wanted.has(change.relative)) {
             continue;

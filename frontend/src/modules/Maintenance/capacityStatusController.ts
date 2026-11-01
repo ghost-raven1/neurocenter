@@ -58,12 +58,16 @@ export function createCapacityStatusController(
             scope.dispose();
         },
         async refresh(): Promise<void> {
-            if (!scope.isActive()) { return; }
+            if (!scope.isActive()) {
+                return;
+            }
             const isCurrent = scope.next();
             update({ loading: true });
             try {
                 const data = await read();
-                if (isCurrent()) { update({ data, error: null }); }
+                if (isCurrent()) {
+                    update({ data, error: null });
+                }
             } catch (failure) {
                 if (isCurrent()) {
                     update({
@@ -72,7 +76,9 @@ export function createCapacityStatusController(
                     });
                 }
             } finally {
-                if (isCurrent()) { update({ loading: false }); }
+                if (isCurrent()) {
+                    update({ loading: false });
+                }
             }
         },
     };

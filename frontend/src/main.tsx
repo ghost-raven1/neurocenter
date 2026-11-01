@@ -25,13 +25,15 @@ const main = (): void => {
 
     createRoot(root as HTMLElement).render(
         <StrictMode>
-          <ConfigProvider locale={ruRU}>
-            <Provider store={store}>
-                <BrowserRouter>
-                    <FeatureAvailabilityProvider><App /></FeatureAvailabilityProvider>
-                </BrowserRouter>
-            </Provider>
-          </ConfigProvider>
+            <ConfigProvider locale={ruRU}>
+                <Provider store={store}>
+                    <BrowserRouter>
+                        <FeatureAvailabilityProvider>
+                            <App />
+                        </FeatureAvailabilityProvider>
+                    </BrowserRouter>
+                </Provider>
+            </ConfigProvider>
         </StrictMode>,
     );
 };

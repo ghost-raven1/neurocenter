@@ -7,7 +7,7 @@ import {
     type RuntimeArtifact,
 } from '../features/runtime-artifacts/model.js';
 
-export interface Package {
+export interface IPackage {
     schemaVersion: number;
     plugin: { id: string; name: string; kind: string; version: number };
     config: {
@@ -65,7 +65,7 @@ export const canonicalV4 = (value: unknown): unknown =>
           : value;
 
 /** Проверяет байты, переносимые пути и хэш всего манифеста до любой записи. */
-export function verify(pkg: Package): void {
+export function verify(pkg: IPackage): void {
     if (
         ![2, 3, 4, 5].includes(pkg.schemaVersion) ||
         !['skill', 'plugin', 'mcp'].includes(pkg.plugin?.kind) ||

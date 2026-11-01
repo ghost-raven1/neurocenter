@@ -18,13 +18,8 @@ import { DeviceStore } from '../devices/device-store';
 import { securityEvent } from '../access/security-events';
 import { ragRequestHash } from '../../../shared/rag-index-contract.cjs';
 import { retirementBlockers } from './retirement-guards';
-import {
-    publicPurge,
-    type IPurgeRow,
-    type IPreviewRow,
-    type IRetiredFacts,
-    type IRetirement,
-} from './retired-rag.types';
+import { publicPurge } from './retired-rag.utils';
+import { type IPurgeRow, type IPreviewRow, type IRetiredFacts, type IRetirement } from './retired-rag.interfaces';
 
 const uuid = (v: unknown): v is string =>
     typeof v === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(v);

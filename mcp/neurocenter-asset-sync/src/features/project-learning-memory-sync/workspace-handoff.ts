@@ -1,15 +1,15 @@
 import path from 'node:path';
 import { hub, stateDir } from '../../bridge/state.js';
 import { syncDirectory } from '../../bridge/atomic-file.js';
-import type { Package } from '../../bridge/package.js';
-import type { WorkspaceBindingResult, WorkspaceFileVerification } from '../../bridge/workspace-instance.model.js';
+import type { IPackage } from '../../bridge/package.js';
+import type { IWorkspaceBindingResult, IWorkspaceFileVerification } from '../../bridge/workspace-instance.model.js';
 import { readPrivateConfiguration, writePrivateConfiguration } from '../local-configuration/private-store.js';
 import { memoryDigest, memoryNamespace, memoryRecipeSupported } from './contract.js';
-import { assertProjectionJournal, type ProjectionJournal } from './projection.js';
+import { assertProjectionJournal, type IProjectionJournal } from './projection.js';
 import { journalKey } from './receipts.js';
 
 /** Only verified current installation identity enters the workspace recovery journal; learned text stays private. */
-export interface MemoryOwnershipHandoff {
+export interface IMemoryOwnershipHandoff {
     schemaVersion: 1;
     site: string;
     projectId: string;
@@ -36,10 +36,10 @@ const keys = [
 ];
 const conflict = () =>
     new Error('Журнал владения Memory изменился или принадлежит другой привязке. Перенос остановлен.');
-const sourceKey = (item: MemoryOwnershipHandoff) =>
+const sourceKey = (item: IMemoryOwnershipHandoff) =>
     journalKey(item.site, { ...item, bindingId: item.previousBindingId });
-const targetKey = (item: MemoryOwnershipHandoff) => journalKey(item.site, item);
-const retired = (item: MemoryOwnershipHandoff) => ({
+const targetKey = (item: IMemoryOwnershipHandoff) => journalKey(item.site, item);
+const retired = (item: IMemoryOwnershipHandoff) => ({
     schemaVersion: 1,
     kind: 'memory-ownership-transferred',
     targetKey: targetKey(item),
@@ -51,8 +51,8 @@ const equal = (left: unknown, right: unknown) =>
 /** Recovery accepts no arbitrary private keys, cross-site namespaces, or changes of instance. */
 export function assertMemoryOwnershipHandoffs(
     value: unknown,
-    result: WorkspaceBindingResult,
-): asserts value is MemoryOwnershipHandoff[] {
+    result: IWorkspaceBindingResult,
+): asserts value is IMemoryOwnershipHandoff[] {
     if (
         !Array.isArray(value) ||
         value.length > 20 ||
@@ -90,22 +90,22 @@ export function assertMemoryOwnershipHandoffs(
         assets.add(item.assetId);
     }
 }
-function journal(value: unknown, item: MemoryOwnershipHandoff): ProjectionJournal {
-    assertProjectionJournal(value as ProjectionJournal, memoryNamespace(item.site, item.projectId));
+function journal(value: unknown, item: IMemoryOwnershipHandoff): IProjectionJournal {
+    assertProjectionJournal(value as IProjectionJournal, memoryNamespace(item.site, item.projectId));
     if (memoryDigest(value) !== item.sourceDigest) throw conflict();
-    return value as ProjectionJournal;
+    return value as IProjectionJournal;
 }
 
 /** Called under identity and installation locks after both roots match the same frozen package. */
 export async function prepareMemoryOwnershipHandoffs(
-    context: WorkspaceFileVerification,
-    packages: Package[],
-): Promise<MemoryOwnershipHandoff[]> {
+    context: IWorkspaceFileVerification,
+    packages: IPackage[],
+): Promise<IMemoryOwnershipHandoff[]> {
     if (!['resume', 'transfer'].includes(context.mode)) return [];
     const memories = packages.filter(memoryRecipeSupported);
     if (!memories.length) return [];
     if (!context.previousBindingId || !context.bindingId || !context.instanceId) throw conflict();
-    const result: MemoryOwnershipHandoff[] = [];
+    const result: IMemoryOwnershipHandoff[] = [];
     for (const pkg of memories) {
         const identity = {
             schemaVersion: 1 as const,
@@ -118,7 +118,7 @@ export async function prepareMemoryOwnershipHandoffs(
             version: pkg.plugin.version,
             manifest: pkg.manifest.sha256,
         };
-        const before = await readPrivateConfiguration<ProjectionJournal>(sourceKey({ ...identity, sourceDigest: '' }));
+        const before = await readPrivateConfiguration<IProjectionJournal>(sourceKey({ ...identity, sourceDigest: '' }));
         if (before === undefined) continue;
         assertProjectionJournal(before, memoryNamespace(identity.site, identity.projectId));
         const item = { ...identity, sourceDigest: memoryDigest(before) };
@@ -129,7 +129,7 @@ export async function prepareMemoryOwnershipHandoffs(
 }
 
 /** Before committing identity, require the same source snapshot and an unoccupied destination. */
-export async function assertPreparedMemoryOwnership(items: MemoryOwnershipHandoff[]): Promise<void> {
+export async function assertPreparedMemoryOwnership(items: IMemoryOwnershipHandoff[]): Promise<void> {
     for (const item of items) {
         journal(await readPrivateConfiguration(sourceKey(item)), item);
         if ((await readPrivateConfiguration(targetKey(item))) !== undefined) throw conflict();
@@ -137,7 +137,7 @@ export async function assertPreparedMemoryOwnership(items: MemoryOwnershipHandof
 }
 
 /** Committed recovery copies the full uncertain plan, then retires the old CAS key; never invokes MCP. */
-export async function finishMemoryOwnershipHandoffs(items: MemoryOwnershipHandoff[]): Promise<void> {
+export async function finishMemoryOwnershipHandoffs(items: IMemoryOwnershipHandoff[]): Promise<void> {
     for (const item of items) {
         const source = await readPrivateConfiguration(sourceKey(item)),
             target = await readPrivateConfiguration(targetKey(item)),

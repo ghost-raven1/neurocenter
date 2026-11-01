@@ -39,43 +39,57 @@ const maintenanceSlice = createSlice({
     name: 'maintenance',
     initialState,
     reducers: {},
-    extraReducers: builder => {
+    extraReducers: (builder) => {
         builder
             .addCase(fetchStorage.pending, (state, action) => {
-                if (!state.authScope) { return; }
+                if (!state.authScope) {
+                    return;
+                }
                 state.storageLoading = true;
                 state.storageError = null;
                 state.storageRequestId = action.meta.requestId;
             })
             .addCase(fetchStorage.fulfilled, (state, action) => {
-                if (state.storageRequestId !== action.meta.requestId) { return; }
+                if (state.storageRequestId !== action.meta.requestId) {
+                    return;
+                }
                 state.storageLoading = false;
                 state.storageRequestId = null;
                 state.storage = action.payload;
             })
             .addCase(fetchStorage.rejected, (state, action) => {
-                if (state.storageRequestId !== action.meta.requestId) { return; }
+                if (state.storageRequestId !== action.meta.requestId) {
+                    return;
+                }
                 state.storageLoading = false;
                 state.storageRequestId = null;
                 const failure = action.payload;
                 state.storageError = failure?.message || 'Не удалось загрузить сводку хранилища';
-                if (failure?.accessDenied) { state.storage = null; }
+                if (failure?.accessDenied) {
+                    state.storage = null;
+                }
             })
             .addCase(fetchBackup.pending, (state, action) => {
-                if (!state.authScope) { return; }
+                if (!state.authScope) {
+                    return;
+                }
                 state.backupLoading = true;
                 state.backupError = null;
                 state.backupRequestId = action.meta.requestId;
             })
             .addCase(fetchBackup.fulfilled, (state, action) => {
-                if (state.backupRequestId !== action.meta.requestId) { return; }
+                if (state.backupRequestId !== action.meta.requestId) {
+                    return;
+                }
                 state.backupLoading = false;
                 state.backupRequestId = null;
                 state.backup = action.payload;
                 state.backupAccessDenied = false;
             })
             .addCase(fetchBackup.rejected, (state, action) => {
-                if (state.backupRequestId !== action.meta.requestId) { return; }
+                if (state.backupRequestId !== action.meta.requestId) {
+                    return;
+                }
                 state.backupLoading = false;
                 state.backupRequestId = null;
                 const failure = action.payload;
@@ -86,26 +100,40 @@ const maintenanceSlice = createSlice({
                 }
             })
             .addCase(authInit.rejected, (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
-                if (action.payload === 'unauthorized' || action.payload === 'forbidden') { return initialState; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
+                if (action.payload === 'unauthorized' || action.payload === 'forbidden') {
+                    return initialState;
+                }
                 state.authRequestId = null;
             })
             .addCase(authLogout.fulfilled, (state, action) => {
-                if (state.authRequestId === action.meta.requestId) { return initialState; }
+                if (state.authRequestId === action.meta.requestId) {
+                    return initialState;
+                }
             })
             .addCase(signOut, () => initialState)
             .addMatcher(isAnyOf(authInit.pending, authSwitchRole.pending, authLogout.pending), (state, action) => {
                 state.authRequestId = action.meta.requestId;
             })
             .addMatcher(isAnyOf(authInit.fulfilled, authSwitchRole.fulfilled), (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
                 const authScope = authDataScope(action.payload);
-                if (state.authScope !== authScope) { return { ...initialState, authScope }; }
+                if (state.authScope !== authScope) {
+                    return { ...initialState, authScope };
+                }
                 state.authRequestId = null;
             })
             .addMatcher(isAnyOf(authSwitchRole.rejected, authLogout.rejected), (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
-                if (action.payload === 'unauthorized') { return initialState; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
+                if (action.payload === 'unauthorized') {
+                    return initialState;
+                }
                 state.authRequestId = null;
             });
     },

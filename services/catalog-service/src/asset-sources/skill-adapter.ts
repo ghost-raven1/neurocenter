@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { toSkillCreate, type ResolvedAsset, type SkillAsset } from '@neurocenter/asset-contract';
-import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-types';
+import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-interfaces';
 import { importDependencyContext } from './tool-adapter';
 import { normalizeEmail } from '../access/access.model';
 

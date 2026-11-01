@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { ModelsService } from './models.service';
 import { ProjectEmbeddingRepository } from './project-embedding.repository';
 import { projectEmbeddingUpdate } from './project-embedding.validation';
-import type { IConfiguredProjectEmbedding, IProjectEmbeddingSelection } from './project-embedding.types';
+import type { IConfiguredProjectEmbedding, IProjectEmbeddingSelection } from './project-embedding.interfaces';
 import { ProjectRagCoordinator } from './project-rag-coordinator';
 
 /** Внутренние callers сначала проверяют права проекта; сервис не зависит от устройств и очереди. */

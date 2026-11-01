@@ -2,15 +2,15 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } fr
 import type { Request } from 'express';
 import { ModelChatService } from './chat.service';
 import type {
-    ChatCreateInput,
-    ChatPreviewInput,
-    ChatRenameInput,
-    ChatRetryInput,
-    ChatRevisionInput,
-    ChatSendInput,
-    ChatUploadInput,
-} from './chat.types';
-import type { ChatParticipantsInput } from './chat-group.types';
+    IChatCreateInput,
+    IChatPreviewInput,
+    IChatRenameInput,
+    IChatRetryInput,
+    IChatRevisionInput,
+    IChatSendInput,
+    IChatUploadInput,
+} from './chat.interfaces';
+import type { IChatParticipantsInput } from './chat-group.interfaces';
 
 /** Authentication is delegated to the Gateway; service checks owner and current project rights. */
 @Controller('api/model-chats')
@@ -19,7 +19,7 @@ export class ModelChatController {
     @Get() list(@Req() req: Request, @Query('modelId') modelId?: string, @Query('projectId') projectId?: string) {
         return this.chats.list(req, modelId, projectId);
     }
-    @Post() create(@Req() req: Request, @Body() body: ChatCreateInput) {
+    @Post() create(@Req() req: Request, @Body() body: IChatCreateInput) {
         return this.chats.create(req, body);
     }
     @Get('agents') agents(
@@ -66,7 +66,7 @@ export class ModelChatController {
     ) {
         return this.chats.researchStep(req, id, stepId);
     }
-    @Patch(':id') rename(@Req() req: Request, @Param('id') id: string, @Body() body: ChatRenameInput) {
+    @Patch(':id') rename(@Req() req: Request, @Param('id') id: string, @Body() body: IChatRenameInput) {
         return this.chats.rename(req, id, body);
     }
     @Get(':id/agents') chatAgents(@Req() req: Request, @Param('id') id: string) {
@@ -75,14 +75,14 @@ export class ModelChatController {
     @Put(':id/participants') participants(
         @Req() req: Request,
         @Param('id') id: string,
-        @Body() body: ChatParticipantsInput,
+        @Body() body: IChatParticipantsInput,
     ) {
         return this.chats.participants(req, id, body);
     }
-    @Delete(':id') remove(@Req() req: Request, @Param('id') id: string, @Body() body: ChatRevisionInput) {
+    @Delete(':id') remove(@Req() req: Request, @Param('id') id: string, @Body() body: IChatRevisionInput) {
         return this.chats.remove(req, id, body);
     }
-    @Post(':id/attachments') upload(@Req() req: Request, @Param('id') id: string, @Body() body: ChatUploadInput) {
+    @Post(':id/attachments') upload(@Req() req: Request, @Param('id') id: string, @Body() body: IChatUploadInput) {
         return this.connected(req, (signal) => this.chats.upload(req, id, body, signal));
     }
     @Get(':id/attachments/:attachmentId') attachment(
@@ -96,21 +96,25 @@ export class ModelChatController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('attachmentId') attachmentId: string,
-        @Body() body: ChatRevisionInput,
+        @Body() body: IChatRevisionInput,
     ) {
         return this.chats.removeAttachment(req, id, attachmentId, body);
     }
-    @Post(':id/context-preview') preview(@Req() req: Request, @Param('id') id: string, @Body() body: ChatPreviewInput) {
+    @Post(':id/context-preview') preview(
+        @Req() req: Request,
+        @Param('id') id: string,
+        @Body() body: IChatPreviewInput,
+    ) {
         return this.chats.preview(req, id, body);
     }
-    @Post(':id/turns') send(@Req() req: Request, @Param('id') id: string, @Body() body: ChatSendInput) {
+    @Post(':id/turns') send(@Req() req: Request, @Param('id') id: string, @Body() body: IChatSendInput) {
         return this.connected(req, (signal) => this.chats.send(req, id, body, signal));
     }
     @Post(':id/turns/:turnId/retry') retry(
         @Req() req: Request,
         @Param('id') id: string,
         @Param('turnId') turnId: string,
-        @Body() body: ChatRetryInput,
+        @Body() body: IChatRetryInput,
     ) {
         return this.connected(req, (signal) => this.chats.retry(req, id, turnId, body, signal));
     }
@@ -118,7 +122,7 @@ export class ModelChatController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('turnId') turnId: string,
-        @Body() body: ChatRevisionInput,
+        @Body() body: IChatRevisionInput,
     ) {
         return this.chats.cancel(req, id, turnId, body);
     }
@@ -126,7 +130,7 @@ export class ModelChatController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('turnId') turnId: string,
-        @Body() body: ChatRevisionInput,
+        @Body() body: IChatRevisionInput,
     ) {
         return this.chats.complete(req, id, turnId, body);
     }
@@ -134,7 +138,7 @@ export class ModelChatController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('turnId') turnId: string,
-        @Body() body: ChatRevisionInput,
+        @Body() body: IChatRevisionInput,
     ) {
         return this.chats.removeTurn(req, id, turnId, body);
     }

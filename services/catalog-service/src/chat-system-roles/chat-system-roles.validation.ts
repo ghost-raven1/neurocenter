@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { chatProject } from '../system-role-chat/system-role-chat.validation';
-import type { ChatSystemRoleOrigin } from './chat-system-roles.types';
+import type { IChatSystemRoleOrigin } from './chat-system-roles.interfaces';
 /** Only canonical saved chat references are accepted; content and caller identity are never copied. */
-export function chatSystemRoleOrigin(raw: unknown): ChatSystemRoleOrigin {
+export function chatSystemRoleOrigin(raw: unknown): IChatSystemRoleOrigin {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
         throw new BadRequestException('Выберите сохранённый исходный чат.');
     const value = raw as Record<string, unknown>,
@@ -15,5 +15,5 @@ export function chatSystemRoleOrigin(raw: unknown): ChatSystemRoleOrigin {
         (value.kind === 'project-chat' && !projectId)
     )
         throw new BadRequestException('Выберите точный чат и его проект.');
-    return { kind: value.kind as ChatSystemRoleOrigin['kind'], originId: value.originId, projectId };
+    return { kind: value.kind as IChatSystemRoleOrigin['kind'], originId: value.originId, projectId };
 }

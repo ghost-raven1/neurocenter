@@ -1,16 +1,16 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { normalizeEmail, roleLevel } from '../access/access.model';
-import type { RemoteProviderActor } from './remote-provider.types';
+import type { IRemoteProviderActor } from './remote-provider.interfaces';
 import { providerFence } from './remote-provider.identity';
 
 /** Shares the role-write fence until dispatch; no role is inferred from an email or model. */
 export async function remoteProviderAuthority(
     db: Pick<PoolClient, 'query'>,
-    raw: RemoteProviderActor,
+    raw: IRemoteProviderActor,
     modelId: string,
     inference = false,
-): Promise<RemoteProviderActor> {
+): Promise<IRemoteProviderActor> {
     let email: string;
     try {
         email = normalizeEmail(raw?.email);

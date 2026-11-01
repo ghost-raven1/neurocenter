@@ -7,7 +7,10 @@ import { ownedTestPostgresAdmin } from './owned-postgres.fixture.mjs';
 
 export const root = fileURLToPath(new URL('../../', import.meta.url));
 const flag = process.argv.indexOf('--owned-postgres-config');
-assert.ok(flag > 1 && typeof process.argv[flag + 1] === 'string', 'Pass --owned-postgres-config with a fresh, explicitly owned connection.json.');
+assert.ok(
+    flag > 1 && typeof process.argv[flag + 1] === 'string',
+    'Pass --owned-postgres-config with a fresh, explicitly owned connection.json.',
+);
 const selected = process.argv[flag + 1];
 assert.ok(path.isAbsolute(selected), 'The owned PostgreSQL configuration path must be absolute.');
 export const output = path.dirname(path.dirname(selected));
@@ -33,7 +36,8 @@ export async function ownedConnection() {
     const owner = JSON.parse(await readFile(ownerFile, 'utf8'));
     const url = ownedTestPostgresAdmin(config.adminUrl);
     assert.match(owner.nonce, /^[a-f0-9]{32}$/);
-    for (const field of ['nonce', 'postgresPid', 'supervisorPid', 'dataDirectory', 'runDirectory', 'port']) assert.equal(config[field], owner[field]);
+    for (const field of ['nonce', 'postgresPid', 'supervisorPid', 'dataDirectory', 'runDirectory', 'port'])
+        assert.equal(config[field], owner[field]);
     assert.equal(owner.runDirectory, path.join(output, 'cluster'));
     assert.equal(owner.dataDirectory, path.join(owner.runDirectory, 'data'));
     assert.equal(await realpath(owner.dataDirectory), owner.dataDirectory);
@@ -48,7 +52,8 @@ export async function ownedConnection() {
     assert.equal(lines[1], owner.dataDirectory);
     assert.equal(Number(lines[3]), owner.port);
     assert.equal(lines[7].trim(), 'ready');
-    process.kill(owner.postgresPid, 0); process.kill(owner.supervisorPid, 0);
+    process.kill(owner.postgresPid, 0);
+    process.kill(owner.supervisorPid, 0);
     return { config, owner, url };
 }
 
@@ -58,18 +63,38 @@ export async function admit() {
     const client = new Client({ connectionString: admitted.url.href, connectionTimeoutMillis: 3000 });
     try {
         await client.connect();
-        const row = (await client.query("SELECT current_setting('server_version') AS version,current_setting('data_directory') AS data_directory,current_setting('port')::int AS port,current_setting('listen_addresses') AS listen_addresses,current_setting('unix_socket_directories') AS sockets,current_setting('fsync') AS fsync,current_setting('full_page_writes') AS full_page_writes,host(inet_server_addr()) AS server_addr,current_user AS role")).rows[0];
+        const row = (
+            await client.query(
+                "SELECT current_setting('server_version') AS version,current_setting('data_directory') AS data_directory,current_setting('port')::int AS port,current_setting('listen_addresses') AS listen_addresses,current_setting('unix_socket_directories') AS sockets,current_setting('fsync') AS fsync,current_setting('full_page_writes') AS full_page_writes,host(inet_server_addr()) AS server_addr,current_user AS role",
+            )
+        ).rows[0];
         assert.match(row.version, /^16\.15/);
         assert.equal(row.data_directory, admitted.owner.dataDirectory);
         assert.equal(row.port, admitted.owner.port);
         assert.equal(row.server_addr, '127.0.0.1');
         assert.equal(row.listen_addresses, '127.0.0.1');
         assert.equal(row.sockets, '');
-        assert.equal(row.fsync, 'on'); assert.equal(row.full_page_writes, 'on');
+        assert.equal(row.fsync, 'on');
+        assert.equal(row.full_page_writes, 'on');
         assert.equal(row.role, 'qa_owner');
-        assert.equal((await client.query("SELECT rolpassword LIKE 'SCRAM-SHA-256$%' AS scram FROM pg_authid WHERE rolname=current_user")).rows[0].scram, true);
-        const receipt = { ok: true, checkedAt: new Date().toISOString(), settings: row, ownerNonce: admitted.owner.nonce, mainPostgresContacted: false };
+        assert.equal(
+            (
+                await client.query(
+                    "SELECT rolpassword LIKE 'SCRAM-SHA-256$%' AS scram FROM pg_authid WHERE rolname=current_user",
+                )
+            ).rows[0].scram,
+            true,
+        );
+        const receipt = {
+            ok: true,
+            checkedAt: new Date().toISOString(),
+            settings: row,
+            ownerNonce: admitted.owner.nonce,
+            mainPostgresContacted: false,
+        };
         await writeFile(path.join(output, 'sql-admission.json'), JSON.stringify(receipt, null, 2) + '\n');
         return receipt;
-    } finally { await client.end(); }
+    } finally {
+        await client.end();
+    }
 }

@@ -7,7 +7,7 @@ import { validateResources } from '../skills/skill-resources';
 import { SKILL_VERSIONS_DIRECTORY, versionRelative, preserveVersion, syncSkillDirectory } from './skill-versions';
 
 import type { ISkillFile, ISkillMeta, ISkillResource } from '../skills/skills.model';
-import { normalizeMeta, parseSkillFile, serializeSkillFile } from './frontmatter';
+import { normalizeMeta, parseSkillFile, serializeSkillFile } from './frontmatter/frontmatter';
 import type { IStoredEntry, ISkillsStorage, ISkillChange, ISkillSourceReceipt } from './skills-storage.interface';
 import {
     SKILL_JOURNAL_DIRECTORY,

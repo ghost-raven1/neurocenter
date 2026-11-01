@@ -9,19 +9,22 @@ import {
     SOURCE_ARCHIVE_LIMITS,
     archiveFailure,
     archiveFileStream,
-    type SourceArchiveResult,
+    type ISourceArchiveResult,
 } from './source-archive-reader-files';
 import { readZipArchive } from './source-archive-reader-zip';
 import { readTarArchive } from './source-archive-reader-tar';
 export { SOURCE_ARCHIVE_LIMITS };
-export type { SourceArchiveResult, SourceArchiveFile } from './source-archive-reader-files';
+export type {
+    ISourceArchiveResult as SourceArchiveResult,
+    ISourceArchiveFile as SourceArchiveFile,
+} from './source-archive-reader-files';
 
 /** Only fully checked archives expose staged regular files; failure removes this invocation's private child. */
 export async function readSourceArchive(
     filename: string,
     directory: string,
     signal: AbortSignal,
-): Promise<SourceArchiveResult> {
+): Promise<ISourceArchiveResult> {
     signal.throwIfAborted();
     filename = path.resolve(filename);
     directory = path.resolve(directory);

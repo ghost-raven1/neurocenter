@@ -10,7 +10,7 @@ import { captureImageFiles, imageTree } from './files.js';
 import { openFullSdkSnapshot } from './sdk.js';
 import { normalizeSnapshotManifest, snapshotCanonicalJson, snapshotManifestHash } from './contract.js';
 
-export interface SnapshotCaptureInput {
+export interface ISnapshotCaptureInput {
     projectId: string;
     bindingId: string;
     snapshotId: string;
@@ -21,7 +21,7 @@ const uuid = (value: string) => /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.
 /** The source index is reserved, never rewritten; only complete .lance data enters the portable image. */
 export async function captureProjectImage(
     root: string,
-    input: SnapshotCaptureInput,
+    input: ISnapshotCaptureInput,
     authorize: () => Promise<unknown>,
 ) {
     if (

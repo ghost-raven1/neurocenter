@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { projectFolder, projectBindingId, projectInstanceId } from '../../bridge/workspace.js';
-import { readState, hub, type Credentials } from '../../bridge/state.js';
-import { verify, type Package } from '../../bridge/package.js';
-import type { InstallSet } from '../../bridge/install-set.js';
+import { readState, hub, type ICredentials } from '../../bridge/state.js';
+import { verify, type IPackage } from '../../bridge/package.js';
+import type { IInstallSet } from '../../bridge/install-set.js';
 import { assetBase } from '../../bridge/installation-receipt.js';
 import { inspectInstallation } from '../../bridge/installation-inspection.js';
 import { assertInspectionIdentity } from '../../bridge/inspection-identity.js';
@@ -12,19 +12,19 @@ import { resolvePreparedRuntimeArtifact } from '../runtime-artifacts/cache.js';
 import { readMcpConfiguration, parseLocalConfiguration } from '../local-configuration/index.js';
 import { packageEnvironment } from '../runtime-probe/profile.js';
 import { systemRoleMcpDigest, roleMcpProducer, type RoleMcpSessionContext } from './contract.js';
-import type { RoleMcpLaunch } from './client.js';
-import type { RoleMcpLocalSession } from './local-session.js';
+import type { IRoleMcpLaunch } from './client.js';
+import type { IRoleMcpLocalSession } from './local-session.js';
 
 /** Only inspected catalogue bytes and private parameters belonging to this exact folder may become a launch. */
 export async function roleMcpTarget(
     context: RoleMcpSessionContext,
     deviceId: string,
     authorize: () => Promise<void>,
-    ownership?: RoleMcpLocalSession,
+    ownership?: IRoleMcpLocalSession,
 ) {
     const { target, projectId } = context,
-        pkg = context.package as Package,
-        set = context.installSet as InstallSet | undefined;
+        pkg = context.package as IPackage,
+        set = context.installSet as IInstallSet | undefined;
     verify(pkg);
     const producer = roleMcpProducer(pkg);
     if (
@@ -43,7 +43,7 @@ export async function roleMcpTarget(
         await authorize();
         if (
             hub() !== site ||
-            (await readState<Credentials>('credentials'))?.deviceId !== deviceId ||
+            (await readState<ICredentials>('credentials'))?.deviceId !== deviceId ||
             (await projectFolder(projectId)) !== root ||
             (await projectBindingId(projectId)) !== target.bindingId ||
             (await projectInstanceId(projectId)) !== target.instanceId
@@ -96,7 +96,7 @@ export async function roleMcpTarget(
             DO_NOT_TRACK: '1',
         });
         const executable = producer.assetKind === 'mcp' && runtime?.executable;
-        const launch: RoleMcpLaunch = {
+        const launch: IRoleMcpLaunch = {
             pkg,
             cwd: root,
             env: { ...env, ...local.env },

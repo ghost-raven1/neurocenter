@@ -4,7 +4,7 @@ function isRaster(extension) {
     if (typeof extension !== 'string') return false;
     const normalized = '.' + extension.trim().toLowerCase().replace(/^\./, '');
     // Upstream accepts literal basenames (diagram.png) as well as extension tokens.
-    return rasterExtensions.some(suffix => normalized.endsWith(suffix));
+    return rasterExtensions.some((suffix) => normalized.endsWith(suffix));
 }
 
 /**
@@ -14,8 +14,17 @@ function isRaster(extension) {
  */
 export function indexCorpusConfiguration(config) {
     if (config.imageDescription?.enabled) return config;
-    return { ...config,
-        indexing: { ...config.indexing, includeExtensions: (config.indexing?.includeExtensions ?? []).filter(extension => !isRaster(extension)) },
-        chunking: { ...config.chunking, parsers: Object.fromEntries(Object.entries(config.chunking?.parsers ?? {}).filter(([extension]) => !isRaster(extension))) },
+    return {
+        ...config,
+        indexing: {
+            ...config.indexing,
+            includeExtensions: (config.indexing?.includeExtensions ?? []).filter((extension) => !isRaster(extension)),
+        },
+        chunking: {
+            ...config.chunking,
+            parsers: Object.fromEntries(
+                Object.entries(config.chunking?.parsers ?? {}).filter(([extension]) => !isRaster(extension)),
+            ),
+        },
     };
 }

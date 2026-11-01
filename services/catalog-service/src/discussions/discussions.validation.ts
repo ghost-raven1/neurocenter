@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { DiscussionTarget } from './discussions.types';
+import type { IDiscussionTarget } from './discussions.interfaces';
 export function discussionObject(value: unknown, keys: string[]): Record<string, unknown> {
     if (
         !value ||
@@ -20,7 +20,7 @@ export function discussionVersion(value: unknown): number {
         throw new BadRequestException('Передайте версию комментария.');
     return Number(value);
 }
-export function discussionTarget(type: unknown, id: unknown): DiscussionTarget {
+export function discussionTarget(type: unknown, id: unknown): IDiscussionTarget {
     if (
         !['catalog', 'help'].includes(String(type)) ||
         typeof id !== 'string' ||
@@ -34,7 +34,7 @@ export function discussionTarget(type: unknown, id: unknown): DiscussionTarget {
         (type === 'catalog' && !/^(?:mcp|plugin|skill|agent|model):[^:]+$/.test(id))
     )
         throw new BadRequestException('Некорректный адрес обсуждения.');
-    return { type: type as DiscussionTarget['type'], id };
+    return { type: type as IDiscussionTarget['type'], id };
 }
 export function discussionBody(value: unknown): string {
     if (typeof value !== 'string' || !value.trim() || Buffer.byteLength(value) > 16000 || /\x00/.test(value))

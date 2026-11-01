@@ -5,17 +5,17 @@ import { Header, Parser, type ReadEntry } from 'tar';
 import { portablePath } from '../../../shared/runtime-artifacts.cjs';
 import { MAX_PACKAGE_BYTES, object, packageFiles, filePath } from '../publication/publication-validation';
 
-interface SourceFile {
+interface ISourceFile {
     path: string;
     content: string;
     encoding?: 'base64';
 }
-interface ArchiveEntry {
+interface IArchiveEntry {
     path: string;
     directory: boolean;
     content?: Buffer;
 }
-interface ZipEntry {
+interface IZipEntry {
     fileName: string;
     fileNameRaw: Buffer;
     uncompressedSize: number;
@@ -23,14 +23,14 @@ interface ZipEntry {
     generalPurposeBitFlag: number;
     crc32: number;
 }
-interface ZipArchive {
+interface IZipArchive {
     on(event: string, listener: (...args: never[]) => void): this;
     readEntry(): void;
-    openReadStreamPromise(entry: ZipEntry): Promise<Readable>;
+    openReadStreamPromise(entry: IZipEntry): Promise<Readable>;
     close(): void;
 }
 const yauzl = require('yauzl') as {
-    fromBufferPromise(bytes: Buffer, options: Record<string, boolean>): Promise<ZipArchive>;
+    fromBufferPromise(bytes: Buffer, options: Record<string, boolean>): Promise<IZipArchive>;
 };
 const crc32 = (zlib as typeof zlib & { crc32(bytes: Buffer, previous?: number): number }).crc32;
 const MAX_ARCHIVE_BYTES = 8 * 1024 * 1024,
@@ -66,12 +66,12 @@ const ignored = (parts: string[], skill = false, python = false): boolean =>
     });
 
 class ArchiveContents {
-    readonly entries: ArchiveEntry[] = [];
+    readonly entries: IArchiveEntry[] = [];
     private readonly names = new Map<string, boolean>();
     private readonly parents = new Set<string>();
     private bytes = 0;
 
-    add(name: string, size: number, directory: boolean): ArchiveEntry {
+    add(name: string, size: number, directory: boolean): IArchiveEntry {
         const clean = name.replace(/^(?:\.\/)+/, '');
         const relative = directory ? clean.replace(/\/$/, '') : clean;
         if (!relative && directory && /^(?:\.\/)*$/.test(name)) {
@@ -107,10 +107,10 @@ class ArchiveContents {
         return entry;
     }
 
-    result(): { files: SourceFile[]; skipped: number; rootName?: string } {
+    result(): { files: ISourceFile[]; skipped: number; rootName?: string } {
         const files = this.entries.filter((entry) => !entry.directory);
         const relevant = files.filter((entry) => !ignored(entry.path.split('/')));
-        const commonRoot = (entries: ArchiveEntry[]): string | undefined => {
+        const commonRoot = (entries: IArchiveEntry[]): string | undefined => {
             const root = entries[0]?.path.split('/')[0];
             return root && entries.every((entry) => entry.path.startsWith(root + '/')) ? root : undefined;
         };
@@ -120,7 +120,7 @@ class ArchiveContents {
             wrapper && (!ignored([wrapper]) || ['build', 'dist', 'node_modules'].includes(wrapper.toLowerCase()))
                 ? wrapper
                 : commonRoot(relevant);
-        const relativeParts = (entry: ArchiveEntry): string[] =>
+        const relativeParts = (entry: IArchiveEntry): string[] =>
             entry.path.split('/').slice(rootName && entry.path.startsWith(rootName + '/') ? 1 : 0);
         const skill = files.some((entry) => {
             const parts = relativeParts(entry);
@@ -132,7 +132,7 @@ class ArchiveContents {
                 const parts = relativeParts(entry);
                 return parts[parts.length - 1]?.endsWith('.py') && !ignored(parts) && !pythonNoise(parts);
             });
-        const accepted: SourceFile[] = [];
+        const accepted: ISourceFile[] = [];
         let skipped = 0;
         for (const entry of files) {
             const parts = relativeParts(entry);
@@ -318,7 +318,7 @@ async function readZip(bytes: Buffer, contents: ArchiveContents, signal: AbortSi
             };
             zip.on('error', stop);
             zip.on('end', () => stop());
-            zip.on('entry', (entry: ZipEntry) => {
+            zip.on('entry', (entry: IZipEntry) => {
                 void (async () => {
                     signal.throwIfAborted();
                     if (++count > 1000) {
@@ -379,7 +379,7 @@ async function readZip(bytes: Buffer, contents: ArchiveContents, signal: AbortSi
 /** Только preview: архив превращается в обычные исходники без записи диска или запуска кода. */
 export async function readSourceArchive(
     raw: unknown,
-): Promise<{ files: SourceFile[]; skipped: number; rootName?: string }> {
+): Promise<{ files: ISourceFile[]; skipped: number; rootName?: string }> {
     const input = object(raw, 'Архив');
     if (
         Object.keys(input).some((key) => !['name', 'contentBase64'].includes(key)) ||

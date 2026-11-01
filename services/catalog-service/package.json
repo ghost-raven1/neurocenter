@@ -2,7 +2,7 @@
   "name": "catalog-service",
   "version": "0.1.0",
   "private": true,
-  "description": "Каталожный microservice lancedb-storage (проекты/версии/скиллы/пакеты/операции/аудит/maintenance)",
+  "description": "\u041a\u0430\u0442\u0430\u043b\u043e\u0436\u043d\u044b\u0439 microservice lancedb-storage (\u043f\u0440\u043e\u0435\u043a\u0442\u044b/\u0432\u0435\u0440\u0441\u0438\u0438/\u0441\u043a\u0438\u043b\u043b\u044b/\u043f\u0430\u043a\u0435\u0442\u044b/\u043e\u043f\u0435\u0440\u0430\u0446\u0438\u0438/\u0430\u0443\u0434\u0438\u0442/maintenance)",
   "scripts": {
     "test": "vitest run",
     "build": "nest build",
@@ -11,10 +11,10 @@
     "start:prod": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src integration --no-error-on-unmatched-pattern --max-warnings=0",
     "lint:fix": "npm run lint -- --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\"",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\""
   },
   "dependencies": {
     "@lancedb/lancedb": "0.29.0",

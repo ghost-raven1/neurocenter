@@ -1,27 +1,32 @@
 import { ConflictException } from '@nestjs/common';
 import { BuildCancelledError } from './build-cancellation';
-import type { BuildConfiguration } from './package-build.model';
-import type { PackageAgentContext, PackageAgentDb, PackageAgentInput, PackageAgentStage } from './package-agent.model';
+import type { IBuildConfiguration } from './package-build.model';
+import type {
+    IPackageAgentContext,
+    TPackageAgentDb,
+    IPackageAgentInput,
+    TPackageAgentStage,
+} from './package-agent.model';
 import { PACKAGE_AGENT_MAX_CALLS } from './package-agent.model';
 import { agentHash, packageAgentRecipeAudit, packageAgentSourceHash } from './package-agent.recipe';
 
-interface OwnerRow {
+interface IOwnerRow {
     state: string;
     execution_nonce: string | null;
     actor: string;
-    config: BuildConfiguration;
+    config: IBuildConfiguration;
     publication_started_at: string | null;
 }
 /** All journal writes use the existing queue lease and the job's current owner nonce. */
 export class PackageAgentJournal {
     constructor(
-        private readonly context: PackageAgentContext,
-        private readonly config: BuildConfiguration,
+        private readonly context: IPackageAgentContext,
+        private readonly config: IBuildConfiguration,
     ) {}
-    private async owner(db: PackageAgentDb): Promise<OwnerRow> {
+    private async owner(db: TPackageAgentDb): Promise<IOwnerRow> {
         this.context.signal.throwIfAborted();
         const row = (
-            await db.query<OwnerRow>(
+            await db.query<IOwnerRow>(
                 'SELECT state,execution_nonce,actor,config,publication_started_at FROM tool_build_jobs WHERE id=$1 FOR UPDATE',
                 [this.context.buildId],
             )
@@ -46,11 +51,11 @@ export class PackageAgentJournal {
         });
     }
     async start(
-        stage: PackageAgentStage,
-        agent: PackageAgentInput,
+        stage: TPackageAgentStage,
+        agent: IPackageAgentInput,
         input: unknown,
         diagnostics: Record<string, unknown>,
-    ): Promise<BuildConfiguration> {
+    ): Promise<IBuildConfiguration> {
         return this.context.transaction(async (db) => {
             const row = await this.owner(db);
             const previous = await db.query(
@@ -86,8 +91,8 @@ export class PackageAgentJournal {
         });
     }
     async finish(
-        stage: PackageAgentStage,
-        config?: BuildConfiguration,
+        stage: TPackageAgentStage,
+        config?: IBuildConfiguration,
         errorCode?: 'inference-failed' | 'invalid-response',
         decision?: 'publish' | 'repair',
     ): Promise<void> {

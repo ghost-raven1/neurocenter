@@ -18,26 +18,26 @@ import { automaticModelOptions } from '../models/model-runtime-options';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { projectEmbeddingPin, assertProjectEmbeddingModel } from '../models/project-embedding.validation';
 import { ModelChatProjectContext } from '../model-chat/chat-project-context';
-import type { PreparedProjectContext, ChatProjectSource } from '../model-chat/chat-project-context.types';
+import type { IPreparedProjectContext, IChatProjectSource } from '../model-chat/chat-project-context.interfaces';
 import { ChatSearchService } from '../chat-search/chat-search.service';
 import { HelpService } from '../help/help.service';
 import { SystemRoleGuidance } from '../system-roles/system-role.guidance';
 import { projectLevel } from '../access/access.model';
 import { systemRole } from '../system-roles/system-role.definitions';
 import { assertProjectChatRoomAccess } from '../project-chat/project-chat-room-access';
-import type { ProjectChatRoomRow } from '../project-chat/project-chat.types';
+import type { IProjectChatRoomRow } from '../project-chat/project-chat.interfaces';
 import { requireFeatureEnabled, requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { readFeatures } from '../../../shared/feature-client.cjs';
-import { CHAT_SEARCH_FEATURES } from '../chat-search/chat-search.types';
+import { CHAT_SEARCH_FEATURES } from '../chat-search/chat-search.constants';
 import { AgentToolsRepository } from './agent-tools.repository';
 import { AgentToolsLoop } from './agent-tools.loop';
+import { AGENT_TOOL_LIMITS } from './agent-tools.constants';
 import {
-    AGENT_TOOL_LIMITS,
-    type AgentToolGrant,
-    type AgentToolScope,
-    type AgentToolStepRow,
-    type AgentToolCapabilities,
-} from './agent-tools.types';
+    type IAgentToolGrant,
+    type IAgentToolScope,
+    type IAgentToolStepRow,
+    type IAgentToolCapabilities,
+} from './agent-tools.interfaces';
 
 /** Ordinary chat tools keep the caller's authority and use real domain owners for paid work. */
 @Injectable()
@@ -64,7 +64,7 @@ export class AgentToolsService implements OnModuleDestroy {
         projectId: string,
         signal: AbortSignal,
         authorize: () => Promise<unknown>,
-    ): Promise<PreparedProjectContext> {
+    ): Promise<IPreparedProjectContext> {
         signal.throwIfAborted();
         const current = async () => {
                 signal.throwIfAborted();
@@ -88,7 +88,7 @@ export class AgentToolsService implements OnModuleDestroy {
             fit: (messages) => ({ messages, evidence }),
         };
     }
-    async admit(req: Request, projectId: string, grant: AgentToolGrant): Promise<void> {
+    async admit(req: Request, projectId: string, grant: IAgentToolGrant): Promise<void> {
         await requireFeatureEnabled('project_agent_tools');
         await this.models.resolveProject(req, projectId, 2);
         if (grant.rag) await requireFeatureEnabled('project_search');
@@ -103,11 +103,11 @@ export class AgentToolsService implements OnModuleDestroy {
                 );
         }
     }
-    async capabilities(req: Request, projectId: string): Promise<AgentToolCapabilities> {
+    async capabilities(req: Request, projectId: string): Promise<IAgentToolCapabilities> {
         const actor = await this.models.actor(req);
         await this.models.resolveProject(req, projectId, 1);
         const off = { available: false },
-            base: AgentToolCapabilities = {
+            base: IAgentToolCapabilities = {
                 protocol: 'json-actions-v1',
                 available: false,
                 rag: off,
@@ -132,7 +132,7 @@ export class AgentToolsService implements OnModuleDestroy {
         }
         if (!flags.project_agent_tools)
             return { ...base, reason: 'Инструменты агентов выключены. История прежних шагов сохраняется.' };
-        const models: AgentToolCapabilities['publicChats']['models'] = [],
+        const models: IAgentToolCapabilities['publicChats']['models'] = [],
             enabledSearch = CHAT_SEARCH_FEATURES.every((key) => flags[key]);
         if (enabledSearch) {
             const list = await this.models.list(req, projectId),
@@ -177,20 +177,20 @@ export class AgentToolsService implements OnModuleDestroy {
     }
     async run(
         req: Request,
-        scope: Omit<AgentToolScope, 'execute' | 'infer'>,
-        initial: PreparedProjectContext,
+        scope: Omit<IAgentToolScope, 'execute' | 'infer'>,
+        initial: IPreparedProjectContext,
         initialQuery: string,
     ) {
         const callerSignal = scope.signal;
         scope = { ...scope, signal: AbortSignal.any([scope.signal, AbortSignal.timeout(120000)]) };
         const found = new Map(initial.evidence.sources.map((source) => [source.id, source])),
-            checks: Array<(db?: Parameters<AgentToolScope['assertCurrent']>[0]) => Promise<void>> = [];
-        const assertCurrent: AgentToolScope['assertCurrent'] = async (db) => {
+            checks: Array<(db?: Parameters<IAgentToolScope['assertCurrent']>[0]) => Promise<void>> = [];
+        const assertCurrent: IAgentToolScope['assertCurrent'] = async (db) => {
             await scope.assertCurrent(db);
             await initial.assertCurrent(db);
             for (const check of checks) await check(db);
         };
-        const tools: AgentToolScope = {
+        const tools: IAgentToolScope = {
             ...scope,
             assertCurrent,
             infer: async (messages, current) => {
@@ -200,7 +200,7 @@ export class AgentToolsService implements OnModuleDestroy {
                 const room =
                     scope.owner.kind === 'project-chat'
                         ? (
-                              await this.models.pool.query<ProjectChatRoomRow>(
+                              await this.models.pool.query<IProjectChatRoomRow>(
                                   'SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2',
                                   [scope.owner.projectId, scope.owner.originId],
                               )
@@ -248,12 +248,12 @@ export class AgentToolsService implements OnModuleDestroy {
                 if (!value || typeof value !== 'object') return;
                 if (action.action === 'rag_search') {
                     const result = value as {
-                        sources?: ChatProjectSource[];
+                        sources?: IChatProjectSource[];
                         generation?: string;
                         snapshot?: string;
                         contextIdentity?: string;
                     };
-                    const check = async (db?: Parameters<AgentToolScope['assertCurrent']>[0]) => {
+                    const check = async (db?: Parameters<IAgentToolScope['assertCurrent']>[0]) => {
                         if (result.sources?.length) {
                             if (!result.contextIdentity)
                                 throw new ConflictException('Источники не содержат подтверждённый снимок.');
@@ -280,7 +280,7 @@ export class AgentToolsService implements OnModuleDestroy {
                 if (job.state !== 'SUCCEEDED')
                     throw new ConflictException('Прежний поиск публичного чата больше недоступен.');
                 const results = job.results ?? [],
-                    check = async (db?: Parameters<AgentToolScope['assertCurrent']>[0]) => {
+                    check = async (db?: Parameters<IAgentToolScope['assertCurrent']>[0]) => {
                         const selected = scope.owner.grant.publicChats!,
                             model = await (db ? projectChatModels(this.models, db) : this.models).getUsable(
                                 selected.modelId,
@@ -404,7 +404,7 @@ export class AgentToolsService implements OnModuleDestroy {
         const messages = await this.loop.run(tools);
         return {
             messages,
-            assertCurrent: async (db?: Parameters<AgentToolScope['assertCurrent']>[0]) => {
+            assertCurrent: async (db?: Parameters<IAgentToolScope['assertCurrent']>[0]) => {
                 await (scope.assertAuthorized ? scope.assertAuthorized(db) : scope.assertCurrent(db));
                 await initial.assertCurrent(db);
                 for (const check of checks) await check(db);
@@ -447,7 +447,7 @@ export class AgentToolsService implements OnModuleDestroy {
         }
         return { step: row };
     }
-    private async historyAccess(req: Request, owner: string, row: AgentToolStepRow): Promise<void> {
+    private async historyAccess(req: Request, owner: string, row: IAgentToolStepRow): Promise<void> {
         if (row.owner_kind === 'model-chat') {
             const current = (
                 await this.models.pool.query<{ model_id: string }>(
@@ -459,7 +459,7 @@ export class AgentToolsService implements OnModuleDestroy {
             await this.models.getUsable(current.model_id, req, row.project_id);
         } else {
             const room = (
-                await this.models.pool.query<ProjectChatRoomRow>(
+                await this.models.pool.query<IProjectChatRoomRow>(
                     'SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2',
                     [row.project_id, row.origin_id],
                 )

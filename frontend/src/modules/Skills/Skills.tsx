@@ -4,11 +4,11 @@ import { useSelector } from 'react-redux';
 
 import Permission from '../../common/components/Permission';
 import { errorMessage } from '../../common/utils/errorMessage';
-import { useAuthRequestOwner } from '../../features/UserBlock/useAuthRequestOwner';
+import { useAuthRequestOwner } from '../../features/UserBlock/hooks/useAuthRequestOwner';
 import { useAppDispatch } from '../../core/hooks';
 import socketClient from '../../core/socket/socketClient';
 import { skillCollectionManageKey, skillsPolitics } from '../../features/UserBlock/permissions';
-import { RootState } from '../../store';
+import { TRootState } from '../../store';
 
 import SkillCatalogTree from './components/SkillCatalogTree';
 import SkillEditorModal from './components/SkillEditorModal';
@@ -27,10 +27,10 @@ const { Title } = Typography;
  */
 const Skills: FC = () => {
     const dispatch = useAppDispatch();
-    const { tree, selectedPath, query } = useSelector((state: RootState) => state.skills);
-    const [ dirModalOpen, setDirModalOpen ] = useState(false);
-    const [ dirName, setDirName ] = useState('');
-    const [ directorySaving, setDirectorySaving ] = useState(false);
+    const { tree, selectedPath, query } = useSelector((state: TRootState) => state.skills);
+    const [dirModalOpen, setDirModalOpen] = useState(false);
+    const [dirName, setDirName] = useState('');
+    const [directorySaving, setDirectorySaving] = useState(false);
     const directoryLock = useRef(false);
     const { scope, captureOwner } = useAuthRequestOwner();
 
@@ -84,34 +84,33 @@ const Skills: FC = () => {
         [dispatch],
     );
 
-    const handleNewSkill = useCallback(
-        (): void => {
-            dispatch(openEditor({ mode: 'create', path: selectedPath ?? '' }));
-        },
-        [dispatch, selectedPath],
-    );
+    const handleNewSkill = useCallback((): void => {
+        dispatch(openEditor({ mode: 'create', path: selectedPath ?? '' }));
+    }, [dispatch, selectedPath]);
 
     const handleNewDirectory = useCallback((): void => {
         setDirName('');
         setDirModalOpen(true);
     }, []);
 
-    const [ projectFilter, setProjectFilter ] = useState<string>('');
+    const [projectFilter, setProjectFilter] = useState<string>('');
 
     /* Каталоги проектов из дерева (project-*): быстрый переход к скиллам проекта. */
-    const projectFolders = tree.filter(node => node.type === 'dir' && node.name.startsWith('project-'));
+    const projectFolders = tree.filter((node) => node.type === 'dir' && node.name.startsWith('project-'));
 
     const handleProjectFilter = useCallback(
         (value?: string): void => {
             setProjectFilter(value ?? '');
             dispatch(setSelectedPath(value ?? ''));
         },
-        [ dispatch ],
+        [dispatch],
     );
 
     const handleCreateDirectory = useCallback((): void => {
         const isCurrent = captureOwner();
-        if (directoryLock.current || !isCurrent()) { return; }
+        if (directoryLock.current || !isCurrent()) {
+            return;
+        }
         const name = dirName.trim();
 
         if (name.length === 0) {
@@ -125,19 +124,37 @@ const Skills: FC = () => {
 
         directoryLock.current = true;
         setDirectorySaving(true);
-        dispatch(createSkillDirectory(fullPath)).unwrap()
-            .then(result => {
-                if (!isCurrent()) { return; }
+        dispatch(createSkillDirectory(fullPath))
+            .unwrap()
+            .then((result) => {
+                if (!isCurrent()) {
+                    return;
+                }
                 notifySkillMutation(result, 'Папка создана', 'directory');
                 setDirModalOpen(false);
                 dispatch(fetchSkillTree());
             })
-            .catch(error => { if (isCurrent()) { message.error(errorMessage(error, 'Не удалось создать папку')); } })
-            .finally(() => { if (isCurrent()) { directoryLock.current = false; setDirectorySaving(false); } });
+            .catch((error) => {
+                if (isCurrent()) {
+                    message.error(errorMessage(error, 'Не удалось создать папку'));
+                }
+            })
+            .finally(() => {
+                if (isCurrent()) {
+                    directoryLock.current = false;
+                    setDirectorySaving(false);
+                }
+            });
     }, [dispatch, dirName, selectedPath, captureOwner]);
 
     return (
-        <Card title={<Title level={4} style={{ margin: 0 }}>Скиллы</Title>}>
+        <Card
+            title={
+                <Title level={4} style={{ margin: 0 }}>
+                    Скиллы
+                </Title>
+            }
+        >
             <Row gutter={16}>
                 <Col span={6}>
                     <Card size="small" title="Каталог">
@@ -145,7 +162,14 @@ const Skills: FC = () => {
                     </Card>
                 </Col>
                 <Col span={18}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div
+                        style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: 12,
+                        }}
+                    >
                         <Space>
                             <Select
                                 allowClear
@@ -155,7 +179,10 @@ const Skills: FC = () => {
                                 onChange={handleProjectFilter}
                                 options={[
                                     { value: 'common', label: 'Общие (common)' },
-                                    ...projectFolders.map(folder => ({ value: folder.path, label: folder.name.replace(/^project-/, '') })),
+                                    ...projectFolders.map((folder) => ({
+                                        value: folder.path,
+                                        label: folder.name.replace(/^project-/, ''),
+                                    })),
                                 ]}
                             />
                             <Input.Search
@@ -163,7 +190,7 @@ const Skills: FC = () => {
                                 placeholder="Поиск по каталогу"
                                 style={{ width: 240 }}
                                 value={query}
-                                onChange={event => handleQuery(event.target.value)}
+                                onChange={(event) => handleQuery(event.target.value)}
                             />
                         </Space>
                         <Permission permissionKey={skillCollectionManageKey} politic={skillsPolitics}>
@@ -183,7 +210,11 @@ const Skills: FC = () => {
                 title="Новая папка"
                 open={dirModalOpen}
                 onOk={handleCreateDirectory}
-                onCancel={() => { if (!directoryLock.current) { setDirModalOpen(false); } }}
+                onCancel={() => {
+                    if (!directoryLock.current) {
+                        setDirModalOpen(false);
+                    }
+                }}
                 confirmLoading={directorySaving}
                 cancelButtonProps={{ disabled: directorySaving }}
                 closable={!directorySaving}
@@ -193,7 +224,7 @@ const Skills: FC = () => {
                 <Input
                     value={dirName}
                     disabled={directorySaving}
-                    onChange={event => setDirName(event.target.value)}
+                    onChange={(event) => setDirName(event.target.value)}
                     onPressEnter={handleCreateDirectory}
                     placeholder="имя папки"
                     autoFocus

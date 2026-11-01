@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { runtimeArtifactDirectory } from '../runtime-artifacts/runtime-artifacts';
-import type { AssetSourceTransport } from './source-client';
+import type { TAssetSourceTransport } from './source-client';
 
 /** Автономный режим запрещает сетевой fallback, включая проверку новых версий моста. */
 export function assetSourceMode(environment: NodeJS.ProcessEnv = process.env): 'online' | 'offline' {
@@ -63,6 +63,6 @@ export class SourceMetadataCache {
     }
 }
 
-export function assetSourceTransport(): AssetSourceTransport {
+export function assetSourceTransport(): TAssetSourceTransport {
     return { offline: assetSourceMode() === 'offline', cache: new SourceMetadataCache() };
 }

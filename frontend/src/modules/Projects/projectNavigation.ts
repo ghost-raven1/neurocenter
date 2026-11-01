@@ -12,18 +12,22 @@ export function projectRagSetupUrl(projectKey: string): string {
 
 /** Установка ведёт к нативному плагину и сохраняет выбранный серверный проект. */
 export function projectRagCatalogUrl(projectKey: string): string {
-    return `/store?${new URLSearchParams({q:'OpenCodeRAG (плагин)',p:projectKey}).toString()}`;
+    return `/store?${new URLSearchParams({ q: 'OpenCodeRAG (плагин)', p: projectKey }).toString()}`;
 }
 
 /** Основной мастер получает точный проект; номер прежнего этапа не переносится. */
 export function projectBindingUrl(projectId: string): string {
-    return `/start?${new URLSearchParams({setup:'1',p:projectId}).toString()}`;
+    return `/start?${new URLSearchParams({ setup: '1', p: projectId }).toString()}`;
 }
 
 /** Закрытие мастера удаляет только его параметр, сохраняя остальные условия страницы. */
 export function projectBindingSearch(search: string, projectId: string | null): string {
     const params = new URLSearchParams(search);
-    if (projectId) { params.set('bind', projectId); } else { params.delete('bind'); }
+    if (projectId) {
+        params.set('bind', projectId);
+    } else {
+        params.delete('bind');
+    }
     const query = params.toString();
     return query ? '?' + query : '';
 }

@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { hostname } from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
-import { normalizeSkillAuditEvents, type ISkillAuditEvent } from '../../../shared/skill-audit.cjs';
+import { normalizeSkillAuditEvents, type TSkillAuditEvent } from '../../../shared/skill-audit.cjs';
 import { skillAuditSummary } from './skill-audit';
 import { syncSkillDirectory } from './skill-versions';
 import {
@@ -38,7 +38,7 @@ export interface ISkillJournal {
     host: string;
     pid: number;
     changes: TSkillJournalChange[];
-    events?: ISkillAuditEvent[];
+    events?: TSkillAuditEvent[];
 }
 const active = new Set<string>();
 const queues = new Map<string, Promise<void>>();
@@ -192,7 +192,7 @@ export function parseSkillJournal(raw: string, filename?: string): ISkillJournal
         if (!/^[a-f0-9-]{36}$/.test(journal.id) || !Array.isArray(journal.events)) {
             throw new Error('Повреждены события журнала скиллов.');
         }
-        const events: ISkillAuditEvent[] = [];
+        const events: TSkillAuditEvent[] = [];
         for (let offset = 0; offset < journal.events.length; offset += 200) {
             events.push(...normalizeSkillAuditEvents({ events: journal.events.slice(offset, offset + 200) }));
         }
@@ -611,7 +611,7 @@ export async function withSkillJournal(
     changes: TSkillJournalChange[],
     write: () => Promise<void>,
     beforeRecover?: (changes: ISkillFileChange[]) => Promise<void>,
-    events?: ISkillAuditEvent[],
+    events?: TSkillAuditEvent[],
 ): Promise<void> {
     if (!changes.length) {
         return;

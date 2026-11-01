@@ -1,11 +1,11 @@
 import path from 'node:path';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { stateDir } from '../../bridge/state.js';
 import { selectedRuntimeArtifact } from './cache.js';
 
 /** Канонический путь не зависит от папки проекта; байты проверяются перед установкой и запуском. */
 export function runtimeArtifactConnection(
-    pkg: Package,
+    pkg: IPackage,
 ): { root: string; entrypoint: string; command: string[] } | undefined {
     const artifact = selectedRuntimeArtifact(pkg);
     if (!artifact) {

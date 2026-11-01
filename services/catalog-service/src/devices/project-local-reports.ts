@@ -1,6 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 
-interface Source {
+interface ISource {
     projectId: string | null;
     bindingId?: unknown;
     instanceId?: unknown;
@@ -53,7 +53,7 @@ const fields = (value: Record<string, unknown>, keys: string[]) =>
 const fail = (): never => {
     throw new ConflictException('Локальный отчёт содержит неподдерживаемые данные или относится к другой папке.');
 };
-export interface ProjectInventory {
+export interface IProjectInventory {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -68,7 +68,7 @@ export interface ProjectInventory {
 }
 
 /** На сервер попадают только ограниченные метаданные, без команд, содержимого и абсолютных путей. */
-export function assertProjectInventory(value: unknown, source: Source): asserts value is ProjectInventory {
+export function assertProjectInventory(value: unknown, source: ISource): asserts value is IProjectInventory {
     if (
         !object(value) ||
         !fields(value, [
@@ -120,7 +120,7 @@ export function assertProjectInventory(value: unknown, source: Source): asserts 
         ids.add(entry.candidateId);
     }
 }
-export function assertLocalVariants(value: unknown, source: Source): void {
+export function assertLocalVariants(value: unknown, source: ISource): void {
     if (
         !object(value) ||
         !fields(value, [

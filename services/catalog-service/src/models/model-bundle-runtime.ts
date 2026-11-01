@@ -4,13 +4,13 @@ import { Readable } from 'node:stream';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AssetSourcesService } from '../asset-sources/asset-sources.service';
-import type { IModel } from './model.types';
+import type { IModel } from './model.interfaces';
 import type { IModelProgress } from './ollama-client';
 import { localModelAlias } from './local-model-alias';
 
-type Engine = { hydrateModelBundle(options: Record<string, unknown>): Promise<{ ok: boolean }> };
+type TEngine = { hydrateModelBundle(options: Record<string, unknown>): Promise<{ ok: boolean }> };
 // Native bundle engine содержит TLA; TS CommonJS не должен переписывать его import в require.
-const loadEngine = new Function('url', 'return import(url)') as (url: string) => Promise<Engine>;
+const loadEngine = new Function('url', 'return import(url)') as (url: string) => Promise<TEngine>;
 
 /** Установка читает только exact imported source receipt; сетевого fallback или /api/pull нет. */
 @Injectable()

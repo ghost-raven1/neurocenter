@@ -9,12 +9,12 @@ const lock = "SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:catalog
 const checksum = (sql: string) => createHash('sha256').update(sql).digest('hex');
 export const featureFlagsMigrationManifest = () =>
     FEATURE_FLAGS_MIGRATIONS.map(({ version, name, sql }) => ({ version, name, checksum: checksum(sql) }));
-interface MigrationRow {
+interface IMigrationRow {
     version: number;
     name: string;
     checksum: string;
 }
-export interface FeatureFlagsMigrationState {
+export interface IFeatureFlagsMigrationState {
     ok: true;
     ready: boolean;
     applied: number[];
@@ -22,11 +22,11 @@ export interface FeatureFlagsMigrationState {
 }
 
 /** The catalog and flags share a schema lock because both own the security event table. */
-async function history(client: PoolClient): Promise<MigrationRow[]> {
+async function history(client: PoolClient): Promise<IMigrationRow[]> {
     if (!(await client.query("SELECT to_regclass('feature_flags_schema_migrations') AS relation")).rows[0]?.relation)
         return [];
     const rows = (
-        await client.query<MigrationRow>(
+        await client.query<IMigrationRow>(
             'SELECT version,name,checksum FROM feature_flags_schema_migrations ORDER BY version',
         )
     ).rows;
@@ -36,7 +36,7 @@ async function history(client: PoolClient): Promise<MigrationRow[]> {
             (row, index) =>
                 !expected[index] ||
                 Object.keys(expected[index]).some(
-                    (key) => row[key as keyof MigrationRow] !== expected[index][key as keyof MigrationRow],
+                    (key) => row[key as keyof IMigrationRow] !== expected[index][key as keyof IMigrationRow],
                 ),
         )
     ) {
@@ -103,7 +103,7 @@ export async function assertFeatureFlagsSchema(client: PoolClient): Promise<void
         throw new Error('Отсутствует индекс истории переключателей.');
 }
 
-const state = (rows: MigrationRow[]): FeatureFlagsMigrationState => ({
+const state = (rows: IMigrationRow[]): IFeatureFlagsMigrationState => ({
     ok: true,
     ready: rows.length === FEATURE_FLAGS_MIGRATIONS.length,
     applied: rows.map((row) => row.version),
@@ -114,7 +114,7 @@ const state = (rows: MigrationRow[]): FeatureFlagsMigrationState => ({
 export async function checkFeatureFlagsMigrations(
     pool: Pool,
     requireReady = false,
-): Promise<FeatureFlagsMigrationState> {
+): Promise<IFeatureFlagsMigrationState> {
     const client = await pool.connect();
     let discard = false;
     try {
@@ -137,7 +137,7 @@ export async function checkFeatureFlagsMigrations(
 }
 
 /** Schema creation, physical checks and immutable history commit atomically. */
-export async function migrateFeatureFlags(pool: Pool): Promise<FeatureFlagsMigrationState> {
+export async function migrateFeatureFlags(pool: Pool): Promise<IFeatureFlagsMigrationState> {
     const client = await pool.connect();
     let discard = false;
     try {

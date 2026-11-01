@@ -1,7 +1,7 @@
 import { authorizedFetch, jobContext } from '../../bridge/state.js';
 import { saveCompletion } from '../../bridge/completions.js';
 import { projectFolder } from '../../bridge/workspace.js';
-import { captureProjectImage, type SnapshotCaptureInput } from './capture.js';
+import { captureProjectImage, type ISnapshotCaptureInput } from './capture.js';
 import { snapshotCanonicalJson } from './contract.js';
 
 const sha = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -44,7 +44,7 @@ async function receipt(response: Response, maximum = 32 * 1024 * 1024): Promise<
         throw new Error('Квитанция снимка повреждена.');
     }
 }
-function uploaded(input: SnapshotCaptureInput, value: unknown, expected?: string) {
+function uploaded(input: ISnapshotCaptureInput, value: unknown, expected?: string) {
     if (
         !object(value) ||
         !keys(value, 'bytes,fileCount,manifestSha256,snapshotId,status,tableCount') ||
@@ -77,7 +77,7 @@ function uploaded(input: SnapshotCaptureInput, value: unknown, expected?: string
 
 /** One leased intent publishes raw chunks. Accepted uploads are durably reported even after a lost ACK. */
 export async function publishProjectSnapshot(
-    input: SnapshotCaptureInput,
+    input: ISnapshotCaptureInput,
     authorize: () => Promise<unknown>,
     update: (percent: number, message: string) => Promise<unknown>,
 ) {

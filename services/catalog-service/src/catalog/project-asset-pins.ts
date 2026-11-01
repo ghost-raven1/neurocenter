@@ -8,7 +8,7 @@ import { toPlugin } from '../publication/plugin-repository';
 import { readSkillPackage } from '../publication/skill-package';
 import { SkillAssetClient } from '../asset-sources/skill-adapter';
 
-type Queryable = Pick<PoolClient, 'query'>;
+type TQueryable = Pick<PoolClient, 'query'>;
 export interface IProjectAssetSnapshot {
     card: Record<string, unknown>;
     package: IPackage;
@@ -55,7 +55,7 @@ export function pluginDeliveryPackage(plugin: IAiPlugin): IPackage {
 
 /** Вызывается под management lock; старый head и immutable history читаются в одной SQL-транзакции. */
 export async function captureProjectAsset(
-    db: Queryable,
+    db: TQueryable,
     id: string,
     kind: string,
     version?: number,

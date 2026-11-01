@@ -1,11 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
 import { assetKey } from '../../bridge/installation-receipt.js';
 import { ProbeError } from './model.js';
-import { configurePlugin, type ProbeProfile } from './profile.js';
+import { configurePlugin, type IProbeProfile } from './profile.js';
 import type { ProbeScope } from './process.js';
 import { resolvePreparedRuntimeArtifact } from '../runtime-artifacts/cache.js';
 
@@ -44,7 +44,7 @@ export default async function probe(input) {
 
 /** Завершённый init подтверждается отдельно от фоновых watchers; собственная группа всегда останавливается. */
 async function initializationState(
-    profile: ProbeProfile,
+    profile: IProbeProfile,
     scope: ProbeScope,
     binary: string,
     marker: string,
@@ -115,8 +115,8 @@ async function initializationState(
 }
 
 export async function probePlugin(
-    pkg: Package,
-    profile: ProbeProfile,
+    pkg: IPackage,
+    profile: IProbeProfile,
     scope: ProbeScope,
     binary: string,
     authorize: () => Promise<void>,

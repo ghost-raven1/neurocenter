@@ -1,10 +1,19 @@
 import type { IAgentStatus } from './model';
-import type { ICatalogAgent, IProjectAgent } from './types';
+import type { ICatalogAgent, IProjectAgent } from './interfaces';
 
-export interface IAgentUpdate { catalogNewer: boolean; needsApply: boolean; attention: boolean; }
+export interface IAgentUpdate {
+    catalogNewer: boolean;
+    needsApply: boolean;
+    attention: boolean;
+}
 
 /** Новая редакция шаблона и неподтверждённое применение — отдельные состояния. */
-export function agentUpdate(agent: ICatalogAgent, assignment: IProjectAgent | undefined, status: IAgentStatus | undefined, ready: boolean): IAgentUpdate {
+export function agentUpdate(
+    agent: ICatalogAgent,
+    assignment: IProjectAgent | undefined,
+    status: IAgentStatus | undefined,
+    ready: boolean,
+): IAgentUpdate {
     const active = !!assignment && !assignment.removed;
     return {
         catalogNewer: ready && active && !agent.archivedAt && agent.version > assignment.version,
@@ -14,4 +23,5 @@ export function agentUpdate(agent: ICatalogAgent, assignment: IProjectAgent | un
 }
 
 /** Фильтр не прячет применение, ошибку и удаление, ожидающее выбранного компьютера. */
-export const showAgentUpdate = (update: IAgentUpdate): boolean => update.catalogNewer || update.needsApply || update.attention;
+export const showAgentUpdate = (update: IAgentUpdate): boolean =>
+    update.catalogNewer || update.needsApply || update.attention;

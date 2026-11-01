@@ -4,13 +4,13 @@ import { syncRagDb } from '../tools/sync-rag-db.js';
 import { locateStore } from '../lib/store.js';
 import { projectFolder, safeTarget } from './workspace.js';
 
-interface RagJob {
+interface IRagJob {
     kind: 'sync-rag' | 'restore-rag';
     projectId: string;
     bindingId: string;
     allowEmpty?: boolean;
 }
-type Result = Record<string, unknown>;
+type TResult = Record<string, unknown>;
 const SLICE_ROWS = 500;
 const counts = [
     'upserted',
@@ -25,8 +25,8 @@ const counts = [
 ];
 
 /** Промежуточный пакет не становится готовой базой знаний, даже если транспорт вернул ok. */
-function checkedResult(raw: string, job: RagJob): Result {
-    const result = JSON.parse(raw) as Result;
+function checkedResult(raw: string, job: IRagJob): TResult {
+    const result = JSON.parse(raw) as TResult;
     if (
         !result ||
         result.ok !== true ||
@@ -77,10 +77,10 @@ function checkedResult(raw: string, job: RagJob): Result {
 
 /** Задание моста применяет короткие порции, сохраняя обычный ручной лимит MCP неизменным. */
 export async function runRagBridgeJob(
-    job: RagJob,
+    job: IRagJob,
     authorize: () => Promise<void>,
     update: (percent: number, message: string) => Promise<unknown>,
-): Promise<Result> {
+): Promise<TResult> {
     await authorize();
     const folder = await projectFolder(job.projectId);
     const located = await locateStore(folder, folder, job.kind === 'restore-rag');
@@ -125,7 +125,7 @@ export async function runRagBridgeJob(
         const remaining = Number(result.remaining),
             appliedNow = Number(result.appliedNow);
         const currentProfile = JSON.stringify(
-            Object.entries(result.indexProfile as Result).sort(([a], [b]) => a.localeCompare(b)),
+            Object.entries(result.indexProfile as TResult).sort(([a], [b]) => a.localeCompare(b)),
         );
         if (snapshotHash !== undefined && (snapshotHash !== result.snapshotHash || profile !== currentProfile)) {
             throw new Error(
@@ -167,7 +167,7 @@ export async function runRagBridgeJob(
 }
 
 /** Абсолютные пути и внутренние сообщения клиента остаются на компьютере. */
-function publicResult(result: Result, job: RagJob): Result {
+function publicResult(result: TResult, job: IRagJob): TResult {
     const allowed = [
         'ok',
         'applied',

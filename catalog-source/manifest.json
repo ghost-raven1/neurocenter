@@ -525,43 +525,83 @@
   "files": [
     {
       "path": "components/codex-connector/NOTICE.md",
-      "sha256": "26b152260a09d710498f6f4fb410c52403cda21e0e7284c4ebc9983e06624fc2",
-      "bytes": 226
+      "sha256": "d10d85ccc43ff7960910ebc00b27d6ecb2e002368477b71cbc018858f38f9842",
+      "bytes": 437
     },
     {
       "path": "components/codex-connector/SOURCE.json",
-      "sha256": "b084998ee420262e6fb5018ad7f1387063d147b6897b1eab4ca8295b71d2c8d2",
-      "bytes": 1366
+      "sha256": "ca1c919e721dbc2cd36f5555ec9e6708e6766af867f66ab98b427e069e725a08",
+      "bytes": 4697
     },
     {
-      "path": "components/codex-connector/source/auth-login.ts",
-      "sha256": "3dacea708db56eb332fd123377eeb8ca0e2bd8bf4a7e65cfbc4f596f5ef71cea",
-      "bytes": 2661
+      "path": "components/codex-connector/source/auth-login/auth-login.ts",
+      "sha256": "e18ca5706f16e78c1c5df9bdd1b8f6cafb18fbb531e19122d9ca2cf5ce0a7f54",
+      "bytes": 3085
     },
     {
-      "path": "components/codex-connector/source/auth-provider.ts",
-      "sha256": "55a4b680a8879dba2c15237c94f891a07bf66e15f4dee494ab839474fa67f11e",
-      "bytes": 3913
+      "path": "components/codex-connector/source/auth-login/interfaces.ts",
+      "sha256": "927ead01cdc4552ed5b8dd9c24b17a5857432282d0613f5406155db784ee7196",
+      "bytes": 259
     },
     {
-      "path": "components/codex-connector/source/auth-session.ts",
-      "sha256": "f1be79a24e884e60843a435016b24fb2f8a7d90c56e17b1d0c14131db5e9bfda",
-      "bytes": 5208
+      "path": "components/codex-connector/source/auth-provider/auth-provider.ts",
+      "sha256": "324764b73d648bc1a528290c22a4f88c432e89d42cbbe2a90a145256d18f5620",
+      "bytes": 2770
     },
     {
-      "path": "components/codex-connector/source/connection.ts",
-      "sha256": "3a3bdbb87ff8376d49f2c975928a155c17291ffe8ca2c6004ee2d55dcf1bf162",
-      "bytes": 4504
+      "path": "components/codex-connector/source/auth-provider/constants.ts",
+      "sha256": "98a4c57ff0de854813efdf24ecef1a7ba18575e15263b9084490273ce0e37fd2",
+      "bytes": 211
+    },
+    {
+      "path": "components/codex-connector/source/auth-provider/interfaces.ts",
+      "sha256": "ca824be4c4a80c89e280c1393574663657682cbf80ce55313681012a67b10557",
+      "bytes": 167
+    },
+    {
+      "path": "components/codex-connector/source/auth-provider/utils.ts",
+      "sha256": "3f30f03513221657d96e00cd4955c500cc96640780b6dc6f48084e4530b94230",
+      "bytes": 2068
+    },
+    {
+      "path": "components/codex-connector/source/auth-session/auth-session.ts",
+      "sha256": "ea53e058269ba20449d8e055926fcbf0a03569e38897925d9bec6a4c242371a2",
+      "bytes": 5435
+    },
+    {
+      "path": "components/codex-connector/source/auth-session/constants.ts",
+      "sha256": "50d38538add7d62705242e13195f390159d3d921fc75454451d0291c32042c5f",
+      "bytes": 459
+    },
+    {
+      "path": "components/codex-connector/source/auth-session/interfaces.ts",
+      "sha256": "70466d0a867c4123fa69e8557766b80dd58bf95fc12b4872d41c4b0926422232",
+      "bytes": 393
+    },
+    {
+      "path": "components/codex-connector/source/connection/connection.ts",
+      "sha256": "346cd17d1c5fa10b0b51ca8603e0a058a5780b3f1db824319745eb3a564cfa4b",
+      "bytes": 5326
+    },
+    {
+      "path": "components/codex-connector/source/connection/interfaces.ts",
+      "sha256": "95620a638a9ad1c0e6140a896db736118776549d048915b618bab97ad64c7f30",
+      "bytes": 132
+    },
+    {
+      "path": "components/codex-connector/source/constants.ts",
+      "sha256": "ce49d5020820091e78572dda42a0d4bf207568f7da0f466caf32426a99c29e14",
+      "bytes": 140
     },
     {
       "path": "components/codex-connector/source/executable.ts",
-      "sha256": "9391645d0eee4739f475e7ff709325bbb02f1f3f05175566a9501ea5a7bfc5e2",
-      "bytes": 581
+      "sha256": "aaf8c57a25da08699d8fad3934621a539733ef9c74ead189a12dc91eea157acc",
+      "bytes": 612
     },
     {
-      "path": "components/codex-connector/source/types.ts",
-      "sha256": "69b82afa9ba910cf773dddf8dc835d26fc5288dee17f6fb7a257199d2f4bc462",
-      "bytes": 748
+      "path": "components/codex-connector/source/interfaces.ts",
+      "sha256": "bc1db86c18e8952a4276f56798456496e7fce3ecd1bcd90e7c30cf18ff8df16a",
+      "bytes": 807
     },
     {
       "path": "components/fetch-mcp/recipe.json",
@@ -630,8 +670,13 @@
     },
     {
       "path": "components/python-context/source/index.ts",
-      "sha256": "042db40fdd88c902d73a7a58234fa78767085a6497fc9d5615c140c3b03c3506",
-      "bytes": 1842
+      "sha256": "175b0cfe98d93c1a5bad8a95c973b73d7a585f98bd33c798257ef45adfa0a58f",
+      "bytes": 2238
+    },
+    {
+      "path": "components/python-context/source/interfaces.ts",
+      "sha256": "ede8bd51b897dca268ae2a7e3c26df6139930a8e3c18030b76333d7494dd9009",
+      "bytes": 115
     },
     {
       "path": "metadata/00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007.json",
@@ -980,8 +1025,8 @@
     },
     {
       "path": "producer.json",
-      "sha256": "a36fc68f922e8009d5cf492b38c4011b4a4535e70ae5b431a95ea1f303f0b2e4",
-      "bytes": 28509
+      "sha256": "1328e58ba7a31ccb63c6ebb5e45dbd25172ce6d49a208897eec2b726f3291b3c",
+      "bytes": 30232
     },
     {
       "path": "recipes/mcp-filesystem.json",

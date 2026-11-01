@@ -7,7 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import type { Request, Response } from 'express';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
-import type { HostedMcpClaim } from './ticket';
+import type { IHostedMcpClaim } from './ticket';
 import { materializeArtifact } from './artifact-cache';
 import { validHostedMcpSession } from './ticket';
 
@@ -42,8 +42,8 @@ const IDLE_TTL_MS = 30 * 60 * 1000;
 const START_TIMEOUT_MS = 20000;
 const TOOL_OUTPUT_LIMIT = 8 * 1024 * 1024;
 
-interface HostSession {
-    claim: HostedMcpClaim;
+interface IHostSession {
+    claim: IHostedMcpClaim;
     client: Client;
     lastUsed: number;
     listeners: number;
@@ -51,8 +51,8 @@ interface HostSession {
 }
 
 class McpHostService {
-    private readonly hosts = new Map<string, HostSession>();
-    private readonly starting = new Map<string, Promise<HostSession>>();
+    private readonly hosts = new Map<string, IHostSession>();
+    private readonly starting = new Map<string, Promise<IHostSession>>();
     private readonly idleTimer: ReturnType<typeof setInterval>;
 
     constructor(
@@ -64,7 +64,7 @@ class McpHostService {
         }, 60 * 1000);
         this.idleTimer.unref();
     }
-    private hostKey(claim: HostedMcpClaim): string {
+    private hostKey(claim: IHostedMcpClaim): string {
         return JSON.stringify([
             claim.artifactSha256,
             claim.session?.projectId,
@@ -75,7 +75,7 @@ class McpHostService {
         ]);
     }
 
-    private async adopt(claim: HostedMcpClaim, signal?: AbortSignal): Promise<HostSession> {
+    private async adopt(claim: IHostedMcpClaim, signal?: AbortSignal): Promise<IHostSession> {
         const key = this.hostKey(claim);
         let session = this.hosts.get(key);
         if (!session) {
@@ -109,13 +109,13 @@ class McpHostService {
         return session;
     }
 
-    private release(_claim: HostedMcpClaim, session: HostSession): void {
+    private release(_claim: IHostedMcpClaim, session: IHostSession): void {
         session.listeners = Math.max(0, session.listeners - 1);
         session.lastUsed = Date.now();
     }
 
     /** Server research uses the same approved Gateway artifact, with cancellation on each actual MCP operation. */
-    async researchTools(claim: HostedMcpClaim, signal: AbortSignal) {
+    async researchTools(claim: IHostedMcpClaim, signal: AbortSignal) {
         signal.throwIfAborted();
         const session = await this.adopt(claim, signal);
         try {
@@ -126,7 +126,7 @@ class McpHostService {
         }
     }
 
-    async researchCall(claim: HostedMcpClaim, name: string, args: Record<string, unknown>, signal: AbortSignal) {
+    async researchCall(claim: IHostedMcpClaim, name: string, args: Record<string, unknown>, signal: AbortSignal) {
         signal.throwIfAborted();
         const session = await this.adopt(claim, signal);
         try {
@@ -137,7 +137,7 @@ class McpHostService {
         }
     }
     /** Role operations reuse this same host and child; a browser survives navigation followed by snapshot. */
-    async operationTools(claim: HostedMcpClaim, signal: AbortSignal) {
+    async operationTools(claim: IHostedMcpClaim, signal: AbortSignal) {
         signal.throwIfAborted();
         const session = await this.adopt(claim, signal);
         try {
@@ -162,10 +162,10 @@ class McpHostService {
             this.release(claim, session);
         }
     }
-    async operationCall(claim: HostedMcpClaim, name: string, args: Record<string, unknown>, signal: AbortSignal) {
+    async operationCall(claim: IHostedMcpClaim, name: string, args: Record<string, unknown>, signal: AbortSignal) {
         return this.researchCall(claim, name, args, signal);
     }
-    async closeOperationSession(claim: HostedMcpClaim): Promise<void> {
+    async closeOperationSession(claim: IHostedMcpClaim): Promise<void> {
         if (!claim.operationSessionId) return;
         const key = this.hostKey(claim),
             starting = this.starting.get(key);
@@ -178,7 +178,7 @@ class McpHostService {
         }
     }
     /** Only a request's own research child is closed; public project sessions and shared artifact bytes stay intact. */
-    async closeResearchSession(claim: HostedMcpClaim): Promise<void> {
+    async closeResearchSession(claim: IHostedMcpClaim): Promise<void> {
         if (!claim.researchSessionId) return;
         const key = this.hostKey(claim),
             session = this.hosts.get(key);
@@ -186,13 +186,13 @@ class McpHostService {
         if (session) await session.client.close();
     }
 
-    private async spawn(claim: HostedMcpClaim, signal?: AbortSignal): Promise<HostSession> {
+    private async spawn(claim: IHostedMcpClaim, signal?: AbortSignal): Promise<IHostSession> {
         const root = claim.operationRemote
             ? undefined
             : await materializeArtifact(claim, this.catalogUrl, this.internalToken);
         signal?.throwIfAborted();
         const entry = root ? entryPath(root, claim.entrypoint) : undefined;
-        let started: HostSession | undefined;
+        let started: IHostSession | undefined;
         const transport = claim.operationRemote
             ? operationRemoteTransport(claim.operationRemote)
             : new OwnedHostedStdio(
@@ -263,8 +263,8 @@ class McpHostService {
     }
 
     /** Безstate-канал: инструменты проксируются в общий процесс-сервер, транспорт живёт ровно время канала. */
-    async handle(claim: HostedMcpClaim, req: Request, res: Response): Promise<void> {
-        let session: HostSession;
+    async handle(claim: IHostedMcpClaim, req: Request, res: Response): Promise<void> {
+        let session: IHostSession;
         try {
             await this.authorizeSession(claim);
             session = await this.adopt(claim);
@@ -339,7 +339,7 @@ class McpHostService {
         }
     }
 
-    private async authorizeSession(claim: HostedMcpClaim, signal?: AbortSignal): Promise<void> {
+    private async authorizeSession(claim: IHostedMcpClaim, signal?: AbortSignal): Promise<void> {
         if (!validHostedMcpSession(claim.session)) throw httpError(401, 'Соединение MCP нужно установить заново.');
         try {
             const response = await fetch(this.catalogUrl.replace(/\/+$/, '') + '/internal/mcp-host/authorize-session', {

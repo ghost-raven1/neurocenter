@@ -6,7 +6,7 @@ import type { NextFunction, Request, Response } from 'express';
 import type { IAuthPayload } from '../auth/auth-guard.service';
 import { swaggerUiOptions } from './swagger-ui-options';
 
-interface DocumentationAuth {
+interface IDocumentationAuth {
     authenticate(request: Request): Promise<IAuthPayload | null>;
 }
 
@@ -16,7 +16,7 @@ const documentationPath = (value: string): boolean => {
 };
 
 /** Register before Nest's proxy wildcard: every document and asset request checks fresh session access. */
-export function setupApiDocumentation(app: INestApplication, auth: DocumentationAuth, document?: OpenAPIObject): void {
+export function setupApiDocumentation(app: INestApplication, auth: IDocumentationAuth, document?: OpenAPIObject): void {
     const definition =
         document ?? (JSON.parse(readFileSync(path.join(__dirname, 'openapi.json'), 'utf8')) as OpenAPIObject);
     app.use(async (request: Request, response: Response, next: NextFunction): Promise<void> => {

@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { ModelsService } from './models.service';
 import { RemoteConnectionService } from './remote-connection.service';
 import { OpenCodeModelImport } from './opencode-model-import';
-import type { IRemoteConnectionInput } from './remote-model.types';
+import type { IRemoteConnectionInput } from './remote-model.interfaces';
 
 /** Приватная настройка доступна только главному администратору; ключ write-only. */
 @Controller('api/models')

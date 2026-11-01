@@ -1,13 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
+import { DISCUSSION_LIMITS } from './chat-discussion.constants';
 import {
-    DISCUSSION_LIMITS,
-    type DiscussionInvoke,
-    type DiscussionOutcome,
-    type DiscussionPlan,
-    type DiscussionResult,
-    type DiscussionTask,
-} from './chat-discussion.types';
-import type { ChatResolvedAgent } from './chat-group.types';
+    type TDiscussionInvoke,
+    type IDiscussionOutcome,
+    type IDiscussionPlan,
+    type IDiscussionResult,
+    type IDiscussionTask,
+} from './chat-discussion.interfaces';
+import type { IChatResolvedAgent } from './chat-group.interfaces';
 
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -22,7 +22,11 @@ const invalid = (): never => {
 };
 
 /** Model output selects only immutable accepted participants; it cannot supply personas, models or tools. */
-export function discussionPlan(content: string, roster: readonly ChatResolvedAgent[], maximum: number): DiscussionPlan {
+export function discussionPlan(
+    content: string,
+    roster: readonly IChatResolvedAgent[],
+    maximum: number,
+): IDiscussionPlan {
     if (Buffer.byteLength(content) > DISCUSSION_LIMITS.outputBytes) return invalid();
     let value: unknown;
     try {
@@ -37,7 +41,7 @@ export function discussionPlan(content: string, roster: readonly ChatResolvedAge
         value.responses.length + Number(value.critic !== null) > Math.min(DISCUSSION_LIMITS.contributions, maximum)
     )
         return invalid();
-    const task = (raw: unknown): DiscussionTask => {
+    const task = (raw: unknown): IDiscussionTask => {
         if (
             !exact(raw, ['agentId', 'instruction']) ||
             !roster.some((item) => item.snapshot.agentId === raw.agentId) ||
@@ -83,7 +87,7 @@ function synthesis(content: string): string {
 }
 
 /** A deterministic partial result is useful even when a child or the final provider cannot answer. */
-export function discussionFallback(outcomes: readonly DiscussionOutcome[]): string {
+export function discussionFallback(outcomes: readonly IDiscussionOutcome[]): string {
     const done = outcomes.filter((item) => item.state === 'done');
     return (
         `Обсуждение завершено с доступными результатами: ${done.length} из ${outcomes.length}.\n\n` +
@@ -102,19 +106,19 @@ export function discussionFallback(outcomes: readonly DiscussionOutcome[]): stri
 /** One send plans, asks specialists, optionally critiques their answers, then synthesizes without round buttons. */
 export async function discussGroup(
     question: string,
-    roster: readonly ChatResolvedAgent[],
+    roster: readonly IChatResolvedAgent[],
     maximum: number,
-    invoke: DiscussionInvoke,
+    invoke: TDiscussionInvoke,
     checkpoint: () => Promise<unknown>,
     summaryPolicy: 'legacy' | 'unique-v1' = 'unique-v1',
-): Promise<DiscussionResult> {
-    const outcomes: DiscussionOutcome[] = [];
-    const fallback = (): DiscussionResult => ({
+): Promise<IDiscussionResult> {
+    const outcomes: IDiscussionOutcome[] = [];
+    const fallback = (): IDiscussionResult => ({
         content: discussionFallback(outcomes),
         finishReason: 'stop',
         outcomes,
     });
-    let plan: DiscussionPlan;
+    let plan: IDiscussionPlan;
     try {
         const planned = await invoke({
             key: 'planning',

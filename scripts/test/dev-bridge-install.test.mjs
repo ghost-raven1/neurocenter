@@ -1,34 +1,394 @@
-import {test,mock} from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import {readFileSync} from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import {updateInstalledDevBridge} from '../workspace/dev-bridge-install.mjs';
-import {bridgeFileSnapshot,expectedBridgeLauncher,expectedBridgeRegistration,installedBridgeSettings,retainBridgeSettings} from '../workspace/dev-bridge-settings.mjs';
-import {fixture,update,unchanged,jsonc,sha,version} from './dev-bridge-install.fixture.mjs';
+import { updateInstalledDevBridge } from '../workspace/dev-bridge-install.mjs';
+import {
+    bridgeFileSnapshot,
+    expectedBridgeLauncher,
+    expectedBridgeRegistration,
+    installedBridgeSettings,
+    retainBridgeSettings,
+} from '../workspace/dev-bridge-settings.mjs';
+import { fixture, update, unchanged, jsonc, sha, version } from './dev-bridge-install.fixture.mjs';
 
-test('Missing installation is skipped without archive reads, pairing or filesystem creation',async()=>fixture(async f=>{await fs.rm(f.install,{recursive:true});const result=await updateInstalledDevBridge({...f.options,archive:'/missing'},f.dependencies);assert.equal(result.updated,false);assert.equal(f.events.length,0);assert.equal(f.starts.length,0);assert.equal((await fs.readdir(f.home)).includes('own bridge'),false);}));
-test('Actual JSONC init/launcher preserve saved identity, pairing, custom env and unrelated agents; worker confirms build',async()=>fixture(async f=>{const result=await update(f);assert.equal(result.updated,true);assert.equal(result.workerRestarted,true);assert.equal(f.starts.length,1);assert.ok((await fs.readFile(f.config,'utf8')).startsWith('// user comment'));const c=jsonc.parse(await fs.readFile(f.config,'utf8'));assert.equal(c.model,'user-model');assert.deepEqual(c.agent,{external:{description:'do not replace'}});assert.equal(c.mcp.other.url,'https://other.test');assert.deepEqual(c.mcp['neurocenter-asset-sync'].environment,f.entry.environment);assert.equal(c.mcp['neurocenter-asset-sync'].enabled,false);assert.equal(await fs.readFile(path.join(f.state,'credentials.json'),'utf8'),f.credentials);assert.equal(await fs.readFile(f.launcher,'utf8'),expectedBridgeLauncher(f.install));assert.equal(await fs.readFile(path.join(result.previousDir,'keep.txt'),'utf8'),'old runtime');assert.ok(f.events.every(e=>e.timeout>0&&e.timeout<=75000));assert.ok(f.events.filter(e=>e.args[1]?.startsWith('--')).every(e=>e.site==='https://saved-site.example.test'&&e.api==='https://saved-api.example.test'));}));
-test('Legacy installation without installation.json uses existing JSONC origin/API rather than caller dev environment',async()=>fixture(async f=>{await update(f);const saved=JSON.parse(await fs.readFile(path.join(f.install,'installation.json'),'utf8'));assert.equal(saved.siteUrl,'https://saved-site.example.test');assert.equal(saved.apiUrl,'https://saved-api.example.test');},{legacy:true}));
-test('Unpaired installation updates files without worker start, connect or browser',async()=>fixture(async f=>{const result=await update(f);assert.equal(result.workerRestarted,false);assert.equal(f.starts.length,0);assert.ok(!f.events.some(e=>e.args.some(a=>/connect|pair|--worker/.test(a))));},{paired:false}));
-test('A rejected prepare preserves old files and compensates its uncertain pause without restarting a worker',async()=>fixture(async f=>{const run=f.dependencies.runCommand;f.dependencies.runCommand=async(...args)=>args[1][1]==='--prepare-upgrade'?'{"ok":false,"error":"offline or foreign PID"}':run(...args);await assert.rejects(update(f),/offline or foreign PID/);await unchanged(f);assert.equal(f.starts.length,0);assert.equal(f.events.filter(e=>e.args[1]==='--finish-upgrade').length,1);}));
-test('Unknown or incomplete prepare ACK attempts bounded resume without replacing files or starting another worker',async()=>{for(const mode of ['lost','missing-paused'])await fixture(async f=>{const run=f.dependencies.runCommand;let finishes=0;f.dependencies.runCommand=async(...args)=>{if(args[1][1]==='--prepare-upgrade'){if(mode==='lost')throw Error('ACK lost');return'{"ok":true}';}if(args[1][1]==='--finish-upgrade')finishes++;return run(...args);};await assert.rejects(update(f),mode==='lost'?/ACK lost/:/состояние паузы/);await unchanged(f);assert.equal(finishes,1);assert.equal(f.starts.length,0);});});
-test('Failed init after real JSONC write restores exact config, old runtime and existing worker',async()=>fixture(async f=>{const run=f.dependencies.runCommand;f.dependencies.runCommand=async(...args)=>{const result=await run(...args);if(args[1][1]==='--init')throw Error('init ACK lost after write');return result;};await assert.rejects(update(f),/init ACK lost/);await unchanged(f);assert.deepEqual(f.starts,['a'.repeat(64)]);}));
-test('Failed launcher after real write restores launcher/config/runtime and resumes previous worker',async()=>fixture(async f=>{const run=f.dependencies.runCommand;f.dependencies.runCommand=async(...args)=>{const result=await run(...args);if(args[1][1]==='--install-command')throw Error('launcher ACK lost after write');return result;};await assert.rejects(update(f),/launcher ACK lost/);await unchanged(f);assert.deepEqual(f.starts,['a'.repeat(64)]);}));
-test('Concurrent user config edit after registration is retained during rollback',async()=>fixture(async f=>{const run=f.dependencies.runCommand;f.dependencies.runCommand=async(...args)=>{const result=await run(...args);if(args[1][1]==='--install-command'){await fs.writeFile(f.config,'{"userChanged":true}\n');throw Error('launcher failure');}return result;};await assert.rejects(update(f),error=>{assert.match(error.message,/Настройки не перезаписаны/);assert.match(error.message,/Каталог восстановления:/);assert.ok(error.recoveryDirectory);assert.equal(readFileSync(path.join(error.recoveryDirectory,'original-opencode.jsonc'),'utf8'),f.original);return true;});assert.equal(await fs.readFile(f.config,'utf8'),'{"userChanged":true}\n');assert.equal(await fs.readFile(path.join(f.install,'keep.txt'),'utf8'),'old runtime');}));
-test('Concurrent user launcher edit is retained during rollback',async()=>fixture(async f=>{const run=f.dependencies.runCommand;f.dependencies.runCommand=async(...args)=>{const result=await run(...args);if(args[1][1]==='--finish-upgrade'){await fs.writeFile(f.launcher,'#!/bin/sh\n# user new launcher\n');throw Error('resume failure');}return result;};await assert.rejects(update(f),/Команда не перезаписана/);assert.equal(await fs.readFile(f.launcher,'utf8'),'#!/bin/sh\n# user new launcher\n');assert.equal(await fs.readFile(path.join(f.install,'keep.txt'),'utf8'),'old runtime');}));
-test('Child exiting before readiness causes rollback instead of a false successful update',async()=>fixture(async f=>{const start=f.dependencies.startWorker;let first=true;f.dependencies.startWorker=(...args)=>{if(first){first=false;return{pid:88888,alive:()=>false};}return start(...args);};await assert.rejects(update(f),/завершился до подтверждения/);await unchanged(f);assert.deepEqual(f.starts,['a'.repeat(64)]);}));
-test('Corrupt archive SHA fails before upgrade, registration or worker mutation',async()=>fixture(async f=>{await fs.appendFile(f.archive,'corrupt');await assert.rejects(update(f),/SHA/);await unchanged(f);assert.equal(f.events.length,0);}));
-test('Build fingerprint mismatch despite fresh archive SHA fails before preparing worker',async()=>fixture(async f=>{await fs.appendFile(path.join(f.content,'dist/index.js'),'\n// changed code');await f.pack();await assert.rejects(update(f),/Отпечаток/);await unchanged(f);assert.equal(f.events.length,0);}));
-test('Archive symlinks are rejected before extraction or worker preparation',async()=>fixture(async f=>{await fs.symlink('/tmp/foreign',path.join(f.content,'dist/foreign'));await f.pack();await assert.rejects(update(f),/Ссылки/);await unchanged(f);assert.equal(f.events.length,0);}));
-test('Existing install lock is not removed and no CLI preparation executes',async()=>fixture(async f=>{await fs.mkdir(f.install+'.install-lock');await fs.writeFile(f.install+'.install-lock/owner.pid','other');await assert.rejects(update(f),{code:'EEXIST'});assert.equal(await fs.readFile(f.install+'.install-lock/owner.pid','utf8'),'other');assert.ok(!f.events.some(e=>e.args[1]==='--prepare-upgrade'));await unchanged(f);}));
-test('Saved identities conflict fails closed without silently switching an existing pairing',async()=>fixture(async f=>{await fs.writeFile(path.join(f.install,'installation.json'),JSON.stringify({schemaVersion:1,siteUrl:'https://different.test',apiUrl:'https://saved-api.example.test'}));await assert.rejects(update(f),/расходятся/);await unchanged(f);assert.ok(!f.events.some(e=>e.args[1]==='--prepare-upgrade'));}));
-test('Unowned launcher fails before pausing a paired worker',async()=>fixture(async f=>{await fs.writeFile(f.launcher,'#!/bin/sh\necho another application');await assert.rejects(update(f),/занята другой программой/);assert.ok(!f.events.some(e=>e.args[1]==='--prepare-upgrade'));assert.equal(f.starts.length,0);}));
-test('Rollback honors a concurrent global config lock and leaves its holder/config untouched',async()=>fixture(async f=>{const run=f.dependencies.runCommand,lock=path.join(path.dirname(f.config),'.neurocenter-config-'+sha(f.config).slice(0,24)+'.lock'),token='12345678-1234-4234-8234-123456789abc';let heldText;f.dependencies.runCommand=async(...args)=>{const result=await run(...args);if(args[1][1]==='--install-command'){heldText=await fs.readFile(f.config,'utf8');await fs.mkdir(lock);await fs.writeFile(path.join(lock,'owner-'+token+'.json'),JSON.stringify({host:os.hostname(),pid:process.pid,token}));throw Error('launcher failure while writer holds config lock');}return result;};await assert.rejects(update(f),/уже регистрирует другой установщик/);assert.equal(await fs.readFile(f.config,'utf8'),heldText);assert.equal((await fs.readdir(lock)).length,1);assert.equal(await fs.readFile(path.join(f.install,'keep.txt'),'utf8'),'old runtime');}));
-test('Readiness failure cannot roll back a different installer publication after the original lock was released',async()=>fixture(async f=>{f.dependencies.workerReady=async()=>{const lock=f.install+'.install-lock';await fs.mkdir(lock);await fs.rename(f.install,path.join(f.directory,'first-publication'));await fs.mkdir(f.install);await fs.writeFile(path.join(f.install,'foreign-runtime'),'newer installer owns this');await fs.rmdir(lock);throw Error('first worker failed after another installer completed');};await assert.rejects(update(f),error=>{assert.match(error.message,/чужая версия не откатывается/);assert.equal(readFileSync(path.join(error.recoveryDirectory,'previous/keep.txt'),'utf8'),'old runtime');return true;});assert.equal(await fs.readFile(path.join(f.install,'foreign-runtime'),'utf8'),'newer installer owns this');assert.equal(f.events.filter(e=>e.args[1]==='--prepare-upgrade').length,1);}));
-test('INSTALL_DIR overlapping source checkout is refused before unpacking or invoking any CLI',async()=>fixture(async f=>{const sourceRoot=path.join(f.directory,'checkout'),source=path.join(sourceRoot,'mcp/neurocenter-asset-sync');await fs.mkdir(source,{recursive:true});await fs.writeFile(path.join(source,'package.json'),JSON.stringify({name:'neurocenter-asset-sync',version}));await fs.writeFile(path.join(source,'source-sentinel'),'source must survive');await assert.rejects(updateInstalledDevBridge({...f.options,root:sourceRoot,environment:{...f.environment,INSTALL_DIR:source}},f.dependencies),/пересекается с исходниками/);assert.equal(await fs.readFile(path.join(source,'source-sentinel'),'utf8'),'source must survive');assert.equal(f.events.length,0);assert.equal((await fs.readdir(path.dirname(source))).filter(name=>name.startsWith('.neurocenter-dev-install')).length,0);}));
-test('Lost second prepare ACK after readiness failure still attempts bounded resume and retains rollback package',async()=>fixture(async f=>{const run=f.dependencies.runCommand;let prepares=0,finishes=0;f.dependencies.runCommand=async(...args)=>{if(args[1][1]==='--prepare-upgrade'&&++prepares===2)throw Error('second prepare ACK lost');if(args[1][1]==='--finish-upgrade')finishes++;return run(...args);};f.dependencies.workerReady=async()=>{throw Error('readiness failed');};await assert.rejects(update(f),error=>{assert.match(error.message,/second prepare ACK lost/);assert.ok(error.recoveryDirectory);return true;});assert.equal(finishes,2);assert.equal(prepares,2);}));
-test('Second prepare refusal compensates its uncertain pause without replacing a worker it could not stop',async()=>fixture(async f=>{const run=f.dependencies.runCommand;let prepares=0,finishes=0;f.dependencies.runCommand=async(...args)=>{if(args[1][1]==='--prepare-upgrade'&&++prepares===2)return'{"ok":false,"error":"foreign PID"}';if(args[1][1]==='--finish-upgrade')finishes++;return run(...args);};f.dependencies.workerReady=async()=>{throw Error('readiness failed');};await assert.rejects(update(f),/foreign PID/);assert.equal(finishes,2);assert.equal(f.starts.length,1);assert.equal(JSON.parse(await fs.readFile(path.join(f.install,'dist/build.json'))).buildId,f.buildId);}));
-test('Partial owner.pid ENOSPC preserves original failure and removes only the lock it just created',async()=>fixture(async f=>{const open=fs.open;const stub=mock.method(fs,'open',async(file,...args)=>{const handle=await open(file,...args);if(String(file)===f.install+'.install-lock/owner.pid'){const write=handle.writeFile.bind(handle);handle.writeFile=async()=>{await write('partial');throw Object.assign(Error('owner disk full'),{code:'ENOSPC'});};}return handle;});try{await assert.rejects(update(f),{code:'ENOSPC'});await assert.rejects(fs.stat(f.install+'.install-lock'),{code:'ENOENT'});await unchanged(f);}finally{stub.mock.restore();}}));
-test('Retargeting the selected JSONC alias while acquiring its config lock prevents writes to either target',async()=>fixture(async f=>{const first=path.join(f.home,'first.jsonc'),second=path.join(f.home,'second.jsonc');await fs.rename(f.config,first);await fs.symlink(first,f.config);await fs.writeFile(second,'{"second":"untouched"}\n');const settings=await installedBridgeSettings({install:f.install,home:f.home,environment:f.environment,jsonc});await fs.writeFile(first,expectedBridgeRegistration(settings,jsonc,f.install));const expected=await bridgeFileSnapshot(first),original=await fs.readFile(first,'utf8');await assert.rejects(retainBridgeSettings({settings,home:f.home,environment:f.environment,jsonc,install:f.install,expected,withConfigLock:async(_file,action)=>{await fs.unlink(f.config);await fs.symlink(second,f.config);return action();}}),/Путь OpenCode изменился во время блокировки/);assert.equal(await fs.readFile(first,'utf8'),original);assert.equal(await fs.readFile(second,'utf8'),'{"second":"untouched"}\n');}));
+test('Missing installation is skipped without archive reads, pairing or filesystem creation', async () =>
+    fixture(async (f) => {
+        await fs.rm(f.install, { recursive: true });
+        const result = await updateInstalledDevBridge({ ...f.options, archive: '/missing' }, f.dependencies);
+        assert.equal(result.updated, false);
+        assert.equal(f.events.length, 0);
+        assert.equal(f.starts.length, 0);
+        assert.equal((await fs.readdir(f.home)).includes('own bridge'), false);
+    }));
+test('Actual JSONC init/launcher preserve saved identity, pairing, custom env and unrelated agents; worker confirms build', async () =>
+    fixture(async (f) => {
+        const result = await update(f);
+        assert.equal(result.updated, true);
+        assert.equal(result.workerRestarted, true);
+        assert.equal(f.starts.length, 1);
+        assert.ok((await fs.readFile(f.config, 'utf8')).startsWith('// user comment'));
+        const c = jsonc.parse(await fs.readFile(f.config, 'utf8'));
+        assert.equal(c.model, 'user-model');
+        assert.deepEqual(c.agent, { external: { description: 'do not replace' } });
+        assert.equal(c.mcp.other.url, 'https://other.test');
+        assert.deepEqual(c.mcp['neurocenter-asset-sync'].environment, f.entry.environment);
+        assert.equal(c.mcp['neurocenter-asset-sync'].enabled, false);
+        assert.equal(await fs.readFile(path.join(f.state, 'credentials.json'), 'utf8'), f.credentials);
+        assert.equal(await fs.readFile(f.launcher, 'utf8'), expectedBridgeLauncher(f.install));
+        assert.equal(await fs.readFile(path.join(result.previousDir, 'keep.txt'), 'utf8'), 'old runtime');
+        assert.ok(f.events.every((e) => e.timeout > 0 && e.timeout <= 75000));
+        assert.ok(
+            f.events
+                .filter((e) => e.args[1]?.startsWith('--'))
+                .every(
+                    (e) => e.site === 'https://saved-site.example.test' && e.api === 'https://saved-api.example.test',
+                ),
+        );
+    }));
+test('Legacy installation without installation.json uses existing JSONC origin/API rather than caller dev environment', async () =>
+    fixture(
+        async (f) => {
+            await update(f);
+            const saved = JSON.parse(await fs.readFile(path.join(f.install, 'installation.json'), 'utf8'));
+            assert.equal(saved.siteUrl, 'https://saved-site.example.test');
+            assert.equal(saved.apiUrl, 'https://saved-api.example.test');
+        },
+        { legacy: true },
+    ));
+test('Unpaired installation updates files without worker start, connect or browser', async () =>
+    fixture(
+        async (f) => {
+            const result = await update(f);
+            assert.equal(result.workerRestarted, false);
+            assert.equal(f.starts.length, 0);
+            assert.ok(!f.events.some((e) => e.args.some((a) => /connect|pair|--worker/.test(a))));
+        },
+        { paired: false },
+    ));
+test('A rejected prepare preserves old files and compensates its uncertain pause without restarting a worker', async () =>
+    fixture(async (f) => {
+        const run = f.dependencies.runCommand;
+        f.dependencies.runCommand = async (...args) =>
+            args[1][1] === '--prepare-upgrade' ? '{"ok":false,"error":"offline or foreign PID"}' : run(...args);
+        await assert.rejects(update(f), /offline or foreign PID/);
+        await unchanged(f);
+        assert.equal(f.starts.length, 0);
+        assert.equal(f.events.filter((e) => e.args[1] === '--finish-upgrade').length, 1);
+    }));
+test('Unknown or incomplete prepare ACK attempts bounded resume without replacing files or starting another worker', async () => {
+    for (const mode of ['lost', 'missing-paused'])
+        await fixture(async (f) => {
+            const run = f.dependencies.runCommand;
+            let finishes = 0;
+            f.dependencies.runCommand = async (...args) => {
+                if (args[1][1] === '--prepare-upgrade') {
+                    if (mode === 'lost') throw Error('ACK lost');
+                    return '{"ok":true}';
+                }
+                if (args[1][1] === '--finish-upgrade') finishes++;
+                return run(...args);
+            };
+            await assert.rejects(update(f), mode === 'lost' ? /ACK lost/ : /состояние паузы/);
+            await unchanged(f);
+            assert.equal(finishes, 1);
+            assert.equal(f.starts.length, 0);
+        });
+});
+test('Failed init after real JSONC write restores exact config, old runtime and existing worker', async () =>
+    fixture(async (f) => {
+        const run = f.dependencies.runCommand;
+        f.dependencies.runCommand = async (...args) => {
+            const result = await run(...args);
+            if (args[1][1] === '--init') throw Error('init ACK lost after write');
+            return result;
+        };
+        await assert.rejects(update(f), /init ACK lost/);
+        await unchanged(f);
+        assert.deepEqual(f.starts, ['a'.repeat(64)]);
+    }));
+test('Failed launcher after real write restores launcher/config/runtime and resumes previous worker', async () =>
+    fixture(async (f) => {
+        const run = f.dependencies.runCommand;
+        f.dependencies.runCommand = async (...args) => {
+            const result = await run(...args);
+            if (args[1][1] === '--install-command') throw Error('launcher ACK lost after write');
+            return result;
+        };
+        await assert.rejects(update(f), /launcher ACK lost/);
+        await unchanged(f);
+        assert.deepEqual(f.starts, ['a'.repeat(64)]);
+    }));
+test('Concurrent user config edit after registration is retained during rollback', async () =>
+    fixture(async (f) => {
+        const run = f.dependencies.runCommand;
+        f.dependencies.runCommand = async (...args) => {
+            const result = await run(...args);
+            if (args[1][1] === '--install-command') {
+                await fs.writeFile(f.config, '{"userChanged":true}\n');
+                throw Error('launcher failure');
+            }
+            return result;
+        };
+        await assert.rejects(update(f), (error) => {
+            assert.match(error.message, /Настройки не перезаписаны/);
+            assert.match(error.message, /Каталог восстановления:/);
+            assert.ok(error.recoveryDirectory);
+            assert.equal(
+                readFileSync(path.join(error.recoveryDirectory, 'original-opencode.jsonc'), 'utf8'),
+                f.original,
+            );
+            return true;
+        });
+        assert.equal(await fs.readFile(f.config, 'utf8'), '{"userChanged":true}\n');
+        assert.equal(await fs.readFile(path.join(f.install, 'keep.txt'), 'utf8'), 'old runtime');
+    }));
+test('Concurrent user launcher edit is retained during rollback', async () =>
+    fixture(async (f) => {
+        const run = f.dependencies.runCommand;
+        f.dependencies.runCommand = async (...args) => {
+            const result = await run(...args);
+            if (args[1][1] === '--finish-upgrade') {
+                await fs.writeFile(f.launcher, '#!/bin/sh\n# user new launcher\n');
+                throw Error('resume failure');
+            }
+            return result;
+        };
+        await assert.rejects(update(f), /Команда не перезаписана/);
+        assert.equal(await fs.readFile(f.launcher, 'utf8'), '#!/bin/sh\n# user new launcher\n');
+        assert.equal(await fs.readFile(path.join(f.install, 'keep.txt'), 'utf8'), 'old runtime');
+    }));
+test('Child exiting before readiness causes rollback instead of a false successful update', async () =>
+    fixture(async (f) => {
+        const start = f.dependencies.startWorker;
+        let first = true;
+        f.dependencies.startWorker = (...args) => {
+            if (first) {
+                first = false;
+                return { pid: 88888, alive: () => false };
+            }
+            return start(...args);
+        };
+        await assert.rejects(update(f), /завершился до подтверждения/);
+        await unchanged(f);
+        assert.deepEqual(f.starts, ['a'.repeat(64)]);
+    }));
+test('Corrupt archive SHA fails before upgrade, registration or worker mutation', async () =>
+    fixture(async (f) => {
+        await fs.appendFile(f.archive, 'corrupt');
+        await assert.rejects(update(f), /SHA/);
+        await unchanged(f);
+        assert.equal(f.events.length, 0);
+    }));
+test('Build fingerprint mismatch despite fresh archive SHA fails before preparing worker', async () =>
+    fixture(async (f) => {
+        await fs.appendFile(path.join(f.content, 'dist/index.js'), '\n// changed code');
+        await f.pack();
+        await assert.rejects(update(f), /Отпечаток/);
+        await unchanged(f);
+        assert.equal(f.events.length, 0);
+    }));
+test('Archive symlinks are rejected before extraction or worker preparation', async () =>
+    fixture(async (f) => {
+        await fs.symlink('/tmp/foreign', path.join(f.content, 'dist/foreign'));
+        await f.pack();
+        await assert.rejects(update(f), /Ссылки/);
+        await unchanged(f);
+        assert.equal(f.events.length, 0);
+    }));
+test('Existing install lock is not removed and no CLI preparation executes', async () =>
+    fixture(async (f) => {
+        await fs.mkdir(f.install + '.install-lock');
+        await fs.writeFile(f.install + '.install-lock/owner.pid', 'other');
+        await assert.rejects(update(f), { code: 'EEXIST' });
+        assert.equal(await fs.readFile(f.install + '.install-lock/owner.pid', 'utf8'), 'other');
+        assert.ok(!f.events.some((e) => e.args[1] === '--prepare-upgrade'));
+        await unchanged(f);
+    }));
+test('Saved identities conflict fails closed without silently switching an existing pairing', async () =>
+    fixture(async (f) => {
+        await fs.writeFile(
+            path.join(f.install, 'installation.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                siteUrl: 'https://different.test',
+                apiUrl: 'https://saved-api.example.test',
+            }),
+        );
+        await assert.rejects(update(f), /расходятся/);
+        await unchanged(f);
+        assert.ok(!f.events.some((e) => e.args[1] === '--prepare-upgrade'));
+    }));
+test('Unowned launcher fails before pausing a paired worker', async () =>
+    fixture(async (f) => {
+        await fs.writeFile(f.launcher, '#!/bin/sh\necho another application');
+        await assert.rejects(update(f), /занята другой программой/);
+        assert.ok(!f.events.some((e) => e.args[1] === '--prepare-upgrade'));
+        assert.equal(f.starts.length, 0);
+    }));
+test('Rollback honors a concurrent global config lock and leaves its holder/config untouched', async () =>
+    fixture(async (f) => {
+        const run = f.dependencies.runCommand,
+            lock = path.join(path.dirname(f.config), '.neurocenter-config-' + sha(f.config).slice(0, 24) + '.lock'),
+            token = '12345678-1234-4234-8234-123456789abc';
+        let heldText;
+        f.dependencies.runCommand = async (...args) => {
+            const result = await run(...args);
+            if (args[1][1] === '--install-command') {
+                heldText = await fs.readFile(f.config, 'utf8');
+                await fs.mkdir(lock);
+                await fs.writeFile(
+                    path.join(lock, 'owner-' + token + '.json'),
+                    JSON.stringify({ host: os.hostname(), pid: process.pid, token }),
+                );
+                throw Error('launcher failure while writer holds config lock');
+            }
+            return result;
+        };
+        await assert.rejects(update(f), /уже регистрирует другой установщик/);
+        assert.equal(await fs.readFile(f.config, 'utf8'), heldText);
+        assert.equal((await fs.readdir(lock)).length, 1);
+        assert.equal(await fs.readFile(path.join(f.install, 'keep.txt'), 'utf8'), 'old runtime');
+    }));
+test('Readiness failure cannot roll back a different installer publication after the original lock was released', async () =>
+    fixture(async (f) => {
+        f.dependencies.workerReady = async () => {
+            const lock = f.install + '.install-lock';
+            await fs.mkdir(lock);
+            await fs.rename(f.install, path.join(f.directory, 'first-publication'));
+            await fs.mkdir(f.install);
+            await fs.writeFile(path.join(f.install, 'foreign-runtime'), 'newer installer owns this');
+            await fs.rmdir(lock);
+            throw Error('first worker failed after another installer completed');
+        };
+        await assert.rejects(update(f), (error) => {
+            assert.match(error.message, /чужая версия не откатывается/);
+            assert.equal(readFileSync(path.join(error.recoveryDirectory, 'previous/keep.txt'), 'utf8'), 'old runtime');
+            return true;
+        });
+        assert.equal(await fs.readFile(path.join(f.install, 'foreign-runtime'), 'utf8'), 'newer installer owns this');
+        assert.equal(f.events.filter((e) => e.args[1] === '--prepare-upgrade').length, 1);
+    }));
+test('INSTALL_DIR overlapping source checkout is refused before unpacking or invoking any CLI', async () =>
+    fixture(async (f) => {
+        const sourceRoot = path.join(f.directory, 'checkout'),
+            source = path.join(sourceRoot, 'mcp/neurocenter-asset-sync');
+        await fs.mkdir(source, { recursive: true });
+        await fs.writeFile(
+            path.join(source, 'package.json'),
+            JSON.stringify({ name: 'neurocenter-asset-sync', version }),
+        );
+        await fs.writeFile(path.join(source, 'source-sentinel'), 'source must survive');
+        await assert.rejects(
+            updateInstalledDevBridge(
+                { ...f.options, root: sourceRoot, environment: { ...f.environment, INSTALL_DIR: source } },
+                f.dependencies,
+            ),
+            /пересекается с исходниками/,
+        );
+        assert.equal(await fs.readFile(path.join(source, 'source-sentinel'), 'utf8'), 'source must survive');
+        assert.equal(f.events.length, 0);
+        assert.equal(
+            (await fs.readdir(path.dirname(source))).filter((name) => name.startsWith('.neurocenter-dev-install'))
+                .length,
+            0,
+        );
+    }));
+test('Lost second prepare ACK after readiness failure still attempts bounded resume and retains rollback package', async () =>
+    fixture(async (f) => {
+        const run = f.dependencies.runCommand;
+        let prepares = 0,
+            finishes = 0;
+        f.dependencies.runCommand = async (...args) => {
+            if (args[1][1] === '--prepare-upgrade' && ++prepares === 2) throw Error('second prepare ACK lost');
+            if (args[1][1] === '--finish-upgrade') finishes++;
+            return run(...args);
+        };
+        f.dependencies.workerReady = async () => {
+            throw Error('readiness failed');
+        };
+        await assert.rejects(update(f), (error) => {
+            assert.match(error.message, /second prepare ACK lost/);
+            assert.ok(error.recoveryDirectory);
+            return true;
+        });
+        assert.equal(finishes, 2);
+        assert.equal(prepares, 2);
+    }));
+test('Second prepare refusal compensates its uncertain pause without replacing a worker it could not stop', async () =>
+    fixture(async (f) => {
+        const run = f.dependencies.runCommand;
+        let prepares = 0,
+            finishes = 0;
+        f.dependencies.runCommand = async (...args) => {
+            if (args[1][1] === '--prepare-upgrade' && ++prepares === 2) return '{"ok":false,"error":"foreign PID"}';
+            if (args[1][1] === '--finish-upgrade') finishes++;
+            return run(...args);
+        };
+        f.dependencies.workerReady = async () => {
+            throw Error('readiness failed');
+        };
+        await assert.rejects(update(f), /foreign PID/);
+        assert.equal(finishes, 2);
+        assert.equal(f.starts.length, 1);
+        assert.equal(JSON.parse(await fs.readFile(path.join(f.install, 'dist/build.json'))).buildId, f.buildId);
+    }));
+test('Partial owner.pid ENOSPC preserves original failure and removes only the lock it just created', async () =>
+    fixture(async (f) => {
+        const open = fs.open;
+        const stub = mock.method(fs, 'open', async (file, ...args) => {
+            const handle = await open(file, ...args);
+            if (String(file) === f.install + '.install-lock/owner.pid') {
+                const write = handle.writeFile.bind(handle);
+                handle.writeFile = async () => {
+                    await write('partial');
+                    throw Object.assign(Error('owner disk full'), { code: 'ENOSPC' });
+                };
+            }
+            return handle;
+        });
+        try {
+            await assert.rejects(update(f), { code: 'ENOSPC' });
+            await assert.rejects(fs.stat(f.install + '.install-lock'), { code: 'ENOENT' });
+            await unchanged(f);
+        } finally {
+            stub.mock.restore();
+        }
+    }));
+test('Retargeting the selected JSONC alias while acquiring its config lock prevents writes to either target', async () =>
+    fixture(async (f) => {
+        const first = path.join(f.home, 'first.jsonc'),
+            second = path.join(f.home, 'second.jsonc');
+        await fs.rename(f.config, first);
+        await fs.symlink(first, f.config);
+        await fs.writeFile(second, '{"second":"untouched"}\n');
+        const settings = await installedBridgeSettings({
+            install: f.install,
+            home: f.home,
+            environment: f.environment,
+            jsonc,
+        });
+        await fs.writeFile(first, expectedBridgeRegistration(settings, jsonc, f.install));
+        const expected = await bridgeFileSnapshot(first),
+            original = await fs.readFile(first, 'utf8');
+        await assert.rejects(
+            retainBridgeSettings({
+                settings,
+                home: f.home,
+                environment: f.environment,
+                jsonc,
+                install: f.install,
+                expected,
+                withConfigLock: async (_file, action) => {
+                    await fs.unlink(f.config);
+                    await fs.symlink(second, f.config);
+                    return action();
+                },
+            }),
+            /Путь OpenCode изменился во время блокировки/,
+        );
+        assert.equal(await fs.readFile(first, 'utf8'), original);
+        assert.equal(await fs.readFile(second, 'utf8'), '{"second":"untouched"}\n');
+    }));

@@ -29,9 +29,9 @@ const ragSlice = createSlice({
     name: 'rag',
     initialState,
     reducers: {
-        clearRag: state => ({ ...initialState, authScope: state.authScope, authRequestId: state.authRequestId }),
+        clearRag: (state) => ({ ...initialState, authScope: state.authScope, authRequestId: state.authRequestId }),
     },
-    extraReducers: builder => {
+    extraReducers: (builder) => {
         builder
             .addCase(fetchRag.pending, (state, action) => {
                 if (!state.authScope) {
@@ -56,14 +56,23 @@ const ragSlice = createSlice({
                 }
                 state.loading = false;
                 state.requestId = null;
-                state.listError = action.payload ?? { status: null, message: 'Не удалось загрузить список баз знаний. Попробуйте ещё раз.' };
-                if (state.listError.status === 401 || state.listError.status === 403 || state.listError.status === 404) {
+                state.listError = action.payload ?? {
+                    status: null,
+                    message: 'Не удалось загрузить список баз знаний. Попробуйте ещё раз.',
+                };
+                if (
+                    state.listError.status === 401 ||
+                    state.listError.status === 403 ||
+                    state.listError.status === 404
+                ) {
                     state.list = [];
                 }
             })
             .addCase(authInit.rejected, (state, action) => {
                 if (state.authRequestId === action.meta.requestId) {
-                    if (action.payload === 'unauthorized' || action.payload === 'forbidden') { return initialState; }
+                    if (action.payload === 'unauthorized' || action.payload === 'forbidden') {
+                        return initialState;
+                    }
                     state.authRequestId = null;
                 }
             })

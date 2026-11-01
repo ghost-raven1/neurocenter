@@ -23,8 +23,6 @@ export default class AuditModule extends ModuleBase {
      * @returns список компонент-роутов
      */
     public getRoute(): ReactNode[] {
-        return [
-            <ProtectedRoute key="audit" name={AUDIT_ROUTE} path={baseRoutes.audit} render={() => <Audit />} />,
-        ];
+        return [<ProtectedRoute key="audit" name={AUDIT_ROUTE} path={baseRoutes.audit} render={() => <Audit />} />];
     }
 }

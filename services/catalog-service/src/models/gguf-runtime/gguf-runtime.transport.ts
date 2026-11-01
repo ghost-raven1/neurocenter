@@ -4,12 +4,12 @@ import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { GgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
+import type { IGgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
 import { modelRuntimeUrl } from '../ollama-client';
 
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
-type RuntimeResponse = { response: Response; close: () => void };
+type TRuntimeResponse = { response: Response; close: () => void };
 /** Pinned Ollama 0.35.1 API: no pull/from/template, only explicit local blob and files creation. */
 export class GgufOllamaTransport {
     constructor(
@@ -19,7 +19,7 @@ export class GgufOllamaTransport {
     private async call(
         route: string,
         options: RequestInit,
-        limits: GgufImportPolicy,
+        limits: IGgufImportPolicy,
         signal: AbortSignal,
         timeoutMs = limits.runtimeRequestTimeoutMs,
     ) {
@@ -54,7 +54,7 @@ export class GgufOllamaTransport {
             );
         }
     }
-    private async json(owned: RuntimeResponse, limits: GgufImportPolicy): Promise<Record<string, unknown>> {
+    private async json(owned: TRuntimeResponse, limits: IGgufImportPolicy): Promise<Record<string, unknown>> {
         const { response } = owned;
         let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
         try {
@@ -88,14 +88,14 @@ export class GgufOllamaTransport {
             owned.close();
         }
     }
-    async version(limits: GgufImportPolicy, signal: AbortSignal) {
+    async version(limits: IGgufImportPolicy, signal: AbortSignal) {
         const version = await this.json(await this.call('/api/version', { method: 'GET' }, limits, signal), limits);
         if (version.version !== '0.35.1')
             throw new ConflictException(
                 'Для импорта GGUF настройте управляемый Ollama версии 0.35.1. Автоустановка не выполнялась.',
             );
     }
-    async tag(alias: string, limits: GgufImportPolicy, signal: AbortSignal): Promise<string | null> {
+    async tag(alias: string, limits: IGgufImportPolicy, signal: AbortSignal): Promise<string | null> {
         const tags = await this.json(await this.call('/api/tags', { method: 'GET' }, limits, signal), limits);
         if (!Array.isArray(tags.models)) throw new ConflictException('Ollama не подтвердил список моделей.');
         const found = tags.models.find((item) => object(item) && (item.name === alias || item.model === alias));
@@ -108,7 +108,7 @@ export class GgufOllamaTransport {
             throw new ConflictException('Ollama не подтвердил digest модели.');
         return found.digest.replace(/^sha256:/, '');
     }
-    async blobExists(sha256: string, limits: GgufImportPolicy, signal: AbortSignal) {
+    async blobExists(sha256: string, limits: IGgufImportPolicy, signal: AbortSignal) {
         const owned = await this.call('/api/blobs/sha256:' + sha256, { method: 'HEAD' }, limits, signal);
         try {
             await owned.response.body?.cancel();
@@ -123,7 +123,7 @@ export class GgufOllamaTransport {
         filename: string,
         bytes: number,
         sha256: string,
-        limits: GgufImportPolicy,
+        limits: IGgufImportPolicy,
         signal: AbortSignal,
         check: () => Promise<void>,
     ) {
@@ -207,7 +207,7 @@ export class GgufOllamaTransport {
             await file.close();
         }
     }
-    async create(alias: string, sha256: string, limits: GgufImportPolicy, signal: AbortSignal) {
+    async create(alias: string, sha256: string, limits: IGgufImportPolicy, signal: AbortSignal) {
         const result = await this.json(
             await this.call(
                 '/api/create',

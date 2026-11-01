@@ -14,12 +14,18 @@ export function storeProjectQuery(search: string): string | null {
 export function storeQueryUrl(search: string, update: { project?: string | null; query?: string }, hash = ''): string {
     const params = new URLSearchParams(search);
     if (update.project !== undefined) {
-        if (update.project) { params.set('p', update.project); }
-        else { params.delete('p'); }
+        if (update.project) {
+            params.set('p', update.project);
+        } else {
+            params.delete('p');
+        }
     }
     if (update.query !== undefined) {
-        if (update.query) { params.set('q', update.query); }
-        else { params.delete('q'); }
+        if (update.query) {
+            params.set('q', update.query);
+        } else {
+            params.delete('q');
+        }
     }
     const next = params.toString();
     return `${baseRoutes.store}${next ? `?${next}` : ''}${hash}`;

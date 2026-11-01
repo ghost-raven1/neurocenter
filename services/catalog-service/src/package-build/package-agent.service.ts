@@ -2,20 +2,20 @@ import { automaticModelOptions } from '../models/model-runtime-options';
 import { ConflictException } from '@nestjs/common';
 import type { ModelsService } from '../models/models.service';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { remoteModelOptions } from '../models/remote-model-options';
 import { chatContext, managedChatContextWindow } from '../model-chat/chat-context';
 import { withModelUsage } from '../model-usage/model-usage.context';
-import type { BuildConfiguration } from './package-build.model';
+import type { IBuildConfiguration } from './package-build.model';
 import { validId } from './package-build.model';
 import type {
-    AgentBuildConfiguration,
-    PackageAgentContext,
-    PackageAgentInput,
-    PackageAgentReview,
-    PackageAgentRuntimeReport,
-    PackageAgentStage,
+    TAgentBuildConfiguration,
+    IPackageAgentContext,
+    IPackageAgentInput,
+    TPackageAgentReview,
+    IPackageAgentRuntimeReport,
+    TPackageAgentStage,
 } from './package-agent.model';
 import { PACKAGE_AGENT_ID, validatePackageAgentInput } from './package-agent.model';
 import { PackageAgentJournal } from './package-agent.journal';
@@ -56,7 +56,7 @@ export class PackageAgentService {
         private readonly runtime: IModelInferenceRuntime,
     ) {}
 
-    async propose(config: BuildConfiguration, context: PackageAgentContext): Promise<BuildConfiguration> {
+    async propose(config: IBuildConfiguration, context: IPackageAgentContext): Promise<IBuildConfiguration> {
         const result = await this.run('propose', config, context);
         try {
             if (!agentObject(result.value) || Object.keys(result.value).join(',') !== 'recipe') throw invalid();
@@ -69,10 +69,10 @@ export class PackageAgentService {
         }
     }
     async review(
-        config: BuildConfiguration,
-        report: PackageAgentRuntimeReport,
-        context: PackageAgentContext,
-    ): Promise<PackageAgentReview> {
+        config: IBuildConfiguration,
+        report: IPackageAgentRuntimeReport,
+        context: IPackageAgentContext,
+    ): Promise<TPackageAgentReview> {
         const safeReport = packageAgentReport(report),
             result = await this.run('review', config, context, safeReport),
             value = result.value;
@@ -102,7 +102,7 @@ export class PackageAgentService {
             throw error;
         }
     }
-    private agent(config: AgentBuildConfiguration, context: PackageAgentContext): PackageAgentInput {
+    private agent(config: TAgentBuildConfiguration, context: IPackageAgentContext): IPackageAgentInput {
         const agent = validatePackageAgentInput(config.agent);
         if (
             !validId(context.buildId) ||
@@ -115,7 +115,7 @@ export class PackageAgentService {
             throw new ConflictException('Лимит попыток агента исчерпан или владелец сборки не определён.');
         return agent;
     }
-    private async pinned(agent: PackageAgentInput): Promise<IModel> {
+    private async pinned(agent: IPackageAgentInput): Promise<IModel> {
         const model = await this.models.getPinned(agent.modelId, agent.expectedModelPin);
         if (
             !model ||
@@ -134,7 +134,7 @@ export class PackageAgentService {
     }
     private async options(
         model: IModel,
-        context: PackageAgentContext,
+        context: IPackageAgentContext,
         recipeV2 = false,
     ): Promise<{ num_predict: number; num_ctx?: number; temperature: number }> {
         let outputTokens = recipeV2 ? 2048 : 1024,
@@ -158,11 +158,11 @@ export class PackageAgentService {
         return { num_predict: outputTokens, temperature: 0, ...(window === null ? {} : { num_ctx: window }) };
     }
     private async run(
-        stage: PackageAgentStage,
-        config: BuildConfiguration,
-        context: PackageAgentContext,
-        report?: PackageAgentRuntimeReport,
-    ): Promise<AgentRunResult> {
+        stage: TPackageAgentStage,
+        config: IBuildConfiguration,
+        context: IPackageAgentContext,
+        report?: IPackageAgentRuntimeReport,
+    ): Promise<IAgentRunResult> {
         if (config.source.type === 'bundled')
             throw new ConflictException('Закреплённый рецепт каталога не меняется агентом.');
         const agent = this.agent(config, context),
@@ -267,8 +267,8 @@ export class PackageAgentService {
         }
     }
 }
-interface AgentRunResult {
+interface IAgentRunResult {
     value: unknown;
-    original: BuildConfiguration;
+    original: IBuildConfiguration;
     journal: PackageAgentJournal;
 }

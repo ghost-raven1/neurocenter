@@ -2,7 +2,7 @@ import type { PoolClient } from 'pg';
 
 export const PUBLICATION_DEADLINE_MESSAGE =
     'Сервер не дождался завершения публикации. Исходники сохранены. Вернитесь к исходникам и повторите сборку новым запросом.';
-interface PublicationTimeouts {
+interface IPublicationTimeouts {
     lock_ms: string;
     statement_ms: string;
 }
@@ -15,7 +15,7 @@ const capped = (value: string, maximum: number) => {
 export async function configureBuildPublicationTransaction(client: PoolClient): Promise<void> {
     const {
         rows: [current],
-    } = await client.query<PublicationTimeouts>(`SELECT
+    } = await client.query<IPublicationTimeouts>(`SELECT
         EXTRACT(EPOCH FROM current_setting('lock_timeout')::interval)*1000 AS lock_ms,
         EXTRACT(EPOCH FROM current_setting('statement_timeout')::interval)*1000 AS statement_ms`);
     await client.query("SELECT set_config('lock_timeout',$1,true),set_config('statement_timeout',$2,true)", [

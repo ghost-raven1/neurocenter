@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { PoolClient } from 'pg';
-import type { DeviceCompletion } from '../devices/device-completion';
+import type { IDeviceCompletion } from '../devices/device-completion';
 import { recordDeviceOperation } from '../devices/device-operations';
 import { assertQuirksJobResult, LEARNING_QUIRKS_KIND } from './learning-quirks-jobs';
 
@@ -9,7 +9,7 @@ import { assertQuirksJobResult, LEARNING_QUIRKS_KIND } from './learning-quirks-j
 export async function completeLearningQuirks(
     db: PoolClient,
     job: { id: string; kind: string; email: string; project_id: string | null; state: string; result?: unknown },
-    input: DeviceCompletion,
+    input: IDeviceCompletion,
 ) {
     if (job.kind !== LEARNING_QUIRKS_KIND) return;
     assertQuirksJobResult(input.result, input.state === 'failed');

@@ -2,12 +2,12 @@ import path from 'node:path';
 import { runtimeArtifactConnection } from '../features/runtime-artifacts/connection.js';
 import { fileURLToPath } from 'node:url';
 import { parse, type ParseError } from 'jsonc-parser';
-import type { Package } from './package.js';
+import type { IPackage } from './package.js';
 import type { InstallationPlan } from './installation-plan.js';
 import { CONFIG_PATHS } from './installation-files.js';
-import { assetBase, legacyMcpConfigKey, mcpConfigKey, removalReceipt, type Receipt } from './installation-receipt.js';
+import { assetBase, legacyMcpConfigKey, mcpConfigKey, removalReceipt, type IReceipt } from './installation-receipt.js';
 
-function previousRoot(receipt: Receipt, pkg: Package): string | undefined {
+function previousRoot(receipt: IReceipt, pkg: IPackage): string | undefined {
     if (pkg.config?.extra?.runtimeArtifacts || pkg.config?.extra?.localConfiguration) {
         return undefined;
     }
@@ -44,7 +44,7 @@ function previousRoot(receipt: Receipt, pkg: Package): string | undefined {
 }
 
 /** Только известная квитанция разрешает явное восстановление ручных правок и старого пути. */
-export async function repairReceipt(plan: InstallationPlan, raw: string, pkg: Package): Promise<Receipt> {
+export async function repairReceipt(plan: InstallationPlan, raw: string, pkg: IPackage): Promise<IReceipt> {
     const receipt = removalReceipt(raw, pkg);
     if (pkg.plugin.kind === 'skill') {
         return receipt;

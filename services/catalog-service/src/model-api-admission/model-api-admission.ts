@@ -1,16 +1,16 @@
 import { ForbiddenException, Injectable, Optional, ServiceUnavailableException } from '@nestjs/common';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { ModelRateLimitsService } from '../model-rate-limits/model-rate-limits.service';
 import { currentModelUsage } from '../model-usage/model-usage.context';
 import { currentModelDispatchMetrics } from '../model-usage/model-dispatch-metrics';
 import { readFeatures } from '../../../shared/feature-client.cjs';
 import { requiredInferenceFeatures } from '../../../shared/feature-policy.cjs';
 import { ModelUsageService } from '../model-usage/model-usage.service';
-import type { ModelTokenQuotaEstimate } from '../model-token-quotas/model-token-quotas.types';
+import type { IModelTokenQuotaEstimate } from '../model-token-quotas/model-token-quotas.interfaces';
 import { quotaCoverage } from '../model-token-quotas/model-token-quotas.model';
 import { quotaUnavailable } from '../model-token-quotas/quota-database';
 import { modelRateBeforeAttempt } from '../model-rate-limits/model-rate-limits.wait';
-import type { ProviderWireLease } from '../model-usage/model-usage.context';
+import type { IProviderWireLease } from '../model-usage/model-usage.context';
 
 /** The transport calls this after metadata preflights, immediately before the physical provider action. */
 @Injectable()
@@ -23,7 +23,7 @@ export class ModelApiAdmission {
         model: IModel,
         signal: AbortSignal | undefined,
         action: () => Promise<T>,
-        estimate?: () => ModelTokenQuotaEstimate,
+        estimate?: () => IModelTokenQuotaEstimate,
     ): Promise<T> {
         const context = currentModelUsage(),
             metrics = currentModelDispatchMetrics();
@@ -75,7 +75,7 @@ export class ModelApiAdmission {
             entered: boolean,
             started: number,
             activeWrite: Promise<void> | undefined,
-            wireLease: ProviderWireLease | undefined;
+            wireLease: IProviderWireLease | undefined;
         try {
             if (quotaEnabled) {
                 if (!this.usage || !estimate) throw quotaUnavailable();

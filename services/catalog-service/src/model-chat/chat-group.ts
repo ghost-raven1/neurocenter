@@ -4,11 +4,16 @@ import { randomUUID } from 'node:crypto';
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
 import { ModelsService } from '../models/models.service';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
-import type { IModel } from '../models/model.types';
-import type { ChatDb } from './chat.repository';
-import type { ConversationRow, TurnRow, ChatTurn } from './chat.types';
+import type { IModel } from '../models/model.interfaces';
+import type { TChatDb } from './chat.repository';
+import type { IConversationRow, ITurnRow, IChatTurn } from './chat.interfaces';
 import { chatHash } from './chat-validation';
-import type { ChatAgentSnapshot, ChatParticipant, ChatResolvedAgent, ChatResponseRow } from './chat-group.types';
+import type {
+    IChatAgentSnapshot,
+    IChatParticipant,
+    IChatResolvedAgent,
+    IChatResponseRow,
+} from './chat-group.interfaces';
 import { LearningRepository } from '../learning/learning.repository';
 import { ModelChatLearningContext } from './chat-learning-context';
 import { resolveAgentChatModel } from '../models/resolve-agent-chat-model';
@@ -37,15 +42,15 @@ export class ChatGroup {
         req: Request,
         projectId: string,
         fallback: IModel,
-        db: ChatDb = this.agents.pool,
-    ): Promise<{ items: ChatParticipant[]; resolved: ChatResolvedAgent[] }> {
+        db: TChatDb = this.agents.pool,
+    ): Promise<{ items: IChatParticipant[]; resolved: IChatResolvedAgent[] }> {
         await this.models.resolveProject(req, projectId, 2);
         const assignments = await this.agents.assignments(projectId, db),
             catalog = await this.models.list(req, projectId),
-            items: ChatParticipant[] = [],
-            resolved: ChatResolvedAgent[] = [];
+            items: IChatParticipant[] = [],
+            resolved: IChatResolvedAgent[] = [];
         for (const assignment of assignments) {
-            const item: ChatParticipant = {
+            const item: IChatParticipant = {
                 agentId: assignment.agentId,
                 name: assignment.card.name,
                 slug: assignment.card.slug,
@@ -89,7 +94,7 @@ export class ChatGroup {
         }
         return { items, resolved };
     }
-    async selected(req: Request, row: ConversationRow, fallback: IModel, db?: ChatDb): Promise<ChatParticipant[]> {
+    async selected(req: Request, row: IConversationRow, fallback: IModel, db?: TChatDb): Promise<IChatParticipant[]> {
         if (row.mode !== 'group') return [];
         const roster = await this.roster(req, row.project_id!, fallback, db);
         return row.agent_ids.map(
@@ -105,11 +110,11 @@ export class ChatGroup {
     }
     async plan(
         req: Request,
-        row: ConversationRow,
+        row: IConversationRow,
         fallback: IModel,
         targets?: string[],
-        db?: ChatDb,
-    ): Promise<ChatResolvedAgent[]> {
+        db?: TChatDb,
+    ): Promise<IChatResolvedAgent[]> {
         const ids = targets?.length ? targets : row.agent_ids;
         if (!ids.length || ids.some((id) => !row.agent_ids.includes(id)))
             throw new BadRequestException('Адресаты должны входить в состав этого чата.');
@@ -125,10 +130,10 @@ export class ChatGroup {
     }
     async assert(
         req: Request,
-        row: ConversationRow,
+        row: IConversationRow,
         fallback: IModel,
-        snapshot: ChatAgentSnapshot,
-        db?: ChatDb,
+        snapshot: IChatAgentSnapshot,
+        db?: TChatDb,
     ): Promise<IModel> {
         const plan = await this.plan(req, row, fallback, [snapshot.agentId], db);
         if (plan[0].snapshot.sha256 !== snapshot.sha256)
@@ -137,7 +142,7 @@ export class ChatGroup {
             );
         return plan[0].model;
     }
-    async add(db: ChatDb, row: ConversationRow, turn: TurnRow, plan: ChatResolvedAgent[]): Promise<void> {
+    async add(db: TChatDb, row: IConversationRow, turn: ITurnRow, plan: IChatResolvedAgent[]): Promise<void> {
         for (const agent of plan)
             await db.query(
                 `INSERT INTO model_chat_agent_responses(id,conversation_id,turn_id,agent_id,snapshot,request_id,status)
@@ -152,27 +157,27 @@ export class ChatGroup {
                 ],
             );
     }
-    async responses(db: ChatDb, conversation: string, turnIds: string[]): Promise<ChatResponseRow[]> {
+    async responses(db: TChatDb, conversation: string, turnIds: string[]): Promise<IChatResponseRow[]> {
         return (
-            await db.query<ChatResponseRow>(
+            await db.query<IChatResponseRow>(
                 'SELECT r.* FROM model_chat_agent_responses r JOIN model_chat_turns t ON t.id=r.turn_id WHERE r.conversation_id=$1 AND r.turn_id=ANY($2::uuid[]) ORDER BY t.position,array_position(t.target_agent_ids,r.agent_id),r.id',
                 [conversation, turnIds],
             )
         ).rows;
     }
-    async retry(db: ChatDb, conversation: string, turn: TurnRow): Promise<void> {
+    async retry(db: TChatDb, conversation: string, turn: ITurnRow): Promise<void> {
         await db.query(
             "UPDATE model_chat_agent_responses SET status='pending',error=NULL,request_id=$3,updated_at=now() WHERE conversation_id=$1 AND turn_id=$2 AND status<>'done'",
             [conversation, turn.id, turn.request_id],
         );
     }
     async status(
-        db: ChatDb,
-        row: ConversationRow,
-        turn: TurnRow,
-        response: ChatResponseRow,
-        status: ChatResponseRow['status'],
-        answer?: ChatTurn['answer'],
+        db: TChatDb,
+        row: IConversationRow,
+        turn: ITurnRow,
+        response: IChatResponseRow,
+        status: IChatResponseRow['status'],
+        answer?: IChatTurn['answer'],
         error?: string,
     ): Promise<void> {
         const changed = await db.query(
@@ -191,7 +196,7 @@ export class ChatGroup {
         if (!changed.rowCount) throw new ConflictException('Раунд уже остановлен или завершён.');
     }
     /** Historical model attribution is part of the compaction source, not a new system instruction. */
-    aggregate(responses: ChatResponseRow[]): string {
+    aggregate(responses: IChatResponseRow[]): string {
         return responses
             .map(
                 (response) =>
@@ -200,7 +205,7 @@ export class ChatGroup {
             )
             .join('\n\n');
     }
-    async partial(db: ChatDb, row: ConversationRow, turn: TurnRow): Promise<ChatResponseRow[]> {
+    async partial(db: TChatDb, row: IConversationRow, turn: ITurnRow): Promise<IChatResponseRow[]> {
         const responses = await this.responses(db, row.id, [turn.id]);
         if (!responses.length) throw new NotFoundException('Раунд агентов не найден.');
         return responses;

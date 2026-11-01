@@ -1,12 +1,12 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import {
     normalizeLearningHypothesisDraft,
-    type LearningExperience,
-    type LearningHypothesisDraft,
+    type ILearningExperience,
+    type ILearningHypothesisDraft,
 } from '../../../shared/project-learning.cjs';
 
 /** Evidence is quoted data, never a source of permissions or executable instructions. */
-export function learningAnalysisMessages(experiences: LearningExperience[]): Array<{ role: string; content: string }> {
+export function learningAnalysisMessages(experiences: ILearningExperience[]): Array<{ role: string; content: string }> {
     const data = JSON.stringify(
         experiences.map((item) => ({
             id: item.id,
@@ -41,7 +41,7 @@ export function learningAnalysisMessages(experiences: LearningExperience[]): Arr
 export function learningAnalysisHypotheses(
     result: Record<string, unknown>,
     allowedIds: readonly string[],
-): LearningHypothesisDraft[] {
+): ILearningHypothesisDraft[] {
     const invalid = (): never => {
         throw new ServiceUnavailableException(
             'Модель не вернула полный проверяемый набор гипотез. Исходный опыт сохранён.',
@@ -73,7 +73,7 @@ export function learningAnalysisHypotheses(
     const allowed = new Set(allowedIds),
         seen = new Set<string>();
     return drafts.map((value) => {
-        let draft: LearningHypothesisDraft;
+        let draft: ILearningHypothesisDraft;
         try {
             draft = normalizeLearningHypothesisDraft(value);
         } catch {

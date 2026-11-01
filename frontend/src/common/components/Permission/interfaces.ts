@@ -1,5 +1,5 @@
-import { ReactNode } from "react";
-import { IPolitic } from "../../../core/interfaces";
+import { ReactNode } from 'react';
+import { IPolitic } from '../../../core/interfaces';
 
 export interface IPermissionProps {
     /** Ключ права, наличие которого проверяется. */

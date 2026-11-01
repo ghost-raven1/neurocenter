@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import type { ProviderContext, Authorize } from './context.js';
+import type { TProviderContext, TAuthorize } from './context.js';
 import { providerStatus, saveProvider } from './engine.js';
 import { providerProof } from './receipt.js';
 import { providerPage } from './page.js';
-import { codexModels, beginProviderLogin, type CodexLogin } from './connector.js';
+import { codexModels, beginProviderLogin, type ICodexLogin } from './connector.js';
 const active = new Map<string, () => Promise<void>>();
 const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -30,10 +30,10 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 /** One browser capability, same-origin CSRF and a fresh server permit before the filesystem transaction. */
 export async function startProviderSession(
-    context: ProviderContext,
+    context: TProviderContext,
     id: string,
     expiresAt: string,
-    authorizeSave: Authorize,
+    authorizeSave: TAuthorize,
     open: (url: string) => Promise<boolean>,
     setupJobId: string,
 ): Promise<void> {
@@ -55,8 +55,8 @@ export async function startProviderSession(
         attempted = false,
         closed = false,
         loginStarting = false,
-        login: CodexLogin | undefined,
-        pendingLogin: Promise<CodexLogin> | undefined;
+        login: ICodexLogin | undefined,
+        pendingLogin: Promise<ICodexLogin> | undefined;
     const current = () => {
         lifecycle.signal.throwIfAborted();
         if (closed || Date.now() >= deadline) throw Error();

@@ -19,8 +19,8 @@ export const {
     normalizeMemorySyncResult,
 } = contract;
 export type {
-    MemorySyncPayload,
-    MemorySyncContext,
-    MemorySyncResult,
-    MemoryEntity,
+    IMemorySyncPayload as MemorySyncPayload,
+    IMemorySyncContext as MemorySyncContext,
+    IMemorySyncResult as MemorySyncResult,
+    IMemoryEntity as MemoryEntity,
 } from '../../../../../services/shared/project-learning-memory-sync.cjs';

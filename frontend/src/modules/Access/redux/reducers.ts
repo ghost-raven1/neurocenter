@@ -36,50 +36,71 @@ const accessSlice = createSlice({
             state.scope = action.payload;
         },
     },
-    extraReducers: builder => {
+    extraReducers: (builder) => {
         builder
             .addCase(fetchDecisions.pending, (state, action) => {
-                if (!state.authScope) { return; }
+                if (!state.authScope) {
+                    return;
+                }
                 state.loading = true;
                 state.error = '';
                 state.decisions = [];
                 state.currentRequestId = action.meta.requestId;
             })
             .addCase(fetchDecisions.fulfilled, (state, action) => {
-                if (state.currentRequestId !== action.meta.requestId) { return; }
+                if (state.currentRequestId !== action.meta.requestId) {
+                    return;
+                }
                 state.loading = false;
                 state.decisions = action.payload.decisions;
                 state.externalServiceUrl = action.payload.externalServiceUrl;
                 state.currentRequestId = null;
             })
             .addCase(fetchDecisions.rejected, (state, action) => {
-                if (state.currentRequestId !== action.meta.requestId) { return; }
+                if (state.currentRequestId !== action.meta.requestId) {
+                    return;
+                }
                 state.loading = false;
-                state.error = typeof action.payload === 'string' ? action.payload : 'Не удалось получить актуальные права.';
+                state.error =
+                    typeof action.payload === 'string' ? action.payload : 'Не удалось получить актуальные права.';
                 state.currentRequestId = null;
             })
             .addCase(authInit.rejected, (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
-                if (action.payload === 'unauthorized' || action.payload === 'forbidden') { return initialState; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
+                if (action.payload === 'unauthorized' || action.payload === 'forbidden') {
+                    return initialState;
+                }
                 state.authRequestId = null;
             })
             .addCase(authLogout.fulfilled, (state, action) => {
-                if (state.authRequestId === action.meta.requestId) { return initialState; }
+                if (state.authRequestId === action.meta.requestId) {
+                    return initialState;
+                }
             })
             .addCase(signOut, () => initialState)
             .addMatcher(isAnyOf(authInit.pending, authSwitchRole.pending, authLogout.pending), (state, action) => {
                 state.authRequestId = action.meta.requestId;
             })
             .addMatcher(isAnyOf(authInit.fulfilled, authSwitchRole.fulfilled), (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
                 const authScope = authDataScope(action.payload);
                 // Обычный heartbeat сохраняет решения; смена владельца отзывает незавершённый GET.
-                if (state.authScope !== authScope) { return { ...initialState, authScope, scope: state.scope }; }
+                if (state.authScope !== authScope) {
+                    return { ...initialState, authScope, scope: state.scope };
+                }
                 state.authRequestId = null;
             })
             .addMatcher(isAnyOf(authSwitchRole.rejected, authLogout.rejected), (state, action) => {
-                if (state.authRequestId !== action.meta.requestId) { return; }
-                if (action.payload === 'unauthorized') { return initialState; }
+                if (state.authRequestId !== action.meta.requestId) {
+                    return;
+                }
+                if (action.payload === 'unauthorized') {
+                    return initialState;
+                }
                 state.authRequestId = null;
             });
     },

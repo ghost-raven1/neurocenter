@@ -39,7 +39,7 @@ import { scanLocalAssets } from './local-assets';
 import { isMainAdmin, roleLevel } from './rbac';
 import { assertProjectCatalogAsset } from '../devices/project-skill';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
-import type { IOperationReadScope } from '../operations/operation.types';
+import type { IOperationReadScope } from '../operations/operation.interfaces';
 import type { IAccessActor } from '../access/access.model';
 
 /**

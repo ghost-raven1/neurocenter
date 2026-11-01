@@ -2,14 +2,14 @@ import type { Pool, PoolClient } from 'pg';
 import { insertHostedRagGrant } from './hosted-rag-grants';
 import { readPinnedModel } from '../models/model-history';
 import { hostedGrantPayload } from './hosted-rag-grants';
-import type { Job } from './device-job.model';
+import type { IJob } from './device-job.model';
 
-type Db = Pick<PoolClient, 'query'>;
+type TDb = Pick<PoolClient, 'query'>;
 
 /** Отзывы являются событиями, поэтому remove→readd не оживляет старое разрешение. */
 export async function backfillHostedRagGrants(
     pool: Pool,
-    validateMigrationJob: (job: Job, db: Db) => Promise<void>,
+    validateMigrationJob: (job: IJob, db: TDb) => Promise<void>,
 ): Promise<void> {
     const db = await pool.connect();
     try {
@@ -20,7 +20,7 @@ export async function backfillHostedRagGrants(
         );
         if (!migrated.rows.length) {
             const jobs =
-                await db.query<Job>(`SELECT DISTINCT ON(device_id,project_id,payload->>'bindingId',payload->>'instanceId',payload->>'assetKind',payload->>'assetId') * FROM bridge_jobs
+                await db.query<IJob>(`SELECT DISTINCT ON(device_id,project_id,payload->>'bindingId',payload->>'instanceId',payload->>'assetKind',payload->>'assetId') * FROM bridge_jobs
                 WHERE kind='connect-rag-model' AND state='succeeded' AND result->>'status'='connected' AND result->>'requiresRestart'='true'
                 AND result->'revision'=payload->'embedding'->'revision' AND result->'modelPin'=payload->'embedding'->'modelPin' AND result->'profile'=payload->'embedding'->'profile'
                 ORDER BY device_id,project_id,payload->>'bindingId',payload->>'instanceId',payload->>'assetKind',payload->>'assetId',COALESCE(started_at,created_at) DESC,id DESC`);

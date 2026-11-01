@@ -31,10 +31,10 @@ const generationId = (value: unknown): value is string =>
     typeof value === 'string' && /^(?:initial-[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/.test(value);
 const columns =
     'id,file_path,content,description,start_line,end_line,language,kind,role,quirk_type,tags,content_hash,embedding';
-type Queryable = Pick<PoolClient, 'query'>;
+type TQueryable = Pick<PoolClient, 'query'>;
 /** pgvector HNSW vector index ограничен 2000 значениями; большая размерность использует точный cosine. */
 export async function ensureGenerationSearchIndex(
-    db: Queryable,
+    db: TQueryable,
     id: string,
     dimension: number,
     concurrently = false,
@@ -93,7 +93,7 @@ function map(value: Record<string, unknown>): IRagGeneration {
 
 /** Все поля исходных строк входят в SHA; чтение страниц ограничено и не собирает тексты целиком в памяти. */
 export async function generationSourceHash(
-    db: Queryable,
+    db: TQueryable,
     project: string,
     generation: string,
 ): Promise<{ hash: string; rows: number; bytes: number }> {
@@ -121,7 +121,7 @@ export async function generationSourceHash(
 /** Кандидаты содержат замороженные тексты. Единственный active pointer принадлежит каталогу. */
 export class RagGenerations {
     constructor(private readonly pool: Pool) {}
-    async get(project: string, id: string, db: Queryable = this.pool): Promise<IRagGeneration> {
+    async get(project: string, id: string, db: TQueryable = this.pool): Promise<IRagGeneration> {
         if (!generationId(id)) throw new BadRequestException('Некорректное поколение индекса.');
         const result = await db.query('SELECT * FROM rag_generations WHERE id=$1 AND project_key=$2', [id, project]);
         if (!result.rows[0]) throw new NotFoundException('Поколение индекса не найдено.');

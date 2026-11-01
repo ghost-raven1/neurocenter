@@ -1,5 +1,5 @@
 /** Wire envelope remains untrusted; the probe only inspects errors and the tools array. */
-interface HostedMcpResponse {
+interface IHostedMcpResponse {
     error?: unknown;
     result?: { tools?: unknown };
 }
@@ -9,7 +9,7 @@ export async function verifyHostedMcpChannel(url: string, timeoutMs = 30000): Pr
     const request = async (
         body: unknown,
         sessionId?: string,
-    ): Promise<{ parsed: HostedMcpResponse | null; sessionId?: string }> => {
+    ): Promise<{ parsed: IHostedMcpResponse | null; sessionId?: string }> => {
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -45,7 +45,7 @@ export async function verifyHostedMcpChannel(url: string, timeoutMs = 30000): Pr
         if (!payloadText) {
             throw new Error('Хост MCP ответил пустым каналом.');
         }
-        let parsed: HostedMcpResponse | null;
+        let parsed: IHostedMcpResponse | null;
         try {
             parsed = JSON.parse(payloadText);
         } catch {

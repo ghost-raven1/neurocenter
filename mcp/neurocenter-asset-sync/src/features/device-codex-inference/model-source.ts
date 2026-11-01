@@ -6,8 +6,8 @@ import { projectFolder } from '../../bridge/workspace.js';
 import { InstallationPlan } from '../../bridge/installation-plan.js';
 import { providerContext } from '../opencode-providers/context.js';
 import { assertOwnedProvider } from '../opencode-providers/engine.js';
-import { receiptFile, type ProviderReceipt } from '../opencode-providers/receipt.js';
-import type { Package } from '../../bridge/package.js';
+import { receiptFile, type IProviderReceipt } from '../opencode-providers/receipt.js';
+import type { IPackage } from '../../bridge/package.js';
 import { deviceCodexCandidateIdentity, type DeviceCodexContext } from './contract.js';
 
 /** Re-read the effective provider before each send; stale local configuration cannot reuse a server model pin. */
@@ -44,8 +44,8 @@ export async function assertCodexModelSource(
             throw new Error('Управляемый провайдер требует исходную папку проекта.');
         const raw = await new InstallationPlan(root).read(receiptFile(candidate.provider));
         if (!raw) throw new Error('Квитанция провайдера Codex недоступна.');
-        const receipt = JSON.parse(raw) as ProviderReceipt,
-            pkg = context.connectorPackage as unknown as Package;
+        const receipt = JSON.parse(raw) as IProviderReceipt,
+            pkg = context.connectorPackage as unknown as IPackage;
         const owned = await providerContext(
             {
                 schemaVersion: 1,

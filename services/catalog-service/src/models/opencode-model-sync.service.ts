@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable 
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
 import { validModelScan } from '../../../shared/opencode-model-scan.cjs';
-import { DeviceStore, type Device } from '../devices/device-store';
+import { DeviceStore, type IDevice } from '../devices/device-store';
 import { managedBinding } from '../devices/device-compatibility';
 import { projectLevel } from '../access/access.model';
 import { ModelsService } from './models.service';
@@ -22,7 +22,7 @@ export class OpenCodeModelSyncService {
     ) {
         this.repository = new OpenCodeModelSyncRepository(models.pool);
     }
-    private async allowed(device: Device): Promise<void> {
+    private async allowed(device: IDevice): Promise<void> {
         if (
             device.role !== 'Главный админ' ||
             !(await this.devices.access.claims(device.email)).userRoles.includes('Главный админ')
@@ -98,7 +98,7 @@ export class OpenCodeModelSyncService {
         }
         return this.read(request, id);
     }
-    async context(device: Device) {
+    async context(device: IDevice) {
         await this.allowed(device);
         await requireFeaturesEnabled(['opencode_model_sync']);
         const settings = await this.repository.settings(device.id),
@@ -137,7 +137,7 @@ export class OpenCodeModelSyncService {
                 : [],
         };
     }
-    async sync(device: Device, value: unknown, authorize: () => Promise<Device>) {
+    async sync(device: IDevice, value: unknown, authorize: () => Promise<IDevice>) {
         await this.allowed(device);
         await requireFeaturesEnabled(['opencode_model_sync']);
         if (

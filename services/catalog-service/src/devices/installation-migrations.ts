@@ -1,8 +1,8 @@
-import type { CatalogMigration } from '../database/migrations';
+import type { ICatalogMigration } from '../database/migrations';
 import { SNAPSHOT_SCHEMA_SQL } from '../snapshots/snapshot-schema';
 
 /** Метаданные локального плана не содержат исходники, полный diff или абсолютные пути. */
-export const INSTALLATION_MIGRATIONS: readonly CatalogMigration[] = [
+export const INSTALLATION_MIGRATIONS: readonly ICatalogMigration[] = [
     {
         version: 1,
         name: 'reliable-local-installation',

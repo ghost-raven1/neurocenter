@@ -8,14 +8,14 @@ import {
 import type { Request } from 'express';
 import { createHash } from 'node:crypto';
 import { readFeatures, FeatureFlagError } from '../../../shared/feature-client.cjs';
-import type { LearningContext } from '../../../shared/project-learning.cjs';
+import type { ILearningContext } from '../../../shared/project-learning.cjs';
 import type { ModelsService } from '../models/models.service';
 import { LearningRepository } from '../learning/learning.repository';
 import { authorizeLearning } from '../learning/learning-access';
 import { chatHash } from './chat-validation';
-import type { ChatDb } from './chat.repository';
-import type { ChatMessage, ConversationRow } from './chat.types';
-import type { ChatLearningReceipt, PreparedLearningContext } from './chat-learning-context.types';
+import type { TChatDb } from './chat.repository';
+import type { IChatMessage, IConversationRow } from './chat.interfaces';
+import type { IChatLearningReceipt, IPreparedLearningContext } from './chat-learning-context.interfaces';
 
 const changed = (): ConflictException =>
     new ConflictException('Одобренные знания этого агента изменились. Повторите сообщение с актуальным контекстом.');
@@ -30,10 +30,10 @@ export class ModelChatLearningContext {
 
     async prepare(
         req: Request,
-        row: Pick<ConversationRow, 'project_id' | 'owner_email'>,
+        row: Pick<IConversationRow, 'project_id' | 'owner_email'>,
         agentId: string,
         signal: AbortSignal,
-    ): Promise<PreparedLearningContext> {
+    ): Promise<IPreparedLearningContext> {
         if (!row.project_id) throw new BadRequestException('Контекст знаний агента требует выбранный проект.');
         const projectId = row.project_id,
             owner = row.owner_email;
@@ -45,7 +45,7 @@ export class ModelChatLearningContext {
             if (project.id !== projectId) throw new ForbiddenException('Контекст знаний относится к другому проекту.');
             return current;
         };
-        const assertAuthorized = async (db?: ChatDb) => {
+        const assertAuthorized = async (db?: TChatDb) => {
             const current = await actor();
             if (db) await authorizeLearning(db, current, projectId, 2);
             signal.throwIfAborted();
@@ -81,7 +81,7 @@ export class ModelChatLearningContext {
                 },
             };
         const prepared = await snapshot();
-        const receipt: ChatLearningReceipt = {
+        const receipt: IChatLearningReceipt = {
             status: prepared.entries.length ? 'applied' : 'empty',
             projectId,
             agentId,
@@ -120,9 +120,9 @@ export class ModelChatLearningContext {
             throw error;
         }
     }
-    private messages(bundle: LearningContext, agentId: string, entries: LearningContext['entries']): ChatMessage[] {
+    private messages(bundle: ILearningContext, agentId: string, entries: ILearningContext['entries']): IChatMessage[] {
         if (!entries.length) return [];
-        const header: ChatMessage = {
+        const header: IChatMessage = {
             role: 'user',
             content:
                 'Одобренные человеком знания выбранного проекта для адресованного агента. ' +

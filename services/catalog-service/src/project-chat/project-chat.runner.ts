@@ -8,14 +8,14 @@ import { randomUUID } from 'node:crypto';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { ProjectChatRepository } from './project-chat.repository';
 import { ProjectChatDispatch } from './project-chat-dispatch';
-import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.types';
+import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.constants';
 import type {
-    ProjectChatInference,
-    ProjectChatJob,
-    ProjectChatMessageRow,
-    ProjectChatStatus,
-    ProjectChatTransport,
-} from './project-chat.types';
+    IProjectChatInference,
+    IProjectChatJob,
+    IProjectChatMessageRow,
+    TProjectChatStatus,
+    TProjectChatTransport,
+} from './project-chat.interfaces';
 
 const safeFailure = (error: unknown): string =>
     error instanceof BadRequestException ||
@@ -27,7 +27,7 @@ const safeFailure = (error: unknown): string =>
 const markdownMetadata = (value: string): string =>
     value.replace(/[\r\n]+/g, ' ').replace(/[\\`*_{}[\]()#+\-.!>|~]/g, '\\$&');
 /** A result links each specialist contribution to its question without another hidden model call. */
-export function projectChatSummary(source: ProjectChatMessageRow, responses: ProjectChatMessageRow[]): string {
+export function projectChatSummary(source: IProjectChatMessageRow, responses: IProjectChatMessageRow[]): string {
     const answered = [
         ...new Map(
             responses
@@ -62,7 +62,7 @@ export class ProjectChatRunner {
     private interval?: ReturnType<typeof setInterval>;
     constructor(
         readonly repository: ProjectChatRepository,
-        private readonly inference: ProjectChatInference,
+        private readonly inference: IProjectChatInference,
     ) {}
     async start(): Promise<void> {
         for (const room of await this.repository.recover()) this.schedule(room.projectId, room.roomId);
@@ -151,13 +151,13 @@ export class ProjectChatRunner {
             }
         }
     }
-    private async execute(job: ProjectChatJob, signal: AbortSignal): Promise<void> {
+    private async execute(job: IProjectChatJob, signal: AbortSignal): Promise<void> {
         const roomId = job.source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM,
             req = this.repository.policy.request(job.actor),
             responses = await this.repository.children(this.repository.pool, job.projectId, job.source.id, roomId);
         const groups: Record<
-            ProjectChatTransport,
-            Array<{ response: ProjectChatMessageRow; failed?: { error: unknown } }>
+            TProjectChatTransport,
+            Array<{ response: IProjectChatMessageRow; failed?: { error: unknown } }>
         > = { server: [], 'device-codex': [] };
         for (const response of responses.filter((row) => row.kind === 'agent' && row.status !== 'done')) {
             signal.throwIfAborted();
@@ -242,8 +242,8 @@ export class ProjectChatRunner {
         );
     }
     private async respond(
-        job: ProjectChatJob,
-        response: ProjectChatMessageRow,
+        job: IProjectChatJob,
+        response: IProjectChatMessageRow,
         signal: AbortSignal,
         failed?: { error: unknown },
     ): Promise<void> {
@@ -334,7 +334,7 @@ export class ProjectChatRunner {
         }
     }
     /** Cleanup is allowed after revocation but can publish only a safe terminal status, never model output. */
-    private async fail(job: ProjectChatJob, status: ProjectChatStatus, error: string): Promise<void> {
+    private async fail(job: IProjectChatJob, status: TProjectChatStatus, error: string): Promise<void> {
         await this.repository.transaction(async (db) => {
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['project-chat:' + job.projectId]);
             const room = await this.repository.room(

@@ -22,7 +22,7 @@ import { SnapshotStorage } from './snapshot-storage';
 import { SnapshotSigner } from './snapshot-signature';
 import { SnapshotCommands } from './snapshot-commands';
 import { SNAPSHOT_CHUNK_BYTES } from '../../../shared/project-snapshot.cjs';
-import type { SnapshotCreate, SnapshotRow } from './snapshot-types';
+import type { ISnapshotCreate, ISnapshotRow } from './snapshot-interfaces';
 
 /** The HTTP service schedules work; full LanceDB verification runs outside this process. */
 @Injectable()
@@ -94,7 +94,7 @@ export class SnapshotService implements OnModuleInit, OnModuleDestroy {
             maxBytes: Number(process.env.SNAPSHOT_MAX_BYTES || 16 * 1024 ** 3),
         };
     }
-    async create(req: Request, project: string, body: SnapshotCreate) {
+    async create(req: Request, project: string, body: ISnapshotCreate) {
         snapshotCreateInput(body);
         const actor = this.actor(req),
             capabilities = await this.capabilities();
@@ -195,7 +195,7 @@ export class SnapshotService implements OnModuleInit, OnModuleDestroy {
         project: string,
         id: string,
         receipt = false,
-    ): Promise<{ row: SnapshotRow; actor: IAccessActor }> {
+    ): Promise<{ row: ISnapshotRow; actor: IAccessActor }> {
         if (!snapshotUuid(id)) throw new BadRequestException('Неверный идентификатор публикации.');
         assertInternal(req.headers['x-neurocenter-internal']);
         const token = String(req.headers.authorization || '').replace(/^Bearer /, ''),

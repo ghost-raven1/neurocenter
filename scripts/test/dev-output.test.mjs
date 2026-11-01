@@ -1,13 +1,26 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
-import {createDevOutput} from '../workspace/dev-output.mjs';
+import { test } from 'node:test';
+import { createDevOutput } from '../workspace/dev-output.mjs';
 
 /** Отдельные потоки позволяют проверить цвета без настоящего терминала. */
-function capture({tty = false, errorTty = tty, env = {TERM: 'xterm-256color'}} = {}) {
-    let output = '', errors = '';
-    const stdout = {isTTY: tty, write: value => {output += value; return true;}};
-    const stderr = {isTTY: errorTty, write: value => {errors += value; return true;}};
-    return {out: createDevOutput({stdout, stderr, env}), stdout: () => output, stderr: () => errors};
+function capture({ tty = false, errorTty = tty, env = { TERM: 'xterm-256color' } } = {}) {
+    let output = '',
+        errors = '';
+    const stdout = {
+        isTTY: tty,
+        write: (value) => {
+            output += value;
+            return true;
+        },
+    };
+    const stderr = {
+        isTTY: errorTty,
+        write: (value) => {
+            errors += value;
+            return true;
+        },
+    };
+    return { out: createDevOutput({ stdout, stderr, env }), stdout: () => output, stderr: () => errors };
 }
 
 const ansi = /\x1b\[[0-9;]*m/;
@@ -18,12 +31,24 @@ test('Вывод сохраняет смысл этапов, адресов, с�
     f.out.step(2, 7, 'Сборка каталога');
     f.out.success('Сборка завершена');
     f.out.info('Интерфейс', 'http://localhost:5173');
-    f.out.service({name: 'gateway', label: 'API-шлюз', port: 4000, ok: true});
-    f.out.service({name: 'rag', label: 'База знаний', port: 4300, ok: false});
+    f.out.service({ name: 'gateway', label: 'API-шлюз', port: 4000, ok: true });
+    f.out.service({ name: 'rag', label: 'База знаний', port: 4300, ok: false });
     f.out.logs('API-шлюз', 'Первое событие\nВторое событие');
     const output = f.stdout();
-    for (const fragment of ['Нейроцентр', 'Локальная разработка', 'Сборка каталога', 'Сборка завершена',
-        'Интерфейс', 'http://localhost:5173', 'API-шлюз', '4000', 'База знаний', '4300', 'Первое событие', 'Второе событие']) {
+    for (const fragment of [
+        'Нейроцентр',
+        'Локальная разработка',
+        'Сборка каталога',
+        'Сборка завершена',
+        'Интерфейс',
+        'http://localhost:5173',
+        'API-шлюз',
+        '4000',
+        'База знаний',
+        '4300',
+        'Первое событие',
+        'Второе событие',
+    ]) {
         assert.ok(output.includes(fragment), fragment);
     }
     assert.match(output, /2\s*\/\s*7/);
@@ -43,16 +68,16 @@ test('Предупреждения и ошибки видны отдельно �
 });
 
 test('Цвета включаются для терминала и не попадают в перенаправленный поток', () => {
-    const f = capture({tty: true, errorTty: false});
+    const f = capture({ tty: true, errorTty: false });
     f.out.success('Готово');
     f.out.error('Ошибка');
     assert.match(f.stdout(), ansi);
     assert.doesNotMatch(f.stderr(), ansi);
 });
 
-for (const env of [{TERM: 'xterm', NO_COLOR: '1'}, {TERM: 'xterm', NO_COLOR: ''}, {TERM: 'dumb'}]) {
+for (const env of [{ TERM: 'xterm', NO_COLOR: '1' }, { TERM: 'xterm', NO_COLOR: '' }, { TERM: 'dumb' }]) {
     test(`Настройки ${JSON.stringify(env)} отключают цвета даже в терминале`, () => {
-        const f = capture({tty: true, env});
+        const f = capture({ tty: true, env });
         f.out.heading('Нейроцентр');
         f.out.success('Готово');
         f.out.warning('Предупреждение');

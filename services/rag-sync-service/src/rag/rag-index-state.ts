@@ -32,7 +32,7 @@ export interface IRagIndexManifest extends IRagIndexSummary {
     ids: Record<string, string>;
     fingerprints: Record<string, string>;
 }
-type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
+type TQueryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
 /** Миграция добавляет nullable hash: старые строки не объявляются проверенными задним числом. */
 
@@ -108,7 +108,7 @@ const usable = `embedding IS NOT NULL AND vector_norm(embedding)>0 AND vector_di
 
 /** Данные и метаданные читаются одним SQL statement: summary не склеивает разные состояния. */
 async function readStatus(
-    db: Queryable,
+    db: TQueryable,
     projectKey: string,
     generation: string,
     manifest: boolean,
@@ -152,11 +152,11 @@ async function readStatus(
         fingerprints: row.fingerprints ?? {},
     };
 }
-export function readIndexManifest(db: Queryable, projectKey: string, generation: string): Promise<IRagIndexManifest> {
+export function readIndexManifest(db: TQueryable, projectKey: string, generation: string): Promise<IRagIndexManifest> {
     return readStatus(db, projectKey, generation, true);
 }
 export async function readIndexSummary(
-    db: Queryable,
+    db: TQueryable,
     projectKey: string,
     generation: string,
 ): Promise<IRagIndexSummary> {
@@ -166,7 +166,7 @@ export async function readIndexSummary(
 
 /** Вызывается только под общим RAG_WRITE_LOCK, до изменения строк или состояния. */
 export async function bindIndexProfile(
-    db: Queryable,
+    db: TQueryable,
     projectKey: string,
     generation: string,
     write: IRagIndexWrite,
@@ -198,7 +198,7 @@ export async function bindIndexProfile(
 }
 
 /** Любая дельта снимает готовность, даже если все уже полученные строки имеют hash. */
-export async function invalidateIndexSeal(db: Queryable, projectKey: string, generation: string): Promise<void> {
+export async function invalidateIndexSeal(db: TQueryable, projectKey: string, generation: string): Promise<void> {
     await db.query(
         `INSERT INTO rag_index_state(project_key,generation_id,complete) VALUES($1,$2,false)
         ON CONFLICT(project_key,generation_id) DO UPDATE SET complete=false,snapshot_hash=NULL,snapshot_rows=NULL,updated_at=now()`,
@@ -208,7 +208,7 @@ export async function invalidateIndexSeal(db: Queryable, projectKey: string, gen
 
 /** Финальный короткий seal подтверждает весь снимок, а не только последнюю порцию. */
 export async function sealIndex(
-    db: Queryable,
+    db: TQueryable,
     projectKey: string,
     generation: string,
     write: IRagIndexWrite,

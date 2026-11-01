@@ -9,14 +9,14 @@ import {
     normalizeAgentMethodWorkflowPayload,
     normalizeAgentMethodWorkflowResult,
 } from '../../../shared/agent-method-workflow.cjs';
-import type { Device } from '../devices/device-store';
-import type { Job, JobInput } from '../devices/device-job.model';
+import type { IDevice } from '../devices/device-store';
+import type { IJob, IJobInput } from '../devices/device-job.model';
 import { managedBinding, assertExpectedBinding } from '../devices/device-compatibility';
 import { assertLocalFeature } from '../devices/local-change-jobs';
-import { captureMethodAgent, assertMethodAgent, type MethodAgentDb } from './selection';
+import { captureMethodAgent, assertMethodAgent, type TMethodAgentDb } from './selection';
 
 /** Capture the selected computer and folder; another binding cannot inherit execution authority. */
-function target(device: Device, projectId: string | undefined, binding: unknown, instance: unknown) {
+function target(device: IDevice, projectId: string | undefined, binding: unknown, instance: unknown) {
     assertLocalFeature(device.report, AGENT_METHOD_WORKFLOW_CAPABILITY);
     const bindingId = managedBinding(device.report, projectId);
     assertExpectedBinding(bindingId, binding, true);
@@ -32,7 +32,7 @@ function target(device: Device, projectId: string | undefined, binding: unknown,
 }
 
 /** The method version, stage and deadline are fixed by the server, not supplied as runtime instructions. */
-export async function agentMethodJobPayload(device: Device, input: JobInput, db?: MethodAgentDb) {
+export async function agentMethodJobPayload(device: IDevice, input: IJobInput, db?: TMethodAgentDb) {
     if (input.kind !== AGENT_METHOD_WORKFLOW_JOB) return;
     const allowed = [
         'deviceId',
@@ -92,9 +92,9 @@ export async function agentMethodJobPayload(device: Device, input: JobInput, db?
 
 /** Recheck the immutable payload against current device identity before claim and every authorization poll. */
 export async function assertAgentMethodJob(
-    device: Device,
-    job: Pick<Job, 'kind' | 'payload' | 'project_id'>,
-    db?: MethodAgentDb,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id'>,
+    db?: TMethodAgentDb,
 ): Promise<void> {
     if (job.kind !== AGENT_METHOD_WORKFLOW_JOB) return;
     const payload = normalizeAgentMethodWorkflowPayload(job.payload);
@@ -108,7 +108,7 @@ export async function assertAgentMethodJob(
 
 /** An accepted completion must describe the original workflow and actual check outcomes. */
 export function assertAgentMethodResult(
-    job: Pick<Job, 'kind' | 'payload' | 'project_id'>,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id'>,
     result: Record<string, unknown>,
     failed: boolean,
 ): void {
@@ -125,10 +125,10 @@ export function assertAgentMethodResult(
 /** A late success cannot outlive the user, project grant or the exact folder binding. */
 export async function assertAgentMethodCompletionAccess(
     db: PoolClient,
-    job: Pick<Job, 'device_id' | 'email' | 'role' | 'project_id' | 'payload'>,
+    job: Pick<IJob, 'device_id' | 'email' | 'role' | 'project_id' | 'payload'>,
 ): Promise<void> {
     const device = (
-        await db.query<Device>(
+        await db.query<IDevice>(
             'SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR SHARE',
             [job.device_id, job.email],
         )

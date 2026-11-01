@@ -1,18 +1,18 @@
 import { missingLaunchFields } from './launch-fields.js';
 import { randomUUID } from 'node:crypto';
 import { hash } from '../../bridge/state.js';
-import type { Package } from '../../bridge/package.js';
-import type { InstallSet } from '../../bridge/install-set.js';
+import type { IPackage } from '../../bridge/package.js';
+import type { IInstallSet } from '../../bridge/install-set.js';
 import { openVerificationPage } from '../../bridge/open-browser.js';
-import { configurationContext, type ConfigurationTuple } from './context.js';
+import { configurationContext, type IConfigurationTuple } from './context.js';
 import { configurationStatus, readConfiguration } from './state.js';
 import { configurationTargets } from './schema.js';
 import { readPrivateConfiguration, writePrivateConfiguration } from './private-store.js';
 import { startConfigurationSession } from './server.js';
 import { saveLauncherDescriptor } from './launcher-descriptor.js';
 export { parseLocalConfiguration, localConfigurationDigest } from './schema.js';
-export type { LocalConfigurationSchema, LocalConfigurationField } from './schema.js';
-export interface ConfigurationPreparation extends ConfigurationTuple {
+export type { ILocalConfigurationSchema, ILocalConfigurationField } from './schema.js';
+export interface IConfigurationPreparation extends IConfigurationTuple {
     preparationId: string;
     expiresAt: string;
 }
@@ -21,8 +21,8 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 /** После файловой транзакции сохраняет только одобренный launcher-дескриптор, без параметров. */
 export async function ensureMcpConfigurationLauncher(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
+    pkg: IPackage,
+    set: IInstallSet | undefined,
     authorize: () => Promise<void>,
 ): Promise<void> {
     await saveLauncherDescriptor(await configurationContext(projectId, pkg, set, authorize));
@@ -30,8 +30,8 @@ export async function ensureMcpConfigurationLauncher(
 /** Инертный дескриптор готовится до транзакции: запуск потребует актуальную квитанцию всех файлов. */
 export async function prepareMcpConfigurationLauncher(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
+    pkg: IPackage,
+    set: IInstallSet | undefined,
     authorize: () => Promise<void>,
 ): Promise<void> {
     const context = await configurationContext(projectId, pkg, set, authorize, { allowNotInstalled: true });
@@ -42,10 +42,10 @@ export async function prepareMcpConfigurationLauncher(
 /** Подготовка не открывает браузер и не читает значения в публичный результат. */
 export async function prepareMcpConfiguration(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
+    pkg: IPackage,
+    set: IInstallSet | undefined,
     authorize: () => Promise<void>,
-): Promise<ConfigurationPreparation> {
+): Promise<IConfigurationPreparation> {
     const context = await configurationContext(projectId, pkg, set, authorize);
     const result = {
         ...context.tuple,
@@ -58,8 +58,8 @@ export async function prepareMcpConfiguration(
 /** Открытие возвращается немедленно; свежая проверка прав перед сохранением передаётся отдельно от lease задания. */
 export async function openMcpConfiguration(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
+    pkg: IPackage,
+    set: IInstallSet | undefined,
     options: {
         preparationId: string;
         schemaDigest: string;
@@ -72,7 +72,7 @@ export async function openMcpConfiguration(
         throw new Error('Подготовьте настройку заново.');
     }
     const context = await configurationContext(projectId, pkg, set, authorize);
-    const prepared = await readPrivateConfiguration<ConfigurationPreparation>(
+    const prepared = await readPrivateConfiguration<IConfigurationPreparation>(
         hash('configuration-preparation:' + options.preparationId),
     );
     if (
@@ -103,8 +103,8 @@ export async function openMcpConfiguration(
 }
 export async function getMcpConfigurationStatus(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
+    pkg: IPackage,
+    set: IInstallSet | undefined,
     authorize: () => Promise<void>,
 ) {
     return configurationStatus(await configurationContext(projectId, pkg, set, authorize));
@@ -112,8 +112,8 @@ export async function getMcpConfigurationStatus(
 /** Этот результат остаётся внутри MCP-процесса и никогда не включается в completion задания. */
 export async function readMcpConfiguration(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
+    pkg: IPackage,
+    set: IInstallSet | undefined,
     authorize: () => Promise<void>,
 ) {
     const context = await configurationContext(projectId, pkg, set, authorize);

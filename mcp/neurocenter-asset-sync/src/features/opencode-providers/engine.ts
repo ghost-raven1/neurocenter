@@ -7,8 +7,8 @@ import { readOpenCodeModelMetadata } from '../../bridge/opencode-model-scan.js';
 import { hasUnsafeOpenCodeWarnings as unsafeScan } from '../../bridge/opencode-scan-warnings.js';
 import { createProviderCredential, providerCredentialPresent } from './credential.js';
 import { providerReportIdentity, type OpenCodeProviderStatus } from './contract.js';
-import { type ProviderContext, type Authorize, stale } from './context.js';
-import { providerConfig, providerProof, receiptFile, journalKey, conflict, type ProviderReceipt } from './receipt.js';
+import { type TProviderContext, type TAuthorize, stale } from './context.js';
+import { providerConfig, providerProof, receiptFile, journalKey, conflict, type IProviderReceipt } from './receipt.js';
 import { resolveConnector, codexDefinition } from './connector.js';
 import { ollamaAdapterUrl } from './ollama-entry.js';
 import { jobContext } from '../../bridge/state.js';
@@ -44,7 +44,7 @@ function config(raw: string | null): Record<string, unknown> {
         throw conflict();
     return value as Record<string, unknown>;
 }
-function entry(context: ProviderContext, credentialFile: string): Record<string, unknown> {
+function entry(context: TProviderContext, credentialFile: string): Record<string, unknown> {
     const expectations = context.descriptor.expectations;
     if (!expectations) throw new Error('Адаптер провайдера недоступен.');
     const { contextWindow, ...basic } = expectations.options;
@@ -74,8 +74,8 @@ function entry(context: ProviderContext, credentialFile: string): Record<string,
     };
 }
 async function observed(
-    context: ProviderContext,
-    authorize: Authorize,
+    context: TProviderContext,
+    authorize: TAuthorize,
     credentialTarget?: Record<string, string>,
     providerNamespaceTarget?: Set<string>,
     providerPluginTarget?: Array<{ identity: string; plain: boolean }>,
@@ -95,7 +95,7 @@ async function observed(
     );
 }
 /** Used by the per-request managed connector permit without executing a model or re-authenticating. */
-export async function assertOwnedProvider(context: ProviderContext) {
+export async function assertOwnedProvider(context: TProviderContext) {
     const proof = await providerProof(context);
     if (!proof || proof.receipt.schemaDigest !== context.descriptor.schemaDigest) throw conflict();
     const plan = new InstallationPlan(context.root),
@@ -137,7 +137,10 @@ export async function assertOwnedProvider(context: ProviderContext) {
     return proof;
 }
 /** Readback checks the effective known OpenCode layers, without executing plugins or inference. */
-export async function providerStatus(context: ProviderContext, authorize: Authorize): Promise<OpenCodeProviderStatus> {
+export async function providerStatus(
+    context: TProviderContext,
+    authorize: TAuthorize,
+): Promise<OpenCodeProviderStatus> {
     await context.assertCurrent();
     await authorize();
     const d = context.descriptor;
@@ -222,10 +225,10 @@ export async function providerStatus(context: ProviderContext, authorize: Author
 }
 /** Save only the owned provider entry, with the existing project transaction, CAS and recovery journal. */
 export async function saveProvider(
-    context: ProviderContext,
+    context: TProviderContext,
     key: unknown,
     expectedRevision: string | null,
-    authorizeSave: Authorize,
+    authorizeSave: TAuthorize,
     beforeCommit: () => void = () => {},
     session?: { preparationId: string; setupJobId: string },
     signal?: AbortSignal,
@@ -284,7 +287,7 @@ export async function saveProvider(
             if (!codex && (!ollama || credentialFile) && !(await providerCredentialPresent(credentialFile)))
                 throw new Error('Введите ключ провайдера локально.');
             const desired = definition?.entry ?? entry(context, credentialFile),
-                receipt: ProviderReceipt = {
+                receipt: IProviderReceipt = {
                     schemaVersion: 1,
                     revision: randomUUID(),
                     schemaDigest: context.descriptor.schemaDigest,

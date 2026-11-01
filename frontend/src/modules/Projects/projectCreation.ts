@@ -5,11 +5,17 @@ export async function submitProjectCreation(options: {
     onCreated: (id: string) => void;
     onError: (error: unknown) => void;
 }): Promise<void> {
-    if (!options.isCurrent()) { return; }
+    if (!options.isCurrent()) {
+        return;
+    }
     try {
         const project = await options.create();
-        if (options.isCurrent()) { options.onCreated(project.id); }
+        if (options.isCurrent()) {
+            options.onCreated(project.id);
+        }
     } catch (error) {
-        if (options.isCurrent()) { options.onError(error); }
+        if (options.isCurrent()) {
+            options.onError(error);
+        }
     }
 }

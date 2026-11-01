@@ -11,18 +11,24 @@ import type { IProjectLoadError } from '../interfaces';
  *
  * @param {IProjectListParams} params - пагинация + поиск
  */
-export const fetchProjects = createAsyncThunk<IPage<IProjectSummary>, IProjectListParams, { rejectValue: IProjectLoadError }>(
-    'projects/fetchProjects', async (params, { rejectWithValue }) => {
-        try { return await bffApi.listProjects(params); }
-        catch (error) {
-            const status = isAxiosError(error) ? error.response?.status ?? null : null;
-            const message = status === 403 ? 'У вас нет доступа к списку проектов. Обратитесь к администратору.'
-                : status === null ? 'Не удалось связаться с сервером. Проверьте соединение и повторите загрузку.'
-                : 'Сервер не смог загрузить список проектов. Попробуйте ещё раз.';
-            return rejectWithValue({ status, message });
-        }
-    },
-);
+export const fetchProjects = createAsyncThunk<
+    IPage<IProjectSummary>,
+    IProjectListParams,
+    { rejectValue: IProjectLoadError }
+>('projects/fetchProjects', async (params, { rejectWithValue }) => {
+    try {
+        return await bffApi.listProjects(params);
+    } catch (error) {
+        const status = isAxiosError(error) ? (error.response?.status ?? null) : null;
+        const message =
+            status === 403
+                ? 'У вас нет доступа к списку проектов. Обратитесь к администратору.'
+                : status === null
+                  ? 'Не удалось связаться с сервером. Проверьте соединение и повторите загрузку.'
+                  : 'Сервер не смог загрузить список проектов. Попробуйте ещё раз.';
+        return rejectWithValue({ status, message });
+    }
+});
 
 /**
  * Загрузить карточку проекта.
@@ -35,11 +41,15 @@ export const fetchProject = createAsyncThunk<IProjectDetail, string, { rejectVal
         try {
             return await bffApi.getProject(projectId);
         } catch (error) {
-            const status = isAxiosError(error) ? error.response?.status ?? null : null;
-            const message = status === 404 ? 'Проект удалён или ссылка больше не действует.'
-                : status === 403 ? 'У вас нет доступа к этому проекту. Обратитесь к администратору.'
-                : status === null ? 'Не удалось связаться с сервером. Проверьте соединение и повторите загрузку.'
-                : 'Сервер не смог загрузить проект. Попробуйте ещё раз.';
+            const status = isAxiosError(error) ? (error.response?.status ?? null) : null;
+            const message =
+                status === 404
+                    ? 'Проект удалён или ссылка больше не действует.'
+                    : status === 403
+                      ? 'У вас нет доступа к этому проекту. Обратитесь к администратору.'
+                      : status === null
+                        ? 'Не удалось связаться с сервером. Проверьте соединение и повторите загрузку.'
+                        : 'Сервер не смог загрузить проект. Попробуйте ещё раз.';
             return rejectWithValue({ status, message });
         }
     },
@@ -53,6 +63,10 @@ export const fetchProject = createAsyncThunk<IProjectDetail, string, { rejectVal
 export const createProject = createAsyncThunk(
     'projects/createProject',
     async (payload: { name: string; externalResourceId: string }, { rejectWithValue }) => {
-        try { return await bffApi.createProject(payload); } catch (error) { return rejectWithValue(errorMessage(error, 'Не удалось создать проект')); }
+        try {
+            return await bffApi.createProject(payload);
+        } catch (error) {
+            return rejectWithValue(errorMessage(error, 'Не удалось создать проект'));
+        }
     },
 );

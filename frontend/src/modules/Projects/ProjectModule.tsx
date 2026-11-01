@@ -25,8 +25,19 @@ export default class ProjectModule extends ModuleBase {
      */
     public getRoute(): ReactNode[] {
         return [
-            <ProtectedRoute key="projects" name={PROJECT_ROUTE} path={baseRoutes.projects} exact render={() => <Projects />} />,
-            <ProtectedRoute key="project-detail" name={PROJECT_DETAIL_ROUTE} path={baseRoutes.projectDetail} render={() => <ProjectDetail />} />,
+            <ProtectedRoute
+                key="projects"
+                name={PROJECT_ROUTE}
+                path={baseRoutes.projects}
+                exact
+                render={() => <Projects />}
+            />,
+            <ProtectedRoute
+                key="project-detail"
+                name={PROJECT_DETAIL_ROUTE}
+                path={baseRoutes.projectDetail}
+                render={() => <ProjectDetail />}
+            />,
         ];
     }
 }

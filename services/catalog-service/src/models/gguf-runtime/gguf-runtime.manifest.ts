@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import type { GgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
+import type { IGgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
 
 /** Reads only the owned alias manifest and proves its single model layer is the accepted file SHA. */
 export async function ggufRuntimeManifest(
@@ -11,7 +11,7 @@ export async function ggufRuntimeManifest(
     alias: string,
     sha256: string,
     bytes: number,
-    limits: GgufImportPolicy,
+    limits: IGgufImportPolicy,
 ): Promise<string> {
     if (!/^neurocenter\/gguf-[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}:v1$/.test(alias))
         throw new ConflictException('Не подтверждено собственное имя GGUF runtime.');

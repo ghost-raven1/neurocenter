@@ -1,19 +1,24 @@
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
-import { apiHub, readState, type Credentials } from '../../bridge/state.js';
-import { assertHostedInstallation, requestProfile, type HostedProfile, type HostedRequestProfile } from './profile.js';
+import { apiHub, readState, type ICredentials } from '../../bridge/state.js';
+import {
+    assertHostedInstallation,
+    requestProfile,
+    type IHostedProfile,
+    type IHostedRequestProfile,
+} from './profile.js';
 const budget = 1024 * 1024;
-export const hostedInstallationIdentity = (profile: HostedRequestProfile) => ({
+export const hostedInstallationIdentity = (profile: IHostedRequestProfile) => ({
     kind: profile.pkg.plugin.kind,
     id: profile.pkg.plugin.id,
     version: profile.pkg.plugin.version,
     manifest: profile.pkg.manifest.sha256,
 });
-export interface HostedRelay {
-    profile: HostedProfile;
+export interface IHostedRelay {
+    profile: IHostedProfile;
     close: () => Promise<void>;
 }
-export function validateVectors(value: unknown, profile: HostedRequestProfile, count: number): void {
+export function validateVectors(value: unknown, profile: IHostedRequestProfile, count: number): void {
     const result = value as { model?: unknown; data?: Array<{ index?: unknown; embedding?: unknown }> } | null;
     if (
         result?.model !== profile.selection.profile.model ||
@@ -32,13 +37,13 @@ export function validateVectors(value: unknown, profile: HostedRequestProfile, c
 }
 /** DeviceBearer читается заново; в HTTP-ответы дочернего процесса он не попадает. */
 export async function inferHosted(
-    source: HostedRequestProfile,
+    source: IHostedRequestProfile,
     input: string | string[],
     signal: AbortSignal,
 ): Promise<unknown> {
     const profile = structuredClone(source);
     await assertHostedInstallation(profile);
-    const credentials = await readState<Credentials>('credentials');
+    const credentials = await readState<ICredentials>('credentials');
     if (!credentials?.token) throw new Error('Компьютер не подключён.');
     const response = await fetch(apiHub() + '/api/device-channel/embedding', {
         method: 'POST',
@@ -90,7 +95,7 @@ export async function inferHosted(
     return result;
 }
 /** Идентичность запроса зависит от значений профиля, а не порядка ключей после JSONB. */
-function generation(profile: HostedRequestProfile): string {
+function generation(profile: IHostedRequestProfile): string {
     const selection = profile.selection,
         index = selection.profile;
     return JSON.stringify([
@@ -109,8 +114,8 @@ function generation(profile: HostedRequestProfile): string {
         profile.relay.key,
     ]);
 }
-export async function createHostedRelay(profile: HostedProfile): Promise<HostedRelay> {
-    const relay: HostedRelay = {
+export async function createHostedRelay(profile: IHostedProfile): Promise<IHostedRelay> {
+    const relay: IHostedRelay = {
         profile: structuredClone(profile),
         close: async () => {
             for (const controller of active) controller.abort();

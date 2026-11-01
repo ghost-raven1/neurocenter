@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { builderScript } from './build-process';
 
-export interface BuildRuntimeReport {
+export interface IBuildRuntimeReport {
     schemaVersion: 1;
     ok: boolean;
     status: 'passed' | 'failed' | 'cancelled';
@@ -38,7 +38,7 @@ export interface BuildRuntimeReport {
 /** Only immutable manifest bytes verified by this invocation can authorize publication. */
 export async function assertRuntimeCandidate(
     manifest: string,
-    report: BuildRuntimeReport,
+    report: IBuildRuntimeReport,
     identity: string,
 ): Promise<void> {
     if (
@@ -77,7 +77,7 @@ export async function verifyBuildRuntime(
     manifest: string,
     identity: string,
     signal: AbortSignal,
-): Promise<BuildRuntimeReport> {
+): Promise<IBuildRuntimeReport> {
     signal.throwIfAborted();
     const { verifyBuiltRuntime } = createRequire(__filename)(
         path.join(path.dirname(builderScript()), 'verify-runtime.mjs'),
@@ -85,7 +85,7 @@ export async function verifyBuildRuntime(
         verifyBuiltRuntime: (
             file: string,
             options: { candidateIdentity: string; signal: AbortSignal },
-        ) => Promise<BuildRuntimeReport>;
+        ) => Promise<IBuildRuntimeReport>;
     };
     const report = await verifyBuiltRuntime(manifest, { candidateIdentity: identity, signal });
     if (report.schemaVersion !== 1 || Buffer.byteLength(JSON.stringify(report)) > 65536)

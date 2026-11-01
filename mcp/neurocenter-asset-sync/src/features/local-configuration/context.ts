@@ -1,12 +1,12 @@
-import { hash, hub, readState, type Credentials } from '../../bridge/state.js';
-import { verify, type Package } from '../../bridge/package.js';
-import { packageDependencies, packageRef, verifyInstallSet, type InstallSet } from '../../bridge/install-set.js';
+import { hash, hub, readState, type ICredentials } from '../../bridge/state.js';
+import { verify, type IPackage } from '../../bridge/package.js';
+import { packageDependencies, packageRef, verifyInstallSet, type IInstallSet } from '../../bridge/install-set.js';
 import { projectFolder, projectBindingId, projectInstanceId } from '../../bridge/workspace.js';
 import { inspectInstallation } from '../../bridge/installation-inspection.js';
 import { assertInspectionIdentity } from '../../bridge/inspection-identity.js';
 import { localConfigurationDigest, parseLocalConfiguration } from './schema.js';
 
-export interface ConfigurationTuple {
+export interface IConfigurationTuple {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -20,8 +20,8 @@ export interface ConfigurationTuple {
 /** Секреты привязаны к физическому экземпляру, а не к переносимому marker или имени папки. */
 export async function configurationContext(
     projectId: string,
-    source: Package,
-    set: InstallSet | undefined,
+    source: IPackage,
+    set: IInstallSet | undefined,
     authorize: () => Promise<void>,
     options: { allowNotInstalled?: boolean } = {},
 ) {
@@ -53,11 +53,11 @@ export async function configurationContext(
     const root = await projectFolder(projectId);
     const bindingId = await projectBindingId(projectId);
     const instanceId = await projectInstanceId(projectId);
-    const credentials = await readState<Credentials>('credentials');
+    const credentials = await readState<ICredentials>('credentials');
     if (!credentials?.deviceId) {
         throw new Error('Компьютер не подключён.');
     }
-    const tuple: ConfigurationTuple = {
+    const tuple: IConfigurationTuple = {
         schemaVersion: 1,
         projectId,
         bindingId,
@@ -81,7 +81,7 @@ export async function configurationContext(
             (await projectFolder(projectId)) !== root ||
             (await projectBindingId(projectId)) !== bindingId ||
             (await projectInstanceId(projectId)) !== instanceId ||
-            (await readState<Credentials>('credentials'))?.deviceId !== credentials.deviceId
+            (await readState<ICredentials>('credentials'))?.deviceId !== credentials.deviceId
         ) {
             throw new Error('Привязка настройки изменилась.');
         }
@@ -97,4 +97,4 @@ export async function configurationContext(
     await (options.allowNotInstalled ? assertIdentity() : assertCurrent());
     return { pkg, schema, tuple, scope, key: hash(JSON.stringify(scope)), root, assertCurrent, assertIdentity };
 }
-export type ConfigurationContext = Awaited<ReturnType<typeof configurationContext>>;
+export type TConfigurationContext = Awaited<ReturnType<typeof configurationContext>>;

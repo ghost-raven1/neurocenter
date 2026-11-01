@@ -5,13 +5,13 @@ import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import type { IModelInferenceRuntime } from '../models/model-runtime';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { ModelChatProjectContext } from '../model-chat/chat-project-context';
 import { chatContext, chatUsage, managedChatContextWindow } from '../model-chat/chat-context';
-import type { ChatMessage } from '../model-chat/chat.types';
-import type { AgentTrialReceipt } from './agent-readiness.types';
-import type { TrialRow } from './agent-readiness.repository';
+import type { IChatMessage } from '../model-chat/chat.interfaces';
+import type { IAgentTrialReceipt } from './agent-readiness.interfaces';
+import type { ITrialRow } from './agent-readiness.repository';
 import type { AgentTrialPolicy } from './agent-readiness.policy';
 
 export const AGENT_TRIAL_FEATURES = ['agents', 'model_chat', 'group_chat', 'model_hosting'] as const;
@@ -43,14 +43,14 @@ export class AgentTrialRunner {
     }
     async run(
         req: Request,
-        row: TrialRow,
-        receipt: AgentTrialReceipt,
+        row: ITrialRow,
+        receipt: IAgentTrialReceipt,
         signal: AbortSignal,
-        checkpoint: (receipt: AgentTrialReceipt) => Promise<IModel>,
+        checkpoint: (receipt: IAgentTrialReceipt) => Promise<IModel>,
     ): Promise<void> {
         const definition = row.snapshot.definition,
             nonce = row.snapshot.nonce;
-        const messages: ChatMessage[] = [{ role: 'system', content: definition.prompt }];
+        const messages: IChatMessage[] = [{ role: 'system', content: definition.prompt }];
         messages.push({
             role: 'user',
             content:

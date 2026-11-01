@@ -1,9 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { chatContext, type IChatContextSettings } from './chat-context';
-import type { ChatMessage, ChatUsage, TurnRow } from './chat.types';
+import type { IChatMessage, IChatUsage, ITurnRow } from './chat.interfaces';
 
-export interface ChatCheckpoint {
+export interface IChatCheckpoint {
     id: string;
     conversation_id: string;
     previous_id: string | null;
@@ -15,11 +15,11 @@ export interface ChatCheckpoint {
     source_sha256: string;
     model_pin: string;
     summary: string;
-    usage: ChatUsage;
+    usage: IChatUsage;
     algorithm_version: 1;
     created_at: string | Date;
 }
-export interface ChatSource {
+export interface IChatSource {
     turnId: string;
     position: number;
     role: 'user' | 'assistant';
@@ -29,10 +29,10 @@ export interface ChatSource {
     total: number;
     completed: boolean;
 }
-export type ChatSourceTurn = Pick<TurnRow, 'id' | 'position' | 'input_text' | 'status' | 'answer'>;
-export interface ChatBatch {
-    messages: ChatMessage[];
-    consumed: ChatSource[];
+export type TChatSourceTurn = Pick<ITurnRow, 'id' | 'position' | 'input_text' | 'status' | 'answer'>;
+export interface IChatBatch {
+    messages: IChatMessage[];
+    consumed: IChatSource[];
     digest: string;
     maxOutputTokens: number;
 }
@@ -53,8 +53,8 @@ function prefix(text: string, maximumBytes: number): string {
     if (low && /[\uD800-\uDBFF]/.test(text[low - 1]) && /[\uDC00-\uDFFF]/.test(text[low] || '')) low--;
     return text.slice(0, low);
 }
-export function chatSources(turns: readonly ChatSourceTurn[], checkpoint: ChatCheckpoint | null): ChatSource[] {
-    const result: ChatSource[] = [];
+export function chatSources(turns: readonly TChatSourceTurn[], checkpoint: IChatCheckpoint | null): IChatSource[] {
+    const result: IChatSource[] = [];
     for (const turn of turns) {
         const position = Number(turn.position);
         for (const [role, text] of [
@@ -88,8 +88,8 @@ export function chatSources(turns: readonly ChatSourceTurn[], checkpoint: ChatCh
     }
     return result;
 }
-export function projection(checkpoint: ChatCheckpoint | null, sources: ChatSource[]): ChatMessage[] {
-    const result: ChatMessage[] = checkpoint
+export function projection(checkpoint: IChatCheckpoint | null, sources: IChatSource[]): IChatMessage[] {
+    const result: IChatMessage[] = checkpoint
         ? [
               {
                   role: 'user',
@@ -108,7 +108,7 @@ export function projection(checkpoint: ChatCheckpoint | null, sources: ChatSourc
     return result;
 }
 /** Compression is triggered by actual configured capacity or bounded transport, never by turn count. */
-export function needsCompaction(messages: ChatMessage[], settings: IChatContextSettings): boolean {
+export function needsCompaction(messages: IChatMessage[], settings: IChatContextSettings): boolean {
     const context = chatContext(messages, settings);
     if (context.requestBytes > 8 * 1024 ** 2) return true;
     return (
@@ -117,16 +117,16 @@ export function needsCompaction(messages: ChatMessage[], settings: IChatContextS
             Math.max(0, context.contextWindowTokens - (context.reservedOutputTokens ?? 0)) * 0.8
     );
 }
-export function canCompact(sources: ChatSource[], pendingTurnId?: string): boolean {
+export function canCompact(sources: IChatSource[], pendingTurnId?: string): boolean {
     return sources.some((source) => source.completed && source.turnId !== pendingTurnId);
 }
 export function compactionBatch(
-    checkpoint: ChatCheckpoint | null,
-    sources: ChatSource[],
+    checkpoint: IChatCheckpoint | null,
+    sources: IChatSource[],
     settings: IChatContextSettings,
     pendingTurnId: string,
-    overhead: ChatMessage[] = [],
-): ChatBatch {
+    overhead: IChatMessage[] = [],
+): IChatBatch {
     const capacity =
         settings.contextWindowTokens && Number.isSafeInteger(settings.contextWindowTokens)
             ? settings.contextWindowTokens
@@ -148,11 +148,11 @@ export function compactionBatch(
         capacity === null ? 1024 : Math.max(32, Math.min(1024, Math.floor(capacity * 0.15), spare)),
     );
     const reserved = { ...settings, reservedOutputTokens: maxOutputTokens };
-    const base: ChatMessage[] = [
+    const base: IChatMessage[] = [
         { role: 'user', content: COMPACTION_INSTRUCTION },
         ...(checkpoint ? [{ role: 'user' as const, content: 'Ранее сохранённое резюме:\n' + checkpoint.summary }] : []),
     ];
-    const consumed: ChatSource[] = [],
+    const consumed: IChatSource[] = [],
         messages = [...base];
     // Only the oldest eligible prefix is consumed; projection is rechecked after each committed batch.
     const eligible = sources.filter((source) => source.completed && source.turnId !== pendingTurnId);

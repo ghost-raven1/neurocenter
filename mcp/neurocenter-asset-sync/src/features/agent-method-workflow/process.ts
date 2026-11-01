@@ -1,4 +1,4 @@
-import { startRoleMcpProcess, type RoleMcpProcessJournal } from '../system-role-mcp/owned-process.js';
+import { startRoleMcpProcess, type IRoleMcpProcessJournal } from '../system-role-mcp/owned-process.js';
 import type { AgentMethodFailureCode } from './contract.js';
 
 export class MethodExecutionError extends Error {
@@ -6,8 +6,12 @@ export class MethodExecutionError extends Error {
         super('Локальный цикл разработки не завершён: ' + code);
     }
 }
-export type MethodCommandResult = { code: number | null; signal: string | null; stdout: string };
-export type MethodCommandRunner = (command: string, args: string[], capture?: boolean) => Promise<MethodCommandResult>;
+export type TMethodCommandResult = { code: number | null; signal: string | null; stdout: string };
+export type TMethodCommandRunner = (
+    command: string,
+    args: string[],
+    capture?: boolean,
+) => Promise<TMethodCommandResult>;
 
 /** Only the owned wrapper receives argv; stdout is bounded and stays local unless it is parsed metadata. */
 export async function runMethodCommand(
@@ -17,9 +21,9 @@ export async function runMethodCommand(
     env: NodeJS.ProcessEnv,
     authorize: () => Promise<void>,
     signal: AbortSignal,
-    journal: RoleMcpProcessJournal,
+    journal: IRoleMcpProcessJournal,
     capture = false,
-): Promise<MethodCommandResult> {
+): Promise<TMethodCommandResult> {
     const process = await startRoleMcpProcess(command, args, root, env, authorize, signal, journal);
     // CLI run commands consume piped input before acting. There is no interactive/MCP stdin in this execution lane.
     process.child.stdin.end();

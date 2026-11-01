@@ -6,7 +6,11 @@ import { recoverMemoryCompletions } from '../features/project-learning-memory-sy
 import { PROJECT_CONFIGURATION_JOB } from '../features/project-configuration/contract.js';
 import { openProjectConfiguration } from '../features/project-configuration/index.js';
 import { closeConfigurationSessions } from '../features/project-configuration/server.js';
-import { OPENCODE_PROVIDER_JOBS, runProviderJob, type ProviderPayload } from '../features/opencode-providers/worker.js';
+import {
+    OPENCODE_PROVIDER_JOBS,
+    runProviderJob,
+    type IProviderPayload,
+} from '../features/opencode-providers/worker.js';
 import { closeProviderSessions } from '../features/opencode-providers/server.js';
 import { reindexHostedRag } from '../features/rag-hosted/reindex.js';
 import { publishProjectSnapshot } from '../features/project-snapshot/publish.js';
@@ -21,12 +25,12 @@ import {
     PROJECT_LOCAL_KINDS,
     PROJECT_LOCAL_APPLIES,
     runProjectLocalJob,
-    type ProjectLocalPayload,
+    type IProjectLocalPayload,
 } from './project-local-worker.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { io } from 'socket.io-client';
-import { api, apiHub, readState, writeState, stateDir, jobContext, type Credentials } from './state.js';
+import { api, apiHub, readState, writeState, stateDir, jobContext, type ICredentials } from './state.js';
 import {
     chooseRoot,
     prepareProjectBinding,
@@ -36,13 +40,13 @@ import {
     bridgePresenceReport,
     projectFolder,
     projectBindingId,
-    type WorkspaceBindingMode,
-    type WorkspaceBindingPreparation,
+    type TWorkspaceBindingMode,
+    type IWorkspaceBindingPreparation,
 } from './workspace.js';
 import { install, installSet } from './installer.js';
-import { packageRef, sortedRefs, type InstallSet } from './install-set.js';
+import { packageRef, sortedRefs, type IInstallSet } from './install-set.js';
 import { uninstall } from './uninstaller.js';
-import type { Package } from './package.js';
+import type { IPackage } from './package.js';
 import { inspectInstallation } from './installation-inspection.js';
 import { assertInspectionIdentity } from './inspection-identity.js';
 import { deliverCompletions, pendingCompletions, saveCompletion } from './completions.js';
@@ -60,24 +64,24 @@ import {
     CONFIGURATION_KINDS,
     runMcpConfigurationJob,
     prepareJobMcpLaunchers,
-    type ConfigurationPayload,
+    type IConfigurationPayload,
 } from './mcp-configuration-worker.js';
 import { prepareJobRuntimeArtifacts } from './job-runtime-artifacts.js';
 import { recoverRuntimePreparations, runtimePreparationCompletion } from './runtime-preparation-intent.js';
 import { runRagBridgeJob } from './rag-worker.js';
 import { recoverRagRestores } from '../features/rag-index/restore-recovery.js';
-import type { ConfigurationRevision } from '../features/runtime-probe/model.js';
+import type { IConfigurationRevision } from '../features/runtime-probe/model.js';
 import { workspaceBindingFailureResult } from './workspace-binding-error.js';
 import {
     connectHostedRag,
     startHostedRagConnections,
     stopHostedRagConnections,
-    type HostedSelection,
+    type IHostedSelection,
 } from '../features/rag-hosted/index.js';
 import { synchronizeLearningObservations } from '../features/project-learning/observation-sync.js';
 import { synchronizeOpenCodeModels } from './opencode-model-sync.js';
 import { DEVICE_CODEX_JOB } from '../features/device-codex-inference/contract.js';
-import { runDeviceCodexJob } from '../features/device-codex-inference/executor.js';
+import { runDeviceCodexJob } from '../features/device-codex-inference/executor/executor.js';
 import { recoverCodexCompletions } from '../features/device-codex-inference/receipts.js';
 import {
     runRuntimeCachePolicyJob,
@@ -107,23 +111,23 @@ const globalProviderJobs: readonly string[] = [
     globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB,
 ];
 
-interface Job {
+interface IJob {
     id: string;
     kind: string;
     project_id?: string;
     lease: string;
-    payload: { memory?: unknown } & ProjectLocalPayload &
-        ConfigurationPayload &
-        ProviderPayload &
+    payload: { memory?: unknown } & IProjectLocalPayload &
+        IConfigurationPayload &
+        IProviderPayload &
         Partial<ProjectAgentsPayload> & {
             folderName?: string;
-            package?: Package;
-            installSet?: InstallSet;
+            package?: IPackage;
+            installSet?: IInstallSet;
             bindingId?: string;
             instanceId?: string;
-            mode?: WorkspaceBindingMode;
-            preparation?: WorkspaceBindingPreparation;
-            installations?: Package[];
+            mode?: TWorkspaceBindingMode;
+            preparation?: IWorkspaceBindingPreparation;
+            installations?: IPackage[];
             workspaceFailureVersion?: 1;
             ragProtocol?: string;
             expectedBindingId?: string;
@@ -134,8 +138,8 @@ interface Job {
             changePlanId?: string;
             changePlanRevision?: 1;
             expectedChangeDigest?: string;
-            configurationRevisions?: ConfigurationRevision[];
-            embedding?: HostedSelection;
+            configurationRevisions?: IConfigurationRevision[];
+            embedding?: IHostedSelection;
             reindex?: true;
             ragReindexProtocol?: string;
         };
@@ -146,7 +150,7 @@ export async function runWorker(): Promise<void> {
     if (!(await waitForWorkerInstallation())) {
         return;
     }
-    let credentials = await readState<Credentials>('credentials');
+    let credentials = await readState<ICredentials>('credentials');
     if (!credentials) {
         return;
     }
@@ -216,7 +220,7 @@ export async function runWorker(): Promise<void> {
             return heartbeatPending;
         }
         heartbeatPending = (async () => {
-            const fresh = await readState<Credentials>('credentials');
+            const fresh = await readState<ICredentials>('credentials');
             if (stopped) {
                 return;
             }
@@ -315,7 +319,7 @@ export async function runWorker(): Promise<void> {
             while (!stopped && workspaceHealthy) {
                 const claimant = credentials!;
                 const deviceId = claimant.deviceId;
-                const current = await api<Job | null>('jobs/claim', undefined, claimant.token);
+                const current = await api<IJob | null>('jobs/claim', undefined, claimant.token);
                 if (!current) {
                     break;
                 }

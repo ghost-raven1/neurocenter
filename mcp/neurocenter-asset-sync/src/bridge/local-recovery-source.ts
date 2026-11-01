@@ -7,24 +7,24 @@ import { journalDirectory, parseJournal } from './installation-journal.js';
 import { readLocalChangePlan } from './local-change-plan-storage.js';
 import { assetKey, sameValue } from './installation-receipt.js';
 import { packageRef, sortedRefs } from './install-set.js';
-import { variantIndexDirectory, type RecoveryIndex } from './local-recovery-index.js';
-import type { RecoveryContext } from './local-recovery-context.js';
-import type { RecoverySource, LocalVariantReason } from './local-recovery.model.js';
-import type { PrivateLocalChangePlan } from './local-change-plan.model.js';
+import { variantIndexDirectory, type IRecoveryIndex } from './local-recovery-index.js';
+import type { TRecoveryContext } from './local-recovery-context.js';
+import type { IRecoverySource, TLocalVariantReason } from './local-recovery.model.js';
+import type { IPrivateLocalChangePlan } from './local-change-plan.model.js';
 
 const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 const MAX_BYTES = 64 * 1048576;
 
 /** Чтение ограничено общим бюджетом; повреждённые записи не превращаются в разрешение на запись. */
 export async function recoverySources(
-    context: RecoveryContext,
-): Promise<{ sources: RecoverySource[]; complete: boolean }> {
+    context: TRecoveryContext,
+): Promise<{ sources: IRecoverySource[]; complete: boolean }> {
     let used = 0;
     let entries = 0;
     let complete = true;
-    const sources = new Map<string, RecoverySource>();
+    const sources = new Map<string, IRecoverySource>();
     const roots = new Set([context.root]);
-    const verifiedPlans = new Map<string, PrivateLocalChangePlan>();
+    const verifiedPlans = new Map<string, IPrivateLocalChangePlan>();
     const read = async (file: string, maximum = MAX_BYTES): Promise<string> => {
         const stat = await fs.lstat(file);
         if (
@@ -40,7 +40,7 @@ export async function recoverySources(
         used += stat.size;
         return readBoundedUtf8(file, Math.min(maximum, MAX_BYTES - used + stat.size));
     };
-    const loadPlan = async (id: string): Promise<PrivateLocalChangePlan> => {
+    const loadPlan = async (id: string): Promise<IPrivateLocalChangePlan> => {
         if (!UUID.test(id)) {
             throw new Error();
         }
@@ -108,7 +108,7 @@ export async function recoverySources(
             ) {
                 return;
             }
-            let reason: LocalVariantReason = 'legacy-unverified';
+            let reason: TLocalVariantReason = 'legacy-unverified';
             let createdAt = (await fs.lstat(file)).mtime.toISOString();
             if (journal.recovery) {
                 const descriptor = journal.recovery;
@@ -176,7 +176,7 @@ export async function recoverySources(
             continue;
         }
         try {
-            const value = JSON.parse(await read(path.join(index, name), 16384)) as RecoveryIndex;
+            const value = JSON.parse(await read(path.join(index, name), 16384)) as IRecoveryIndex;
             if (
                 !value ||
                 value.schemaVersion !== 1 ||

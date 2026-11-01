@@ -1,32 +1,24 @@
 import { ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { chatHash } from './chat-validation';
-import {
-    unknownGroupUsage,
-    type ChatAgentSnapshot,
-    type ChatResolvedAgent,
-    type ChatAgentResponse,
-} from './chat-group.types';
-import { ChatRepository, type ChatDb } from './chat.repository';
-import type { ChatMessage, TurnRow } from './chat.types';
-import {
-    DISCUSSION_LIMITS,
-    type DiscussionPhase,
-    type DiscussionRun,
-    type DiscussionStep,
-} from './chat-discussion.types';
+import { unknownGroupUsage } from './chat-group.utils';
+import { type IChatAgentSnapshot, type IChatResolvedAgent, type IChatAgentResponse } from './chat-group.interfaces';
+import { ChatRepository, type TChatDb } from './chat.repository';
+import type { IChatMessage, ITurnRow } from './chat.interfaces';
+import { DISCUSSION_LIMITS } from './chat-discussion.constants';
+import { type TDiscussionPhase, type IDiscussionRun, type IDiscussionStep } from './chat-discussion.interfaces';
 
 /** A paid step is journaled once before dispatch. Reopening an uncertain step never authorizes a replay. */
 export class ChatDiscussionRepository {
     constructor(private readonly chats: ChatRepository) {}
     async create(
-        db: ChatDb,
-        turn: TurnRow,
+        db: TChatDb,
+        turn: ITurnRow,
         actorRole: string,
         model: IModel,
-        roster: ChatResolvedAgent[],
+        roster: IChatResolvedAgent[],
     ): Promise<void> {
         const deadline = new Date(Date.now() + DISCUSSION_LIMITS.deadlineMs);
         await db.query(
@@ -39,22 +31,22 @@ export class ChatDiscussionRepository {
             deadline,
         ]);
     }
-    async get(db: ChatDb, turnId: string): Promise<DiscussionRun | undefined> {
-        return (await db.query<DiscussionRun>('SELECT * FROM model_chat_discussions WHERE turn_id=$1', [turnId]))
+    async get(db: TChatDb, turnId: string): Promise<IDiscussionRun | undefined> {
+        return (await db.query<IDiscussionRun>('SELECT * FROM model_chat_discussions WHERE turn_id=$1', [turnId]))
             .rows[0];
     }
-    async runs(db: ChatDb, conversation: string, turnIds: string[]): Promise<DiscussionRun[]> {
+    async runs(db: TChatDb, conversation: string, turnIds: string[]): Promise<IDiscussionRun[]> {
         return (
-            await db.query<DiscussionRun>(
+            await db.query<IDiscussionRun>(
                 `SELECT run.* FROM model_chat_discussions run JOIN model_chat_turns turn ON turn.id=run.turn_id
             WHERE turn.conversation_id=$1 AND run.turn_id=ANY($2::uuid[])`,
                 [conversation, turnIds],
             )
         ).rows;
     }
-    async steps(db: ChatDb, conversation: string, turnIds: string[]): Promise<DiscussionStep[]> {
+    async steps(db: TChatDb, conversation: string, turnIds: string[]): Promise<IDiscussionStep[]> {
         return (
-            await db.query<DiscussionStep>(
+            await db.query<IDiscussionStep>(
                 `SELECT step.*,CASE WHEN step.status='pending' AND EXISTS(SELECT 1 FROM model_usage_calls call
             WHERE call.turn_id=step.turn_id AND call.operation_id=step.id AND call.status='pending' AND call.dispatch_count>0
             AND call.provider_latency_ms IS NULL AND call.lease_until>now()) THEN 'running' ELSE 'waiting' END AS execution_state
@@ -64,7 +56,7 @@ export class ChatDiscussionRepository {
             )
         ).rows;
     }
-    private async pending(db: ChatDb, turn: TurnRow): Promise<void> {
+    private async pending(db: TChatDb, turn: ITurnRow): Promise<void> {
         if (
             !(
                 await db.query(
@@ -79,21 +71,21 @@ export class ChatDiscussionRepository {
     async begin(
         owner: string,
         conversation: string,
-        turn: TurnRow,
-        phase: DiscussionPhase,
+        turn: ITurnRow,
+        phase: TDiscussionPhase,
         key: string,
         model: IModel,
-        snapshot: ChatAgentSnapshot | null,
-        messages: ChatMessage[],
-        authorize: (db?: ChatDb) => Promise<unknown>,
-    ): Promise<DiscussionStep> {
+        snapshot: IChatAgentSnapshot | null,
+        messages: IChatMessage[],
+        authorize: (db?: TChatDb) => Promise<unknown>,
+    ): Promise<IDiscussionStep> {
         return this.chats.owned(owner, conversation, authorize, async (db) => {
             await this.pending(db, turn);
             const run = await this.get(db, turn.id);
             if (!run || run.request_id !== turn.request_id || new Date(run.deadline_at).getTime() <= Date.now())
                 throw new ConflictException('Срок или владелец обсуждения изменился.');
             const previous = (
-                await db.query<DiscussionStep>(
+                await db.query<IDiscussionStep>(
                     'SELECT * FROM model_chat_discussion_steps WHERE turn_id=$1 AND step_key=$2',
                     [turn.id, key],
                 )
@@ -111,7 +103,7 @@ export class ChatDiscussionRepository {
             ).rows[0];
             if (!reserved) throw new ConflictException('Достигнут бюджет обсуждения. Сохранённые ответы не теряются.');
             return (
-                await db.query<DiscussionStep>(
+                await db.query<IDiscussionStep>(
                     `INSERT INTO model_chat_discussion_steps(id,turn_id,request_id,sequence,step_key,phase,model_id,model_pin,snapshot,input_hash)
                 VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) RETURNING *`,
                     [
@@ -130,7 +122,7 @@ export class ChatDiscussionRepository {
             ).rows[0];
         });
     }
-    async current(db: ChatDb, turn: TurnRow, step: DiscussionStep): Promise<void> {
+    async current(db: TChatDb, turn: ITurnRow, step: IDiscussionStep): Promise<void> {
         await this.pending(db, turn);
         if (
             !(
@@ -145,12 +137,12 @@ export class ChatDiscussionRepository {
     async finish(
         owner: string,
         conversation: string,
-        turn: TurnRow,
-        step: DiscussionStep,
+        turn: ITurnRow,
+        step: IDiscussionStep,
         status: 'done' | 'failed',
         output: string | null,
         finishReason: 'stop' | 'length' | null,
-        authorize: (db?: ChatDb) => Promise<unknown>,
+        authorize: (db?: TChatDb) => Promise<unknown>,
     ): Promise<void> {
         await this.chats.owned(owner, conversation, authorize, async (db, row) => {
             await this.current(db, turn, step);
@@ -172,7 +164,7 @@ export class ChatDiscussionRepository {
         });
     }
     /** Safe terminal metadata may be written after revocation; it can never publish model content. */
-    async cancel(db: ChatDb, turnIds: string[], message: string): Promise<void> {
+    async cancel(db: TChatDb, turnIds: string[], message: string): Promise<void> {
         await db.query(
             `UPDATE model_chat_discussion_steps SET status='cancelled',error=$2,finished_at=now()
             WHERE turn_id=ANY($1::uuid[]) AND status='pending'`,
@@ -182,8 +174,12 @@ export class ChatDiscussionRepository {
 }
 
 /** Existing chat clients can render contributions and the server-owned final summary without a new action API. */
-export function discussionResponses(turn: TurnRow, run: DiscussionRun, steps: DiscussionStep[]): ChatAgentResponse[] {
-    const responses: ChatAgentResponse[] = steps
+export function discussionResponses(
+    turn: ITurnRow,
+    run: IDiscussionRun,
+    steps: IDiscussionStep[],
+): IChatAgentResponse[] {
+    const responses: IChatAgentResponse[] = steps
         .filter((step) => step.snapshot && ['response', 'critique'].includes(step.phase))
         .map((step) => ({
             id: step.id,

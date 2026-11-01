@@ -1,18 +1,18 @@
 import { resolvePreparedRuntimeArtifact } from '../features/runtime-artifacts/cache.js';
-import type { Package } from './package.js';
+import type { IPackage } from './package.js';
 import { safeTarget } from './workspace.js';
-import type { FileChange } from './installation-files.js';
+import type { IFileChange } from './installation-files.js';
 import { readBoundedSnapshot } from './read-bounded.js';
 import { installationReadLimit } from './installation-limits.js';
 import { hash } from './state.js';
 
-interface PlannedFile {
+interface IPlannedFile {
     before: Buffer | null;
     after: Buffer | null;
     fingerprint: string | null;
     encoding?: 'base64';
 }
-export interface SnapshotFingerprint {
+export interface ISnapshotFingerprint {
     relative: string;
     fingerprint: string | null;
     sha256: string | null;
@@ -20,11 +20,11 @@ export interface SnapshotFingerprint {
 
 /** Общий снимок файлов объединяет несколько правок JSONC в единственную запись журнала. */
 export class InstallationPlan {
-    private readonly files = new Map<string, PlannedFile>();
+    private readonly files = new Map<string, IPlannedFile>();
     private readonly writes = new Set<string>();
-    private readonly runtimePackages = new Map<string, Package>();
+    private readonly runtimePackages = new Map<string, IPackage>();
     /** Повторно проверяет одобренные байты внешнего неизменяемого комплекта перед commit. */
-    expectRuntimeArtifact(pkg: Package): void {
+    expectRuntimeArtifact(pkg: IPackage): void {
         if (pkg.config?.extra?.runtimeArtifacts) {
             this.runtimePackages.set(pkg.manifest.sha256, structuredClone(pkg));
         }
@@ -92,7 +92,7 @@ export class InstallationPlan {
             }
         }
     }
-    changes(): FileChange[] {
+    changes(): IFileChange[] {
         return [...this.writes]
             .map((relative) => [relative, this.files.get(relative)!] as const)
             .filter(([, file]) =>
@@ -107,7 +107,7 @@ export class InstallationPlan {
             }));
     }
     /** Неизменяемые метаданные всех чтений защищают также ledger и соседние настройки. */
-    snapshotFingerprints(): SnapshotFingerprint[] {
+    snapshotFingerprints(): ISnapshotFingerprint[] {
         return [...this.files].map(([relative, file]) => ({
             relative,
             fingerprint: file.fingerprint,

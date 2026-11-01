@@ -6,21 +6,21 @@ import { verify } from '../../bridge/package.js';
 import { packageDependencies, packageRef, referenceKey, verifyInstallSet } from '../../bridge/install-set.js';
 import { inspectInstallation } from '../../bridge/installation-inspection.js';
 import { assertInspectionIdentity } from '../../bridge/inspection-identity.js';
-import { ProbeError, type RuntimeProbeInput, type RuntimeProbeResult } from './model.js';
+import { ProbeError, type IRuntimeProbeInput, type IRuntimeProbeResult } from './model.js';
 import { ProbeScope } from './process.js';
-import { assertNoManagedPreferences, createProfile, removeProfile, type ProbeProfile } from './profile.js';
+import { assertNoManagedPreferences, createProfile, removeProfile, type IProbeProfile } from './profile.js';
 import { checkSkill } from './skill.js';
 import { probeMcp } from './mcp.js';
 import { probePlugin } from './plugin.js';
 import { probeConfigurations } from './configuration.js';
 import { windowsJobHelper } from './windows-job.js';
 
-export type { RuntimeProbeInput, RuntimeProbeResult, RuntimeProbeStatus, RuntimeProbeCode } from './model.js';
+export type { IRuntimeProbeInput, IRuntimeProbeResult, TRuntimeProbeStatus, TRuntimeProbeCode } from './model.js';
 const active = new Set<string>();
-const sameRef = (a: RuntimeProbeInput['target'], b: RuntimeProbeInput['target']): boolean =>
+const sameRef = (a: IRuntimeProbeInput['target'], b: IRuntimeProbeInput['target']): boolean =>
     a.kind === b.kind && a.id === b.id && a.version === b.version && a.manifest === b.manifest;
 
-function validate(input: RuntimeProbeInput): void {
+function validate(input: IRuntimeProbeInput): void {
     const set = input.frozenSet;
     if (
         !input.projectId ||
@@ -76,7 +76,7 @@ function validate(input: RuntimeProbeInput): void {
         throw new Error();
     }
 }
-async function current(input: RuntimeProbeInput, scope: ProbeScope): Promise<void> {
+async function current(input: IRuntimeProbeInput, scope: ProbeScope): Promise<void> {
     for (const pkg of input.frozenSet.packages) {
         let result;
         try {
@@ -98,7 +98,7 @@ async function current(input: RuntimeProbeInput, scope: ProbeScope): Promise<voi
 }
 
 /** Хэш проверяется для фактически исполняемой копии, включая разрешённую внешнюю ad-hoc подпись. */
-async function assertEngine(input: RuntimeProbeInput, scope: ProbeScope): Promise<void> {
+async function assertEngine(input: IRuntimeProbeInput, scope: ProbeScope): Promise<void> {
     if (
         input.openCode.version !== '1.14.48' ||
         !/^[a-f0-9]{64}$/.test(input.openCode.sha256) ||
@@ -153,8 +153,8 @@ async function assertEngine(input: RuntimeProbeInput, scope: ProbeScope): Promis
 }
 
 /** Явная диагностика уже установленного frozen набора. Не устанавливает пакеты и не изменяет рабочий проект. */
-export async function runRuntimeProbe(source: RuntimeProbeInput): Promise<RuntimeProbeResult> {
-    const result: RuntimeProbeResult = {
+export async function runRuntimeProbe(source: IRuntimeProbeInput): Promise<IRuntimeProbeResult> {
+    const result: IRuntimeProbeResult = {
         schemaVersion: 1,
         projectId: source.projectId,
         bindingId: source.bindingId,
@@ -171,11 +171,11 @@ export async function runRuntimeProbe(source: RuntimeProbeInput): Promise<Runtim
         counts: { packages: 0, files: 0, skills: 0, mcp: 0, tools: 0, resources: 0, prompts: 0, pluginsInitialized: 0 },
     };
     const scope = new ProbeScope();
-    let profile: ProbeProfile | undefined;
+    let profile: IProbeProfile | undefined;
     let lease: string | undefined;
     try {
         // Callback не может незаметно изменить frozen bytes во время авторизации.
-        let input: RuntimeProbeInput;
+        let input: IRuntimeProbeInput;
         try {
             input = { ...structuredClone({ ...source, authorize: undefined }), authorize: source.authorize };
             validate(input);

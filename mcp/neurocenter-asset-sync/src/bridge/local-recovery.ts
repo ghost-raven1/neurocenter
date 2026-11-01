@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { hash } from './state.js';
-import type { Package } from './package.js';
-import { packageRef, sortedRefs, type InstallSet } from './install-set.js';
+import type { IPackage } from './package.js';
+import { packageRef, sortedRefs, type IInstallSet } from './install-set.js';
 import { assetKey, sameValue } from './installation-receipt.js';
 import { commitChanges, withProjectFiles } from './installation-files.js';
 import { validateChanges } from './installation-journal.js';
 import { freezeRecoveryPackages, recoveryContext } from './local-recovery-context.js';
 import { recoverySources } from './local-recovery-source.js';
 import { recoveryTargets } from './local-recovery-changes.js';
-import { LocalRecoveryError, type LocalVariantList } from './local-recovery.model.js';
+import { LocalRecoveryError, type ILocalVariantList } from './local-recovery.model.js';
 import {
     localChangeDigest,
     localChangeFiles,
@@ -17,18 +17,22 @@ import {
     saveLocalChangePlan,
     verifyLocalChangeSnapshot,
 } from './local-change-plan-storage.js';
-import type { ApplyLocalChangeOptions, LocalChangeSummary, PrivateLocalChangePlan } from './local-change-plan.model.js';
-export type { LocalVariantList, LocalVariantEntry, LocalVariantReason } from './local-recovery.model.js';
-type Authorize = () => Promise<unknown>;
-type Progress = (percent: number, message: string) => Promise<unknown>;
+import type {
+    IApplyLocalChangeOptions,
+    ILocalChangeSummary,
+    IPrivateLocalChangePlan,
+} from './local-change-plan.model.js';
+export type { ILocalVariantList, ILocalVariantEntry, TLocalVariantReason } from './local-recovery.model.js';
+type TAuthorize = () => Promise<unknown>;
+type TProgress = (percent: number, message: string) => Promise<unknown>;
 
 /** Список содержит только метаданные копий текущего инструмента, без локального содержимого. */
 export async function listLocalVariants(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
-    authorize: Authorize,
-): Promise<LocalVariantList> {
+    pkg: IPackage,
+    set: IInstallSet | undefined,
+    authorize: TAuthorize,
+): Promise<ILocalVariantList> {
     const frozen = freezeRecoveryPackages(pkg, set);
     return withProjectFiles(projectId, async (root) => {
         const context = await recoveryContext(projectId, root, frozen);
@@ -74,11 +78,11 @@ export async function listLocalVariants(
 /** Preview никогда не применяет копию: он фиксирует выбранные пути и текущие CAS-снимки. */
 export async function prepareLocalRestore(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
+    pkg: IPackage,
+    set: IInstallSet | undefined,
     options: { recoveryId: string; paths?: string[] },
-    authorize: Authorize,
-): Promise<LocalChangeSummary> {
+    authorize: TAuthorize,
+): Promise<ILocalChangeSummary> {
     const frozen = freezeRecoveryPackages(pkg, set);
     options = structuredClone(options);
     return withProjectFiles(projectId, async (root) => {
@@ -98,7 +102,7 @@ export async function prepareLocalRestore(
         await context.assertIdentity();
         await context.plan.verifySnapshot();
         const now = new Date();
-        const summary: LocalChangeSummary = {
+        const summary: ILocalChangeSummary = {
             schemaVersion: 1,
             planId: randomUUID(),
             revision: 1,
@@ -107,7 +111,7 @@ export async function prepareLocalRestore(
             bindingId: context.bindingId,
             instanceId: context.instanceId,
             assetId: frozen.pkg.plugin.id,
-            assetKind: frozen.pkg.plugin.kind as LocalChangeSummary['assetKind'],
+            assetKind: frozen.pkg.plugin.kind as ILocalChangeSummary['assetKind'],
             version: frozen.pkg.plugin.version,
             manifest: frozen.pkg.manifest.sha256,
             checkedAt: now.toISOString(),
@@ -115,7 +119,7 @@ export async function prepareLocalRestore(
             status: 'prepared',
             files: localChangeFiles(changes),
         };
-        const saved: PrivateLocalChangePlan = {
+        const saved: IPrivateLocalChangePlan = {
             schemaVersion: 1,
             summary,
             root,
@@ -138,10 +142,10 @@ export async function prepareLocalRestore(
 /** Применение пишет только просмотренные собственные bytes и сохраняет текущий вариант обычной транзакцией. */
 export async function applyLocalRestore(
     projectId: string,
-    pkg: Package,
-    options: ApplyLocalChangeOptions,
-    authorize: Authorize,
-    progress: Progress,
+    pkg: IPackage,
+    options: IApplyLocalChangeOptions,
+    authorize: TAuthorize,
+    progress: TProgress,
 ) {
     const frozen = freezeRecoveryPackages(pkg, options.installSet);
     const saved = await readLocalChangePlan(options.planId);

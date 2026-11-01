@@ -2,23 +2,23 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { assetKey } from '../../bridge/installation-receipt.js';
 import { ProbeError } from './model.js';
 import type { ProbeScope } from './process.js';
 
-export interface ProbeProfile {
+export interface IProbeProfile {
     root: string;
     project: string;
     config: string;
     env: NodeJS.ProcessEnv;
-    packageDirectory(pkg: Package): string;
+    packageDirectory(pkg: IPackage): string;
 }
 const lockedDependency = { '@opencode-ai/plugin': '1.14.48' };
 const forbiddenEnvironment =
     /^(HOME|USERPROFILE|PATH|SHELL|ENV|BASH_ENV|APPDATA|LOCALAPPDATA|TMPDIR|TMP|TEMP|NODE_OPTIONS|NODE_PATH|XDG_.*|OPENCODE_.*|BUN_.*|NPM_.*|PIP_.*|PYTHON.*|LD_.*|DYLD_.*)$/i;
 
-export function packageEnvironment(pkg: Package, base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function packageEnvironment(pkg: IPackage, base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     const env = pkg.config?.env ?? {};
     if (Object.keys(env).some((key) => forbiddenEnvironment.test(key))) {
         throw new ProbeError('unsupported', 'unsafe-environment');
@@ -50,7 +50,7 @@ export async function assertNoManagedPreferences(): Promise<void> {
 }
 
 /** Материализует только одобренные байты, полностью исключая личные конфиги и переменные окружения. */
-export async function createProfile(packages: Package[], scope: ProbeScope): Promise<ProbeProfile> {
+export async function createProfile(packages: IPackage[], scope: ProbeScope): Promise<IProbeProfile> {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-runtime-probe-')));
     try {
         await fs.chmod(root, 0o700);
@@ -119,7 +119,7 @@ export async function createProfile(packages: Package[], scope: ProbeScope): Pro
             PIP_DISABLE_PIP_VERSION_CHECK: '1',
         };
         await fs.mkdir(env.TMPDIR!, { mode: 0o700 });
-        const packageDirectory = (pkg: Package): string => path.join(root, 'packages', assetKey(pkg));
+        const packageDirectory = (pkg: IPackage): string => path.join(root, 'packages', assetKey(pkg));
         for (const pkg of packages) {
             for (const file of pkg.files) {
                 scope.remaining();
@@ -139,7 +139,7 @@ export async function createProfile(packages: Package[], scope: ProbeScope): Pro
     }
 }
 
-export async function configurePlugin(profile: ProbeProfile, wrapper: string): Promise<void> {
+export async function configurePlugin(profile: IProbeProfile, wrapper: string): Promise<void> {
     await fs.chmod(profile.config, 0o700);
     await fs.chmod(path.join(profile.config, 'opencode.json'), 0o600).catch(() => {});
     await fs.writeFile(
@@ -167,7 +167,7 @@ export async function configurePlugin(profile: ProbeProfile, wrapper: string): P
 }
 
 /** Перед очисткой возвращает права только собственному временному config directory. */
-export async function removeProfile(profile: ProbeProfile): Promise<void> {
+export async function removeProfile(profile: IProbeProfile): Promise<void> {
     await fs.chmod(profile.config, 0o700).catch(() => {});
     await fs.chmod(path.join(profile.config, 'node_modules'), 0o700).catch(() => {});
     await fs.rm(profile.root, { recursive: true, force: true });

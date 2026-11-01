@@ -2,17 +2,17 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { Pool } from 'pg';
-import type { ChatDb } from './chat.repository';
+import type { TChatDb } from './chat.repository';
 import { chatUuid } from './chat-validation';
 import type {
-    ChatResearchHistory,
-    ChatResearchRequest,
-    ChatResearchStep,
-    ChatResearchStepSummary,
-    FinishResearchStep,
-    StartResearchStep,
-} from './chat-research.types';
-interface StepRow {
+    IChatResearchHistory,
+    IChatResearchRequest,
+    IChatResearchStep,
+    IChatResearchStepSummary,
+    IFinishResearchStep,
+    IStartResearchStep,
+} from './chat-research.interfaces';
+interface IStepRow {
     id: string;
     conversation_id: string;
     turn_id: string;
@@ -20,8 +20,8 @@ interface StepRow {
     request_id: string;
     attempt: number;
     sequence: number;
-    kind: ChatResearchStep['kind'];
-    status: ChatResearchStep['status'];
+    kind: IChatResearchStep['kind'];
+    status: IChatResearchStep['status'];
     input: Record<string, unknown>;
     output: string;
     sources: unknown[];
@@ -36,7 +36,7 @@ const kinds = new Set(['planner', 'project_search', 'project_read', 'external_se
 const keys = new Set(['query', 'sourceId', 'path', 'startLine', 'endLine', 'tool', 'arguments', 'modelId', 'modelPin']);
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
-const summary = (row: StepRow): ChatResearchStepSummary => ({
+const summary = (row: IStepRow): IChatResearchStepSummary => ({
     id: row.id,
     conversationId: row.conversation_id,
     turnId: row.turn_id,
@@ -51,14 +51,14 @@ const summary = (row: StepRow): ChatResearchStepSummary => ({
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
 });
-const full = (row: StepRow): ChatResearchStep => ({
+const full = (row: IStepRow): IChatResearchStep => ({
     ...summary(row),
     input: row.input,
     output: row.output,
     sources: row.sources,
 });
 /** Canonical immutable consent lists only actual requested sources, never provider credentials. */
-export function chatResearchRequest(raw: unknown): ChatResearchRequest {
+export function chatResearchRequest(raw: unknown): IChatResearchRequest {
     if (
         !object(raw) ||
         Object.keys(raw).some((key) => !['project', 'external'].includes(key)) ||
@@ -66,7 +66,7 @@ export function chatResearchRequest(raw: unknown): ChatResearchRequest {
         (!raw.project && !raw.external)
     )
         throw new BadRequestException('Выберите источник исследования.');
-    let external: ChatResearchRequest['external'];
+    let external: IChatResearchRequest['external'];
     if (raw.external !== undefined) {
         const value = raw.external;
         if (
@@ -152,12 +152,12 @@ function stepInput(raw: unknown): Record<string, unknown> {
 export class ChatResearchRepository {
     constructor(readonly pool: Pool) {}
     /** Batch history shows the latest explicit attempt per recipient only; immutable older receipts remain available by scoped ID. */
-    async list(db: ChatDb, conversationId: string, turnIds: string[]): Promise<ChatResearchStepSummary[]> {
+    async list(db: TChatDb, conversationId: string, turnIds: string[]): Promise<IChatResearchStepSummary[]> {
         chatUuid(conversationId);
         if (turnIds.length > 50) throw new BadRequestException('Слишком большая страница истории.');
         turnIds.forEach(chatUuid);
         if (!turnIds.length) return [];
-        const { rows } = await db.query<StepRow>(
+        const { rows } = await db.query<IStepRow>(
             `SELECT ${columns
                 .split(',')
                 .map((column) =>
@@ -172,10 +172,10 @@ export class ChatResearchRepository {
         );
         return rows.map(summary);
     }
-    async get(db: ChatDb, conversationId: string, id: string): Promise<ChatResearchStep> {
+    async get(db: TChatDb, conversationId: string, id: string): Promise<IChatResearchStep> {
         chatUuid(conversationId);
         chatUuid(id);
-        const { rows } = await db.query<StepRow>(
+        const { rows } = await db.query<IStepRow>(
             `SELECT *,octet_length(output) AS output_bytes FROM model_chat_research_steps WHERE conversation_id=$1 AND id=$2`,
             [conversationId, id],
         );
@@ -184,11 +184,11 @@ export class ChatResearchRepository {
     }
     /** Explicit bounded pages expose every immutable attempt without loading private tool outputs into history lists. */
     async history(
-        db: ChatDb,
+        db: TChatDb,
         conversationId: string,
         turnId: string,
         options: { before?: string; limit?: number } = {},
-    ): Promise<ChatResearchHistory> {
+    ): Promise<IChatResearchHistory> {
         chatUuid(conversationId);
         chatUuid(turnId);
         if (options.before !== undefined) chatUuid(options.before);
@@ -214,7 +214,7 @@ export class ChatResearchRepository {
             ).rowCount
         )
             throw new NotFoundException('Курсор исследования не найден.');
-        const { rows } = await db.query<StepRow>(
+        const { rows } = await db.query<IStepRow>(
             `SELECT ${columns} FROM model_chat_research_steps WHERE conversation_id=$1 AND turn_id=$2
    AND ($3::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM model_chat_research_steps WHERE conversation_id=$1 AND turn_id=$2 AND id=$3))
    ORDER BY created_at DESC,id DESC LIMIT $4`,
@@ -224,7 +224,7 @@ export class ChatResearchRepository {
             hasMore = rows.length > limit;
         return { items, history: { hasMore, nextCursor: hasMore ? items.at(-1)!.id : null } };
     }
-    async start(db: ChatDb, input: StartResearchStep): Promise<ChatResearchStep> {
+    async start(db: TChatDb, input: IStartResearchStep): Promise<IChatResearchStep> {
         const { conversationId, turnId, requestId } = input;
         [conversationId, turnId, requestId].forEach(chatUuid);
         if (input.responseId) chatUuid(input.responseId);
@@ -247,7 +247,7 @@ export class ChatResearchRepository {
         if (!parent || !attempt || !parent.research_request)
             throw new ConflictException('Сообщение не разрешает это исследование.');
         const prior = (
-            await db.query<StepRow>(
+            await db.query<IStepRow>(
                 'SELECT *,octet_length(output) AS output_bytes FROM model_chat_research_steps WHERE turn_id=$1 AND response_id IS NOT DISTINCT FROM $2::uuid AND attempt=$3 AND sequence=$4',
                 [turnId, input.responseId ?? null, attempt, input.sequence],
             )
@@ -280,7 +280,7 @@ export class ChatResearchRepository {
         );
         if (previous.rows[0].pending || previous.rows[0].count + 1 !== input.sequence)
             throw new ConflictException('Предыдущий шаг ещё выполняется или порядок шагов изменился.');
-        const result = await db.query<StepRow>(
+        const result = await db.query<IStepRow>(
             'INSERT INTO model_chat_research_steps(id,conversation_id,turn_id,response_id,request_id,attempt,sequence,kind,input) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) RETURNING *,octet_length(output) AS output_bytes',
             [
                 randomUUID(),
@@ -296,7 +296,7 @@ export class ChatResearchRepository {
         );
         return full(result.rows[0]);
     }
-    async finish(db: ChatDb, input: FinishResearchStep): Promise<ChatResearchStep> {
+    async finish(db: TChatDb, input: IFinishResearchStep): Promise<IChatResearchStep> {
         chatUuid(input.id);
         chatUuid(input.requestId);
         if (!['done', 'failed', 'cancelled'].includes(input.status))
@@ -316,7 +316,7 @@ export class ChatResearchRepository {
         )
             throw new BadRequestException('Результат шага превышает допустимый размер или имеет неверный формат.');
         const prior = (
-            await db.query<StepRow>(
+            await db.query<IStepRow>(
                 'SELECT *,octet_length(output) AS output_bytes FROM model_chat_research_steps WHERE id=$1 AND request_id=$2 FOR UPDATE',
                 [input.id, input.requestId],
             )
@@ -332,7 +332,7 @@ export class ChatResearchRepository {
                 return full(prior);
             throw new ConflictException('Результат шага уже сохранён.');
         }
-        const result = await db.query<StepRow>(
+        const result = await db.query<IStepRow>(
             `UPDATE model_chat_research_steps s SET status=$3,output=$4,sources=$5::jsonb,error=$6,updated_at=now(),finished_at=now() WHERE s.id=$1 AND s.request_id=$2 AND s.status='pending'
    AND EXISTS(SELECT 1 FROM model_chat_turns t WHERE t.id=s.turn_id AND t.status='pending' AND t.request_id=s.request_id AND t.lease_until>now() AND t.removed_at IS NULL)
    AND (s.response_id IS NULL OR EXISTS(SELECT 1 FROM model_chat_agent_responses r WHERE r.id=s.response_id AND r.status='pending' AND r.request_id=s.request_id)) RETURNING s.*,octet_length(s.output) AS output_bytes`,
@@ -342,7 +342,7 @@ export class ChatResearchRepository {
             throw new ConflictException('Исследование остановлено. Уже сохранённые результаты доступны в истории.');
         return full(result.rows[0]);
     }
-    async cancelUnfinished(db: ChatDb, conversationId: string, turnId: string, requestId: string): Promise<number> {
+    async cancelUnfinished(db: TChatDb, conversationId: string, turnId: string, requestId: string): Promise<number> {
         [conversationId, turnId, requestId].forEach(chatUuid);
         return (
             (

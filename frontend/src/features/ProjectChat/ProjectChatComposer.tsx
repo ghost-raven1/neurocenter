@@ -1,152 +1,556 @@
-import {Alert, Button, Mentions, Select, Typography} from 'antd';
-import {useEffect, useRef, useState} from 'react';
-import type {MentionsRef} from 'antd/lib/mentions';
-import {errorMessage} from '../../common/utils/errorMessage';
-import {useFeatureAvailability} from '../FeatureFlags/FeatureAvailability';
-import {useAuthRequestOwner} from '../UserBlock/useAuthRequestOwner';
-import {chatMentions} from '../ModelChat/participants';
-import {chatSystemRoleMention, chatSystemRoleOptions} from '../ChatSystemRoles/mentions';
-import {chatRoleOriginKey, type ChatRoleLaunch, type ChatRoleAction} from '../ChatSystemRoles/types';
-import {ChatSendAction} from '../ChatCommon/ChatSendAction';
-import {useChatEnter} from '../ChatCommon/useChatEnter';
-import {useAgentTools} from '../AgentTools/useAgentTools';
-import {AgentToolsControls, AgentToolsGrantSummary} from '../AgentTools/AgentToolsControls';
-import type {SystemRoleId} from '../SystemRoles/types';
-import {emptyProjectChatDraft, PROJECT_CHAT_MESSAGE_BYTES, projectChatAmbiguous, projectChatAuthor, projectChatRequestKey} from './model';
-import type {ProjectChatDetail, ProjectChatDraft, ProjectChatIntent, ProjectChatMessage, ProjectChatReceipt} from './types';
-import {ProjectChatPanel} from './ProjectChatPanel';
-import {projectChatDraftScope, readProjectChatDraft, saveProjectChatDraft} from './draftStorage';
+import { Alert, Button, Mentions, Select, Typography } from 'antd';
+import { useEffect, useRef, useState } from 'react';
+import type { MentionsRef } from 'antd/lib/mentions';
+import { errorMessage } from '../../common/utils/errorMessage';
+import { useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
+import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
+import { chatMentions } from '../ModelChat/participants';
+import { chatSystemRoleMention, chatSystemRoleOptions } from '../ChatSystemRoles/mentions';
+import { chatRoleOriginKey } from '../ChatSystemRoles/utils';
+import { type IChatRoleLaunch, type TChatRoleAction } from '../ChatSystemRoles/interfaces';
+import { ChatSendAction } from '../ChatCommon/ChatSendAction';
+import { useChatEnter } from '../../common/hooks/useChatEnter';
+import { useAgentTools } from '../AgentTools/hooks/useAgentTools';
+import { AgentToolsControls, AgentToolsGrantSummary } from '../AgentTools/AgentToolsControls';
+import type { TSystemRoleId } from '../SystemRoles/interfaces';
+import {
+    emptyProjectChatDraft,
+    PROJECT_CHAT_MESSAGE_BYTES,
+    projectChatAmbiguous,
+    projectChatAuthor,
+    projectChatRequestKey,
+} from './model';
+import type {
+    IProjectChatDetail,
+    IProjectChatDraft,
+    IProjectChatIntent,
+    IProjectChatMessage,
+    IProjectChatReceipt,
+} from './interfaces';
+import { ProjectChatPanel } from './ProjectChatPanel';
+import { projectChatDraftScope, readProjectChatDraft, saveProjectChatDraft } from './draftStorage';
 
-interface Props {
-    draftKey: string; detail: ProjectChatDetail; reply?: ProjectChatMessage;
-    onCancelReply: () => void; onFrozenChange?: (value: boolean) => void;
+interface IProps {
+    draftKey: string;
+    detail: IProjectChatDetail;
+    reply?: IProjectChatMessage;
+    onCancelReply: () => void;
+    onFrozenChange?: (value: boolean) => void;
     onTyping?: (body: string) => void;
-    onSend: (intent: ProjectChatIntent) => Promise<ProjectChatReceipt>;
-    onSystemRole?: (launch?: ChatRoleLaunch) => void;
-    systemTaskKey?: number; systemAction?: ChatRoleAction; onSystemInstructionChange?: (key: number, instruction: string) => void;
+    onSend: (intent: IProjectChatIntent) => Promise<IProjectChatReceipt>;
+    onSystemRole?: (launch?: IChatRoleLaunch) => void;
+    systemTaskKey?: number;
+    systemAction?: TChatRoleAction;
+    onSystemInstructionChange?: (key: number, instruction: string) => void;
 }
 
 /** A shared-room post gets a short durable receipt; other questions can arrive while agents work. */
-export function ProjectChatComposer({draftKey, detail, reply, onCancelReply, onFrozenChange, onTyping, onSend, onSystemRole, systemTaskKey, systemAction, onSystemInstructionChange}: Props): JSX.Element {
-    const {captureOwner} = useAuthRequestOwner(), availability = useFeatureAvailability('project_chat'), inference = useFeatureAvailability('group_chat');
+export function ProjectChatComposer({
+    draftKey,
+    detail,
+    reply,
+    onCancelReply,
+    onFrozenChange,
+    onTyping,
+    onSend,
+    onSystemRole,
+    systemTaskKey,
+    systemAction,
+    onSystemInstructionChange,
+}: IProps): JSX.Element {
+    const { captureOwner } = useAuthRequestOwner(),
+        availability = useFeatureAvailability('project_chat'),
+        inference = useFeatureAvailability('group_chat');
     const draftScope = projectChatDraftScope(draftKey);
-    const [draft, setDraft] = useState<ProjectChatDraft>(() => readProjectChatDraft(draftScope));
-    const [sending, setSending] = useState(false), [error, setError] = useState('');
+    const [draft, setDraft] = useState<IProjectChatDraft>(() => readProjectChatDraft(draftScope));
+    const [sending, setSending] = useState(false),
+        [error, setError] = useState('');
     const [recipientsOpen, setRecipientsOpen] = useState(false);
-    const [toolsOpen,setToolsOpen] = useState(false), agentTools = useAgentTools(draftKey,detail.room.projectId);
-    const latest = useRef(draft), lock = useRef(false), text = useRef<MentionsRef>(null), alive = useRef(true);
+    const [toolsOpen, setToolsOpen] = useState(false),
+        agentTools = useAgentTools(draftKey, detail.room.projectId);
+    const latest = useRef(draft),
+        lock = useRef(false),
+        text = useRef<MentionsRef>(null),
+        alive = useRef(true);
     const roleSequence = useRef(0);
-    const activeTask = useRef(systemTaskKey); activeTask.current = systemTaskKey;
+    const activeTask = useRef(systemTaskKey);
+    activeTask.current = systemTaskKey;
     latest.current = draft;
     const frozen = sending || !!draft.pending;
-    const dialogs = useFeatureAvailability('project_chat_dialogs'), custom = !!detail.room.id && detail.room.id !== '00000000-0000-0000-0000-000000000000';
-    const canSend = availability.enabled && (!custom || dialogs.enabled), privateRoom = detail.room.visibility === 'PRIVATE';
-    useEffect(() => {if (frozen || !detail.canPost || !canSend) onTyping?.(''); return () => onTyping?.('');}, [onTyping, frozen, detail.canPost, canSend]);
-    const audience = privateRoom ? 'Переписка видна только участникам этого диалога.' : 'Переписка видна участникам проекта.';
-    const update = (value: ProjectChatDraft): void => {latest.current = value; saveProjectChatDraft(draftScope, value); setDraft(value);};
-    useEffect(() => {alive.current = true; return () => {alive.current = false;};}, []);
-    useEffect(() => {onFrozenChange?.(frozen);}, [frozen, onFrozenChange]);
+    const dialogs = useFeatureAvailability('project_chat_dialogs'),
+        custom = !!detail.room.id && detail.room.id !== '00000000-0000-0000-0000-000000000000';
+    const canSend = availability.enabled && (!custom || dialogs.enabled),
+        privateRoom = detail.room.visibility === 'PRIVATE';
+    useEffect(() => {
+        if (frozen || !detail.canPost || !canSend) onTyping?.('');
+        return () => onTyping?.('');
+    }, [onTyping, frozen, detail.canPost, canSend]);
+    const audience = privateRoom
+        ? 'Переписка видна только участникам этого диалога.'
+        : 'Переписка видна участникам проекта.';
+    const update = (value: IProjectChatDraft): void => {
+        latest.current = value;
+        saveProjectChatDraft(draftScope, value);
+        setDraft(value);
+    };
+    useEffect(() => {
+        alive.current = true;
+        return () => {
+            alive.current = false;
+        };
+    }, []);
+    useEffect(() => {
+        onFrozenChange?.(frozen);
+    }, [frozen, onFrozenChange]);
     useEffect(() => {
         if (!reply || latest.current.reply?.id === reply.id || latest.current.pending || lock.current) return;
-        update({...latest.current, reply, delivery: 'people', agentIds: []}); setError(''); text.current?.focus();
+        update({ ...latest.current, reply, delivery: 'people', agentIds: [] });
+        setError('');
+        text.current?.focus();
     }, [reply?.id]);
-    const selectedReply = draft.pending?.replyToId ? draft.reply : draft.reply ?? reply;
-    const roomAgents = detail.agents.filter(agent => detail.room.agentIds.includes(agent.agentId));
-    const activeRoomAgents = roomAgents.filter(agent => agent.status === 'active');
-    const agentsHelp = detail.canConfigure ? 'Откройте «Настроить агентов» или уберите @, чтобы написать участникам.' : 'Попросите администратора проекта добавить агентов или уберите @, чтобы написать участникам.';
+    const selectedReply = draft.pending?.replyToId ? draft.reply : (draft.reply ?? reply);
+    const roomAgents = detail.agents.filter((agent) => detail.room.agentIds.includes(agent.agentId));
+    const activeRoomAgents = roomAgents.filter((agent) => agent.status === 'active');
+    const agentsHelp = detail.canConfigure
+        ? 'Откройте «Настроить агентов» или уберите @, чтобы написать участникам.'
+        : 'Попросите администратора проекта добавить агентов или уберите @, чтобы написать участникам.';
     const emptyRoomText = `В группе нет агентов. ${agentsHelp}`;
-    const role = onSystemRole && systemTaskKey === undefined && !draft.pending ? chatSystemRoleMention(draft.body, roomAgents) : undefined;
-    useEffect(() => {if (systemTaskKey !== undefined) onSystemInstructionChange?.(systemTaskKey, chatSystemRoleMention(draft.body, roomAgents).instruction);}, [systemTaskKey,draft.body]);
-    const mentions = chatMentions(draft.body, roomAgents), explicit = systemTaskKey === undefined && mentions.hasMentions && !draft.pending && !role?.agentId && !role?.error;
+    const role =
+        onSystemRole && systemTaskKey === undefined && !draft.pending
+            ? chatSystemRoleMention(draft.body, roomAgents)
+            : undefined;
+    useEffect(() => {
+        if (systemTaskKey !== undefined)
+            onSystemInstructionChange?.(systemTaskKey, chatSystemRoleMention(draft.body, roomAgents).instruction);
+    }, [systemTaskKey, draft.body]);
+    const mentions = chatMentions(draft.body, roomAgents),
+        explicit =
+            systemTaskKey === undefined && mentions.hasMentions && !draft.pending && !role?.agentId && !role?.error;
     const mentionError = mentions.error && !roomAgents.length ? emptyRoomText : mentions.error;
-    const targets = draft.pending ? draft.pending.targetAgentIds ?? [] : explicit ? mentions.ids : draft.delivery === 'people' ? [] : draft.delivery === 'group' ? detail.room.agentIds : draft.agentIds;
-    const asksAgents = systemTaskKey === undefined && !role?.agentId && !role?.error && (targets.length > 0 || !draft.pending && (explicit || draft.delivery !== 'people'));
-    const unavailable = targets.find(id => roomAgents.find(agent => agent.agentId === id)?.status !== 'active');
-    const recipients = targets.map(id => detail.agents.find(agent => agent.agentId === id)?.name ?? 'Недоступный агент');
+    const targets = draft.pending
+        ? (draft.pending.targetAgentIds ?? [])
+        : explicit
+          ? mentions.ids
+          : draft.delivery === 'people'
+            ? []
+            : draft.delivery === 'group'
+              ? detail.room.agentIds
+              : draft.agentIds;
+    const asksAgents =
+        systemTaskKey === undefined &&
+        !role?.agentId &&
+        !role?.error &&
+        (targets.length > 0 || (!draft.pending && (explicit || draft.delivery !== 'people')));
+    const unavailable = targets.find((id) => roomAgents.find((agent) => agent.agentId === id)?.status !== 'active');
+    const recipients = targets.map(
+        (id) => detail.agents.find((agent) => agent.agentId === id)?.name ?? 'Недоступный агент',
+    );
     const recovering = !!draft.pending && !sending;
-    const feedback = recovering || !!error || !!role?.error || !canSend || asksAgents && !inference.enabled && !draft.pending;
-    const openSystemRole = (agentId: SystemRoleId, instruction: string): void => {
+    const feedback =
+        recovering || !!error || !!role?.error || !canSend || (asksAgents && !inference.enabled && !draft.pending);
+    const openSystemRole = (agentId: TSystemRoleId, instruction: string): void => {
         const owns = captureOwner();
         if (!onSystemRole || frozen || !owns()) return;
-        const origin = chatRoleOriginKey({kind: 'project-chat', originId: detail.room.id ?? '00000000-0000-0000-0000-000000000000', projectId: detail.room.projectId});
+        const origin = chatRoleOriginKey({
+            kind: 'project-chat',
+            originId: detail.room.id ?? '00000000-0000-0000-0000-000000000000',
+            projectId: detail.room.projectId,
+        });
         onTyping?.('');
         const key = ++roleSequence.current;
         activeTask.current = key;
-        onSystemRole({key, origin, agentId, instruction, ...(detail.room.modelId ? {modelId: detail.room.modelId} : {}),
-            onAccepted: accepted => {if (!owns() || !alive.current || activeTask.current !== key) return;
-                if (chatSystemRoleMention(latest.current.body, roomAgents).instruction.trim() === (accepted ?? instruction).trim()) {update(emptyProjectChatDraft()); onCancelReply();}
-                onSystemRole(undefined);}});
+        onSystemRole({
+            key,
+            origin,
+            agentId,
+            instruction,
+            ...(detail.room.modelId ? { modelId: detail.room.modelId } : {}),
+            onAccepted: (accepted) => {
+                if (!owns() || !alive.current || activeTask.current !== key) return;
+                if (
+                    chatSystemRoleMention(latest.current.body, roomAgents).instruction.trim() ===
+                    (accepted ?? instruction).trim()
+                ) {
+                    update(emptyProjectChatDraft());
+                    onCancelReply();
+                }
+                onSystemRole(undefined);
+            },
+        });
     };
     const send = async (): Promise<void> => {
         const owns = captureOwner();
-        if (systemTaskKey !== undefined) {if (owns() && !systemAction?.disabled) systemAction?.onClick(); return;}
-        if (lock.current || !owns() || !draft.pending && (!detail.canPost || !canSend)) return;
-        if (!draft.pending && !draft.body.trim()) {setError('Напишите сообщение.'); text.current?.focus(); return;}
-        if (!draft.pending && role?.error) {setError(role.error); return;}
-        if (!draft.pending && role?.agentId) {openSystemRole(role.agentId, role.instruction); return;}
-        if (!draft.pending && new TextEncoder().encode(draft.body.trim()).length > PROJECT_CHAT_MESSAGE_BYTES) {setError('Сообщение слишком большое: допустимо до 128 КиБ текста UTF-8. Сократите его.'); return;}
-        if (!draft.pending && explicit && mentionError) {setError(mentionError); text.current?.focus(); return;}
-        if (!draft.pending && asksAgents && (!inference.enabled || !targets.length || unavailable)) {
-            setError(!inference.enabled ? inference.reason : !targets.length ? 'Выберите доступного агента или отправьте сообщение только людям.' : 'Среди адресатов есть недоступный агент. Измените выбор или отправьте только людям.'); return;
+        if (systemTaskKey !== undefined) {
+            if (owns() && !systemAction?.disabled) systemAction?.onClick();
+            return;
         }
-        if (!draft.pending && asksAgents && agentTools.blocked) {setError(agentTools.reason || 'Проверяем инструменты. Дождитесь проверки или выключите их для обычного ответа.'); setToolsOpen(true); return;}
-        const intent = draft.pending ?? {requestKey: projectChatRequestKey(), prompt: draft.body.trim(), ...(selectedReply ? {replyToId: selectedReply.id} : {}), targetAgentIds: [...targets],...(asksAgents && agentTools.request ? {agentTools: structuredClone(agentTools.request)} : {})};
-        const pendingDraft = {...draft, reply: selectedReply, pending: intent};
-        if (!saveProjectChatDraft(draftScope, pendingDraft)) {saveProjectChatDraft(draftScope, draft); setError('Не удалось сохранить запрос в браузере. Отправка не начата. Разрешите хранение данных сайта и повторите.'); return;}
+        if (lock.current || !owns() || (!draft.pending && (!detail.canPost || !canSend))) return;
+        if (!draft.pending && !draft.body.trim()) {
+            setError('Напишите сообщение.');
+            text.current?.focus();
+            return;
+        }
+        if (!draft.pending && role?.error) {
+            setError(role.error);
+            return;
+        }
+        if (!draft.pending && role?.agentId) {
+            openSystemRole(role.agentId, role.instruction);
+            return;
+        }
+        if (!draft.pending && new TextEncoder().encode(draft.body.trim()).length > PROJECT_CHAT_MESSAGE_BYTES) {
+            setError('Сообщение слишком большое: допустимо до 128 КиБ текста UTF-8. Сократите его.');
+            return;
+        }
+        if (!draft.pending && explicit && mentionError) {
+            setError(mentionError);
+            text.current?.focus();
+            return;
+        }
+        if (!draft.pending && asksAgents && (!inference.enabled || !targets.length || unavailable)) {
+            setError(
+                !inference.enabled
+                    ? inference.reason
+                    : !targets.length
+                      ? 'Выберите доступного агента или отправьте сообщение только людям.'
+                      : 'Среди адресатов есть недоступный агент. Измените выбор или отправьте только людям.',
+            );
+            return;
+        }
+        if (!draft.pending && asksAgents && agentTools.blocked) {
+            setError(
+                agentTools.reason || 'Проверяем инструменты. Дождитесь проверки или выключите их для обычного ответа.',
+            );
+            setToolsOpen(true);
+            return;
+        }
+        const intent = draft.pending ?? {
+            requestKey: projectChatRequestKey(),
+            prompt: draft.body.trim(),
+            ...(selectedReply ? { replyToId: selectedReply.id } : {}),
+            targetAgentIds: [...targets],
+            ...(asksAgents && agentTools.request ? { agentTools: structuredClone(agentTools.request) } : {}),
+        };
+        const pendingDraft = { ...draft, reply: selectedReply, pending: intent };
+        if (!saveProjectChatDraft(draftScope, pendingDraft)) {
+            saveProjectChatDraft(draftScope, draft);
+            setError(
+                'Не удалось сохранить запрос в браузере. Отправка не начата. Разрешите хранение данных сайта и повторите.',
+            );
+            return;
+        }
         const acceptTools = intent.agentTools ? agentTools.afterSubmission() : undefined;
         onTyping?.('');
-        lock.current = true; update(pendingDraft); setSending(true); setError('');
+        lock.current = true;
+        update(pendingDraft);
+        setSending(true);
+        setError('');
         try {
             await onSend(intent);
             if (!owns() || !alive.current) return;
             acceptTools?.();
-            update(emptyProjectChatDraft()); onCancelReply(); text.current?.focus();
+            update(emptyProjectChatDraft());
+            onCancelReply();
+            text.current?.focus();
         } catch (cause) {
             if (!owns() || !alive.current) return;
-            if (!draft.pending && !projectChatAmbiguous(cause)) update({...latest.current, pending: undefined});
-            setError(errorMessage(cause, 'Отправка не подтверждена. Повторите этот запрос: текст и адресаты сохранены.'));
-        } finally {lock.current = false; if (owns() && alive.current) setSending(false);}
+            if (!draft.pending && !projectChatAmbiguous(cause)) update({ ...latest.current, pending: undefined });
+            setError(
+                errorMessage(cause, 'Отправка не подтверждена. Повторите этот запрос: текст и адресаты сохранены.'),
+            );
+        } finally {
+            lock.current = false;
+            if (owns() && alive.current) setSending(false);
+        }
     };
-    const keyboard = useChatEnter(() => {void send();});
-    return <section className="project-chat__composer" aria-label="Сообщение команде проекта">
-        {selectedReply && <div className="project-chat__reply-draft"><div><Typography.Text strong>Ответ · {projectChatAuthor(selectedReply)}</Typography.Text><div>{selectedReply.content.slice(0, 220) || 'Сообщение ещё готовится'}</div></div>
-            <Button size="small" disabled={frozen} onClick={() => {update({...draft, reply: undefined}); onCancelReply(); text.current?.focus();}}>Отменить ответ</Button></div>}
-        <div className="project-chat__composer-heading"><label htmlFor="project-chat-message">{systemTaskKey !== undefined ? 'Задача системному агенту' : 'Сообщение'}</label>
-            {systemTaskKey !== undefined ? <Button type="text" size="small" disabled={systemAction?.busy} onClick={() => {update({...latest.current,body: chatSystemRoleMention(latest.current.body,roomAgents).instruction}); onSystemRole?.(undefined); text.current?.focus();}}>Вернуться к сообщению</Button>
-                : onSystemRole && <Button type="text" size="small" disabled={frozen || !detail.canPost || !canSend} onClick={() => openSystemRole('agent-coordinator', draft.body)}>Системный агент</Button>}
-            {systemTaskKey === undefined && <ProjectChatPanel label="Кому отправить сообщение" caption={explicit ? 'Кому: по @упоминаниям' : draft.delivery === 'people' ? 'Кому: участникам' : 'Кому: участникам и агентам'} open={recipientsOpen} onOpenChange={setRecipientsOpen} placement="topRight">
-                <div className="project-chat__delivery"><label>Кому<Select aria-label="Адресаты сообщения" value={draft.delivery} disabled={frozen || explicit || !detail.canPost || !canSend} options={[
-                    {value: 'people', label: privateRoom ? 'Только участникам диалога' : 'Только участникам проекта'}, {value: 'group', label: 'Участникам и всем агентам группы'}, {value: 'selected', label: 'Участникам и выбранным агентам'},
-                ]} onChange={delivery => {
-                    const replyAgent = roomAgents.find(agent => agent.agentId === selectedReply?.agent?.id && agent.status === 'active');
-                    const agentIds = delivery === 'selected' && !draft.agentIds.length && replyAgent ? [replyAgent.agentId] : draft.agentIds;
-                    update({...draft, delivery, agentIds}); setError('');
-                }}/></label>
-                    {draft.delivery === 'selected' && <label>Агенты<Select mode="multiple" aria-label="Агенты для ответа" value={draft.agentIds} disabled={frozen || explicit || !detail.canPost || !canSend || !inference.enabled} optionFilterProp="label" placeholder="Выберите агентов" options={roomAgents.map(agent => ({value: agent.agentId, label: agent.name, disabled: agent.status !== 'active'}))}
-                        onChange={agentIds => {update({...draft, agentIds}); setError('');}}/></label>}
-                    <Typography.Text type="secondary">{audience} Явные @упоминания заменяют выбор «Кому». Каждый выбранный агент получает отдельный запрос; итог собирается из их ответов.</Typography.Text>
+    const keyboard = useChatEnter(() => {
+        void send();
+    });
+    return (
+        <section className="project-chat__composer" aria-label="Сообщение команде проекта">
+            {selectedReply && (
+                <div className="project-chat__reply-draft">
+                    <div>
+                        <Typography.Text strong>Ответ · {projectChatAuthor(selectedReply)}</Typography.Text>
+                        <div>{selectedReply.content.slice(0, 220) || 'Сообщение ещё готовится'}</div>
+                    </div>
+                    <Button
+                        size="small"
+                        disabled={frozen}
+                        onClick={() => {
+                            update({ ...draft, reply: undefined });
+                            onCancelReply();
+                            text.current?.focus();
+                        }}
+                    >
+                        Отменить ответ
+                    </Button>
                 </div>
-            </ProjectChatPanel>}
-        </div>
-        {systemTaskKey === undefined && asksAgents && <><ProjectChatPanel label="Контекст/инструменты" open={toolsOpen} onOpenChange={setToolsOpen} placement="topRight">
-            <AgentToolsControls value={agentTools} disabled={frozen} projectId={detail.room.projectId}/>
-        </ProjectChatPanel>{draft.pending?.agentTools ? <AgentToolsGrantSummary grant={draft.pending.agentTools}/> : agentTools.request ? <AgentToolsGrantSummary grant={agentTools.request}/> : <Typography.Text type={agentTools.blocked ? 'warning' : 'secondary'} role="status">{agentTools.loading ? 'Проверяем контекст и инструменты…' : agentTools.reason || 'Инструменты агентов выключены для следующего сообщения.'}</Typography.Text>}</>}
-        <Mentions ref={text} id="project-chat-message" aria-label="Текст сообщения команде" aria-describedby="project-chat-recipients project-chat-keyboard-hint" value={draft.body} autoSize={{minRows: 1, maxRows: 4}} disabled={frozen || !detail.canPost || !canSend} placement="top" dropdownClassName="project-chat__mentions"
-            placeholder={detail.canPost ? 'Напишите участникам или @имя, чтобы спросить агента…' : 'Для отправки нужна роль разработчика проекта.'} onChange={body => {update({...draft, body}); setError(''); onTyping?.(systemTaskKey === undefined ? body : '');}} onBlur={() => onTyping?.('')}
-            options={[...(inference.enabled ? activeRoomAgents.map(agent => ({value: agent.slug, label: `${agent.name} · @${agent.slug}`})) : []), ...(onSystemRole ? chatSystemRoleOptions : [])]}
-            notFoundContent={!inference.enabled ? inference.reason : !activeRoomAgents.length ? `Нет доступных агентов. ${agentsHelp}` : 'Агент не найден. Измените имя.'}
-            filterOption={(search, option) => `${option.value} ${chatSystemRoleOptions.find(role => role.value === option.value)?.label ?? ''} ${roomAgents.find(agent => agent.slug === option.value)?.name ?? ''}`.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))}
-            {...keyboard}/>
-        <Typography.Text id="project-chat-recipients" type={systemTaskKey === undefined && explicit && mentionError ? 'warning' : 'secondary'} className="project-chat__delivery-note" role="status">{systemTaskKey !== undefined || role?.agentId || role?.error ? 'Системная задача не публикуется в переписку участников.' : explicit ? mentionError ? `${mentionError} @ заменяет выбор «Кому».` : `Ответят: ${recipients.join(', ')} · запросов к моделям: ${targets.length}. @ заменяет выбор «Кому». ${privateRoom ? 'Только участники диалога.' : 'Весь проект.'}` : !asksAgents ? `${privateRoom ? 'Увидят только участники диалога' : 'Увидят участники проекта'}. Запрос к моделям не выполняется.` : `${recipients.length ? recipients.join(', ') : 'Выберите агентов'} · запросов к моделям: ${targets.length}. ${privateRoom ? 'Увидят только участники диалога.' : 'Увидят участники проекта.'}`}</Typography.Text>
-        {role?.agentId && <Typography.Text type="secondary" role="status">Сначала проверим задачу, модель и контекст. Результат системного агента будет виден только вам.</Typography.Text>}
-        {feedback && <div className="project-chat__feedback" role="region" aria-label="Состояние отправки" tabIndex={0}>
-            {recovering ? <Alert role="alert" showIcon type="warning" message={error || 'Подтверждение отправки не получено'} description="Проверьте ту же отправку: текст, ответ на сообщение и адресаты сохранены."/>
-                : (error || role?.error) && <Alert role="alert" type="error" showIcon message={error || role?.error}/>}
-            {!canSend && <Typography.Paragraph type="secondary">{availability.enabled && custom ? dialogs.reason : availability.reason}</Typography.Paragraph>}
-            {asksAgents && !inference.enabled && !draft.pending && <Typography.Paragraph type="secondary">{inference.reason} {explicit ? 'Уберите @адресатов, чтобы отправить сообщение только людям.' : 'Можно выбрать «Только участникам проекта».'}</Typography.Paragraph>}
-        </div>}
-        <div className="project-chat__send"><Typography.Text id="project-chat-keyboard-hint" className="project-chat__keyboard-hint" type="secondary">Enter — отправить · Shift+Enter — новая строка</Typography.Text><ChatSendAction task={systemAction} busy={sending}
-            disabled={systemTaskKey !== undefined || sending || !draft.pending && (!detail.canPost || !canSend || !!role?.error || explicit && !!mentionError || asksAgents && agentTools.blocked)} onSend={() => {void send();}}
-            label={systemTaskKey !== undefined ? 'Открываем задачу…' : recovering ? 'Проверить отправку' : role?.agentId ? 'Подготовить задачу' : asksAgents ? 'Спросить агентов' : 'Отправить'}/></div>
-    </section>;
+            )}
+            <div className="project-chat__composer-heading">
+                <label htmlFor="project-chat-message">
+                    {systemTaskKey !== undefined ? 'Задача системному агенту' : 'Сообщение'}
+                </label>
+                {systemTaskKey !== undefined ? (
+                    <Button
+                        type="text"
+                        size="small"
+                        disabled={systemAction?.busy}
+                        onClick={() => {
+                            update({
+                                ...latest.current,
+                                body: chatSystemRoleMention(latest.current.body, roomAgents).instruction,
+                            });
+                            onSystemRole?.(undefined);
+                            text.current?.focus();
+                        }}
+                    >
+                        Вернуться к сообщению
+                    </Button>
+                ) : (
+                    onSystemRole && (
+                        <Button
+                            type="text"
+                            size="small"
+                            disabled={frozen || !detail.canPost || !canSend}
+                            onClick={() => openSystemRole('agent-coordinator', draft.body)}
+                        >
+                            Системный агент
+                        </Button>
+                    )
+                )}
+                {systemTaskKey === undefined && (
+                    <ProjectChatPanel
+                        label="Кому отправить сообщение"
+                        caption={
+                            explicit
+                                ? 'Кому: по @упоминаниям'
+                                : draft.delivery === 'people'
+                                  ? 'Кому: участникам'
+                                  : 'Кому: участникам и агентам'
+                        }
+                        open={recipientsOpen}
+                        onOpenChange={setRecipientsOpen}
+                        placement="topRight"
+                    >
+                        <div className="project-chat__delivery">
+                            <label>
+                                Кому
+                                <Select
+                                    aria-label="Адресаты сообщения"
+                                    value={draft.delivery}
+                                    disabled={frozen || explicit || !detail.canPost || !canSend}
+                                    options={[
+                                        {
+                                            value: 'people',
+                                            label: privateRoom
+                                                ? 'Только участникам диалога'
+                                                : 'Только участникам проекта',
+                                        },
+                                        { value: 'group', label: 'Участникам и всем агентам группы' },
+                                        { value: 'selected', label: 'Участникам и выбранным агентам' },
+                                    ]}
+                                    onChange={(delivery) => {
+                                        const replyAgent = roomAgents.find(
+                                            (agent) =>
+                                                agent.agentId === selectedReply?.agent?.id && agent.status === 'active',
+                                        );
+                                        const agentIds =
+                                            delivery === 'selected' && !draft.agentIds.length && replyAgent
+                                                ? [replyAgent.agentId]
+                                                : draft.agentIds;
+                                        update({ ...draft, delivery, agentIds });
+                                        setError('');
+                                    }}
+                                />
+                            </label>
+                            {draft.delivery === 'selected' && (
+                                <label>
+                                    Агенты
+                                    <Select
+                                        mode="multiple"
+                                        aria-label="Агенты для ответа"
+                                        value={draft.agentIds}
+                                        disabled={
+                                            frozen || explicit || !detail.canPost || !canSend || !inference.enabled
+                                        }
+                                        optionFilterProp="label"
+                                        placeholder="Выберите агентов"
+                                        options={roomAgents.map((agent) => ({
+                                            value: agent.agentId,
+                                            label: agent.name,
+                                            disabled: agent.status !== 'active',
+                                        }))}
+                                        onChange={(agentIds) => {
+                                            update({ ...draft, agentIds });
+                                            setError('');
+                                        }}
+                                    />
+                                </label>
+                            )}
+                            <Typography.Text type="secondary">
+                                {audience} Явные @упоминания заменяют выбор «Кому». Каждый выбранный агент получает
+                                отдельный запрос; итог собирается из их ответов.
+                            </Typography.Text>
+                        </div>
+                    </ProjectChatPanel>
+                )}
+            </div>
+            {systemTaskKey === undefined && asksAgents && (
+                <>
+                    <ProjectChatPanel
+                        label="Контекст/инструменты"
+                        open={toolsOpen}
+                        onOpenChange={setToolsOpen}
+                        placement="topRight"
+                    >
+                        <AgentToolsControls value={agentTools} disabled={frozen} projectId={detail.room.projectId} />
+                    </ProjectChatPanel>
+                    {draft.pending?.agentTools ? (
+                        <AgentToolsGrantSummary grant={draft.pending.agentTools} />
+                    ) : agentTools.request ? (
+                        <AgentToolsGrantSummary grant={agentTools.request} />
+                    ) : (
+                        <Typography.Text type={agentTools.blocked ? 'warning' : 'secondary'} role="status">
+                            {agentTools.loading
+                                ? 'Проверяем контекст и инструменты…'
+                                : agentTools.reason || 'Инструменты агентов выключены для следующего сообщения.'}
+                        </Typography.Text>
+                    )}
+                </>
+            )}
+            <Mentions
+                ref={text}
+                id="project-chat-message"
+                aria-label="Текст сообщения команде"
+                aria-describedby="project-chat-recipients project-chat-keyboard-hint"
+                value={draft.body}
+                autoSize={{ minRows: 1, maxRows: 4 }}
+                disabled={frozen || !detail.canPost || !canSend}
+                placement="top"
+                dropdownClassName="project-chat__mentions"
+                placeholder={
+                    detail.canPost
+                        ? 'Напишите участникам или @имя, чтобы спросить агента…'
+                        : 'Для отправки нужна роль разработчика проекта.'
+                }
+                onChange={(body) => {
+                    update({ ...draft, body });
+                    setError('');
+                    onTyping?.(systemTaskKey === undefined ? body : '');
+                }}
+                onBlur={() => onTyping?.('')}
+                options={[
+                    ...(inference.enabled
+                        ? activeRoomAgents.map((agent) => ({
+                              value: agent.slug,
+                              label: `${agent.name} · @${agent.slug}`,
+                          }))
+                        : []),
+                    ...(onSystemRole ? chatSystemRoleOptions : []),
+                ]}
+                notFoundContent={
+                    !inference.enabled
+                        ? inference.reason
+                        : !activeRoomAgents.length
+                          ? `Нет доступных агентов. ${agentsHelp}`
+                          : 'Агент не найден. Измените имя.'
+                }
+                filterOption={(search, option) =>
+                    `${option.value} ${chatSystemRoleOptions.find((role) => role.value === option.value)?.label ?? ''} ${roomAgents.find((agent) => agent.slug === option.value)?.name ?? ''}`
+                        .toLocaleLowerCase('ru')
+                        .includes(search.toLocaleLowerCase('ru'))
+                }
+                {...keyboard}
+            />
+            <Typography.Text
+                id="project-chat-recipients"
+                type={systemTaskKey === undefined && explicit && mentionError ? 'warning' : 'secondary'}
+                className="project-chat__delivery-note"
+                role="status"
+            >
+                {systemTaskKey !== undefined || role?.agentId || role?.error
+                    ? 'Системная задача не публикуется в переписку участников.'
+                    : explicit
+                      ? mentionError
+                          ? `${mentionError} @ заменяет выбор «Кому».`
+                          : `Ответят: ${recipients.join(', ')} · запросов к моделям: ${targets.length}. @ заменяет выбор «Кому». ${privateRoom ? 'Только участники диалога.' : 'Весь проект.'}`
+                      : !asksAgents
+                        ? `${privateRoom ? 'Увидят только участники диалога' : 'Увидят участники проекта'}. Запрос к моделям не выполняется.`
+                        : `${recipients.length ? recipients.join(', ') : 'Выберите агентов'} · запросов к моделям: ${targets.length}. ${privateRoom ? 'Увидят только участники диалога.' : 'Увидят участники проекта.'}`}
+            </Typography.Text>
+            {role?.agentId && (
+                <Typography.Text type="secondary" role="status">
+                    Сначала проверим задачу, модель и контекст. Результат системного агента будет виден только вам.
+                </Typography.Text>
+            )}
+            {feedback && (
+                <div className="project-chat__feedback" role="region" aria-label="Состояние отправки" tabIndex={0}>
+                    {recovering ? (
+                        <Alert
+                            role="alert"
+                            showIcon
+                            type="warning"
+                            message={error || 'Подтверждение отправки не получено'}
+                            description="Проверьте ту же отправку: текст, ответ на сообщение и адресаты сохранены."
+                        />
+                    ) : (
+                        (error || role?.error) && (
+                            <Alert role="alert" type="error" showIcon message={error || role?.error} />
+                        )
+                    )}
+                    {!canSend && (
+                        <Typography.Paragraph type="secondary">
+                            {availability.enabled && custom ? dialogs.reason : availability.reason}
+                        </Typography.Paragraph>
+                    )}
+                    {asksAgents && !inference.enabled && !draft.pending && (
+                        <Typography.Paragraph type="secondary">
+                            {inference.reason}{' '}
+                            {explicit
+                                ? 'Уберите @адресатов, чтобы отправить сообщение только людям.'
+                                : 'Можно выбрать «Только участникам проекта».'}
+                        </Typography.Paragraph>
+                    )}
+                </div>
+            )}
+            <div className="project-chat__send">
+                <Typography.Text
+                    id="project-chat-keyboard-hint"
+                    className="project-chat__keyboard-hint"
+                    type="secondary"
+                >
+                    Enter — отправить · Shift+Enter — новая строка
+                </Typography.Text>
+                <ChatSendAction
+                    task={systemAction}
+                    busy={sending}
+                    disabled={
+                        systemTaskKey !== undefined ||
+                        sending ||
+                        (!draft.pending &&
+                            (!detail.canPost ||
+                                !canSend ||
+                                !!role?.error ||
+                                (explicit && !!mentionError) ||
+                                (asksAgents && agentTools.blocked)))
+                    }
+                    onSend={() => {
+                        void send();
+                    }}
+                    label={
+                        systemTaskKey !== undefined
+                            ? 'Открываем задачу…'
+                            : recovering
+                              ? 'Проверить отправку'
+                              : role?.agentId
+                                ? 'Подготовить задачу'
+                                : asksAgents
+                                  ? 'Спросить агентов'
+                                  : 'Отправить'
+                    }
+                />
+            </div>
+        </section>
+    );
 }

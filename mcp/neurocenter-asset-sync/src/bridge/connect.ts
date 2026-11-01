@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { openVerificationPage } from './open-browser.js';
 import { ensureCurrentWorker } from './worker-upgrade.js';
-import { api, hash, hub, readState, stateDir, writeState, type Credentials } from './state.js';
+import { api, hash, hub, readState, stateDir, writeState, type ICredentials } from './state.js';
 
 const index = fileURLToPath(new URL('../index.js', import.meta.url));
 export function startWorker(): void {
@@ -17,7 +17,7 @@ export function startWorker(): void {
     });
     child.unref();
 }
-interface Pair {
+interface IPair {
     deviceCode: string;
     userCode: string;
     expiresIn: number;
@@ -25,7 +25,7 @@ interface Pair {
     fingerprint?: string;
     expiresAt?: number;
 }
-interface Identity {
+interface IIdentity {
     id: string;
     email: string;
     role: string;
@@ -38,7 +38,7 @@ function startPairWatch(): void {
     });
     child.unref();
 }
-async function pairLink(pair: Pair, openBrowser: boolean) {
+async function pairLink(pair: IPair, openBrowser: boolean) {
     startPairWatch();
     const url = `${hub()}/start?setup=1&setupFlow=bridge-first&step=0&connect=${encodeURIComponent(pair.userCode)}`;
     const browserOpened = openBrowser ? await openVerificationPage(url) : false;
@@ -51,7 +51,7 @@ async function pairLink(pair: Pair, openBrowser: boolean) {
         note: 'Проверьте имя и отпечаток компьютера и подтвердите подключение в браузере. Код нужен только если ссылка не открылась.',
     };
 }
-async function connected(token: string, identity: Identity) {
+async function connected(token: string, identity: IIdentity) {
     await writeState('credentials', { token, deviceId: identity.id, email: identity.email });
     await fs.rm(path.join(stateDir(), 'pair.json'), { force: true });
     await ensureCurrentWorker();
@@ -64,11 +64,11 @@ async function connected(token: string, identity: Identity) {
 }
 /** Клиент хранит будущий ключ до подтверждения; повтор poll не теряет секрет и сохраняет прежний ID устройства. */
 export async function connectBridge(openBrowser = false, reconnect = false) {
-    const pending = await readState<Pair>('pair');
+    const pending = await readState<IPair>('pair');
     if (pending?.candidateToken) {
-        let identity: Identity | undefined;
+        let identity: IIdentity | undefined;
         try {
-            identity = await api<Identity>('identity', undefined, pending.candidateToken);
+            identity = await api<IIdentity>('identity', undefined, pending.candidateToken);
         } catch {
             /* Ключ ещё не подтверждён; продолжаем тот же шаг подключения. */
         }
@@ -79,11 +79,11 @@ export async function connectBridge(openBrowser = false, reconnect = false) {
             return pairLink(pending, openBrowser);
         }
     }
-    const credentials = await readState<Credentials>('credentials');
+    const credentials = await readState<ICredentials>('credentials');
     if (credentials && !reconnect) {
-        let identity: Identity | undefined;
+        let identity: IIdentity | undefined;
         try {
-            identity = await api<Identity>('identity');
+            identity = await api<IIdentity>('identity');
         } catch {
             /* Продление просроченного подключения требует повторного подтверждения владельца. */
         }
@@ -93,7 +93,7 @@ export async function connectBridge(openBrowser = false, reconnect = false) {
     }
     const candidateToken = randomBytes(32).toString('hex');
     const fingerprint = hash(randomBytes(32).toString('hex'));
-    const pair = await api<Pair>('pair/start', {
+    const pair = await api<IPair>('pair/start', {
         name: os.hostname(),
         fingerprint,
         credentialHash: hash(candidateToken),
@@ -103,16 +103,16 @@ export async function connectBridge(openBrowser = false, reconnect = false) {
     return pairLink(saved, openBrowser);
 }
 export async function watchPair(): Promise<void> {
-    const pair = await readState<Pair>('pair');
+    const pair = await readState<IPair>('pair');
     if (!pair) {
         return;
     }
     const started = Date.now();
     while (Date.now() - started < 600000 && Date.now() < (pair.expiresAt || started + 600000)) {
         try {
-            const response = await api<Credentials & { state: string }>('pair/poll', { deviceCode: pair.deviceCode });
+            const response = await api<ICredentials & { state: string }>('pair/poll', { deviceCode: pair.deviceCode });
             if (response.state === 'connected') {
-                const current = await readState<Pair>('pair');
+                const current = await readState<IPair>('pair');
                 if (current?.deviceCode !== pair.deviceCode) {
                     return;
                 }

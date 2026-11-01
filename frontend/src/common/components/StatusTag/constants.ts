@@ -1,4 +1,4 @@
-import { TTagColor } from "./interfaces";
+import { TTagColor } from './interfaces';
 
 /**
  * Соответствие статусов цвета AntD Tag.

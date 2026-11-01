@@ -3,15 +3,16 @@ import type { PoolClient } from 'pg';
 import {
     normalizeRoleMcpResult,
     SYSTEM_ROLE_MCP_JOB,
-    type RoleMcpExecutionResult,
-    type RoleMcpSessionContext,
+    type TRoleMcpExecutionResult,
+    type IRoleMcpSessionContext,
 } from '../../../shared/system-role-mcp.cjs';
-import { digest, type Device, type DeviceStore } from '../devices/device-store';
+import { digest, type IDevice, type DeviceStore } from '../devices/device-store';
 import { SystemRoleMcpRepository } from './system-role-mcp.repository';
-import { mcpCallContext, type McpCallRow, type McpSessionRow } from './system-role-mcp.store-types';
+import { mcpCallContext } from './system-role-mcp.store-utils';
+import { type IMcpCallRow, type IMcpSessionRow } from './system-role-mcp.store-interfaces';
 
-type Db = Pick<PoolClient, 'query'>;
-interface LeaseInput {
+type TDb = Pick<PoolClient, 'query'>;
+interface ILeaseInput {
     jobId: string;
     lease: string;
     callId?: string;
@@ -19,7 +20,7 @@ interface LeaseInput {
     state?: 'succeeded' | 'failed';
     message?: string;
 }
-export interface McpChannelFence {
+export interface IMcpChannelFence {
     sessionId: string;
     lease: string;
     deviceId: string;
@@ -38,10 +39,10 @@ export class SystemRoleMcpChannel {
     constructor(
         private readonly repository: SystemRoleMcpRepository,
         private readonly devices: DeviceStore,
-        private readonly authority: (session: McpSessionRow, db?: Db) => Promise<void>,
-        private readonly dispatchCall: (callId: string, expectedChannel?: McpChannelFence) => Promise<unknown>,
+        private readonly authority: (session: IMcpSessionRow, db?: TDb) => Promise<void>,
+        private readonly dispatchCall: (callId: string, expectedChannel?: IMcpChannelFence) => Promise<unknown>,
         private readonly closeSession: (id: string, onlyUnclaimed?: boolean) => Promise<unknown>,
-        private readonly preflight?: (session: McpSessionRow) => Promise<void>,
+        private readonly preflight?: (session: IMcpSessionRow) => Promise<void>,
         private readonly releaseDeviceSession: (id: string) => void = () => undefined,
     ) {}
 
@@ -67,7 +68,7 @@ export class SystemRoleMcpChannel {
         // A candidate is immutable. External availability checks finish before any row lock is taken.
         for (let attempt = 0; attempt < 32; attempt++) {
             const candidate = (
-                await this.repository.pool.query<McpSessionRow>(
+                await this.repository.pool.query<IMcpSessionRow>(
                     `SELECT * FROM system_role_mcp_sessions
                 WHERE state='open' AND claimed_at IS NULL AND deadline_at>clock_timestamp()
                 AND target->>'runtime'='device' AND target->>'deviceId'=$1 AND owner_email=$2
@@ -99,7 +100,7 @@ export class SystemRoleMcpChannel {
                 );
                 if (Number(occupied.rows[0].count) >= 2) return null;
                 const session = (
-                    await db.query<McpSessionRow>(
+                    await db.query<IMcpSessionRow>(
                         `SELECT * FROM system_role_mcp_sessions
                     WHERE state='open' AND claimed_at IS NULL AND deadline_at>clock_timestamp()
                     AND target->>'runtime'='device' AND target->>'deviceId'=$1 AND owner_email=$2 AND id=$3
@@ -116,7 +117,7 @@ export class SystemRoleMcpChannel {
                     return false;
                 }
                 const claimed = (
-                    await db.query<McpSessionRow>(
+                    await db.query<IMcpSessionRow>(
                         `UPDATE system_role_mcp_sessions SET claimed_at=clock_timestamp(),worker_claim_request_id=$2,worker_claim_token_hash=$3,
                     worker_lease_until=LEAST(deadline_at,clock_timestamp()+interval '30 seconds')
                     WHERE id=$1 AND state='open' AND claimed_at IS NULL AND deadline_at>clock_timestamp() RETURNING *`,
@@ -168,7 +169,7 @@ export class SystemRoleMcpChannel {
         });
     }
 
-    async context(token: unknown, input: unknown): Promise<RoleMcpSessionContext> {
+    async context(token: unknown, input: unknown): Promise<IRoleMcpSessionContext> {
         const value = this.input(input),
             device = await this.devices.identity(token);
         await this.prepare(device, value);
@@ -204,7 +205,7 @@ export class SystemRoleMcpChannel {
             if (current.state === 'closed') return { closed: true };
             this.live(current);
             const row = (
-                await db.query<McpCallRow>(
+                await db.query<IMcpCallRow>(
                     `SELECT * FROM system_role_mcp_calls WHERE session_id=$1 AND state='queued'
                 AND deadline_at>clock_timestamp() ORDER BY created_at,id LIMIT 1`,
                     [session.id],
@@ -237,7 +238,7 @@ export class SystemRoleMcpChannel {
             session = await this.receipt(token, value);
         const call = await this.repository.call(value.callId!);
         if (call.session_id !== session.id) return conflict();
-        let result: RoleMcpExecutionResult;
+        let result: TRoleMcpExecutionResult;
         try {
             result = normalizeRoleMcpResult(value.result, call.kind);
         } catch {
@@ -265,7 +266,7 @@ export class SystemRoleMcpChannel {
         return { ok: true, closed: true };
     }
 
-    private input(value: unknown, kind: 'base' | 'dispatch' | 'result' | 'complete' = 'base'): LeaseInput {
+    private input(value: unknown, kind: 'base' | 'dispatch' | 'result' | 'complete' = 'base'): ILeaseInput {
         const required = [
             'jobId',
             'lease',
@@ -287,10 +288,10 @@ export class SystemRoleMcpChannel {
                     value.message.includes('\0')))
         )
             throw new BadRequestException('Нужны точная сессия MCP, аренда и поля операции.');
-        return value as unknown as LeaseInput;
+        return value as unknown as ILeaseInput;
     }
 
-    private async bound(db: Db, device: Device, value: LeaseInput): Promise<McpSessionRow> {
+    private async bound(db: TDb, device: IDevice, value: ILeaseInput): Promise<IMcpSessionRow> {
         const session = await this.repository.session(value.jobId, db);
         if (
             session.target.runtime !== 'device' ||
@@ -303,14 +304,14 @@ export class SystemRoleMcpChannel {
             return conflict();
         return session;
     }
-    private async prepare(device: Device, input: LeaseInput): Promise<void> {
+    private async prepare(device: IDevice, input: ILeaseInput): Promise<void> {
         const session = await this.bound(this.repository.pool, device, input);
         if (session.state === 'open') await this.preflight?.(session);
     }
-    private live(session: McpSessionRow): void {
+    private live(session: IMcpSessionRow): void {
         if (session.state !== 'open' || !future(session.deadline_at) || !future(session.worker_lease_until)) conflict();
     }
-    private async currentDevice(db: Db, device: Device, token: unknown, exclusive = false): Promise<boolean> {
+    private async currentDevice(db: TDb, device: IDevice, token: unknown, exclusive = false): Promise<boolean> {
         const row =
             typeof token === 'string'
                 ? (
@@ -325,7 +326,7 @@ export class SystemRoleMcpChannel {
         return row.paused === true || (exclusive && row.report_unavailable === true);
     }
     /** Replaying a durable preclaim intent retires execution; it never allocates work or asserts physical cleanup. */
-    private async recoverClaim(db: Db, token: unknown, requestId: string, retireUnknown = false) {
+    private async recoverClaim(db: TDb, token: unknown, requestId: string, retireUnknown = false) {
         if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token))
             throw new UnauthorizedException('Подтверждение MCP не принадлежит этому подключению.');
         const tokenHash = digest(token),
@@ -337,7 +338,7 @@ export class SystemRoleMcpChannel {
             ).rows[0];
         if (!device) throw new UnauthorizedException('Подтверждение MCP не принадлежит этому подключению.');
         const session = (
-            await db.query<McpSessionRow>(
+            await db.query<IMcpSessionRow>(
                 `SELECT * FROM system_role_mcp_sessions WHERE target->>'runtime'='device'
             AND target->>'deviceId'=$1 AND owner_email=$2 AND worker_claim_request_id=$3 AND worker_claim_token_hash=$4
             AND claimed_at IS NOT NULL FOR NO KEY UPDATE`,
@@ -375,11 +376,11 @@ export class SystemRoleMcpChannel {
         };
     }
     /** A stored token hash and immutable lease accept only receipts after revocation, never new execution. */
-    private async receipt(token: unknown, value: LeaseInput): Promise<McpSessionRow> {
+    private async receipt(token: unknown, value: ILeaseInput): Promise<IMcpSessionRow> {
         if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token))
             throw new UnauthorizedException('Подтверждение MCP не принадлежит этому подключению.');
         const session = (
-            await this.repository.pool.query<McpSessionRow>(
+            await this.repository.pool.query<IMcpSessionRow>(
                 `SELECT s.* FROM system_role_mcp_sessions s JOIN bridge_devices d
             ON d.id::text=s.target->>'deviceId' AND d.email=s.owner_email WHERE s.id=$1 AND s.job_id=s.id::text AND s.worker_lease=$2
             AND s.claimed_at IS NOT NULL AND s.target->>'runtime'='device' AND d.token_hash=$3`,

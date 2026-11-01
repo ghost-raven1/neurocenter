@@ -1,17 +1,17 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import type { UploadIntent, UploadRow } from './source-upload.model';
+import type { IUploadIntent, IUploadRow } from './source-upload.model';
 
 /** Actor ownership, immutable request identities and source retention share the build transaction. */
 export class SourceUploadRepository {
     constructor(readonly pool: Pool) {}
-    async create(actor: string, epoch: string, input: UploadIntent): Promise<UploadRow> {
+    async create(actor: string, epoch: string, input: IUploadIntent): Promise<IUploadRow> {
         const fingerprint = createHash('sha256')
                 .update(JSON.stringify([input.name, input.sha256, input.bytes]))
                 .digest('hex'),
             format = /\.(?:tar\.gz|tgz)$/i.test(input.name) ? 'tar.gz' : /\.zip$/i.test(input.name) ? 'zip' : 'file';
-        const { rows } = await this.pool.query<UploadRow>(
+        const { rows } = await this.pool.query<IUploadRow>(
             `INSERT INTO tool_source_uploads(id,actor,request_key,request_hash,name,sha256,bytes,format,state,auth_epoch)
    VALUES($1,$2,$3,$4,$5,$6,$7,$8,'WAITING',$9) ON CONFLICT(actor,request_key) DO UPDATE SET request_key=EXCLUDED.request_key RETURNING *`,
             [randomUUID(), actor, input.requestKey, fingerprint, input.name, input.sha256, input.bytes, format, epoch],
@@ -20,16 +20,16 @@ export class SourceUploadRepository {
             throw new ConflictException('UUID загрузки уже принадлежит другому файлу.');
         return rows[0];
     }
-    async get(actor: string, id: string, client: Pick<Pool, 'query'> = this.pool, lock = false): Promise<UploadRow> {
-        const { rows } = await client.query<UploadRow>(
+    async get(actor: string, id: string, client: Pick<Pool, 'query'> = this.pool, lock = false): Promise<IUploadRow> {
+        const { rows } = await client.query<IUploadRow>(
             'SELECT * FROM tool_source_uploads WHERE actor=$1 AND id=$2' + (lock ? ' FOR UPDATE' : ''),
             [actor, id],
         );
         if (!rows[0]) throw new NotFoundException('Загрузка не найдена.');
         return rows[0];
     }
-    async lookup(actor: string, key: string): Promise<UploadRow> {
-        const { rows } = await this.pool.query<UploadRow>(
+    async lookup(actor: string, key: string): Promise<IUploadRow> {
+        const { rows } = await this.pool.query<IUploadRow>(
             'SELECT * FROM tool_source_uploads WHERE actor=$1 AND request_key=$2',
             [actor, key],
         );

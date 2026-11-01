@@ -23,8 +23,6 @@ export default class StartModule extends ModuleBase {
      * @returns список компонент-роутов
      */
     public getRoute(): ReactNode[] {
-        return [
-            <ProtectedRoute key="start" name={START_ROUTE} path={baseRoutes.start} render={() => <Start />} />,
-        ];
+        return [<ProtectedRoute key="start" name={START_ROUTE} path={baseRoutes.start} render={() => <Start />} />];
     }
 }

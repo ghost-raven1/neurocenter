@@ -1,6 +1,6 @@
 import type { ResolvedAsset } from '@neurocenter/asset-contract';
 import type { Pool } from 'pg';
-import type { ISourceReceipt } from './import-types';
+import type { ISourceReceipt } from './import-interfaces';
 import { SkillAssetClient } from './skill-adapter';
 
 interface ICardState {

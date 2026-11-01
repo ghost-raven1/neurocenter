@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
-import type { IModel, IModelDescriptor, IModelVerification, IProjectModel } from './model.types';
+import type { IModel, TModelDescriptor, IModelVerification, IProjectModel } from './model.interfaces';
 import { validateModelCreate, validateModelDelete, validateModelUpdate } from './model-validation';
 import {
     modelFromRow as model,
@@ -102,7 +102,7 @@ export class ModelsRepository {
     create(raw: unknown, actor: string, requestKey?: string): Promise<IModel> {
         const body = validateModelCreate(raw);
         const { name, ...rest } = body;
-        const descriptor: IModelDescriptor = {
+        const descriptor: TModelDescriptor = {
             ...rest,
             manifestSha256: null,
             source: 'custom',

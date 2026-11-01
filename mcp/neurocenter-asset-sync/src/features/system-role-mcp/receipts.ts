@@ -3,38 +3,38 @@ import path from 'node:path';
 import { syncDirectory, atomicText } from '../../bridge/atomic-file.js';
 import { readBoundedSnapshot } from '../../bridge/read-bounded.js';
 import { systemRoleMcpDigest, normalizeRoleMcpResult } from './contract.js';
-import { roleMcpApi, captureRoleMcpIdentity, type RoleMcpIdentity } from './api.js';
+import { roleMcpApi, captureRoleMcpIdentity, type IRoleMcpIdentity } from './api.js';
 import { sessionDirectory } from './session-journal.js';
 
-interface ResultBody {
+interface IResultBody {
     jobId: string;
     lease: string;
     callId: string;
     result: unknown;
 }
-type Scope = Omit<RoleMcpIdentity, 'profile'>;
-interface Receipt {
+type TScope = Omit<IRoleMcpIdentity, 'profile'>;
+interface IReceipt {
     schemaVersion: 2;
-    identity: Scope;
+    identity: TScope;
     kind: 'list' | 'call';
-    body: ResultBody;
+    body: IResultBody;
     digest: string;
 }
 const uuid = (value: unknown) =>
     typeof value === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(value);
-const scope = ({ profile: _, ...value }: RoleMcpIdentity) => value;
-const matches = (identity: RoleMcpIdentity, item: Receipt) =>
-    Object.entries(scope(identity)).every(([key, value]) => item.identity?.[key as keyof Scope] === value);
-async function current(identity: RoleMcpIdentity) {
+const scope = ({ profile: _, ...value }: IRoleMcpIdentity) => value;
+const matches = (identity: IRoleMcpIdentity, item: IReceipt) =>
+    Object.entries(scope(identity)).every(([key, value]) => item.identity?.[key as keyof TScope] === value);
+async function current(identity: IRoleMcpIdentity) {
     const actual = await captureRoleMcpIdentity();
     if (
         Object.keys(actual).some(
-            (key) => actual[key as keyof RoleMcpIdentity] !== identity[key as keyof RoleMcpIdentity],
+            (key) => actual[key as keyof IRoleMcpIdentity] !== identity[key as keyof IRoleMcpIdentity],
         )
     )
         throw new Error('Подключение результата MCP изменилось.');
 }
-async function read(identity: RoleMcpIdentity, file: string) {
+async function read(identity: IRoleMcpIdentity, file: string) {
     const info = await fs.lstat(file);
     if (
         !info.isFile() ||
@@ -45,7 +45,7 @@ async function read(identity: RoleMcpIdentity, file: string) {
     )
         throw new Error('Небезопасная квитанция результата MCP.');
     const snapshot = await readBoundedSnapshot(file, 8 * 1024 * 1024),
-        item = JSON.parse(snapshot.bytes.toString('utf8')) as Receipt;
+        item = JSON.parse(snapshot.bytes.toString('utf8')) as IReceipt;
     // Legacy pointers and their private values are retained, never silently adopted
     // into a different API or credential epoch by the v2 recovery lane.
     if (item.schemaVersion !== 2) return undefined;
@@ -65,10 +65,10 @@ async function read(identity: RoleMcpIdentity, file: string) {
 }
 /** Exact scope and normalized result are fsynced before any network delivery. */
 export async function saveRoleMcpResult(
-    body: ResultBody,
+    body: IResultBody,
     deviceId: string,
     kind: 'list' | 'call',
-    identity = undefined as RoleMcpIdentity | undefined,
+    identity = undefined as IRoleMcpIdentity | undefined,
 ) {
     const exact = identity ?? (await captureRoleMcpIdentity());
     await current(exact);
@@ -77,7 +77,7 @@ export async function saveRoleMcpResult(
     const normalized = { ...body, result: normalizeRoleMcpResult(body.result, kind) },
         directory = await sessionDirectory(exact, 'system-role-mcp-receipts'),
         file = path.join(directory, body.callId + '.json');
-    const record: Receipt = {
+    const record: IReceipt = {
         schemaVersion: 2,
         identity: scope(exact),
         kind,
@@ -99,7 +99,7 @@ export async function saveRoleMcpResult(
     await atomicText(file, JSON.stringify(record), 0o600);
     return record;
 }
-async function deliver(identity: RoleMcpIdentity, item: Receipt, signal?: AbortSignal) {
+async function deliver(identity: IRoleMcpIdentity, item: IReceipt, signal?: AbortSignal) {
     if (!matches(identity, item)) return;
     const file = path.join(await sessionDirectory(identity, 'system-role-mcp-receipts'), item.body.callId + '.json'),
         before = await read(identity, file);
@@ -114,11 +114,11 @@ async function deliver(identity: RoleMcpIdentity, item: Receipt, signal?: AbortS
     await syncDirectory(path.dirname(file));
 }
 export async function sendRoleMcpResult(
-    body: ResultBody,
+    body: IResultBody,
     deviceId: string,
     kind: 'list' | 'call',
     signal?: AbortSignal,
-    identity?: RoleMcpIdentity,
+    identity?: IRoleMcpIdentity,
 ) {
     const exact = identity ?? (await captureRoleMcpIdentity()),
         item = await saveRoleMcpResult(body, deviceId, kind, exact);

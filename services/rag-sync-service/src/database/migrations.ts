@@ -4,11 +4,11 @@ import {
     QUOTA_MIGRATION,
     RAG_MIGRATIONS,
     sqlChecksum,
-    type RagMigration,
+    type IRagMigration,
 } from './migration-definitions';
 import { inspectSchema } from './schema-inspection';
 
-interface AppliedMigration {
+interface IAppliedMigration {
     version: string;
     checksum: string | null;
 }
@@ -17,7 +17,7 @@ const historyError = () =>
 const lock = "SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:rag:migrations',0))";
 
 /** An old generation marker is adopted only after exact checks of its columns, constraints, indexes, function and trigger. */
-async function verifySchema(db: PoolClient, migration: RagMigration): Promise<void> {
+async function verifySchema(db: PoolClient, migration: IRagMigration): Promise<void> {
     for (const table of [...migration.objects.tables, ...(migration.lockTables ?? [])]) {
         await db.query(`LOCK TABLE public."${table}" IN ACCESS SHARE MODE`);
     }
@@ -30,7 +30,7 @@ async function verifySchema(db: PoolClient, migration: RagMigration): Promise<vo
     }
 }
 
-function verifyHistory(rows: AppliedMigration[]): void {
+function verifyHistory(rows: IAppliedMigration[]): void {
     for (const row of rows) {
         const known = RAG_MIGRATIONS.find((migration) => migration.version === row.version);
         if (
@@ -43,7 +43,7 @@ function verifyHistory(rows: AppliedMigration[]): void {
 }
 
 /** A known applied successor verifies the complete replaced object set; SQL journals remain independently frozen. */
-function physicalSchema(migration: RagMigration, rows: AppliedMigration[]): RagMigration {
+function physicalSchema(migration: IRagMigration, rows: IAppliedMigration[]): IRagMigration {
     const successors = RAG_MIGRATIONS.filter(
         (item) =>
             item.replacesSchemaOf?.includes(migration.version) && rows.some((row) => row.version === item.version),
@@ -56,7 +56,7 @@ function physicalSchema(migration: RagMigration, rows: AppliedMigration[]): RagM
 async function verifyQuota(db: PoolClient): Promise<boolean> {
     if (!(await db.query("SELECT to_regclass('public.neurocenter_rag_migrations') AS name")).rows[0].name) return false;
     const rows = (
-        await db.query<AppliedMigration>('SELECT version,checksum FROM neurocenter_rag_migrations ORDER BY version')
+        await db.query<IAppliedMigration>('SELECT version,checksum FROM neurocenter_rag_migrations ORDER BY version')
     ).rows;
     if (
         rows.some((row) => row.version !== QUOTA_MIGRATION.version || row.checksum !== sqlChecksum(QUOTA_MIGRATION.sql))
@@ -88,7 +88,7 @@ export async function checkRagQuotaMigration(pool: Pool): Promise<boolean> {
 }
 
 /** Bootstrap is limited to the migration ledger; application tables are created exclusively by registered SQL. */
-export async function migrateRag(pool: Pool, migrations: readonly RagMigration[]): Promise<void> {
+export async function migrateRag(pool: Pool, migrations: readonly IRagMigration[]): Promise<void> {
     const client = await pool.connect();
     let discard = false;
     try {
@@ -101,7 +101,7 @@ export async function migrateRag(pool: Pool, migrations: readonly RagMigration[]
         await client.query(`CREATE TABLE IF NOT EXISTS neurocenter_rag_schema_versions(version TEXT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),checksum TEXT);
             ALTER TABLE neurocenter_rag_schema_versions ADD COLUMN IF NOT EXISTS checksum TEXT`);
         const rows = (
-            await client.query<AppliedMigration>(
+            await client.query<IAppliedMigration>(
                 'SELECT version,checksum FROM neurocenter_rag_schema_versions ORDER BY version',
             )
         ).rows;
@@ -137,7 +137,7 @@ export async function migrateRag(pool: Pool, migrations: readonly RagMigration[]
 /** Compatibility inspection never creates a ledger, adopts history, or changes application data. */
 export async function checkRagMigrations(
     pool: Pool,
-    migrations: readonly RagMigration[],
+    migrations: readonly IRagMigration[],
 ): Promise<{ applied: string[]; pending: string[] }> {
     const client = await pool.connect();
     let discard = false;
@@ -156,7 +156,7 @@ export async function checkRagMigrations(
             )
         ).rowCount;
         const rows = (
-            await client.query<AppliedMigration>(
+            await client.query<IAppliedMigration>(
                 `SELECT version,${checksumColumn ? 'checksum' : 'NULL::text AS checksum'} FROM neurocenter_rag_schema_versions ORDER BY version`,
             )
         ).rows;

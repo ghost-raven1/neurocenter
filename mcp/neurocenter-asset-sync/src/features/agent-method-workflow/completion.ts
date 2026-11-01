@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { load } from 'js-yaml';
 import { safeTarget } from '../../bridge/workspace.js';
 import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
-import { MethodExecutionError, type MethodCommandRunner } from './process.js';
+import { MethodExecutionError, type TMethodCommandRunner } from './process.js';
 import type { AgentMethodWorkflowPayload, AgentMethodWorkflowResult } from './contract.js';
 
 const incomplete = () => new MethodExecutionError('EXECUTION_FAILED');
@@ -12,7 +12,7 @@ export async function assertMethodCompleted(
     root: string,
     payload: AgentMethodWorkflowPayload,
     result: AgentMethodWorkflowResult,
-    run: MethodCommandRunner,
+    run: TMethodCommandRunner,
 ): Promise<void> {
     const changed = result.changes.filter((file) => file.afterSha256 !== null);
     if (payload.method === 'combined') {

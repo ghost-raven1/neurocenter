@@ -1,13 +1,13 @@
 import { previousRoleContract as previous } from './system-role.previous-data';
 import { roleHash } from './system-role.definitions';
-import type { RoleDefinition, RoleRunRow, SystemRoleId } from './system-role.types';
+import type { IRoleDefinition, IRoleRunRow, TSystemRoleId } from './system-role.interfaces';
 
 /** Exact accepted pre-guidance contracts stay readable and executable without gaining a new grant. */
-export const PREVIOUS_ROLE_DEFINITIONS = previous.definitions as unknown as readonly RoleDefinition[];
-export const previousSystemRole = (id: SystemRoleId): RoleDefinition =>
+export const PREVIOUS_ROLE_DEFINITIONS = previous.definitions as unknown as readonly IRoleDefinition[];
+export const previousSystemRole = (id: TSystemRoleId): IRoleDefinition =>
     PREVIOUS_ROLE_DEFINITIONS.find((item) => item.id === id)!;
-export const previousRoleDefinitionPin = (id: SystemRoleId): string => previous.pins[id];
-export function acceptedPreviousDefinition(row: RoleRunRow): RoleDefinition | undefined {
+export const previousRoleDefinitionPin = (id: TSystemRoleId): string => previous.pins[id];
+export function acceptedPreviousDefinition(row: IRoleRunRow): IRoleDefinition | undefined {
     const { request, snapshot } = row,
         definitionPin = previousRoleDefinitionPin(row.agent_id);
     if (

@@ -1,13 +1,13 @@
 import type { IPackage } from '../catalog/bundle-package';
 import type { IInstallationSet } from './installation-set';
 
-export interface InstallPlanInput {
+export interface IInstallPlanInput {
     projectId: string;
     assetKind: string;
     assetId: string;
     version: number;
 }
-export interface InstallPlanRow {
+export interface IInstallPlanRow {
     id: string;
     project_id: string;
     asset_kind: string;
@@ -22,7 +22,7 @@ export interface InstallPlanRow {
 }
 
 /** Просмотр точной версии позволяет проверить код до одобрения; локальные секреты сюда не входят. */
-export function installPlanView(row: InstallPlanRow) {
+export function installPlanView(row: IInstallPlanRow) {
     return {
         id: row.id,
         projectId: row.project_id,

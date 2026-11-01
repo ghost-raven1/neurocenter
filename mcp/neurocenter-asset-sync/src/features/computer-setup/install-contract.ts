@@ -1,10 +1,10 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 export type {
-    OpenCodeInstallPayload,
-    OpenCodeInstallResult,
-    OpenCodeInstallSupply,
-    OpenCodeInstallFailure,
+    IOpenCodeInstallPayload as OpenCodeInstallPayload,
+    IOpenCodeInstallResult as OpenCodeInstallResult,
+    IOpenCodeInstallSupply as OpenCodeInstallSupply,
+    TOpenCodeInstallFailure as OpenCodeInstallFailure,
 } from '../../../../../services/shared/opencode-cli-install.cjs';
 const source = new URL(
     import.meta.url.endsWith('.ts')

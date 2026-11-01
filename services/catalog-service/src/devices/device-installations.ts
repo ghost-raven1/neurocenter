@@ -8,8 +8,8 @@ import type { IAccessActor } from '../access/access.model';
 import { projectLevel } from '../access/access.model';
 import { verifyPackage, type IPackage } from '../catalog/bundle-package';
 import { DeviceStore } from './device-store';
-import { assertInstallationInspection, type InstallationInspection } from './installation-inspection';
-import { assertRuntimeProbe, type RuntimeProbeResult } from './runtime-probe';
+import { assertInstallationInspection, type IInstallationInspection } from './installation-inspection';
+import { assertRuntimeProbe, type IRuntimeProbeResult } from './runtime-probe';
 import { verifyInstallationSet, packageDependencies, type IInstallationSet } from './installation-set';
 import { installedGraph } from './installed-graph';
 import { configurationSchemaDigest } from './mcp-config-reports';
@@ -33,7 +33,7 @@ const latest = `WITH installed_events AS (
     FROM installed_events
     ORDER BY device_id,project_id,installed_binding,installed_package->'plugin'->>'kind',installed_package->'plugin'->>'id',COALESCE(started_at,created_at) DESC,id DESC
 )`;
-interface InstallationRow {
+interface IInstallationRow {
     deviceId: string;
     projectId: string;
     assetId: string;
@@ -61,7 +61,7 @@ interface InstallationRow {
         installSet?: { packages: IPackage[] };
     } | null;
 }
-interface InstallationInput {
+interface IInstallationInput {
     deviceId: string;
     projectId?: string;
     assetId?: string;
@@ -110,7 +110,7 @@ export class DeviceInstallations {
             .filter((project) => projectLevel(claims, actor.activeRole, project.projectId) > 0)
             .map((project) => project.projectId);
         const rows = (
-            await this.store.pool.query<InstallationRow>(
+            await this.store.pool.query<IInstallationRow>(
                 `${latest}
             SELECT j.device_id AS "deviceId",j.project_id AS "projectId",j.installed_package->'plugin'->>'id' AS "assetId",
                 j.installed_package->'plugin'->>'kind' AS "assetKind",(j.installed_package->'plugin'->>'version')::int AS version,
@@ -177,8 +177,8 @@ export class DeviceInstallations {
                     : undefined;
                 const isCurrentBinding =
                     !!item.bindingId && current?.valid !== false && current?.bindingId === item.bindingId;
-                let verifiedInspection: InstallationInspection | undefined;
-                let verifiedRuntime: RuntimeProbeResult | undefined;
+                let verifiedInspection: IInstallationInspection | undefined;
+                let verifiedRuntime: IRuntimeProbeResult | undefined;
                 let schemaDigest: string | undefined;
                 try {
                     schemaDigest = configurationSchemaDigest({
@@ -325,13 +325,13 @@ export class DeviceInstallations {
         }
         return result;
     }
-    async removalPackage(actor: IAccessActor, input: InstallationInput): Promise<IPackage> {
+    async removalPackage(actor: IAccessActor, input: IInstallationInput): Promise<IPackage> {
         return this.installedPackage(actor, input);
     }
     /** Диагностика читает тот же сохранённый пакет и не требует нового одобрения кода. */
     async inspectionPackage(
         actor: IAccessActor,
-        input: InstallationInput,
+        input: IInstallationInput,
         db?: Pick<PoolClient, 'query'>,
     ): Promise<IPackage> {
         return this.installedPackage(actor, input, db);
@@ -339,7 +339,7 @@ export class DeviceInstallations {
     /** Чтение копий сохраняет исходный граф даже после отзыва одобрения. */
     async inspectionDelivery(
         actor: IAccessActor,
-        input: InstallationInput,
+        input: IInstallationInput,
         db: Pick<PoolClient, 'query'> = this.store.pool,
     ): Promise<{ package: IPackage; installSet?: IInstallationSet }> {
         const pkg = await this.installedPackage(actor, input, db);
@@ -397,7 +397,7 @@ export class DeviceInstallations {
     }
     private async installedPackage(
         actor: IAccessActor,
-        input: InstallationInput,
+        input: IInstallationInput,
         db: Pick<PoolClient, 'query'> = this.store.pool,
     ): Promise<IPackage> {
         if (

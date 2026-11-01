@@ -4,14 +4,14 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
     bundledBuildRecipe,
     checkedFile,
-    type BundledBuildSource,
-    type BundledRecipe,
+    type IBundledBuildSource,
+    type IBundledRecipe,
 } from '../../../shared/bundled-catalog.cjs';
 import { TARGETS } from '../../../shared/runtime-artifacts.cjs';
 import { RAG_PLUGIN_SOURCE } from '../../../shared/opencode-rag-source.cjs';
 
 /** A current source recipe is pinned before enqueue and checked again before starting a producer. */
-export async function resolveBundledBuild(source: BundledBuildSource, kind: string, requested?: string[]) {
+export async function resolveBundledBuild(source: IBundledBuildSource, kind: string, requested?: string[]) {
     let resolved: Awaited<ReturnType<typeof bundledBuildRecipe>>;
     try {
         resolved = await bundledBuildRecipe(source);
@@ -31,9 +31,9 @@ export async function resolveBundledBuild(source: BundledBuildSource, kind: stri
 }
 
 /** Stage only files declared by the app manifest; a caller cannot select a filesystem path. */
-export async function stageBundledBuild(source: BundledBuildSource, kind: string, targets: string[], stage: string) {
+export async function stageBundledBuild(source: IBundledBuildSource, kind: string, targets: string[], stage: string) {
     const resolved = await resolveBundledBuild(source, kind, targets),
-        recipe: BundledRecipe = { ...resolved.recipe, targets };
+        recipe: IBundledRecipe = { ...resolved.recipe, targets };
     recipe.producer = {
         schemaVersion: 1,
         id: source.id,
@@ -82,8 +82,8 @@ export async function assertBundledPublication(
     const resolved = await bundledBuildRecipe(source);
     const expected = {
         schemaVersion: 1,
-        id: (source as BundledBuildSource).id,
-        revision: (source as BundledBuildSource).revision,
+        id: (source as IBundledBuildSource).id,
+        revision: (source as IBundledBuildSource).revision,
         producerSha256: resolved.bundle.producerSha256,
     };
     if (

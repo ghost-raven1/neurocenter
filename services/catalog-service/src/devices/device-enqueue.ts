@@ -9,7 +9,7 @@ import type { IAccessClaims } from '../access/access.model';
 import { reclaimUnauthorizedQueuedJobs } from './device-job-access';
 import { findDeviceJobRequest, saveDeviceJobRequest } from './device-job-requests';
 
-interface Enqueue {
+interface IEnqueue {
     id: string;
     deviceId: string;
     email: string;
@@ -20,13 +20,13 @@ interface Enqueue {
     requestKey: string;
     requestHash: string;
 }
-type Row = Record<string, unknown> & {
+type TRow = Record<string, unknown> & {
     id: string;
     request_hash?: string;
     role?: string;
     payload?: Record<string, unknown>;
 };
-const clean = (row: Row): Row => {
+const clean = (row: TRow): TRow => {
     const { request_hash: _hash, role: _role, payload: _payload, ...publicRow } = row;
     return publicRow;
 };
@@ -35,12 +35,12 @@ const clean = (row: Row): Row => {
 export async function enqueueDeviceJob(
     pool: Pool,
     view: string,
-    input: Enqueue,
+    input: IEnqueue,
     readClaims: (db: PoolClient) => Promise<IAccessClaims>,
     postInsert?: (db: PoolClient, jobId: string) => Promise<void>,
-): Promise<Row> {
+): Promise<TRow> {
     const client = await pool.connect();
-    let result: Row;
+    let result: TRow;
     try {
         await client.query('BEGIN');
         const owned = await client.query<{ id: string; role: string; report_unavailable: boolean }>(
@@ -67,7 +67,7 @@ export async function enqueueDeviceJob(
         );
         await guardWorkspaceQueue(client, input);
         if (['install', 'uninstall', ...LOCAL_APPLIES].includes(input.kind)) {
-            const pending = await client.query<Row>(
+            const pending = await client.query<TRow>(
                 `SELECT ${view},role,payload FROM bridge_jobs WHERE device_id=$1 AND project_id=$2
                 AND kind IN ('install','uninstall','apply-local-change','apply-adopt-installation','apply-local-restore') AND payload->>'assetKind'=$3 AND payload->>'assetId'=$4
                 AND state IN ('queued','running','reconciling') ORDER BY created_at LIMIT 1 FOR UPDATE`,
@@ -144,7 +144,7 @@ export async function enqueueDeviceJob(
                 'Ожидает моста',
             ],
         );
-        const saved = await client.query<Row>(
+        const saved = await client.query<TRow>(
             `SELECT ${view},request_hash FROM bridge_jobs WHERE email=$1 AND request_key=$2`,
             [input.email, input.requestKey],
         );

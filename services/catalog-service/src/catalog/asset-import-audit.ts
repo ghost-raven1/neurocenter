@@ -1,12 +1,12 @@
-interface ImportAuditItem {
+interface IImportAuditItem {
     assetId: string;
     name: string;
     kind: string;
     version: string;
 }
-interface ImportAuditSnapshot {
+interface IImportAuditSnapshot {
     ids: string[];
-    items: ImportAuditItem[];
+    items: IImportAuditItem[];
     repository?: string;
     commit?: string;
 }
@@ -16,11 +16,11 @@ const text = (value: unknown, max: number): value is string =>
     typeof value === 'string' && value.length > 0 && value.length <= max;
 
 /** Only immutable selected-asset identities leave the job; payloads, source files and credentials never do. */
-export function assetImportAuditSnapshot(value: unknown, rawItems: unknown): ImportAuditSnapshot {
+export function assetImportAuditSnapshot(value: unknown, rawItems: unknown): IImportAuditSnapshot {
     const input = record(value),
         ids = Array.isArray(input.ids) ? [...new Set(input.ids.filter((id) => text(id, 256)))].slice(0, 50) : [];
     const selected = new Set(ids),
-        items: ImportAuditItem[] = [];
+        items: IImportAuditItem[] = [];
     for (const raw of Array.isArray(rawItems) ? rawItems : []) {
         const item = record(raw);
         if (

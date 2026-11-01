@@ -1,9 +1,9 @@
 import { createOllama as nativeOllama } from '@neurocenter/ollama-runtime';
 
-type NativeProvider = ReturnType<typeof nativeOllama>;
-type NativeModel = ReturnType<NativeProvider['languageModel']>;
-type Call = Parameters<NativeModel['doGenerate']>[0];
-interface Settings {
+type TNativeProvider = ReturnType<typeof nativeOllama>;
+type TNativeModel = ReturnType<TNativeProvider['languageModel']>;
+type TCall = Parameters<TNativeModel['doGenerate']>[0];
+interface ISettings {
     name?: string;
     baseURL: string;
     apiKey?: string;
@@ -11,7 +11,7 @@ interface Settings {
 }
 
 /** OpenCode 1.14 uses a provider-ID namespace; the pinned SDK expects Ollama's native namespace and options. */
-function nativeCall(call: Call, provider: string): Call {
+function nativeCall(call: TCall, provider: string): TCall {
     const values = call.providerOptions?.[provider] ?? {},
         options: Record<string, number> = {};
     for (const [field, wire, fallback] of [
@@ -48,7 +48,7 @@ function nativeCall(call: Call, provider: string): Call {
 }
 
 /** Native /api/chat transport with optional bearer auth, tool calls, abort and streaming owned by the pinned Provider V3 SDK. */
-export function createOllama(settings: Settings): NativeProvider {
+export function createOllama(settings: ISettings): TNativeProvider {
     const name = settings.name ?? 'ollama',
         url = new URL(settings.baseURL);
     if (
@@ -71,18 +71,18 @@ export function createOllama(settings: Settings): NativeProvider {
         ...(settings.apiKey ? { headers: { Authorization: 'Bearer ' + settings.apiKey } } : {}),
         ...(settings.fetch ? { fetch: settings.fetch } : {}),
     });
-    const languageModel = (id: Parameters<NativeProvider['languageModel']>[0]): NativeModel => {
+    const languageModel = (id: Parameters<TNativeProvider['languageModel']>[0]): TNativeModel => {
         const model = native.languageModel(id);
         return new Proxy(model, {
             get(target, key, receiver) {
                 if (key === 'supportedUrls') return {};
-                if (key === 'doGenerate') return async (call: Call) => target.doGenerate(nativeCall(call, name));
-                if (key === 'doStream') return async (call: Call) => target.doStream(nativeCall(call, name));
+                if (key === 'doGenerate') return async (call: TCall) => target.doGenerate(nativeCall(call, name));
+                if (key === 'doStream') return async (call: TCall) => target.doStream(nativeCall(call, name));
                 return Reflect.get(target, key, receiver);
             },
         });
     };
-    return Object.assign((id: Parameters<NativeProvider['languageModel']>[0]) => languageModel(id), native, {
+    return Object.assign((id: Parameters<TNativeProvider['languageModel']>[0]) => languageModel(id), native, {
         languageModel,
         chat: languageModel,
     });

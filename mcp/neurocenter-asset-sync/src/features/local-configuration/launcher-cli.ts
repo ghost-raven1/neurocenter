@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readPrivateConfiguration } from './private-store.js';
-import { launcherDescriptorKey, type LauncherDescriptor } from './launcher-descriptor.js';
+import { launcherDescriptorKey, type ILauncherDescriptor } from './launcher-descriptor.js';
 import { configurationContext } from './context.js';
 import { readConfiguration } from './state.js';
 import { configurationTargets } from './schema.js';
@@ -26,7 +26,7 @@ async function launch(): Promise<void> {
     const marker = JSON.parse(await fs.readFile(path.join(root, '.opencode/neurocenter.json'), 'utf8')) as {
         projectId: string;
     };
-    const descriptor = await readPrivateConfiguration<LauncherDescriptor>(
+    const descriptor = await readPrivateConfiguration<ILauncherDescriptor>(
         await launcherDescriptorKey(marker.projectId, key!, manifest!),
     );
     if (

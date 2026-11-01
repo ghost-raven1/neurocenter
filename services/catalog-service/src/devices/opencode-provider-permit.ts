@@ -2,16 +2,16 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { normalizeProviderDescriptor } from '../../../shared/opencode-providers.cjs';
 import { requiredJobFeatures } from '../../../shared/feature-policy.cjs';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import type { DeviceArtifacts } from './device-artifacts';
-import type { Job } from './device-job.model';
+import type { IJob } from './device-job.model';
 import { assertProviderJob } from './opencode-provider-jobs';
 
 /** Form save survives its open ACK; paid Codex admission survives form TTL but never revoked scope or flags. */
 export async function authorizeProviderAction(
     store: DeviceStore,
     artifacts: DeviceArtifacts,
-    device: Device,
+    device: IDevice,
     input: unknown,
     permission: (role: string, projectId?: string) => Promise<unknown>,
 ) {
@@ -28,7 +28,7 @@ export async function authorizeProviderAction(
         throw new BadRequestException('Разрешение принимает только исходное задание открытия и фазу вызова.');
     const call = body.phase === 'request';
     const job = (
-        await store.pool.query<Job>(
+        await store.pool.query<IJob>(
             `SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3
         AND kind='open-opencode-provider' AND state IN ('running','succeeded')`,
             [body.jobId, device.id, device.email],

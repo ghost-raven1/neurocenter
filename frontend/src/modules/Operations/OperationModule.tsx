@@ -22,7 +22,12 @@ export default class OperationModule extends ModuleBase {
      */
     public getRoute(): ReactNode[] {
         return [
-            <ProtectedRoute key="operations" name={OPERATIONS_ROUTE} path={baseRoutes.operations} render={() => <Operations />} />,
+            <ProtectedRoute
+                key="operations"
+                name={OPERATIONS_ROUTE}
+                path={baseRoutes.operations}
+                render={() => <Operations />}
+            />,
         ];
     }
 }

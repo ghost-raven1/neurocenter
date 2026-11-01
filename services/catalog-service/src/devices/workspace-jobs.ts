@@ -1,13 +1,13 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { PoolClient } from 'pg';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import type { DeviceInstallations } from './device-installations';
 import type { IPackage } from '../catalog/bundle-package';
 
 export const WORKSPACE_MODES = ['new', 'new-copy', 'adopt-legacy', 'transfer', 'resume'] as const;
-type Mode = (typeof WORKSPACE_MODES)[number];
-export interface WorkspaceJobInput {
+type TMode = (typeof WORKSPACE_MODES)[number];
+export interface IWorkspaceJobInput {
     kind: string;
     projectId?: string;
     folderName?: string;
@@ -17,10 +17,10 @@ export interface WorkspaceJobInput {
     preparationJobId?: string;
     expectedPreparation?: string;
 }
-interface Preparation extends Record<string, unknown> {
+interface IPreparation extends Record<string, unknown> {
     projectId: string;
     folderName: string;
-    mode: Mode;
+    mode: TMode;
     preparation: string;
     requiresFileVerification: boolean;
     expectedBindingId?: string;
@@ -81,15 +81,15 @@ export function assertWorkspaceSource(
 export async function workspaceJobPayload(
     store: DeviceStore,
     installations: DeviceInstallations,
-    device: Device,
-    input: WorkspaceJobInput,
+    device: IDevice,
+    input: IWorkspaceJobInput,
 ): Promise<Record<string, unknown>> {
     const mode = input.bindingMode ?? 'new';
-    if (!WORKSPACE_MODES.includes(mode as Mode) || !folder(input.folderName)) {
+    if (!WORKSPACE_MODES.includes(mode as TMode) || !folder(input.folderName)) {
         throw new BadRequestException('Выберите папку и действие мастера привязки.');
     }
     assertWorkspaceSource(device.report, input.projectId!, mode, input.expectedBindingId, input.expectedInstanceId);
-    let preparation: Preparation | undefined;
+    let preparation: IPreparation | undefined;
     let preparedInstallations: unknown;
     if (
         input.kind === 'bind-project' &&
@@ -150,8 +150,8 @@ export async function workspaceJobPayload(
 export function assertWorkspacePreparation(
     value: unknown,
     input: { projectId?: string; folderName?: string; mode?: unknown },
-): asserts value is Preparation {
-    const result = value as Preparation | null;
+): asserts value is IPreparation {
+    const result = value as IPreparation | null;
     const fields = [
         'projectId',
         'folderName',
@@ -199,7 +199,7 @@ export async function saveWorkspaceEvent(
         !sha(result.bindingId) ||
         !uuid(result.instanceId) ||
         (result.previousBindingId !== undefined && !sha(result.previousBindingId)) ||
-        (job.payload.preparation && result.preparation !== (job.payload.preparation as Preparation).preparation) ||
+        (job.payload.preparation && result.preparation !== (job.payload.preparation as IPreparation).preparation) ||
         (['transfer', 'resume'].includes(String(result.mode)) &&
             result.instanceId !== job.payload.expectedInstanceId) ||
         (result.mode === 'new-copy' && result.instanceId === job.payload.expectedInstanceId) ||

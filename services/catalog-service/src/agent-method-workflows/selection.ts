@@ -8,21 +8,21 @@ import {
     validateProjectAgentsResult,
     PROJECT_AGENTS_JOB,
 } from '../../../shared/project-agents.cjs';
-import type { AgentMethodWorkflowAgent, AgentMethodWorkflowPayload } from '../../../shared/agent-method-workflow.cjs';
+import type { IAgentMethodWorkflowAgent, IAgentMethodWorkflowPayload } from '../../../shared/agent-method-workflow.cjs';
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
 import { agentModelRequirements, agentModelSetupRequired } from '../agents/agent-model-requirements';
 import { agentId } from '../agents/agent-validation';
-import type { Device } from '../devices/device-store';
+import type { IDevice } from '../devices/device-store';
 
-export type MethodAgentDb = Pick<PoolClient, 'query'>;
-interface Selection {
+export type TMethodAgentDb = Pick<PoolClient, 'query'>;
+interface ISelection {
     projectId: string;
     bindingId: string;
     instanceId: string;
     agentId: unknown;
     expectedAgentsRevision: unknown;
 }
-interface Delivery {
+interface IDelivery {
     id: string;
     state: string;
     payload: unknown;
@@ -32,17 +32,17 @@ const stale = () =>
     new ConflictException(
         'Настройка выбранного агента изменилась или ещё не применена к этой папке. Примените актуальные настройки агентов и выберите задачу заново.',
     );
-const database = (db: MethodAgentDb | undefined): MethodAgentDb => {
+const database = (db: TMethodAgentDb | undefined): TMethodAgentDb => {
     if (!db) throw stale();
     return db;
 };
 
 /** Bind one enabled native profile to the current desired set and its latest successful exact delivery. */
 export async function captureMethodAgent(
-    db: MethodAgentDb | undefined,
-    device: Device,
-    selection: Selection,
-): Promise<AgentMethodWorkflowAgent> {
+    db: TMethodAgentDb | undefined,
+    device: IDevice,
+    selection: ISelection,
+): Promise<IAgentMethodWorkflowAgent> {
     const source = database(db),
         id = selection.agentId;
     agentId(id);
@@ -83,7 +83,7 @@ export async function captureMethodAgent(
         modelRequirements,
     });
     const delivered = (
-        await source.query<Delivery>(
+        await source.query<IDelivery>(
             `SELECT id,state,payload,result FROM bridge_jobs
   WHERE device_id=$1 AND email=$2 AND project_id=$3 AND kind=$4 AND payload->>'bindingId'=$5 AND payload->>'instanceId'=$6
   ORDER BY created_at DESC,id DESC LIMIT 1 FOR SHARE`,
@@ -127,9 +127,9 @@ export async function captureMethodAgent(
 
 /** Server freshness never grants a fallback: accepted selected jobs must keep their exact original identity. */
 export async function assertMethodAgent(
-    db: MethodAgentDb | undefined,
-    device: Device,
-    payload: AgentMethodWorkflowPayload,
+    db: TMethodAgentDb | undefined,
+    device: IDevice,
+    payload: IAgentMethodWorkflowPayload,
 ): Promise<void> {
     if (!payload.agent) return;
     const current = await captureMethodAgent(db, device, {

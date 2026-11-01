@@ -4,9 +4,9 @@ import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { verifyPackage, type IPackage } from '../catalog/bundle-package';
 import { assertProjectEmbeddingModel, projectEmbeddingPin } from '../models/project-embedding.validation';
-import type { IConfiguredProjectEmbedding, IDeviceEmbeddingContext } from '../models/project-embedding.types';
-import type { Device } from './device-store';
-import type { Job } from './device-job.model';
+import type { IConfiguredProjectEmbedding, IDeviceEmbeddingContext } from '../models/project-embedding.interfaces';
+import type { IDevice } from './device-store';
+import type { IJob } from './device-job.model';
 
 export interface IHostedInstallationIdentity {
     kind: 'mcp' | 'plugin';
@@ -34,7 +34,7 @@ export interface IHostedRagGrant {
     revoked_at: Date | null;
     job_id: string;
 }
-type Db = Pick<PoolClient, 'query'>;
+type TDb = Pick<PoolClient, 'query'>;
 const invalid = () =>
     new ConflictException(
         'Подключение RAG не разрешено или изменилось. Подключите модель заново из установленного OpenCodeRAG.',
@@ -75,8 +75,8 @@ export function hostedGrantPayload(payload: Record<string, unknown>, projectId: 
 /** До локального commit сохраняется кандидат; прежний grant нужен для честного rollback. */
 export async function registerHostedRagGrant(
     pool: Pool,
-    device: Device,
-    expected: Job,
+    device: IDevice,
+    expected: IJob,
     lease: string,
     validate: () => Promise<void>,
 ): Promise<void> {
@@ -84,7 +84,7 @@ export async function registerHostedRagGrant(
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const found = await client.query<Job>(
+        const found = await client.query<IJob>(
             "SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3 AND state='running' AND lease_until>now() FOR UPDATE",
             [expected.id, device.id, lease],
         );
@@ -97,7 +97,7 @@ export async function registerHostedRagGrant(
         )
             throw invalid();
         const live = (
-            await client.query<Device>(
+            await client.query<IDevice>(
                 'SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR SHARE',
                 [device.id, device.email],
             )
@@ -155,8 +155,8 @@ export async function registerHostedRagGrant(
 }
 
 export async function insertHostedRagGrant(
-    db: Db,
-    job: Pick<Job, 'id' | 'device_id' | 'project_id' | 'email' | 'role' | 'payload'>,
+    db: TDb,
+    job: Pick<IJob, 'id' | 'device_id' | 'project_id' | 'email' | 'role' | 'payload'>,
 ): Promise<void> {
     const { pkg, selection } = hostedGrantPayload(job.payload, job.project_id!);
     const assignment = (
@@ -193,7 +193,7 @@ export async function insertHostedRagGrant(
 }
 
 /** Только подтверждённый успех заменяет старый grant той же установки; failed/timeout сохраняет исходный индекс. */
-export async function completeHostedRagGrant(db: Db, jobId: string): Promise<void> {
+export async function completeHostedRagGrant(db: TDb, jobId: string): Promise<void> {
     if (!(await db.query('SELECT 1 FROM bridge_hosted_rag_grants WHERE job_id=$1', [jobId])).rows.length)
         throw new ConflictException(
             'Подключение не было авторизовано до локального изменения. Проверьте состояние на компьютере и создайте новый intent.',
@@ -210,8 +210,8 @@ export async function completeHostedRagGrant(db: Db, jobId: string): Promise<voi
 
 /** Поиск использует только таблицу разрешений, никогда не ищет подходящий job во время inference. */
 export async function readHostedRagGrant(
-    db: Db,
-    device: Device,
+    db: TDb,
+    device: IDevice,
     input: IDeviceEmbeddingContext,
 ): Promise<IHostedRagGrant> {
     const install = input.installation;

@@ -5,8 +5,8 @@ import { publicationHash } from '../publication/publication-validation';
 import { securityEvent } from '../access/security-events';
 import { AgentRepository, agentSummary } from '../agents/agent.repository';
 import { agentCard, agentManifest, agentNativeHash, normalizeCard } from '../agents/agent-validation';
-import type { AgentCard, AgentHeadRow } from '../agents/agent.types';
-import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-types';
+import type { IAgentCard, IAgentHeadRow } from '../agents/agent.interfaces';
+import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-interfaces';
 
 /** Source provenance and immutable versions are retained independently from the editable catalog head. */
 export class AgentAssetAdapter {
@@ -14,7 +14,7 @@ export class AgentAssetAdapter {
     constructor(private readonly pool: Pool) {
         this.cards = new AgentRepository(pool);
     }
-    private candidate(item: IImportItem): AgentCard {
+    private candidate(item: IImportItem): IAgentCard {
         const input = normalizeCard({
             slug: item.payload!.slug,
             name: item.payload!.name,
@@ -53,7 +53,7 @@ export class AgentAssetAdapter {
                     !item.preserveHead &&
                     item.action !== 'conflict',
             );
-        const saved = (await this.pool.query<AgentHeadRow>('SELECT * FROM agent_catalog WHERE id=$1', [id])).rows[0],
+        const saved = (await this.pool.query<IAgentHeadRow>('SELECT * FROM agent_catalog WHERE id=$1', [id])).rows[0],
             row = previous ? this.candidate(previous) : saved ? agentCard(saved) : undefined;
         const base: IImportItem = {
             resolved,
@@ -94,7 +94,7 @@ export class AgentAssetAdapter {
                     reason: 'Версия источника связана с другим неизменяемым агентом.',
                 };
             const old = (
-                await this.pool.query<AgentHeadRow>(
+                await this.pool.query<IAgentHeadRow>(
                     'SELECT agent_id AS id,slug,name,definition,version,manifest,NULL::timestamptz AS archived_at,created_at,created_at AS updated_at FROM agent_catalog_versions WHERE agent_id=$1 AND version=$2',
                     [id, versionReceipt.native_version],
                 )
@@ -149,7 +149,7 @@ export class AgentAssetAdapter {
         const version = row ? (same ? row.version : Math.max(row.version, plannedMaximum) + 1) : 1,
             snapshot = !!row && !resolved.current && !same;
         const manifest = agentManifest({ id, ...input, version }),
-            candidate: AgentCard = {
+            candidate: IAgentCard = {
                 id,
                 ...input,
                 description: input.definition.description,
@@ -177,7 +177,7 @@ export class AgentAssetAdapter {
                 name: item.payload!.name,
                 definition: item.payload!.definition,
             }),
-            saved = (await db.query<AgentHeadRow>('SELECT * FROM agent_catalog WHERE id=$1 FOR UPDATE', [id])).rows[0],
+            saved = (await db.query<IAgentHeadRow>('SELECT * FROM agent_catalog WHERE id=$1 FOR UPDATE', [id])).rows[0],
             row = saved ? agentCard(saved) : undefined;
         if (item.action === 'unchanged' && item.preserveHead) {
             const old = await this.cards.pinned(id, item.native.version, item.native.manifest!, db);
@@ -209,7 +209,7 @@ export class AgentAssetAdapter {
         });
         return this.pin(card);
     }
-    pin(card: AgentCard): INativeAssetPin {
+    pin(card: IAgentCard): INativeAssetPin {
         return {
             kind: 'agent',
             id: card.id,

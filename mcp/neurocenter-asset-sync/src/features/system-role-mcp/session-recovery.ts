@@ -1,4 +1,4 @@
-import type { RoleMcpIdentity } from './api.js';
+import type { IRoleMcpIdentity } from './api.js';
 import { cleanRoleMcpSession, roleMcpClosurePath } from './local-session.js';
 import { roleMcpOwnerAlive, retireRoleMcpProcessReceipt } from './owned-process.js';
 import {
@@ -6,15 +6,15 @@ import {
     retainRoleMcpClaim,
     retainRoleMcpCompletion,
     retireRoleMcpIntent,
-    type RoleMcpSessionIntent,
+    type IRoleMcpSessionIntent,
 } from './session-journal.js';
-import type { SessionJob } from './worker.js';
+import type { ISessionJob } from './worker.js';
 
-export interface RoleMcpClaimRequest {
+export interface IRoleMcpClaimRequest {
     requestId: string;
     recoveryOnly: boolean;
 }
-export function assertRoleMcpClaim(job: SessionJob, requestId: string) {
+export function assertRoleMcpClaim(job: ISessionJob, requestId: string) {
     if (
         !job ||
         !/^[a-f0-9-]{36}$/.test(job.id) ||
@@ -26,9 +26,9 @@ export function assertRoleMcpClaim(job: SessionJob, requestId: string) {
         throw new Error('Сервер не подтвердил точный запрос сессии MCP.');
 }
 export async function acknowledgeRoleMcpCompletion(
-    identity: RoleMcpIdentity,
-    intent: RoleMcpSessionIntent,
-    send: (job: SessionJob, value: unknown, identity: RoleMcpIdentity) => Promise<unknown>,
+    identity: IRoleMcpIdentity,
+    intent: IRoleMcpSessionIntent,
+    send: (job: ISessionJob, value: unknown, identity: IRoleMcpIdentity) => Promise<unknown>,
 ) {
     if (intent.phase !== 'closed' || !intent.completion || !intent.job)
         throw new Error('Нет подтверждения физической очистки MCP.');
@@ -41,10 +41,10 @@ export async function acknowledgeRoleMcpCompletion(
 }
 /** A replay may close a lease, but never obtains authority to run its tool again. */
 export async function recoverRoleMcpSessions(
-    identity: RoleMcpIdentity,
+    identity: IRoleMcpIdentity,
     active: Set<string>,
-    claim: (request: RoleMcpClaimRequest) => Promise<SessionJob | null>,
-    send: (job: SessionJob, value: unknown, identity: RoleMcpIdentity) => Promise<unknown>,
+    claim: (request: IRoleMcpClaimRequest) => Promise<ISessionJob | null>,
+    send: (job: ISessionJob, value: unknown, identity: IRoleMcpIdentity) => Promise<unknown>,
 ) {
     for (let intent of await readRoleMcpIntents(identity)) {
         if (active.has(intent.requestId)) continue;

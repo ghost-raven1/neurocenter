@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import { createInflateRaw } from 'node:zlib';
 import { ArchiveStager, SOURCE_ARCHIVE_LIMITS, archiveFailure, archiveFileStream } from './source-archive-reader-files';
 
-interface ZipEntry {
+interface IZipEntry {
     fileName: string;
     fileNameRaw: Buffer;
     uncompressedSize: number;
@@ -15,7 +15,7 @@ interface ZipEntry {
     compressionMethod: number;
     relativeOffsetOfLocalHeader: number;
 }
-interface LocalHeader {
+interface ILocalHeader {
     fileDataStart: number;
     generalPurposeBitFlag: number;
     compressionMethod: number;
@@ -25,24 +25,24 @@ interface LocalHeader {
     fileName: Buffer;
     extraField: Buffer;
 }
-interface ZipArchive {
+interface IZipArchive {
     entryCount: number;
     readEntryCursor: number;
-    on(event: 'entry', listener: (entry: ZipEntry) => void): this;
+    on(event: 'entry', listener: (entry: IZipEntry) => void): this;
     on(event: 'error', listener: (error: Error) => void): this;
     on(event: 'end', listener: () => void): this;
     readEntry(): void;
     close(): void;
-    readLocalFileHeaderPromise(entry: ZipEntry, options: object): Promise<LocalHeader>;
-    openReadStreamPromise(entry: ZipEntry, options: object): Promise<Readable>;
+    readLocalFileHeaderPromise(entry: IZipEntry, options: object): Promise<ILocalHeader>;
+    openReadStreamPromise(entry: IZipEntry, options: object): Promise<Readable>;
 }
-interface AccessReader {
+interface IAccessReader {
     close(callback: (error?: Error) => void): void;
     _readStreamForRange(start: number, end: number): Readable;
 }
 const yauzl = require('yauzl') as {
-    RandomAccessReader: new () => AccessReader;
-    fromRandomAccessReaderPromise: (reader: AccessReader, size: number, options: object) => Promise<ZipArchive>;
+    RandomAccessReader: new () => IAccessReader;
+    fromRandomAccessReaderPromise: (reader: IAccessReader, size: number, options: object) => Promise<IZipArchive>;
 };
 const integer = (value: bigint): number => {
     if (value > BigInt(Number.MAX_SAFE_INTEGER)) archiveFailure('ZIP64 содержит слишком большой размер.');
@@ -101,7 +101,7 @@ async function layout(file: FileHandle, size: number): Promise<{ start: number; 
         archiveFailure('ZIP превышает лимиты или содержит повреждённый каталог.');
     return { start, end, entries };
 }
-function localSizes(local: LocalHeader): { compressed: number; uncompressed: number } {
+function localSizes(local: ILocalHeader): { compressed: number; uncompressed: number } {
     let compressed = local.compressedSize,
         uncompressed = local.uncompressedSize;
     if (compressed !== 0xffffffff && uncompressed !== 0xffffffff) return { compressed, uncompressed };
@@ -127,12 +127,12 @@ function localSizes(local: LocalHeader): { compressed: number; uncompressed: num
     }
     return archiveFailure('В ZIP64 отсутствуют размеры файла.');
 }
-interface Region {
+interface IRegion {
     start: number;
     end: number;
-    entry: Pick<ZipEntry, 'generalPurposeBitFlag' | 'crc32' | 'compressedSize' | 'uncompressedSize'>;
+    entry: Pick<IZipEntry, 'generalPurposeBitFlag' | 'crc32' | 'compressedSize' | 'uncompressedSize'>;
 }
-async function regions(file: FileHandle, items: Region[], end: number): Promise<void> {
+async function regions(file: FileHandle, items: IRegion[], end: number): Promise<void> {
     items.sort((a, b) => a.start - b.start);
     let expected = 0;
     for (let index = 0; index < items.length; index++) {
@@ -179,7 +179,7 @@ export async function readZipArchive(file: FileHandle, size: number, stager: Arc
         validateEntrySizes: true,
         autoClose: false,
     });
-    const ranges: Region[] = [];
+    const ranges: IRegion[] = [];
     let active: Readable | undefined, pending: Promise<void> | undefined;
     try {
         if (zip.entryCount !== directory.entries || zip.readEntryCursor !== directory.start) archiveFailure();
@@ -196,7 +196,7 @@ export async function readZipArchive(file: FileHandle, size: number, stager: Arc
             const abort = () => stop(stager.signal.reason as Error);
             zip.on('error', stop);
             zip.on('end', () => stop());
-            zip.on('entry', (entry: ZipEntry) => {
+            zip.on('entry', (entry: IZipEntry) => {
                 pending = (async () => {
                     stager.signal.throwIfAborted();
                     let name = entry.fileName;

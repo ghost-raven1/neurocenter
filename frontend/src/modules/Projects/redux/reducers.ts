@@ -1,3 +1,4 @@
+import type { IProjectsState } from './interfaces';
 import { createSlice, isAnyOf } from '@reduxjs/toolkit';
 
 import { authDataScope } from '../../../features/UserBlock/authDataScope';
@@ -6,7 +7,6 @@ import { signOut } from '../../../features/UserBlock/redux/reducers';
 import type { IAuthMe } from '../../../core/interfaces';
 import type { IProjectListParams } from '../../../core/api/interfaces';
 import { fetchProject, fetchProjects } from './actions';
-import type { IProjectsState } from '../interfaces';
 
 const initialState: IProjectsState = {
     list: [],
@@ -74,7 +74,7 @@ const projectsSlice = createSlice({
         },
         clearSelected: clearSelectedProject,
     },
-    extraReducers: builder => {
+    extraReducers: (builder) => {
         builder
             .addCase(fetchProjects.pending, (state, action) => {
                 if (!state.authScope || !matchesListParams(state, action.meta.arg)) {
@@ -100,7 +100,10 @@ const projectsSlice = createSlice({
                 }
                 state.loading = false;
                 state.listRequestId = null;
-                state.listError = action.payload ?? { status: null, message: 'Не удалось загрузить список проектов. Попробуйте ещё раз.' };
+                state.listError = action.payload ?? {
+                    status: null,
+                    message: 'Не удалось загрузить список проектов. Попробуйте ещё раз.',
+                };
                 if (state.listError.status === 403 || state.listError.status === 404) {
                     state.list = [];
                     state.total = 0;
@@ -110,7 +113,11 @@ const projectsSlice = createSlice({
                 if (!state.authScope) {
                     return;
                 }
-                if (state.selectedId !== action.meta.arg && state.selected?.id !== action.meta.arg && state.selected?.name !== action.meta.arg) {
+                if (
+                    state.selectedId !== action.meta.arg &&
+                    state.selected?.id !== action.meta.arg &&
+                    state.selected?.name !== action.meta.arg
+                ) {
                     clearSelectedProject(state);
                 }
                 state.selectedId = action.meta.arg;
@@ -131,7 +138,10 @@ const projectsSlice = createSlice({
                 if (state.selectedRequestId !== action.meta.requestId) {
                     return;
                 }
-                const error = action.payload ?? { status: null, message: 'Не удалось загрузить проект. Попробуйте ещё раз.' };
+                const error = action.payload ?? {
+                    status: null,
+                    message: 'Не удалось загрузить проект. Попробуйте ещё раз.',
+                };
                 if (error.status === 403 || error.status === 404) {
                     clearSelectedProject(state);
                 }
@@ -142,7 +152,9 @@ const projectsSlice = createSlice({
             })
             .addCase(authInit.rejected, (state, action) => {
                 if (state.authRequestId === action.meta.requestId) {
-                    if (action.payload === 'unauthorized' || action.payload === 'forbidden') { return initialState; }
+                    if (action.payload === 'unauthorized' || action.payload === 'forbidden') {
+                        return initialState;
+                    }
                     state.authRequestId = null;
                 }
             })

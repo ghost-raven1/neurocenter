@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import type { IModel, IModelList } from './model.types';
+import type { IModel, IModelList } from './model.interfaces';
 import { validateModelAssignment } from './model-validation';
 import { ModelsService } from './models.service';
 

@@ -8,16 +8,16 @@ import { currentActor, canRead, permissions } from './request.access';
 import { checkedTarget, listTargets, targetAvailability } from './request.targets';
 import { actionInput, createInput, editInput, listInput, targetQuery, uuid } from './request.validation';
 import type {
-    CatalogRequest,
-    RequestActor,
-    RequestDetail,
-    RequestEvent,
-    RequestList,
-    RequestRow,
-    RequestStatus,
-} from './request.types';
+    ICatalogRequest,
+    IRequestActor,
+    IRequestDetail,
+    IRequestEvent,
+    IRequestList,
+    IRequestRow,
+    TRequestStatus,
+} from './request.interfaces';
 
-const summary = (row: RequestRow) => ({
+const summary = (row: IRequestRow) => ({
     id: row.id,
     title: row.title,
     kind: row.kind,
@@ -31,7 +31,7 @@ export class CatalogRequestRepository {
     constructor(readonly pool: Pool) {}
     private async transaction<T>(
         input: IAccessActor,
-        work: (db: PoolClient, actor: RequestActor) => Promise<T>,
+        work: (db: PoolClient, actor: IRequestActor) => Promise<T>,
     ): Promise<T> {
         const db = await this.pool.connect();
         try {
@@ -46,9 +46,9 @@ export class CatalogRequestRepository {
             db.release();
         }
     }
-    private async row(db: PoolClient, actor: RequestActor, id: string, lock = false): Promise<RequestRow> {
+    private async row(db: PoolClient, actor: IRequestActor, id: string, lock = false): Promise<IRequestRow> {
         const row = (
-            await db.query<RequestRow>(
+            await db.query<IRequestRow>(
                 'SELECT * FROM catalog_requests WHERE id=$1' + (lock ? ' FOR UPDATE' : ' FOR SHARE'),
                 [uuid(id)],
             )
@@ -56,7 +56,7 @@ export class CatalogRequestRepository {
         if (!row || !canRead(actor, row)) throw new NotFoundException('Заявка не найдена или недоступна.');
         return row;
     }
-    private async views(db: PoolClient, actor: RequestActor, rows: RequestRow[]): Promise<CatalogRequest[]> {
+    private async views(db: PoolClient, actor: IRequestActor, rows: IRequestRow[]): Promise<ICatalogRequest[]> {
         const available = await targetAvailability(
             db,
             rows.flatMap((row) => (row.target ? [row.target] : [])),
@@ -81,7 +81,7 @@ export class CatalogRequestRepository {
                 [ids],
             )
         ).rows;
-        const targetView = (row: RequestRow) => {
+        const targetView = (row: IRequestRow) => {
             if (!row.target) return null;
             const target = { ...row.target, available: available.get(row.target.type + ':' + row.target.id) ?? null };
             if (row.project_id) {
@@ -122,9 +122,9 @@ export class CatalogRequestRepository {
             permissions: permissions(actor, row),
         }));
     }
-    private async detail(db: PoolClient, actor: RequestActor, row: RequestRow): Promise<RequestDetail> {
+    private async detail(db: PoolClient, actor: IRequestActor, row: IRequestRow): Promise<IRequestDetail> {
         const events = (
-            await db.query<Omit<RequestEvent, 'at'> & { at: Date }>(
+            await db.query<Omit<IRequestEvent, 'at'> & { at: Date }>(
                 `SELECT id,action,actor,comment,from_status AS "fromStatus",to_status AS "toStatus",revision,created_at AS at FROM catalog_request_events WHERE request_id=$1 ORDER BY revision`,
                 [row.id],
             )
@@ -132,7 +132,7 @@ export class CatalogRequestRepository {
         const history = events.map((event) => ({ ...event, at: event.at.toISOString() }));
         return { ...(await this.views(db, actor, [row]))[0], history };
     }
-    list(input: IAccessActor, query: unknown): Promise<RequestList> {
+    list(input: IAccessActor, query: unknown): Promise<IRequestList> {
         const filter = listInput(query);
         return this.transaction(input, async (db, actor) => {
             const values: unknown[] = [],
@@ -167,7 +167,7 @@ export class CatalogRequestRepository {
                     .rows[0].n,
             );
             const rows = (
-                await db.query<RequestRow>(
+                await db.query<IRequestRow>(
                     'SELECT * FROM catalog_requests' +
                         where +
                         ' ORDER BY updated_at DESC,id LIMIT ' +
@@ -180,7 +180,7 @@ export class CatalogRequestRepository {
             return { items: await this.views(db, actor, rows), total, page: filter.page, size: filter.size };
         });
     }
-    get(actor: IAccessActor, id: string): Promise<RequestDetail> {
+    get(actor: IAccessActor, id: string): Promise<IRequestDetail> {
         return this.transaction(actor, async (db, current) =>
             this.detail(db, current, await this.row(db, current, id)),
         );
@@ -196,8 +196,8 @@ export class CatalogRequestRepository {
         key: string,
         operation: string,
         payload: unknown,
-        work: (db: PoolClient, actor: RequestActor) => Promise<RequestRow>,
-    ): Promise<RequestDetail> {
+        work: (db: PoolClient, actor: IRequestActor) => Promise<IRequestRow>,
+    ): Promise<IRequestDetail> {
         return this.transaction(input, async (db, actor) => {
             const hash = publicationHash({ operation, role: actor.activeRole, payload });
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
@@ -224,10 +224,10 @@ export class CatalogRequestRepository {
     }
     private async event(
         db: PoolClient,
-        actor: RequestActor,
+        actor: IRequestActor,
         action: string,
-        before: RequestRow | null,
-        after: RequestRow,
+        before: IRequestRow | null,
+        after: IRequestRow,
         comment = '',
     ) {
         await db.query(
@@ -251,7 +251,7 @@ export class CatalogRequestRepository {
             after: summary(after),
         });
     }
-    create(actor: IAccessActor, raw: unknown): Promise<RequestDetail> {
+    create(actor: IAccessActor, raw: unknown): Promise<IRequestDetail> {
         const input = createInput(raw);
         return this.mutate(actor, input.requestKey, 'create', input, async (db, current) => {
             let projectName: string | null = null;
@@ -271,7 +271,7 @@ export class CatalogRequestRepository {
                 ? await checkedTarget(db, current, input.target, input.assetType, input.projectId)
                 : null;
             const row = (
-                await db.query<RequestRow>(
+                await db.query<IRequestRow>(
                     `INSERT INTO catalog_requests(id,kind,asset_type,title,description,source_url,project_id,project_name,created_by,status,revision,target)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'submitted',1,$10::jsonb) RETURNING *`,
                     [
@@ -292,7 +292,7 @@ export class CatalogRequestRepository {
             return row;
         });
     }
-    edit(actor: IAccessActor, id: string, raw: unknown): Promise<RequestDetail> {
+    edit(actor: IAccessActor, id: string, raw: unknown): Promise<IRequestDetail> {
         uuid(id);
         const input = editInput(raw);
         return this.mutate(actor, input.requestKey, 'edit', { id, ...input }, async (db, current) => {
@@ -307,7 +307,7 @@ export class CatalogRequestRepository {
                 ? await checkedTarget(db, current, input.target, before.asset_type, before.project_id)
                 : null;
             const row = (
-                await db.query<RequestRow>(
+                await db.query<IRequestRow>(
                     `UPDATE catalog_requests SET title=$2,description=$3,source_url=$4,target=$5::jsonb,revision=revision+1,updated_at=now() WHERE id=$1 RETURNING *`,
                     [id, input.title, input.description, input.sourceUrl, target ? JSON.stringify(target) : null],
                 )
@@ -316,7 +316,7 @@ export class CatalogRequestRepository {
             return row;
         });
     }
-    action(actor: IAccessActor, id: string, raw: unknown): Promise<RequestDetail> {
+    action(actor: IAccessActor, id: string, raw: unknown): Promise<IRequestDetail> {
         uuid(id);
         const input = actionInput(raw);
         return this.mutate(actor, input.requestKey, 'action', { id, ...input }, async (db, current) => {
@@ -332,7 +332,7 @@ export class CatalogRequestRepository {
                       : !allowed.canReview
             )
                 throw new ForbiddenException('Активная роль не разрешает это действие с заявкой.');
-            const next: Record<string, RequestStatus> = {
+            const next: Record<string, TRequestStatus> = {
                 start: 'in_progress',
                 needs_info: 'needs_info',
                 reject: 'rejected',
@@ -353,7 +353,7 @@ export class CatalogRequestRepository {
                 target = await checkedTarget(db, current, choice, before.asset_type, before.project_id);
             }
             const row = (
-                await db.query<RequestRow>(
+                await db.query<IRequestRow>(
                     'UPDATE catalog_requests SET status=$2,target=$3::jsonb,revision=revision+1,updated_at=now() WHERE id=$1 RETURNING *',
                     [id, next[input.action], target ? JSON.stringify(target) : null],
                 )

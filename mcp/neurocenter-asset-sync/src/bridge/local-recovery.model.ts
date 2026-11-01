@@ -1,6 +1,6 @@
-import type { PackageRef } from './install-set.js';
-import type { Journal } from './installation-journal.js';
-export type LocalVariantReason =
+import type { IPackageRef } from './install-set.js';
+import type { IJournal } from './installation-journal.js';
+export type TLocalVariantReason =
     | 'ready'
     | 'legacy-unverified'
     | 'different-installation'
@@ -9,14 +9,14 @@ export type LocalVariantReason =
     | 'no-restorable-files'
     | 'invalid-backup'
     | 'limit-exceeded';
-export interface LocalVariantEntry {
+export interface ILocalVariantEntry {
     recoveryId: string;
     createdAt: string;
     files: number;
     eligible: boolean;
-    reason: LocalVariantReason;
+    reason: TLocalVariantReason;
 }
-export interface LocalVariantList {
+export interface ILocalVariantList {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -27,16 +27,16 @@ export interface LocalVariantList {
     manifest: string;
     checkedAt: string;
     complete: boolean;
-    entries: LocalVariantEntry[];
+    entries: ILocalVariantEntry[];
 }
-export interface RecoverySource {
-    journal: Journal;
+export interface IRecoverySource {
+    journal: IJournal;
     createdAt: string;
-    reason: LocalVariantReason;
-    packages?: PackageRef[];
+    reason: TLocalVariantReason;
+    packages?: IPackageRef[];
 }
 export class LocalRecoveryError extends Error {
-    constructor(readonly reason: LocalVariantReason) {
+    constructor(readonly reason: TLocalVariantReason) {
         super('Локальный вариант недоступен: ' + reason + '. Подготовьте список заново.');
     }
 }

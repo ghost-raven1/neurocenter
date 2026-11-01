@@ -1,14 +1,14 @@
-import { catalogRebuildRequestKey, type CatalogRebuildRequest } from '../../../shared/catalog-rebuild-request.cjs';
+import { catalogRebuildRequestKey, type ICatalogRebuildRequest } from '../../../shared/catalog-rebuild-request.cjs';
 import {
     readCatalogRebuildRequest,
     sameCatalogRebuildRequest,
     writeCatalogRebuildState,
-    type CatalogRebuildItem,
-    type CatalogRebuildState,
+    type ICatalogRebuildItem,
+    type ICatalogRebuildState,
 } from './catalog-rebuild-state';
-import type { BuildPublicationTarget } from './publication-target';
+import type { IBuildPublicationTarget } from './publication-target';
 
-export interface RebuildPlan {
+export interface IRebuildPlan {
     id: string;
     kind: string;
     name: string;
@@ -18,43 +18,43 @@ export interface RebuildPlan {
     catalogReady?: boolean;
     imported?: { id: string; name?: string; version: number; archived?: boolean; unavailable?: boolean };
 }
-interface Job {
+interface IJob {
     id: string;
     state: string;
     items?: Array<{ state: string; action: string }>;
 }
-interface Actor {
+interface IActor {
     email: string;
     activeRole: 'Главный админ';
 }
-export interface CatalogRebuildDependencies {
+export interface ICatalogRebuildDependencies {
     file: string;
-    actor: () => Actor;
-    authorize: (actor: Actor) => Promise<void>;
+    actor: () => IActor;
+    authorize: (actor: IActor) => Promise<void>;
     bundle: () => Promise<{ revision: string; commit: string; inlineIds: string[] }>;
-    plans: () => Promise<RebuildPlan[]>;
+    plans: () => Promise<IRebuildPlan[]>;
     refresh: () => Promise<void>;
-    target: (plan: RebuildPlan) => Promise<{ name: string; publication?: BuildPublicationTarget }>;
+    target: (plan: IRebuildPlan) => Promise<{ name: string; publication?: IBuildPublicationTarget }>;
     build: {
-        request: (actor: Actor, key: string) => Promise<Job>;
-        create: (actor: Actor, input: unknown) => Promise<Job>;
+        request: (actor: IActor, key: string) => Promise<IJob>;
+        create: (actor: IActor, input: unknown) => Promise<IJob>;
     };
     inline: {
-        request: (actor: Actor, key: string) => Promise<Job>;
-        create: (actor: Actor, input: { requestKey: string; commit: string; ids: string[] }) => Promise<Job>;
+        request: (actor: IActor, key: string) => Promise<IJob>;
+        create: (actor: IActor, input: { requestKey: string; commit: string; ids: string[] }) => Promise<IJob>;
     };
 }
 const missing = (error: unknown) => (error as { getStatus?: () => number })?.getStatus?.() === 404;
-const ready = (job: Job) =>
+const ready = (job: IJob) =>
     job.state === 'SUCCEEDED' && !job.items?.some((item) => item.action === 'conflict' || item.state === 'FAILED');
-const pending = (job: Job) => ['QUEUED', 'RUNNING', 'CANCELLING'].includes(job.state);
+const pending = (job: IJob) => ['QUEUED', 'RUNNING', 'CANCELLING'].includes(job.state);
 
 /** Reuses accepted build/import requests; this coordinator never runs a producer or publishes a card itself. */
 export class CatalogRebuildCoordinator {
     private running?: Promise<void>;
     private stopped = false;
-    private settled?: CatalogRebuildRequest;
-    constructor(private readonly dependencies: CatalogRebuildDependencies) {}
+    private settled?: ICatalogRebuildRequest;
+    constructor(private readonly dependencies: ICatalogRebuildDependencies) {}
     tick(): Promise<void> {
         if (this.stopped) return Promise.resolve();
         return (this.running ??= this.run()
@@ -67,16 +67,16 @@ export class CatalogRebuildCoordinator {
         this.stopped = true;
         await this.running;
     }
-    private async current(request: CatalogRebuildRequest): Promise<boolean> {
+    private async current(request: ICatalogRebuildRequest): Promise<boolean> {
         return (
             !this.stopped && sameCatalogRebuildRequest(await readCatalogRebuildRequest(this.dependencies.file), request)
         );
     }
     private async existingOrCreate(
-        request: CatalogRebuildRequest,
-        lookup: () => Promise<Job>,
-        create: () => Promise<Job>,
-    ): Promise<Job> {
+        request: ICatalogRebuildRequest,
+        lookup: () => Promise<IJob>,
+        create: () => Promise<IJob>,
+    ): Promise<IJob> {
         try {
             return await lookup();
         } catch (error) {
@@ -85,7 +85,7 @@ export class CatalogRebuildCoordinator {
         if (!(await this.current(request))) throw Error('REBUILD_REQUEST_CHANGED');
         return create();
     }
-    private item(id: string, name: string, job: Job, catalogId?: string): CatalogRebuildItem {
+    private item(id: string, name: string, job: IJob, catalogId?: string): ICatalogRebuildItem {
         return {
             id,
             name,
@@ -103,7 +103,7 @@ export class CatalogRebuildCoordinator {
         const d = this.dependencies,
             request = await readCatalogRebuildRequest(d.file);
         if (!request || sameCatalogRebuildRequest(this.settled, request)) return;
-        const items: CatalogRebuildItem[] = [];
+        const items: ICatalogRebuildItem[] = [];
         let message: string | undefined,
             retry = false,
             settle = false;
@@ -214,7 +214,7 @@ export class CatalogRebuildCoordinator {
             message =
                 'Актуализация не подтверждена. Проверьте текущие исходники и права настроенного администратора установки.';
         }
-        const state: CatalogRebuildState = {
+        const state: ICatalogRebuildState = {
             requestId: request.requestId,
             sourceRevision: request.sourceRevision,
             requestedAt: request.requestedAt,

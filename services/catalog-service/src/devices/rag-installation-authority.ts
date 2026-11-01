@@ -3,16 +3,16 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import { localRagCore } from '../../../shared/rag-core-contract.cjs';
 import { localRagUi } from '../../../shared/rag-ui-contract.cjs';
-import type { Device } from './device-store';
+import type { IDevice } from './device-store';
 import type { DeviceInstallations } from './device-installations';
 import type { InstallPlans } from './install-plans';
-import type { Job, JobInput } from './device-job.model';
+import type { IJob, IJobInput } from './device-job.model';
 import type { IPackage } from '../catalog/bundle-package';
 import { assertExpectedBinding, assertPackageBridge, managedBinding } from './device-compatibility';
 import { assertLocalFeature } from './local-change-jobs';
 
-type Mode = 'core' | 'ui';
-function binding(device: Device, projectId: string | undefined, expected: unknown, instance: unknown) {
+type TMode = 'core' | 'ui';
+function binding(device: IDevice, projectId: string | undefined, expected: unknown, instance: unknown) {
     const bindingId = managedBinding(device.report, projectId);
     assertExpectedBinding(bindingId, expected, true);
     const current = (device.report.bindings as Array<{ projectId: string; instanceId?: string }>).find(
@@ -22,7 +22,7 @@ function binding(device: Device, projectId: string | undefined, expected: unknow
         throw new ConflictException('Экземпляр папки изменился. Обновите список установок.');
     return { bindingId, instanceId: current.instanceId };
 }
-function supported(device: Device, pkg: IPackage, mode: Mode) {
+function supported(device: IDevice, pkg: IPackage, mode: TMode) {
     assertLocalFeature(device.report, mode === 'core' ? 'hosted-rag-core-v1' : 'opencode-rag-ui-v1');
     try {
         if ((mode === 'core' ? localRagCore : localRagUi)(pkg)) return;
@@ -39,9 +39,9 @@ function supported(device: Device, pkg: IPackage, mode: Mode) {
 export async function ragInstallationJobPayload(
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
-    input: JobInput,
-    mode: Mode,
+    device: IDevice,
+    input: IJobInput,
+    mode: TMode,
 ) {
     const fields = [
         'deviceId',
@@ -79,9 +79,9 @@ export async function ragInstallationJobPayload(
 export async function assertRagInstallation(
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
-    job: Pick<Job, 'payload' | 'project_id'>,
-    mode: Mode,
+    device: IDevice,
+    job: Pick<IJob, 'payload' | 'project_id'>,
+    mode: TMode,
     db?: Pick<PoolClient, 'query'>,
 ) {
     if (mode === 'ui') assertLocalFeature(device.report, 'opencode-rag-ui-v1');

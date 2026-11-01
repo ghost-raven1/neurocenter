@@ -5,7 +5,7 @@ import { readLocalChangePlan } from './local-change-plan-storage.js';
 import { hash } from './state.js';
 import { readBoundedBytes } from './read-bounded.js';
 
-export interface LocalChangeReportInput {
+export interface ILocalChangeReportInput {
     projectId: string;
     bindingId: string;
     instanceId: string;
@@ -14,7 +14,7 @@ export interface LocalChangeReportInput {
 }
 
 /** Отчёт открывается только на подключённом компьютере; браузер сервера не получает его содержимое. */
-export async function openLocalChangeReport(input: LocalChangeReportInput): Promise<void> {
+export async function openLocalChangeReport(input: ILocalChangeReportInput): Promise<void> {
     const saved = await readLocalChangePlan(input.planId);
     const { summary } = saved;
     if (

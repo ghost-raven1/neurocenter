@@ -1,5 +1,5 @@
 import { HttpException } from '@nestjs/common';
-import type { RoleRunRow } from './system-role.types';
+import type { IRoleRunRow } from './system-role.interfaces';
 
 const contextWindow =
     'Оценка контекста с резервом для ответа превышает настроенное окно модели. Уменьшите сообщение или начните новый диалог.';
@@ -82,7 +82,10 @@ function explanation(cause: unknown): string {
 }
 
 /** Durable reservations describe progress, never proof of provider dispatch, completion or billing. */
-export function systemRoleFailureMessage(cause: unknown, current: Pick<RoleRunRow, 'phase' | 'calls_started'>): string {
+export function systemRoleFailureMessage(
+    cause: unknown,
+    current: Pick<IRoleRunRow, 'phase' | 'calls_started'>,
+): string {
     const phase = Object.prototype.hasOwnProperty.call(phases, current.phase) ? phases[current.phase] : 'исполнение';
     const progress =
         current.calls_started === 0

@@ -7,15 +7,14 @@ import { assertProjectEmbeddingModel, projectEmbeddingPin } from '../models/proj
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { ChatSearchRepository } from './chat-search.repository';
+import { CHAT_SEARCH_FEATURES, CHAT_SEARCH_SCAN_CAP } from './chat-search.constants';
 import {
-    CHAT_SEARCH_FEATURES,
-    CHAT_SEARCH_SCAN_CAP,
-    type ChatSearchInput,
-    type ChatSearchJob,
-    type ChatSearchJobRow,
-    type ChatSearchSource,
-    type ChatSearchStoredHit,
-} from './chat-search.types';
+    type IChatSearchInput,
+    type IChatSearchJob,
+    type IChatSearchJobRow,
+    type IChatSearchSource,
+    type IChatSearchStoredHit,
+} from './chat-search.interfaces';
 import { chatSearchInput, chatSearchChunk, cosine, embeddingVectors } from './chat-search.math';
 
 /** Explicit, durable single-batch jobs reuse ModelRuntime admission and Operations; no paid restart/replay. */
@@ -43,7 +42,7 @@ export class ChatSearchService implements OnModuleDestroy {
             throw new BadRequestException('Некорректный ID запроса.');
         return value;
     }
-    private async model(req: Request, project: string, input: Pick<ChatSearchInput, 'modelId' | 'expectedModelPin'>) {
+    private async model(req: Request, project: string, input: Pick<IChatSearchInput, 'modelId' | 'expectedModelPin'>) {
         const model = await this.models.getUsable(input.modelId, req, project);
         assertProjectEmbeddingModel(model, model.dimension ?? 0);
         if (model.archivedAt || projectEmbeddingPin(model) !== input.expectedModelPin)
@@ -52,7 +51,7 @@ export class ChatSearchService implements OnModuleDestroy {
             );
         return model;
     }
-    async create(req: Request, projectId: string, kind: 'index' | 'search', raw: unknown): Promise<ChatSearchJob> {
+    async create(req: Request, projectId: string, kind: 'index' | 'search', raw: unknown): Promise<IChatSearchJob> {
         const project = this.project(projectId),
             actor = this.repository.chat.policy.input(req),
             input = chatSearchInput(raw, kind);
@@ -96,7 +95,7 @@ export class ChatSearchService implements OnModuleDestroy {
         projectId: string,
         id: string,
         existingDb?: Pick<PoolClient, 'query'>,
-    ): Promise<ChatSearchJob> {
+    ): Promise<IChatSearchJob> {
         const project = this.project(projectId),
             actor = this.repository.chat.policy.input(req);
         this.id(id);
@@ -126,13 +125,13 @@ export class ChatSearchService implements OnModuleDestroy {
         }
         return this.repository.scoped(project, actor, 1, read);
     }
-    async list(req: Request, projectId: string): Promise<{ jobs: ChatSearchJob[] }> {
+    async list(req: Request, projectId: string): Promise<{ jobs: IChatSearchJob[] }> {
         const project = this.project(projectId),
             actor = this.repository.chat.policy.input(req);
         return this.repository.scoped(project, actor, 1, async (db) => {
             await this.repository.expire(db, project, actor.email);
             const rows = (
-                await db.query<ChatSearchJobRow>(
+                await db.query<IChatSearchJobRow>(
                     'SELECT * FROM chat_search_jobs WHERE project_id=$1 AND actor=$2 ORDER BY created_at DESC,id DESC LIMIT 20',
                     [project, actor.email],
                 )
@@ -152,7 +151,7 @@ export class ChatSearchService implements OnModuleDestroy {
             };
         });
     }
-    async cancel(req: Request, projectId: string, id: string): Promise<ChatSearchJob> {
+    async cancel(req: Request, projectId: string, id: string): Promise<IChatSearchJob> {
         const project = this.project(projectId),
             actor = this.repository.chat.policy.input(req);
         this.id(id);
@@ -171,10 +170,10 @@ export class ChatSearchService implements OnModuleDestroy {
     }
     private async current(
         req: Request,
-        row: ChatSearchJobRow,
-        input: ChatSearchInput,
+        row: IChatSearchJobRow,
+        input: IChatSearchInput,
         signal: AbortSignal,
-        source?: ChatSearchSource,
+        source?: IChatSearchSource,
     ) {
         signal.throwIfAborted();
         await requireFeaturesEnabled(CHAT_SEARCH_FEATURES);
@@ -190,11 +189,11 @@ export class ChatSearchService implements OnModuleDestroy {
     }
     private async embed(
         req: Request,
-        row: ChatSearchJobRow,
-        input: ChatSearchInput,
+        row: IChatSearchJobRow,
+        input: IChatSearchInput,
         texts: string[],
         signal: AbortSignal,
-        source?: ChatSearchSource,
+        source?: IChatSearchSource,
     ): Promise<number[][]> {
         const beforeInference = async () => {
             await this.current(req, row, input, signal, source);
@@ -223,7 +222,7 @@ export class ChatSearchService implements OnModuleDestroy {
         await this.current(req, row, input, signal, source);
         return embeddingVectors(result.embeddings, texts.length, row.dimension);
     }
-    private async execute(req: Request, row: ChatSearchJobRow, input: ChatSearchInput): Promise<void> {
+    private async execute(req: Request, row: IChatSearchJobRow, input: IChatSearchInput): Promise<void> {
         const controller = new AbortController();
         this.controllers.set(row.id, controller);
         const timer = setTimeout(() => controller.abort(), 105000);
@@ -296,17 +295,17 @@ export class ChatSearchService implements OnModuleDestroy {
         }
     }
     private async rank(
-        row: ChatSearchJobRow,
-        input: ChatSearchInput,
+        row: IChatSearchJobRow,
+        input: IChatSearchInput,
         vector: number[],
         scoped: <T>(work: (db: import('pg').PoolClient) => Promise<T>) => Promise<T>,
         signal: AbortSignal,
-    ): Promise<ChatSearchStoredHit[]> {
+    ): Promise<IChatSearchStoredHit[]> {
         const size = Math.max(1, Math.min(64, Math.floor(1024 ** 2 / (row.dimension * 8)))),
             deadline = Date.now() + 5000;
         let cursor: { id: string; chunk: number } | undefined,
             scanned = 0,
-            hits: ChatSearchStoredHit[] = [];
+            hits: IChatSearchStoredHit[] = [];
         for (;;) {
             signal.throwIfAborted();
             if (Date.now() > deadline) throw new ConflictException('Поиск превысил время. Выберите один диалог.');

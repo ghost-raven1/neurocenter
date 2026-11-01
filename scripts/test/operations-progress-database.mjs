@@ -8,8 +8,12 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(path.join(root, 'services/catalog-service/package.json'));
 const { Pool } = require('pg');
-const { OperationRepository } = require(path.join(root, 'services/catalog-service/dist/operations/operation-repository.js'));
-const pool = new Pool({ connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog' });
+const { OperationRepository } = require(
+    path.join(root, 'services/catalog-service/dist/operations/operation-repository.js'),
+);
+const pool = new Pool({
+    connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
+});
 const fixture = `WITH operations AS (
     SELECT input.*, 'SYNC'::text AS type, 'bridge'::text AS resource_type,
            operation_id AS resource_id, 0::bigint AS bytes_done, 0::bigint AS bytes_total,
@@ -84,9 +88,16 @@ try {
     await pool.end();
 }
 
-const report = { results, passed: results.filter(row => row.ok).length, failed: results.filter(row => !row.ok).length };
-const reportPath = process.env.OPERATIONS_PROGRESS_REPORT || path.join(root, '.run/operations-progress/summary-database.json');
+const report = {
+    results,
+    passed: results.filter((row) => row.ok).length,
+    failed: results.filter((row) => !row.ok).length,
+};
+const reportPath =
+    process.env.OPERATIONS_PROGRESS_REPORT || path.join(root, '.run/operations-progress/summary-database.json');
 await fs.mkdir(path.dirname(reportPath), { recursive: true });
 await fs.writeFile(reportPath, JSON.stringify(report, null, 2));
 console.log(JSON.stringify({ passed: report.passed, failed: report.failed }));
-if (report.failed) { process.exitCode = 1; }
+if (report.failed) {
+    process.exitCode = 1;
+}

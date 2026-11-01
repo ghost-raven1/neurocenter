@@ -14,16 +14,16 @@ import { ModelsService } from '../models/models.service';
 import { securityEvent } from '../access/security-events';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { readFeatures } from '../../../shared/feature-client.cjs';
-import { configuredGgufImportPolicy, type GgufImportPolicy } from '../../../shared/gguf-import-policy.cjs';
+import { configuredGgufImportPolicy, type IGgufImportPolicy } from '../../../shared/gguf-import-policy.cjs';
 import {
     DEFAULT_RUNTIME_LIMIT_POLICY,
     RUNTIME_LIMIT_CEILINGS,
     runtimeLimitPolicy,
     runtimeLimitInput,
-    type RuntimeLimitView,
-    type RuntimeLimitAdminView,
-    type RuntimeLimitReceipt,
-    type RuntimeLimitInput,
+    type IRuntimeLimitView,
+    type IRuntimeLimitAdminView,
+    type IRuntimeLimitReceipt,
+    type IRuntimeLimitInput,
 } from '../../../shared/runtime-limits.cjs';
 
 const uuid = (value: unknown): value is string =>
@@ -32,7 +32,7 @@ const unavailable = () =>
     new ServiceUnavailableException(
         'Действующие лимиты не подтверждены. Сохранённые операции и квитанции продолжают действовать.',
     );
-const fingerprint = (writer: string, input: RuntimeLimitInput) =>
+const fingerprint = (writer: string, input: IRuntimeLimitInput) =>
     createHash('sha256')
         .update(JSON.stringify({ writer, ...input }))
         .digest('hex');
@@ -41,7 +41,7 @@ const fingerprint = (writer: string, input: RuntimeLimitInput) =>
 @Injectable()
 export class RuntimeLimitsService {
     constructor(private readonly models: ModelsService) {}
-    async effective(db: Pick<PoolClient, 'query'> = this.models.pool): Promise<RuntimeLimitView> {
+    async effective(db: Pick<PoolClient, 'query'> = this.models.pool): Promise<IRuntimeLimitView> {
         try {
             const row = (
                 await db.query('SELECT revision,policy,updated_at FROM runtime_limit_settings WHERE singleton')
@@ -59,7 +59,7 @@ export class RuntimeLimitsService {
             throw unavailable();
         }
     }
-    async ggufPolicy(): Promise<Readonly<GgufImportPolicy>> {
+    async ggufPolicy(): Promise<Readonly<IGgufImportPolicy>> {
         return (await this.effective()).policy.ggufImport;
     }
     private async main(req: Request, expected?: string): Promise<string> {
@@ -70,7 +70,7 @@ export class RuntimeLimitsService {
             throw new ForbiddenException('Учётная запись изменилась. Перечитайте лимиты.');
         return writer;
     }
-    async read(req: Request): Promise<RuntimeLimitView> {
+    async read(req: Request): Promise<IRuntimeLimitView> {
         const actor = await this.models.actor(req),
             result = await this.effective(),
             current = await this.models.actor(req);
@@ -78,7 +78,7 @@ export class RuntimeLimitsService {
             throw new ForbiddenException('Учётная запись изменилась. Перечитайте лимиты.');
         return result;
     }
-    async admin(req: Request): Promise<RuntimeLimitAdminView> {
+    async admin(req: Request): Promise<IRuntimeLimitAdminView> {
         const writer = await this.main(req),
             result = await this.effective();
         const configurationEnabled = (await readFeatures(process.env, globalThis.fetch)).flags
@@ -86,7 +86,7 @@ export class RuntimeLimitsService {
         await this.main(req, writer);
         return { ...result, configurationEnabled };
     }
-    async receipt(req: Request, key: string): Promise<RuntimeLimitReceipt> {
+    async receipt(req: Request, key: string): Promise<IRuntimeLimitReceipt> {
         if (!uuid(key)) throw new BadRequestException('Нужен ключ сохранения лимитов.');
         const writer = await this.main(req),
             row = (
@@ -99,8 +99,8 @@ export class RuntimeLimitsService {
         if (!row) throw new NotFoundException('Квитанция этого сохранения не найдена.');
         return row.result;
     }
-    async save(req: Request, raw: unknown): Promise<RuntimeLimitReceipt> {
-        let input: RuntimeLimitInput;
+    async save(req: Request, raw: unknown): Promise<IRuntimeLimitReceipt> {
+        let input: IRuntimeLimitInput;
         try {
             input = runtimeLimitInput(raw);
         } catch (error) {
@@ -147,7 +147,7 @@ export class RuntimeLimitsService {
                     [JSON.stringify(input.policy)],
                 )
             ).rows[0];
-            const result: RuntimeLimitReceipt = {
+            const result: IRuntimeLimitReceipt = {
                 requestKey: input.requestKey,
                 requestHash: hash,
                 revision: Number(row.revision),

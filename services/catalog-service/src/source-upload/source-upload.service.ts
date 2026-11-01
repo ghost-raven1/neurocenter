@@ -27,9 +27,9 @@ import {
     uploadView,
     uploadRuntime,
     validateUploadIntent,
-    type UploadBuildSource,
-    type UploadRow,
-    type PinnedUploadSource,
+    type IUploadBuildSource,
+    type IUploadRow,
+    type IPinnedUploadSource,
 } from './source-upload.model';
 
 /** Durable upload control plane; data streams hold a PostgreSQL session lease until bytes settle. */
@@ -89,7 +89,7 @@ export class SourceUploads {
         if (!uploadId(key)) throw new BadRequestException('Нужен UUID загрузки.');
         return uploadView(await this.repository.lookup(normalizeEmail(actor.email), key));
     }
-    private usable(row: UploadRow) {
+    private usable(row: IUploadRow) {
         if (row.state === 'CANCELLED') throw new ConflictException('Загрузка отменена. Выберите файл заново.');
         if (new Date(row.expires_at).getTime() < Date.now())
             throw new ConflictException('Срок загрузки истёк. Выберите файл заново.');
@@ -214,7 +214,7 @@ export class SourceUploads {
                 if (current.state !== 'UPLOADING' || current.lease_token !== token)
                     throw new ConflictException('Загрузка отменена.');
                 return (
-                    await transaction.query<UploadRow>(
+                    await transaction.query<IUploadRow>(
                         "UPDATE tool_source_uploads SET state='READY',metadata=$2,lease_token=NULL,updated_at=now() WHERE id=$1 RETURNING *",
                         [id, JSON.stringify(metadata)],
                     )
@@ -270,7 +270,7 @@ export class SourceUploads {
             client.release();
         }
     }
-    async pin(actor: IAccessActor, source: UploadBuildSource): Promise<PinnedUploadSource> {
+    async pin(actor: IAccessActor, source: IUploadBuildSource): Promise<IPinnedUploadSource> {
         const row = await this.repository.get(normalizeEmail(actor.email), source.uploadId);
         await this.authorize(actor, row.auth_epoch);
         this.requireFiles();
@@ -283,14 +283,14 @@ export class SourceUploads {
         return { ...source, format: row.format, runtimeSource: uploadRuntime(choice) };
     }
     /** Called inside the build enqueue transaction, locking cancellation and expiry against the retained job. */
-    async retain(client: PoolClient, actor: string, source: PinnedUploadSource) {
+    async retain(client: PoolClient, actor: string, source: IPinnedUploadSource) {
         const row = await this.repository.get(normalizeEmail(actor), source.uploadId, client, true);
         await this.authorize({ email: actor, activeRole: 'Главный админ' }, row.auth_epoch, client);
         if (row.state !== 'READY' || row.sha256 !== source.sha256 || Number(row.bytes) !== source.bytes)
             throw new ConflictException('Загрузка отменена или изменена перед началом сборки.');
         this.usable(row);
     }
-    async assertRetained(actor: string, source: PinnedUploadSource) {
+    async assertRetained(actor: string, source: IPinnedUploadSource) {
         const row = await this.repository.get(normalizeEmail(actor), source.uploadId);
         await this.authorize({ email: actor, activeRole: 'Главный админ' }, row.auth_epoch);
         this.requireFiles();
@@ -311,7 +311,7 @@ export class SourceUploads {
             if (await this.repository.referenced(client, id))
                 throw new ConflictException('Исходник уже сохранён в сборке. Его нельзя удалить вместе с формой.');
             return (
-                await client.query<UploadRow>(
+                await client.query<IUploadRow>(
                     "UPDATE tool_source_uploads SET state='CANCELLED',updated_at=now() WHERE id=$1 RETURNING *",
                     [row.id],
                 )
@@ -329,7 +329,7 @@ export class SourceUploads {
                 `INSERT INTO tool_source_uploads(id,actor,request_key,request_hash,name,sha256,bytes,format,state,auth_epoch) VALUES($1,$2,$3,'cancelled','cancelled',$4,1,'file','CANCELLED',$5) ON CONFLICT(actor,request_key) DO NOTHING`,
                 [randomUUID(), normalizeEmail(actor.email), key, '0'.repeat(64), epoch],
             );
-            const result = await client.query<UploadRow>(
+            const result = await client.query<IUploadRow>(
                     'SELECT * FROM tool_source_uploads WHERE actor=$1 AND request_key=$2 FOR UPDATE',
                     [normalizeEmail(actor.email), key],
                 ),
@@ -337,7 +337,7 @@ export class SourceUploads {
             if (await this.repository.referenced(client, row.id))
                 throw new ConflictException('Исходник уже сохранён в сборке. Его нельзя удалить вместе с формой.');
             return (
-                await client.query<UploadRow>(
+                await client.query<IUploadRow>(
                     "UPDATE tool_source_uploads SET state='CANCELLED',updated_at=now() WHERE id=$1 RETURNING *",
                     [row.id],
                 )
@@ -353,7 +353,7 @@ export class SourceUploads {
         );
         for (const candidate of candidates.rows) {
             const remove = await this.repository.transaction(async (client) => {
-                const { rows } = await client.query<UploadRow>(
+                const { rows } = await client.query<IUploadRow>(
                     'SELECT * FROM tool_source_uploads WHERE id=$1 FOR UPDATE',
                     [candidate.id],
                 );

@@ -6,7 +6,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { assertPrivateS3Bucket } from '../../../shared/s3-bucket-privacy.cjs';
 
-export interface ChatS3Configuration {
+export interface IChatS3Configuration {
     endpoint: string;
     region: string;
     accessKey: string;
@@ -14,7 +14,7 @@ export interface ChatS3Configuration {
     projectBucket: string;
     personalBucket: string;
 }
-export interface ChatObjectReference {
+export interface IChatObjectReference {
     storage_id: string;
     bucket: string;
     object_key: string;
@@ -29,7 +29,7 @@ const code = (error: unknown): string =>
     typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
 
 /** Endpoint and credentials are operator settings; neither is returned in chat metadata. */
-export function chatS3Configuration(env: NodeJS.ProcessEnv = process.env): ChatS3Configuration | null {
+export function chatS3Configuration(env: NodeJS.ProcessEnv = process.env): IChatS3Configuration | null {
     const names = [
         'CHAT_S3_ENDPOINT',
         'CHAT_S3_ACCESS_KEY',
@@ -55,7 +55,7 @@ export class ChatObjectStorage {
     readonly client: Client;
     private readonly abortContext = new AsyncLocalStorage<AbortSignal | undefined>();
     constructor(
-        readonly config: ChatS3Configuration,
+        readonly config: IChatS3Configuration,
         options: { allowInsecureLocal?: boolean; environment?: NodeJS.ProcessEnv } = {},
     ) {
         let url: URL;
@@ -134,7 +134,7 @@ export class ChatObjectStorage {
             throw unavailable();
         }
     }
-    reference(reference: ChatObjectReference): void {
+    reference(reference: IChatObjectReference): void {
         if (
             reference.storage_id !== this.storageId ||
             ![this.config.projectBucket, this.config.personalBucket].includes(reference.bucket) ||
@@ -149,7 +149,7 @@ export class ChatObjectStorage {
             throw new ConflictException('Настройки хранилища или опись файла изменились.');
         }
     }
-    async put(reference: ChatObjectReference, bytes: Buffer, signal?: AbortSignal): Promise<string | null> {
+    async put(reference: IChatObjectReference, bytes: Buffer, signal?: AbortSignal): Promise<string | null> {
         this.reference(reference);
         if (bytes.length !== reference.bytes || chatObjectDigest(bytes) !== reference.sha256)
             throw new ConflictException('Контрольная сумма файла не совпала.');
@@ -170,7 +170,7 @@ export class ChatObjectStorage {
             throw unavailable();
         }
     }
-    async read(reference: ChatObjectReference, signal?: AbortSignal): Promise<Buffer> {
+    async read(reference: IChatObjectReference, signal?: AbortSignal): Promise<Buffer> {
         this.reference(reference);
         try {
             return await this.abortContext.run(signal, async () => {
@@ -210,7 +210,7 @@ export class ChatObjectStorage {
         }
     }
     /** A policy changed after startup must not publish a newly uploaded personal document. */
-    async assertPrivate(reference: ChatObjectReference, signal?: AbortSignal): Promise<void> {
+    async assertPrivate(reference: IChatObjectReference, signal?: AbortSignal): Promise<void> {
         this.reference(reference);
         try {
             signal?.throwIfAborted();
@@ -229,7 +229,7 @@ export class ChatObjectStorage {
         }
     }
     /** Keys contain a fresh nonce; purge all versions, including uncertain PUT acknowledgements. */
-    async remove(reference: ChatObjectReference): Promise<void> {
+    async remove(reference: IChatObjectReference): Promise<void> {
         this.reference(reference);
         try {
             const stream = this.client.listObjects(reference.bucket, reference.object_key, true, {

@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
-import type { GgufMetadata } from '../../../../shared/gguf-import';
-import type { GgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
+import type { IGgufMetadata } from '../../../../shared/gguf-import';
+import type { IGgufImportPolicy } from '../../../../shared/gguf-import-policy.cjs';
 
 const invalid = (detail: string): never => {
     throw new BadRequestException('GGUF: ' + detail);
@@ -46,9 +46,9 @@ const scalarSizes: Record<number, number> = { 0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4
 /** Reads a bounded metadata region through one small cache; tensor bytes never enter memory. */
 export async function inspectGguf(
     filename: string,
-    limits: GgufImportPolicy,
+    limits: IGgufImportPolicy,
     check: () => Promise<void> = async () => {},
-): Promise<GgufMetadata> {
+): Promise<IGgufMetadata> {
     const file = await fs.open(filename, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
         const info = await file.stat();

@@ -19,11 +19,11 @@ import {
     roleMcpProducer,
     roleMcpToolKey,
     systemRoleMcpDigest,
-    type RoleMcpPreparedTarget,
-    type RoleMcpTarget,
-    type RoleMcpTargetSelection,
-    type RoleMcpReceipt,
-    type RoleMcpOutput,
+    type IRoleMcpPreparedTarget,
+    type TRoleMcpTarget,
+    type TRoleMcpTargetSelection,
+    type IRoleMcpReceipt,
+    type IRoleMcpOutput,
 } from '../../../shared/system-role-mcp.cjs';
 import { ModelsService } from '../models/models.service';
 import { DeviceStore } from '../devices/device-store';
@@ -34,19 +34,15 @@ import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { checkedProjectPackage, projectAssetColumns, type IProjectPinRow } from '../catalog/project-asset-pins';
 import { roleRequestId } from '../system-roles/system-role.validation';
 import { systemRole } from '../system-roles/system-role.definitions';
-import type { RoleRunRow } from '../system-roles/system-role.types';
-import type { SystemRoleMcpAccess } from './system-role-mcp.types';
+import type { IRoleRunRow } from '../system-roles/system-role.interfaces';
+import type { ISystemRoleMcpAccess } from './system-role-mcp.interfaces';
 import { SystemRoleMcpPolicy } from './system-role-mcp.policy';
 import { SystemRoleMcpRepository } from './system-role-mcp.repository';
-import { SystemRoleMcpChannel, type McpChannelFence } from './system-role-mcp.channel';
-import {
-    mcpCallContext,
-    type McpCallRow,
-    type McpSessionRow,
-    type McpDiscoveryView,
-} from './system-role-mcp.store-types';
+import { SystemRoleMcpChannel, type IMcpChannelFence } from './system-role-mcp.channel';
+import { mcpCallContext } from './system-role-mcp.store-utils';
+import { type IMcpCallRow, type IMcpSessionRow, type IMcpDiscoveryView } from './system-role-mcp.store-interfaces';
 
-type Db = Pick<PoolClient, 'query'>;
+type TDb = Pick<PoolClient, 'query'>;
 const exact = (raw: unknown, keys: string[]): Record<string, unknown> => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some((key) => !keys.includes(key)))
         throw new BadRequestException('Проверьте поля выбранного MCP.');
@@ -54,7 +50,7 @@ const exact = (raw: unknown, keys: string[]): Record<string, unknown> => {
 };
 /** Generic private MCP sessions are opt-in, pinned by actual discovery, and dispatched at most once. */
 @Injectable()
-export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, OnApplicationShutdown {
+export class SystemRoleMcpService implements ISystemRoleMcpAccess, OnModuleInit, OnApplicationShutdown {
     readonly repository: SystemRoleMcpRepository;
     readonly policy: SystemRoleMcpPolicy;
     readonly channel: SystemRoleMcpChannel;
@@ -164,7 +160,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
                         projectId: project,
                         packages: delivery.installSet?.packages ?? [delivery.package],
                     });
-                    const target: RoleMcpTarget = { ...common, runtime: 'device', ...base, configurationRevisions };
+                    const target: TRoleMcpTarget = { ...common, runtime: 'device', ...base, configurationRevisions };
                     await this.policy.target(req, project, target);
                     computers.push({ ...base, configurationRevisions, available: true });
                 } catch (error) {
@@ -187,12 +183,12 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
             enabled,
         };
     }
-    async discover(req: Request, raw: unknown): Promise<McpDiscoveryView> {
+    async discover(req: Request, raw: unknown): Promise<IMcpDiscoveryView> {
         await this.models.ready();
         const input = exact(raw, ['projectId', 'target', 'requestId']),
             project = this.policy.project(input.projectId),
             id = roleRequestId(input.requestId);
-        let target: RoleMcpTarget;
+        let target: TRoleMcpTarget;
         try {
             target = normalizeRoleMcpTarget(input.target, false);
         } catch {
@@ -223,7 +219,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
         }
         return this.discovery(req, id);
     }
-    async discovery(req: Request, id: string): Promise<McpDiscoveryView> {
+    async discovery(req: Request, id: string): Promise<IMcpDiscoveryView> {
         const actor = await this.models.actor(req),
             row = await this.repository.discovery(roleRequestId(id), actor.email);
         if (!row) throw new NotFoundException('Обнаружение инструментов недоступно.');
@@ -245,7 +241,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
                     : 'Обнаружение не подтверждено. Проверьте подключение и начните новую проверку.',
         };
     }
-    async assertAdmission(req: Request, projectId: string | null, selection: RoleMcpTargetSelection[]): Promise<void> {
+    async assertAdmission(req: Request, projectId: string | null, selection: TRoleMcpTargetSelection[]): Promise<void> {
         const project = this.policy.project(projectId),
             actor = await this.policy.roles.actor(req, project);
         for (const target of selection) {
@@ -261,11 +257,11 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
     async prepare(
         req: Request,
         projectId: string | null,
-        selection: RoleMcpTargetSelection[],
-    ): Promise<RoleMcpPreparedTarget[]> {
+        selection: TRoleMcpTargetSelection[],
+    ): Promise<IRoleMcpPreparedTarget[]> {
         const project = this.policy.project(projectId),
             actor = await this.policy.roles.actor(req, project),
-            result: RoleMcpPreparedTarget[] = [];
+            result: IRoleMcpPreparedTarget[] = [];
         for (const target of selection) {
             const row = await this.repository.discovery(roleRequestId(target.discoveryId), actor.email),
                 base = normalizeRoleMcpTarget(
@@ -294,7 +290,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
         return result;
     }
     /** Tool availability can fail locally while the role still finalizes evidence under its own authority. */
-    async canContinueTools(req: Request, row: RoleRunRow): Promise<boolean> {
+    async canContinueTools(req: Request, row: IRoleRunRow): Promise<boolean> {
         const project = this.policy.project(row.project_id),
             actor = await this.policy.roles.actor(req, project);
         if (actor.email !== row.actor || actor.activeRole !== row.actor_role)
@@ -324,12 +320,12 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
     }
     async call(
         req: Request,
-        row: RoleRunRow,
-        prepared: RoleMcpPreparedTarget[],
+        row: IRoleRunRow,
+        prepared: IRoleMcpPreparedTarget[],
         toolKey: string,
         args: Record<string, unknown>,
         signal: AbortSignal,
-    ): Promise<RoleMcpReceipt> {
+    ): Promise<IRoleMcpReceipt> {
         signal.throwIfAborted();
         const selected = prepared.find((item) => item.tools.some((tool) => tool.toolKey === toolKey)),
             tool = selected?.tools.find((value) => value.toolKey === toolKey);
@@ -380,10 +376,10 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
             throw error;
         }
     }
-    async calls(req: Request, id: string): Promise<RoleMcpReceipt[]> {
+    async calls(req: Request, id: string): Promise<IRoleMcpReceipt[]> {
         const actor = await this.models.actor(req),
             run = (
-                await this.models.pool.query<RoleRunRow>('SELECT * FROM system_role_runs WHERE id=$1 AND actor=$2', [
+                await this.models.pool.query<IRoleRunRow>('SELECT * FROM system_role_runs WHERE id=$1 AND actor=$2', [
                     roleRequestId(id),
                     actor.email,
                 ])
@@ -391,7 +387,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
         if (!run) throw new NotFoundException('Журнал инструментов недоступен.');
         await this.policy.roles.read(req, run);
         return (
-            await this.models.pool.query<McpCallRow>(
+            await this.models.pool.query<IMcpCallRow>(
                 "SELECT * FROM system_role_mcp_calls WHERE run_id=$1 AND kind='call' ORDER BY created_at,id",
                 [run.id],
             )
@@ -440,7 +436,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
         if (call.kind === 'list') await this.closeSession(session.id);
         return { ok: true };
     }
-    async dispatch(id: string, fence?: McpChannelFence, proof?: unknown) {
+    async dispatch(id: string, fence?: IMcpChannelFence, proof?: unknown) {
         const callId = roleRequestId(id),
             pending = await this.repository.call(callId),
             source = await this.repository.session(pending.session_id);
@@ -454,7 +450,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
             await this.authority(session, db);
         });
     }
-    private channelFence(session: McpSessionRow, fence: McpChannelFence): void {
+    private channelFence(session: IMcpSessionRow, fence: IMcpChannelFence): void {
         if (
             session.id !== fence.sessionId ||
             session.worker_lease !== fence.lease ||
@@ -463,7 +459,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
         )
             throw new ConflictException('Сессия компьютера изменилась до отправки.');
     }
-    private proof(session: McpSessionRow, call: McpCallRow, proof: unknown): void {
+    private proof(session: IMcpSessionRow, call: IMcpCallRow, proof: unknown): void {
         if (
             session.target.runtime !== 'server' ||
             typeof proof !== 'string' ||
@@ -472,7 +468,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
         )
             throw new NotFoundException('Квитанция отправки MCP недоступна.');
     }
-    private async authority(session: McpSessionRow, db: Db = this.models.pool): Promise<void> {
+    private async authority(session: IMcpSessionRow, db: TDb = this.models.pool): Promise<void> {
         if (
             session.state !== 'open' ||
             new Date(session.deadline_at).getTime() <= Date.now() ||
@@ -485,7 +481,7 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
             throw new ConflictException('Проект недоступен.');
         const current = session.run_id
             ? (
-                  await db.query<RoleRunRow>(
+                  await db.query<IRoleRunRow>(
                       "SELECT * FROM system_role_runs WHERE id=$1 AND actor=$2 AND lease_token=$3 AND state='running' AND lease_until>now() FOR NO KEY UPDATE",
                       [session.run_id, session.owner_email, session.lease_token],
                   )
@@ -513,11 +509,11 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
         }
     }
     /** External flags are checked before transactions; the locked authority below performs database reads only. */
-    private async executionFeatures(session: McpSessionRow): Promise<void> {
+    private async executionFeatures(session: IMcpSessionRow): Promise<void> {
         await this.features(session.target);
         if (session.run_id) {
             const row = (
-                await this.models.pool.query<RoleRunRow>(
+                await this.models.pool.query<IRoleRunRow>(
                     'SELECT * FROM system_role_runs WHERE id=$1 AND actor=$2 AND lease_token=$3',
                     [session.run_id, session.owner_email, session.lease_token],
                 )
@@ -529,13 +525,13 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
             ]);
         }
     }
-    private async features(target: RoleMcpTarget): Promise<void> {
+    private async features(target: TRoleMcpTarget): Promise<void> {
         await requireFeaturesEnabled([
             'system_role_mcp',
             ...(target.runtime === 'device' ? ['computer_connections' as const] : []),
         ]);
     }
-    private execute(session: McpSessionRow, call: McpCallRow, signal?: AbortSignal): void {
+    private execute(session: IMcpSessionRow, call: IMcpCallRow, signal?: AbortSignal): void {
         const task = (async () => {
             try {
                 const value = await this.gateway(
@@ -625,20 +621,20 @@ export class SystemRoleMcpService implements SystemRoleMcpAccess, OnModuleInit, 
         ).rows;
         await Promise.allSettled(rows.map((row) => this.closeSession(row.id)));
     }
-    private receipt(row: McpCallRow): RoleMcpReceipt {
+    private receipt(row: IMcpCallRow): IRoleMcpReceipt {
         const result =
             row.result?.state === 'succeeded'
                 ? row.result
                 : row.late_result?.state === 'succeeded'
                   ? row.late_result
                   : undefined;
-        const output = result && !('tools' in result.value) ? (result.value as RoleMcpOutput) : undefined;
+        const output = result && !('tools' in result.value) ? (result.value as IRoleMcpOutput) : undefined;
         return {
             id: row.id,
             toolKey: row.tool_key!,
             name: row.name!,
             state: ['succeeded', 'failed', 'unknown', 'cancelled'].includes(row.state)
-                ? (row.state as RoleMcpReceipt['state'])
+                ? (row.state as IRoleMcpReceipt['state'])
                 : 'unknown',
             ...(output ? { output } : {}),
             message:

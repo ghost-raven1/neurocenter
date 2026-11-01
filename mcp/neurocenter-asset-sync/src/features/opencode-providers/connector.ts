@@ -2,38 +2,38 @@ import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { verify, type Package } from '../../bridge/package.js';
+import { verify, type IPackage } from '../../bridge/package.js';
 import { resolvePreparedRuntimeArtifact } from '../runtime-artifacts/cache.js';
 import type { OpenCodeProviderDescriptor } from './contract.js';
-import type { ProviderContext } from './context.js';
-export interface CodexModel {
+import type { TProviderContext } from './context.js';
+export interface ICodexModel {
     id: string;
     name: string;
     inputModalities: string[];
 }
-export interface CodexLogin {
+export interface ICodexLogin {
     url: string;
     finished: Promise<void>;
     close: () => Promise<void>;
 }
-interface CodexSetup {
-    readCodexModels: (options?: { signal?: AbortSignal }) => Promise<{ models: CodexModel[]; defaultModel: string }>;
-    beginCodexSetupLogin: (options?: { signal?: AbortSignal }) => Promise<CodexLogin>;
+interface ICodexSetup {
+    readCodexModels: (options?: { signal?: AbortSignal }) => Promise<{ models: ICodexModel[]; defaultModel: string }>;
+    beginCodexSetupLogin: (options?: { signal?: AbortSignal }) => Promise<ICodexLogin>;
 }
-interface CodexSession {
+interface ICodexSession {
     accessToken: string;
     accountId: string;
     expiresAt: number;
 }
-interface CodexAuthSession {
+interface ICodexAuthSession {
     createSessionReader: (
-        load: (refresh: boolean) => Promise<CodexSession>,
-    ) => (refresh?: boolean) => Promise<CodexSession>;
-    loadSession: (refresh: boolean, options: { env: NodeJS.ProcessEnv }) => Promise<CodexSession>;
+        load: (refresh: boolean) => Promise<ICodexSession>,
+    ) => (refresh?: boolean) => Promise<ICodexSession>;
+    loadSession: (refresh: boolean, options: { env: NodeJS.ProcessEnv }) => Promise<ICodexSession>;
 }
-interface CodexAuthProvider {
+interface ICodexAuthProvider {
     createCodexFetch: (
-        read: (refresh: boolean, signal?: AbortSignal) => Promise<CodexSession>,
+        read: (refresh: boolean, signal?: AbortSignal) => Promise<ICodexSession>,
         transport: typeof fetch,
     ) => typeof fetch;
 }
@@ -50,8 +50,8 @@ const trustedPin = createRequire(import.meta.url)(
 export const loginRequired = () =>
     Object.assign(new Error('Войдите в Codex на этом компьютере.'), { code: 'CODEX_LOGIN_REQUIRED' });
 /** Only the server-approved full package and pinned auth-only recipe may enter the existing runtime cache. */
-export function connectorPackage(descriptor: OpenCodeProviderDescriptor, input: unknown): Package {
-    const pkg = structuredClone(input) as Package;
+export function connectorPackage(descriptor: OpenCodeProviderDescriptor, input: unknown): IPackage {
+    const pkg = structuredClone(input) as IPackage;
     try {
         verify(pkg);
     } catch {
@@ -78,7 +78,7 @@ export function connectorPackage(descriptor: OpenCodeProviderDescriptor, input: 
     return pkg;
 }
 /** Resolution rechecks archive inventory and every file; no npm, arbitrary module or PATH executable is loaded. */
-export async function resolveConnector(context: ProviderContext) {
+export async function resolveConnector(context: TProviderContext) {
     const pkg = connectorPackage(context.descriptor, context.connectorPackage),
         resolved = await resolvePreparedRuntimeArtifact(pkg);
     if (!resolved) throw new Error('Подготовьте готовый комплект коннектора Codex.');
@@ -88,16 +88,16 @@ export async function resolveConnector(context: ProviderContext) {
         pluginModule: pathToFileURL(path.join(resolved.root, 'codex-plugin.mjs')).href,
     };
 }
-export async function loadConnector(context: ProviderContext): Promise<{ setup: CodexSetup; pluginModule: string }> {
+export async function loadConnector(context: TProviderContext): Promise<{ setup: ICodexSetup; pluginModule: string }> {
     const { setupModule, pluginModule } = await resolveConnector(context),
-        setup = (await import(setupModule)) as CodexSetup;
+        setup = (await import(setupModule)) as ICodexSetup;
     if (typeof setup.readCodexModels !== 'function' || typeof setup.beginCodexSetupLogin !== 'function')
         throw new Error('Неподдерживаемый интерфейс коннектора.');
     return { setup, pluginModule };
 }
 /** Device inference loads the pinned Responses transport, without executing an OpenCode plugin or agent. */
-export function deviceCodexConnectorPackage(input: unknown): Package {
-    const pkg = structuredClone(input) as Package;
+export function deviceCodexConnectorPackage(input: unknown): IPackage {
+    const pkg = structuredClone(input) as IPackage;
     try {
         verify(pkg);
     } catch {
@@ -128,10 +128,10 @@ export async function loadDeviceCodexTransport(
     await authorize();
     const auth = (await import(
         pathToFileURL(path.join(resolved.root, 'upstream/auth-session.js')).href
-    )) as CodexAuthSession;
+    )) as ICodexAuthSession;
     const provider = (await import(
         pathToFileURL(path.join(resolved.root, 'upstream/auth-provider.js')).href
-    )) as CodexAuthProvider;
+    )) as ICodexAuthProvider;
     if (
         typeof auth.createSessionReader !== 'function' ||
         typeof auth.loadSession !== 'function' ||
@@ -152,7 +152,7 @@ export async function loadDeviceCodexTransport(
         return session;
     }, transport);
 }
-export async function codexModels(context: ProviderContext, signal?: AbortSignal) {
+export async function codexModels(context: TProviderContext, signal?: AbortSignal) {
     signal?.throwIfAborted();
     const { setup } = await loadConnector(context),
         value = await setup.readCodexModels({ signal });
@@ -184,7 +184,7 @@ export async function codexModels(context: ProviderContext, signal?: AbortSignal
         throw new Error('Некорректная модель Codex.');
     return { models, defaultModel: value.defaultModel };
 }
-export async function beginProviderLogin(context: ProviderContext, signal?: AbortSignal): Promise<CodexLogin> {
+export async function beginProviderLogin(context: TProviderContext, signal?: AbortSignal): Promise<ICodexLogin> {
     signal?.throwIfAborted();
     const { setup } = await loadConnector(context),
         login = await setup.beginCodexSetupLogin({ signal });
@@ -208,7 +208,7 @@ export async function beginProviderLogin(context: ProviderContext, signal?: Abor
     return { ...login, close: () => (closing ??= login.close()) };
 }
 export async function codexDefinition(
-    context: ProviderContext,
+    context: TProviderContext,
     selected: unknown,
     session: { preparationId: string; setupJobId: string },
     signal?: AbortSignal,

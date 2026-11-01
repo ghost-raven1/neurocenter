@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
-import type { RoleMcpOwner } from './session-journal.js';
+import type { IRoleMcpOwner } from './session-journal.js';
 import { readBoundedSnapshot } from '../../bridge/read-bounded.js';
 import { syncDirectory } from '../../bridge/atomic-file.js';
 
@@ -59,13 +59,13 @@ async function status(pid: number) {
 export async function roleMcpProcessOwner(
     pid = process.pid,
     entry = path.resolve(process.argv[1] ?? process.execPath),
-): Promise<RoleMcpOwner> {
+): Promise<IRoleMcpOwner> {
     const value = await status(pid);
     if (!value || value.state.startsWith('Z') || value.uid !== process.getuid!())
         throw new Error('Владелец процесса MCP не подтверждён.');
     return { pid, uid: value.uid, birth: value.birth, entry };
 }
-export async function roleMcpOwnerAlive(owner: RoleMcpOwner) {
+export async function roleMcpOwnerAlive(owner: IRoleMcpOwner) {
     const value = await status(owner.pid);
     return (
         !!value &&
@@ -93,7 +93,7 @@ export async function findRoleMcpProcess(nonce: string, receipt: string) {
     if (found.length > 1) throw new Error('Несколько процессов заявили одно владение MCP.');
     return found[0] ? roleMcpProcessOwner(found[0], runner) : undefined;
 }
-async function closure(owner: RoleMcpOwner, nonce: string, receipt: string) {
+async function closure(owner: IRoleMcpOwner, nonce: string, receipt: string) {
     try {
         const info = await fs.lstat(receipt);
         if (
@@ -107,7 +107,7 @@ async function closure(owner: RoleMcpOwner, nonce: string, receipt: string) {
         const value = JSON.parse((await readBoundedSnapshot(receipt, 16384)).bytes.toString('utf8')) as {
             schemaVersion: number;
             nonce: string;
-            owner: RoleMcpOwner;
+            owner: IRoleMcpOwner;
             closed: boolean;
         };
         if (
@@ -124,7 +124,7 @@ async function closure(owner: RoleMcpOwner, nonce: string, receipt: string) {
     }
 }
 /** Called after the server acknowledged the durable closed intent, never after a timeout. */
-export async function retireRoleMcpProcessReceipt(owner: RoleMcpOwner, nonce: string, receipt: string) {
+export async function retireRoleMcpProcessReceipt(owner: IRoleMcpOwner, nonce: string, receipt: string) {
     if (!(await closure(owner, nonce, receipt))) return;
     const before = await readBoundedSnapshot(receipt, 16384);
     if (!(await closure(owner, nonce, receipt))) return;
@@ -135,7 +135,7 @@ export async function retireRoleMcpProcessReceipt(owner: RoleMcpOwner, nonce: st
     await syncDirectory(path.dirname(receipt));
 }
 /** No PID-only termination: the exact nonce, birth, UID and group leader must still match. */
-export async function closeRoleMcpProcess(owner: RoleMcpOwner, nonce: string, receipt: string) {
+export async function closeRoleMcpProcess(owner: IRoleMcpOwner, nonce: string, receipt: string) {
     const value = await status(owner.pid);
     if (value && !value.state.startsWith('Z')) {
         if (
@@ -162,10 +162,10 @@ export async function closeRoleMcpProcess(owner: RoleMcpOwner, nonce: string, re
     }
     throw new Error('Очистка принадлежащих сессии процессов MCP не подтверждена.');
 }
-export interface RoleMcpProcessJournal {
+export interface IRoleMcpProcessJournal {
     nonce: string;
     receipt: string;
-    retain(owner: RoleMcpOwner): Promise<void>;
+    retain(owner: IRoleMcpOwner): Promise<void>;
 }
 /** The wrapper receives private configuration only after its durable ownership receipt. */
 export async function startRoleMcpProcess(
@@ -175,7 +175,7 @@ export async function startRoleMcpProcess(
     env: NodeJS.ProcessEnv,
     authorize: () => Promise<void>,
     signal: AbortSignal,
-    journal?: RoleMcpProcessJournal,
+    journal?: IRoleMcpProcessJournal,
 ) {
     if (!roleMcpLifecycleSupported()) throw new Error('Восстановление локальных MCP на этой ОС пока недоступно.');
     await authorize();
@@ -215,7 +215,7 @@ export async function startRoleMcpProcess(
         child.once('error', () => resolve({ code: null, signal: null }));
     });
     child.stdin!.on('error', () => {});
-    let owner: RoleMcpOwner | undefined;
+    let owner: IRoleMcpOwner | undefined;
     const closed = () => child.exitCode !== null || child.signalCode !== null;
     const stop = async () => {
         if (owner)

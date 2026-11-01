@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, OnApplicationShutdown } from '@nestjs/
 import type { Request } from 'express';
 import { createPool } from '../database/pool';
 import { ModelsService } from '../models/models.service';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import type { IRemoteConnectionRow } from '../models/remote-connection.repository';
 import { currentModelUsage } from '../model-usage/model-usage.context';
 import { RemoteProviderRepository } from './remote-provider.repository';

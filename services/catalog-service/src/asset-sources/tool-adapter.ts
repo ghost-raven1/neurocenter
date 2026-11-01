@@ -12,7 +12,7 @@ import { assertInstallablePackage } from '../devices/installation-set';
 import { PluginRepository, toPlugin } from '../publication/plugin-repository';
 import { publicationHash, validatePublication } from '../publication/publication-validation';
 import { nativeCardHash } from '../publication/native-hash';
-import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-types';
+import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-interfaces';
 
 export const assetKey = (value: ResolvedAsset): string => value.asset.id + '@' + value.asset.version;
 /** Native pins берутся из exact source tuple, включая historical source revision. */

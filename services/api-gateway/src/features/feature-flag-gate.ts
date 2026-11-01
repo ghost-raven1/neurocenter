@@ -1,13 +1,13 @@
 import type { AxiosInstance } from 'axios';
-import { FEATURE_FLAGS, parseEvaluatedFeatureFlags, type FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import { FEATURE_FLAGS, parseEvaluatedFeatureFlags, type TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 export { requiredRouteFeatures as requiredFeatureFlags } from '../../../shared/feature-policy.cjs';
 
 interface IFlagFailure {
     status: 403 | 503;
     code: string;
     message: string;
-    feature?: FeatureFlagKey;
-    blockedBy?: FeatureFlagKey[];
+    feature?: TFeatureFlagKey;
+    blockedBy?: TFeatureFlagKey[];
 }
 
 /** One bounded internal read is shared by admission and the public visual projection. */
@@ -25,7 +25,7 @@ export async function readEvaluatedFeatureFlags(http: Pick<AxiosInstance, 'get'>
 export async function featureFlagsFailure(
     http: Pick<AxiosInstance, 'get'>,
     base: string,
-    keys: readonly FeatureFlagKey[],
+    keys: readonly TFeatureFlagKey[],
 ): Promise<IFlagFailure | undefined> {
     if (!keys.length) return;
     try {

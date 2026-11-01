@@ -1,13 +1,13 @@
 import fs from 'node:fs/promises';
 import { hash } from './state.js';
 import { safeTarget } from './workspace.js';
-import { assetKey, type Receipt } from './installation-receipt.js';
-import { packageDependencies, packageRef, type PackageRef } from './install-set.js';
-import type { Package } from './package.js';
+import { assetKey, type IReceipt } from './installation-receipt.js';
+import { packageDependencies, packageRef, type IPackageRef } from './install-set.js';
+import type { IPackage } from './package.js';
 import type { InstallationPlan } from './installation-plan.js';
 
 export const LEDGER_PATH = '.opencode/neurocenter/installations.json';
-interface LedgerRef {
+interface ILedgerRef {
     key: string;
     version: number;
     manifest: string;
@@ -15,20 +15,20 @@ interface LedgerRef {
     id?: string;
     dependencies?: string[];
 }
-interface LedgerRoot {
-    root: LedgerRef;
+interface ILedgerRoot {
+    root: ILedgerRef;
     manifest: string;
-    packages: LedgerRef[];
+    packages: ILedgerRef[];
     retained?: true;
 }
-interface Ledger {
+interface ILedger {
     schemaVersion: 1;
-    roots: Record<string, LedgerRoot>;
+    roots: Record<string, ILedgerRoot>;
 }
 const keyPattern = /^[a-f0-9]{24}$/;
 const digestPattern = /^[a-f0-9]{64}$/;
-const ref = (item: PackageRef): LedgerRef => ({ key: hash(item.kind + ':' + item.id).slice(0, 24), ...item });
-function validRef(item: LedgerRef): boolean {
+const ref = (item: IPackageRef): ILedgerRef => ({ key: hash(item.kind + ':' + item.id).slice(0, 24), ...item });
+function validRef(item: ILedgerRef): boolean {
     return (
         !!item &&
         typeof item === 'object' &&
@@ -42,7 +42,7 @@ function validRef(item: LedgerRef): boolean {
                 item.dependencies.every((key) => keyPattern.test(key)) &&
                 new Set(item.dependencies).size === item.dependencies.length)) &&
         ((item.kind === undefined && item.id === undefined) ||
-            (typeof item.kind === 'string' && typeof item.id === 'string' && ref(item as PackageRef).key === item.key))
+            (typeof item.kind === 'string' && typeof item.id === 'string' && ref(item as IPackageRef).key === item.key))
     );
 }
 
@@ -50,13 +50,13 @@ function validRef(item: LedgerRef): boolean {
 export class InstallationLedger {
     private constructor(
         private readonly plan: InstallationPlan,
-        private readonly data: Ledger,
+        private readonly data: ILedger,
     ) {}
     static async load(plan: InstallationPlan): Promise<InstallationLedger> {
         const raw = await plan.read(LEDGER_PATH);
-        let data: Ledger;
+        let data: ILedger;
         try {
-            data = raw === null ? { schemaVersion: 1, roots: {} } : (JSON.parse(raw) as Ledger);
+            data = raw === null ? { schemaVersion: 1, roots: {} } : (JSON.parse(raw) as ILedger);
             if (
                 !data ||
                 data.schemaVersion !== 1 ||
@@ -102,9 +102,9 @@ export class InstallationLedger {
         const found = new Set<string>();
         for (const name of files.filter((name) => /^[a-f0-9]{24}\.json$/.test(name))) {
             const key = name.slice(0, -5);
-            let receipt: Receipt;
+            let receipt: IReceipt;
             try {
-                receipt = JSON.parse((await plan.read('.opencode/neurocenter/receipts/' + name))!) as Receipt;
+                receipt = JSON.parse((await plan.read('.opencode/neurocenter/receipts/' + name))!) as IReceipt;
                 if (
                     !Number.isSafeInteger(receipt.version) ||
                     receipt.version < 1 ||
@@ -133,7 +133,7 @@ export class InstallationLedger {
         }
         return new InstallationLedger(plan, data);
     }
-    assertInstall(rootKey: string, pkg: Package): void {
+    assertInstall(rootKey: string, pkg: IPackage): void {
         const key = assetKey(pkg);
         for (const [ownerKey, owner] of Object.entries(this.data.roots)) {
             if (
@@ -148,7 +148,7 @@ export class InstallationLedger {
             }
         }
     }
-    assertRemoval(pkg: Package): void {
+    assertRemoval(pkg: IPackage): void {
         const key = assetKey(pkg);
         for (const [ownerKey, owner] of Object.entries(this.data.roots)) {
             if (ownerKey !== key && owner.packages.some((item) => item.key === key)) {
@@ -162,10 +162,10 @@ export class InstallationLedger {
     }
     private retainDependencies(key: string, next: Set<string>): void {
         const members = new Map((this.data.roots[key]?.packages ?? []).map((item) => [item.key, item]));
-        const closure = (start: LedgerRef): LedgerRef[] => {
+        const closure = (start: ILedgerRef): ILedgerRef[] => {
             const visiting = new Set<string>();
-            const visited = new Map<string, LedgerRef>();
-            const visit = (item: LedgerRef): void => {
+            const visited = new Map<string, ILedgerRef>();
+            const visit = (item: ILedgerRef): void => {
                 if (visiting.has(item.key)) {
                     throw new Error('Повреждён цикл локального реестра зависимостей.');
                 }
@@ -197,7 +197,7 @@ export class InstallationLedger {
             }
         }
     }
-    async install(root: PackageRef, manifest: string, packages: Package[]): Promise<void> {
+    async install(root: IPackageRef, manifest: string, packages: IPackage[]): Promise<void> {
         const members = packages.map((pkg) => ({
             ...ref(packageRef(pkg)),
             dependencies: packageDependencies(pkg).map((pin) => ref(pin).key),
@@ -210,7 +210,7 @@ export class InstallationLedger {
         this.data.roots[rootRef.key] = { root: rootRef, manifest, packages: members };
         await this.save();
     }
-    async remove(pkg: Package): Promise<void> {
+    async remove(pkg: IPackage): Promise<void> {
         const key = assetKey(pkg);
         this.retainDependencies(key, new Set());
         delete this.data.roots[key];

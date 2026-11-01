@@ -1,0 +1,10 @@
+**/node_modules/**
+**/dist/**
+coverage/**
+frontend/coverage/**
+services/*/coverage/**
+mcp/*/coverage/**
+.run/**
+vendor/**
+# Byte-preserved upstream sources have their own integrity manifests.
+catalog-source/components/fetch-mcp/source/**

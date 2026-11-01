@@ -2,11 +2,11 @@ import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { LearningService } from './learning.service';
 import type {
-    LearningExperienceInput,
-    LearningHypothesisInput,
-    LearningCheckInput,
-    LearningCandidateInput,
-    LearningCandidateActionInput,
+    ILearningExperienceInput,
+    ILearningHypothesisInput,
+    ILearningCheckInput,
+    ILearningCandidateInput,
+    ILearningCandidateActionInput,
 } from '../../../shared/project-learning.cjs';
 
 @Controller('api/projects/:id/learning')
@@ -73,14 +73,14 @@ export class LearningController {
     @Post('experiences') experience(
         @Req() req: Request,
         @Param('id') id: string,
-        @Body() body: LearningExperienceInput,
+        @Body() body: ILearningExperienceInput,
     ) {
         return this.learning.recordExperience(req, id, body);
     }
     @Post('hypotheses') hypothesis(
         @Req() req: Request,
         @Param('id') id: string,
-        @Body() body: LearningHypothesisInput,
+        @Body() body: ILearningHypothesisInput,
     ) {
         return this.learning.proposeHypothesis(req, id, body);
     }
@@ -88,18 +88,18 @@ export class LearningController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('hypothesisId') hypothesisId: string,
-        @Body() body: LearningCheckInput,
+        @Body() body: ILearningCheckInput,
     ) {
         return this.learning.checkHypothesis(req, id, hypothesisId, body);
     }
-    @Post('candidates') candidate(@Req() req: Request, @Param('id') id: string, @Body() body: LearningCandidateInput) {
+    @Post('candidates') candidate(@Req() req: Request, @Param('id') id: string, @Body() body: ILearningCandidateInput) {
         return this.learning.proposeCandidate(req, id, body);
     }
     @Post('candidates/:candidateId/approve') approve(
         @Req() req: Request,
         @Param('id') id: string,
         @Param('candidateId') candidateId: string,
-        @Body() body: LearningCandidateActionInput,
+        @Body() body: ILearningCandidateActionInput,
     ) {
         return this.learning.candidateAction(req, id, candidateId, body, 'approve');
     }
@@ -107,7 +107,7 @@ export class LearningController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('candidateId') candidateId: string,
-        @Body() body: LearningCandidateActionInput,
+        @Body() body: ILearningCandidateActionInput,
     ) {
         return this.learning.candidateAction(req, id, candidateId, body, 'reject');
     }
@@ -115,7 +115,7 @@ export class LearningController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('candidateId') candidateId: string,
-        @Body() body: LearningCandidateActionInput,
+        @Body() body: ILearningCandidateActionInput,
     ) {
         return this.learning.candidateAction(req, id, candidateId, body, 'revoke');
     }
@@ -123,7 +123,7 @@ export class LearningController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('candidateId') candidateId: string,
-        @Body() body: LearningCandidateActionInput,
+        @Body() body: ILearningCandidateActionInput,
     ) {
         return this.learning.candidateAction(req, id, candidateId, body, 'activate');
     }

@@ -1,6 +1,7 @@
+import type { IOperationsState } from './interfaces';
 import { createSlice } from '@reduxjs/toolkit';
 
-import type { IOperationsFilters, IOperationsState, IOperationProgressCache } from '../interfaces';
+import type { IOperationsFilters, IOperationProgressCache } from '../interfaces';
 import { fetchOperation, fetchOperations } from './actions';
 
 const initialState: IOperationsState = {
@@ -8,7 +9,7 @@ const initialState: IOperationsState = {
     page: 1,
     size: 10,
     total: 0,
-    activeCount:0,
+    activeCount: 0,
     loading: false,
     filters: {},
     progressCache: {},
@@ -19,7 +20,9 @@ const operationsSlice = createSlice({
     name: 'operations',
     initialState,
     reducers: {
-        setActiveCount:(state,action:{payload:number})=>{state.activeCount=action.payload;},
+        setActiveCount: (state, action: { payload: number }) => {
+            state.activeCount = action.payload;
+        },
         setFilters: (state, action: { payload: IOperationsFilters }) => {
             state.filters = action.payload;
             state.page = 1;
@@ -31,13 +34,13 @@ const operationsSlice = createSlice({
             const { operationId, ...rest } = action.payload;
             state.progressCache[operationId] = rest;
         },
-        closeDetail: state => {
+        closeDetail: (state) => {
             state.selected = null;
         },
     },
-    extraReducers: builder => {
+    extraReducers: (builder) => {
         builder
-            .addCase(fetchOperations.pending, state => {
+            .addCase(fetchOperations.pending, (state) => {
                 state.loading = true;
             })
             .addCase(fetchOperations.fulfilled, (state, action) => {
@@ -45,7 +48,7 @@ const operationsSlice = createSlice({
                 state.list = action.payload.items;
                 state.total = action.payload.total;
             })
-            .addCase(fetchOperations.rejected, state => {
+            .addCase(fetchOperations.rejected, (state) => {
                 state.loading = false;
             })
             .addCase(fetchOperation.fulfilled, (state, action) => {

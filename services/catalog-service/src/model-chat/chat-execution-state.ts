@@ -1,7 +1,7 @@
-import type { ChatDb } from './chat.repository';
-import type { ConversationRow, TurnRow } from './chat.types';
+import type { TChatDb } from './chat.repository';
+import type { IConversationRow, ITurnRow } from './chat.interfaces';
 
-interface ActiveCall {
+interface IActiveCall {
     turn_id: string;
     operation_id: string;
     agent_id: string | null;
@@ -11,14 +11,14 @@ interface ActiveCall {
 
 /** Only a dispatched, leased call for the current attempt means an answer is being generated. */
 export async function projectExecutionState(
-    db: ChatDb,
-    conversation: ConversationRow,
-    turns: TurnRow[],
+    db: TChatDb,
+    conversation: IConversationRow,
+    turns: ITurnRow[],
 ): Promise<void> {
     const pending = turns.filter((turn) => turn.status === 'pending');
     const calls = pending.length
         ? (
-              await db.query<ActiveCall>(
+              await db.query<IActiveCall>(
                   `SELECT turn_id,operation_id,agent_id,model_id,purpose FROM model_usage_calls
         WHERE actor_email=$1 AND turn_id=ANY($2::uuid[]) AND operation_id=ANY($3::uuid[])
         AND status='pending' AND endpoint='chat' AND purpose IN ('chat','agent')

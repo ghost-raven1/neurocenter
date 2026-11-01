@@ -9,31 +9,31 @@ import {
     type OpenCodeGlobalProvidersInventory,
     type GlobalProvider,
 } from './contract.js';
-import { snapshot, unchanged, publish, conflict, type LocalSnapshot } from './files.js';
+import { snapshot, unchanged, publish, conflict, type ILocalSnapshot } from './files.js';
 import { ProviderTransactions } from './transaction.js';
 
-export interface CompatibleCliProof {
+export interface ICompatibleCliProof {
     assertCurrent: () => Promise<void>;
 }
-interface Options {
+interface IOptions {
     home: string;
     environment: NodeJS.ProcessEnv;
     authorize: () => Promise<unknown>;
-    assertCompatibleCli?: () => Promise<CompatibleCliProof>;
+    assertCompatibleCli?: () => Promise<ICompatibleCliProof>;
     current?: () => void;
     limits?: Readonly<GlobalProvidersLimits>;
 }
-interface Change {
-    before: LocalSnapshot;
+interface IChange {
+    before: ILocalSnapshot;
     after: string;
 }
-interface Preview {
+interface IPreview {
     previewId: string;
-    changes: Change[];
-    snapshots: LocalSnapshot[];
+    changes: IChange[];
+    snapshots: ILocalSnapshot[];
     providerId: string;
 }
-interface Input {
+interface IInput {
     providerId?: unknown;
     authentication?: unknown;
     apiKey?: unknown;
@@ -83,10 +83,10 @@ export class GlobalProviderEditor {
     readonly configDirectory: string;
     readonly authFile: string;
     private readonly configurations: string[];
-    private preview?: Preview;
+    private preview?: IPreview;
     private busy = false;
     private readonly transactions: ProviderTransactions;
-    constructor(private readonly options: Options) {
+    constructor(private readonly options: IOptions) {
         this.limits = options.limits ?? contract.globalProvidersLimits(options.environment);
         this.configDirectory = path.join(
             options.environment.XDG_CONFIG_HOME || path.join(options.home, '.config'),
@@ -129,7 +129,7 @@ export class GlobalProviderEditor {
     }
     private async read() {
         await this.admit();
-        const snapshots: LocalSnapshot[] = [];
+        const snapshots: ILocalSnapshot[] = [];
         let config: Record<string, unknown> = {};
         for (const file of this.configurations) {
             const item = await snapshot(file, this.limits.fileBytes, false);
@@ -233,7 +233,7 @@ export class GlobalProviderEditor {
             };
         }
     }
-    async prepare(input: Input) {
+    async prepare(input: IInput) {
         if (
             this.busy ||
             !object(input) ||
@@ -258,7 +258,7 @@ export class GlobalProviderEditor {
             entries = object(config.provider) ? config.provider : {},
             provider = object(entries[id]) ? (entries[id] as Record<string, unknown>) : {},
             providerOptions = object(provider.options) ? provider.options : {};
-        const changes: Change[] = [],
+        const changes: IChange[] = [],
             kind = authKind(authentication[id]),
             apiKey = input.apiKey;
         if (input.authentication === 'api') {

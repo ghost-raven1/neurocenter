@@ -11,7 +11,7 @@ import { remoteModelBaseUrl } from './remote-model-validation';
 import { openCodeCardMetadata } from './opencode-model-sync.repository';
 import { resolveOpenCodeIdentity, saveOpenCodeIdentity } from './opencode-model-identity';
 import { DeviceCodexService } from './device-codex.service';
-import type { DeviceCodexSource } from '../../../shared/device-codex-inference.cjs';
+import type { TDeviceCodexSource } from '../../../shared/device-codex-inference.cjs';
 
 /** Импортирует только выбранную metadata запись из собственной завершённой очереди и текущей папки. */
 @Injectable()
@@ -84,7 +84,7 @@ export class OpenCodeModelImport {
             const name = typeof body.name === 'string' ? body.name.trim() : candidate.name;
             if (!name || name.length > 128 || /[\x00-\x1f\x7f]/.test(name))
                 throw new BadRequestException('Укажите название модели до 128 символов.');
-            const source: DeviceCodexSource =
+            const source: TDeviceCodexSource =
                 context.scope === 'global'
                     ? { scope: 'global' }
                     : {

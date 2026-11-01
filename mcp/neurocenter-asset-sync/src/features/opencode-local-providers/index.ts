@@ -1,6 +1,6 @@
 import os from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
-import { api, hub, readState, type Credentials } from '../../bridge/state.js';
+import { api, hub, readState, type ICredentials } from '../../bridge/state.js';
 import { saveCompletion } from '../../bridge/completions.js';
 import { openVerificationPage } from '../../bridge/open-browser.js';
 import { assertOpenCodeAuthOwner, stopOpenCodeAuthOwnerChecks } from '../computer-setup/auth-owner.js';
@@ -17,14 +17,14 @@ import {
     queueGlobalReceipt,
     globalReceipts,
     globalReceiptRecoverable,
-    type GlobalJob,
-    type GlobalReceipt,
+    type IGlobalJob,
+    type IGlobalReceipt,
 } from './receipts.js';
 const active = new Map<string, Promise<void>>();
 let stopping = false;
 const message =
     'Локальное состояние OpenCode сохранено в квитанции. Окно настройки и ответ модели проверяются отдельно.';
-function failed(receipt: GlobalReceipt, issue: GlobalProvidersIssue = 'unknown') {
+function failed(receipt: IGlobalReceipt, issue: GlobalProvidersIssue = 'unknown') {
     return {
         id: receipt.job.id,
         lease: receipt.job.lease,
@@ -67,7 +67,7 @@ export async function stopGlobalProvidersJobs() {
 }
 /** Fixed global actions use only the bounded version probe and keep local URLs/credentials out of the outbox. */
 export async function runGlobalProvidersJob(
-    job: GlobalJob,
+    job: IGlobalJob,
     deviceId: string,
     authorize: (signal?: AbortSignal) => Promise<unknown>,
 ) {
@@ -91,7 +91,7 @@ export async function runGlobalProvidersJob(
         }
         let receipt = await beginGlobalReceipt(identity);
         const site = hub(),
-            credentials = await readState<Credentials>('credentials'),
+            credentials = await readState<ICredentials>('credentials'),
             limits = contract.globalProvidersLimits(process.env);
         const current = async () => {
             if (
@@ -99,7 +99,7 @@ export async function runGlobalProvidersJob(
                 hub() !== site ||
                 !credentials ||
                 credentials.deviceId !== deviceId ||
-                !isDeepStrictEqual(await readState<Credentials>('credentials'), credentials)
+                !isDeepStrictEqual(await readState<ICredentials>('credentials'), credentials)
             )
                 throw Error('Авторизация компьютера изменилась.');
         };

@@ -4,7 +4,7 @@ import {
     writePrivateConfiguration,
     removePrivateConfiguration,
 } from '../local-configuration/private-store.js';
-import type { Completion } from '../../bridge/completions.js';
+import type { ICompletion } from '../../bridge/completions.js';
 import {
     memoryDigest,
     normalizeMemorySyncPayload,
@@ -12,9 +12,9 @@ import {
     type MemorySyncPayload,
     type MemorySyncResult,
 } from './contract.js';
-import { assertProjectionJournal, type ProjectionJournal } from './projection.js';
+import { assertProjectionJournal, type IProjectionJournal } from './projection.js';
 
-interface Pending {
+interface IPending {
     id: string;
     lease: string;
     deviceId: string;
@@ -39,12 +39,12 @@ export const journalKey = (
     );
 /** CAS updates retain only owned text; the pointer used by recovery contains public receipt data. */
 export async function projectionStorage(key: string, namespace: string) {
-    let saved = await readPrivateConfiguration<ProjectionJournal>(key);
+    let saved = await readPrivateConfiguration<IProjectionJournal>(key);
     if (saved) assertProjectionJournal(saved, namespace);
-    const journal: ProjectionJournal = structuredClone(saved ?? { schemaVersion: 1, namespace, owned: {} });
+    const journal: IProjectionJournal = structuredClone(saved ?? { schemaVersion: 1, namespace, owned: {} });
     return {
         journal,
-        save: async (value: ProjectionJournal) => {
+        save: async (value: IProjectionJournal) => {
             await writePrivateConfiguration(key, value, saved);
             saved = structuredClone(value);
         },
@@ -77,7 +77,7 @@ export function publicMemoryResult(
         payload,
     );
 }
-async function pointers(): Promise<Pending[]> {
+async function pointers(): Promise<IPending[]> {
     const value = (await readState<unknown>(index)) ?? [];
     if (
         !Array.isArray(value) ||
@@ -95,7 +95,7 @@ async function pointers(): Promise<Pending[]> {
     for (const item of value) normalizeMemorySyncResult(item.result, normalizeMemorySyncPayload(item.payload));
     return value;
 }
-export async function saveMemoryCheckpoint(value: Pending) {
+export async function saveMemoryCheckpoint(value: IPending) {
     const pending = await pointers();
     if (!pending.some((item) => item.id === value.id)) {
         if (pending.length >= 200)
@@ -103,16 +103,16 @@ export async function saveMemoryCheckpoint(value: Pending) {
         await writeState(index, [...pending, value]);
     }
     const key = pendingKey(value.id),
-        before = await readPrivateConfiguration<Pending>(key);
+        before = await readPrivateConfiguration<IPending>(key);
     if (before && (before.deviceId !== value.deviceId || before.lease !== value.lease))
         throw new Error('Квитанция Memory принадлежит другому заданию.');
     await writePrivateConfiguration(key, value, before);
 }
 /** Recovery delivers a conservative checkpoint; it never reruns MCP mutations on its own. */
-export async function recoverMemoryCompletions(save: (completion: Completion) => Promise<void>) {
+export async function recoverMemoryCompletions(save: (completion: ICompletion) => Promise<void>) {
     for (const pointer of await pointers()) {
         const id = pointer.id,
-            value = (await readPrivateConfiguration<Pending>(pendingKey(id))) ?? pointer;
+            value = (await readPrivateConfiguration<IPending>(pendingKey(id))) ?? pointer;
         if (
             value.id !== pointer.id ||
             value.deviceId !== pointer.deviceId ||
@@ -137,7 +137,7 @@ export async function recoverMemoryCompletions(save: (completion: Completion) =>
 export async function acknowledgeMemoryCheckpoint(id: string) {
     const pending = await pointers(),
         key = pendingKey(id),
-        value = await readPrivateConfiguration<Pending>(key);
+        value = await readPrivateConfiguration<IPending>(key);
     await writeState(
         index,
         pending.filter((item) => item.id !== id),

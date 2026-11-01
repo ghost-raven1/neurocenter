@@ -1,15 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
 import type {
-    ActionRequest,
-    AssetType,
-    CreateRequest,
-    EditRequest,
-    RequestFields,
-    RequestFilter,
-    RequestKind,
-    RequestStatus,
-    TargetInput,
-} from './request.types';
+    IActionRequest,
+    TAssetType,
+    ICreateRequest,
+    IEditRequest,
+    IRequestFields,
+    IRequestFilter,
+    TRequestKind,
+    TRequestStatus,
+    ITargetInput,
+} from './request.interfaces';
 const kinds = ['add', 'update', 'issue'] as const;
 const assets = ['plugin', 'mcp', 'skill', 'model'] as const;
 const statuses = ['submitted', 'in_progress', 'needs_info', 'rejected', 'completed', 'cancelled'] as const;
@@ -59,10 +59,10 @@ export function projectId(value: unknown): string | null {
     if (!/^prj-[A-Za-z0-9-]+$/.test(id)) throw new BadRequestException('Выберите проект по его ID.');
     return id;
 }
-export function assetType(value: unknown): AssetType {
+export function assetType(value: unknown): TAssetType {
     return choice(value, assets, 'Тип инструмента');
 }
-export function target(value: unknown): TargetInput | null {
+export function target(value: unknown): ITargetInput | null {
     if (value === undefined || value === null) return null;
     const input = object(value, ['type', 'id']),
         type = assetType(input.type),
@@ -91,7 +91,7 @@ function sourceUrl(value: unknown): string | null {
         throw new BadRequestException('Ссылка должна использовать HTTP(S) без логина и пароля.');
     return url.href;
 }
-function fields(input: Record<string, unknown>): RequestFields {
+function fields(input: Record<string, unknown>): IRequestFields {
     return {
         title: text(input.title, 'Заголовок', 160),
         description: text(input.description, 'Описание', 10000),
@@ -99,7 +99,7 @@ function fields(input: Record<string, unknown>): RequestFields {
         target: target(input.target),
     };
 }
-export function createInput(raw: unknown): CreateRequest {
+export function createInput(raw: unknown): ICreateRequest {
     const input = object(raw, [
         'requestKey',
         'kind',
@@ -113,7 +113,7 @@ export function createInput(raw: unknown): CreateRequest {
     const result = {
         ...fields(input),
         requestKey: uuid(input.requestKey),
-        kind: choice<RequestKind>(input.kind, kinds, 'Вид заявки'),
+        kind: choice<TRequestKind>(input.kind, kinds, 'Вид заявки'),
         assetType: assetType(input.assetType),
         projectId: projectId(input.projectId),
     };
@@ -127,11 +127,11 @@ export function createInput(raw: unknown): CreateRequest {
         );
     return result;
 }
-export function editInput(raw: unknown): EditRequest {
+export function editInput(raw: unknown): IEditRequest {
     const input = object(raw, ['requestKey', 'expectedRevision', 'title', 'description', 'sourceUrl', 'target']);
     return { ...fields(input), requestKey: uuid(input.requestKey), expectedRevision: revision(input.expectedRevision) };
 }
-export function actionInput(raw: unknown): ActionRequest {
+export function actionInput(raw: unknown): IActionRequest {
     const input = object(raw, ['requestKey', 'expectedRevision', 'action', 'comment', 'target']),
         action = choice(input.action, actions, 'Действие');
     const comment = text(input.comment, 'Комментарий', 4000, !['needs_info', 'reject', 'complete'].includes(action));
@@ -157,14 +157,14 @@ function positive(value: unknown, fallback: number, max: number): number {
         throw new BadRequestException('Некорректная страница или размер списка.');
     return Number(value);
 }
-export function listInput(raw: unknown): RequestFilter {
+export function listInput(raw: unknown): IRequestFilter {
     const input = object(raw, ['scope', 'status', 'kind', 'assetType', 'projectId', 'page', 'size']);
     return {
         scope: input.scope === undefined ? 'mine' : choice(input.scope, ['mine', 'all'], 'Список'),
         page: positive(input.page, 1, 1000000),
         size: positive(input.size, 20, 100),
-        ...(input.status !== undefined ? { status: choice<RequestStatus>(input.status, statuses, 'Статус') } : {}),
-        ...(input.kind !== undefined ? { kind: choice<RequestKind>(input.kind, kinds, 'Вид заявки') } : {}),
+        ...(input.status !== undefined ? { status: choice<TRequestStatus>(input.status, statuses, 'Статус') } : {}),
+        ...(input.kind !== undefined ? { kind: choice<TRequestKind>(input.kind, kinds, 'Вид заявки') } : {}),
         ...(input.assetType !== undefined ? { assetType: assetType(input.assetType) } : {}),
         ...(input.projectId !== undefined ? { projectId: projectId(input.projectId) ?? undefined } : {}),
     };

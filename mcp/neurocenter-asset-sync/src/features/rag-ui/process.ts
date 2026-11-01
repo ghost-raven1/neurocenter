@@ -1,14 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { ragUiReady } from './contract.js';
 
-interface StopOptions {
+interface IStopOptions {
     force?: boolean;
     timeoutMs?: number;
 }
-export interface UiProcess {
+export interface IUiProcess {
     child: ChildProcess;
     url: string;
-    stop(options?: StopOptions): Promise<void>;
+    stop(options?: IStopOptions): Promise<void>;
 }
 /** Долгоживущий HTTP-процесс принадлежит worker; URL читается только из IPC и не печатается. */
 export async function startRagUiProcess(
@@ -16,7 +16,7 @@ export async function startRagUiProcess(
     args: string[],
     cwd: string,
     env: NodeJS.ProcessEnv,
-): Promise<UiProcess> {
+): Promise<IUiProcess> {
     const child = spawn(process.execPath, [entrypoint, ...args], {
         cwd,
         env,
@@ -90,7 +90,7 @@ export async function startRagUiProcess(
             }
         }
     };
-    const stop = (options: StopOptions = {}): Promise<void> => {
+    const stop = (options: IStopOptions = {}): Promise<void> => {
         if (stopping)
             return options.force === false
                 ? stopping

@@ -1,26 +1,26 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { atomicText, syncDirectory } from './atomic-file.js';
-import { pendingCompletions, saveCompletion, type Completion } from './completions.js';
+import { pendingCompletions, saveCompletion, type ICompletion } from './completions.js';
 import { readBoundedUtf8 } from './read-bounded.js';
-import { readState, stateDir, type Credentials } from './state.js';
-import { sortedRefs, type InstallSet } from './install-set.js';
-import type { Package } from './package.js';
+import { readState, stateDir, type ICredentials } from './state.js';
+import { sortedRefs, type IInstallSet } from './install-set.js';
+import type { IPackage } from './package.js';
 import { RuntimeArtifactCapacityError } from '../features/runtime-artifacts/capacity-error.js';
 
-interface Intent {
+interface IIntent {
     schemaVersion: 1;
     pid: number;
-    completion: Completion;
+    completion: ICompletion;
 }
-interface PreparationJob {
+interface IPreparationJob {
     id: string;
     lease: string;
     kind: string;
     project_id?: string;
     payload: {
-        package?: Package;
-        installSet?: InstallSet;
+        package?: IPackage;
+        installSet?: IInstallSet;
         bindingId?: string;
         changePlanId?: string;
         expectedChangeDigest?: string;
@@ -38,7 +38,7 @@ const alive = (pid: number) => {
         return (error as NodeJS.ErrnoException).code !== 'ESRCH';
     }
 };
-function validate(item: Intent): void {
+function validate(item: IIntent): void {
     const c = item?.completion,
         r = c?.result;
     if (
@@ -100,7 +100,7 @@ async function remove(file: string): Promise<void> {
 }
 
 /** Исходная идентичность нужна для позднего отказа после перезапуска, без повторного выполнения. */
-export function runtimePreparationCompletion(job: PreparationJob, deviceId: string): Completion {
+export function runtimePreparationCompletion(job: IPreparationJob, deviceId: string): ICompletion {
     const pkg = job.payload.package;
     if (
         !pkg ||
@@ -110,7 +110,7 @@ export function runtimePreparationCompletion(job: PreparationJob, deviceId: stri
     ) {
         throw new Error('Неизвестная подготовка готового комплекта.');
     }
-    const completion: Completion = {
+    const completion: ICompletion = {
         id: job.id,
         lease: job.lease,
         deviceId,
@@ -135,14 +135,14 @@ export function runtimePreparationCompletion(job: PreparationJob, deviceId: stri
 
 /** Intent существует только до передачи управления файловой транзакции установки/repair. */
 export async function withRuntimePreparationIntent(
-    completion: Completion | undefined,
+    completion: ICompletion | undefined,
     prepare: () => Promise<void>,
 ): Promise<void> {
     if (!completion) {
         await prepare();
         return;
     }
-    const intent: Intent = { schemaVersion: 1, pid: process.pid, completion };
+    const intent: IIntent = { schemaVersion: 1, pid: process.pid, completion };
     validate(intent);
     await fs.mkdir(directory(), { recursive: true, mode: 0o700 });
     const info = await fs.lstat(directory());
@@ -181,7 +181,7 @@ export async function withRuntimePreparationIntent(
 
 /** Восстановленные файловые квитанции имеют приоритет; отправляется только отказ до записи проекта. */
 export async function recoverRuntimePreparations(): Promise<void> {
-    const credentials = await readState<Credentials>('credentials');
+    const credentials = await readState<ICredentials>('credentials');
     if (!credentials) return;
     const info = await fs.lstat(directory()).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') return undefined;
@@ -195,7 +195,7 @@ export async function recoverRuntimePreparations(): Promise<void> {
     });
     for (const name of files.filter((name) => uuid.test(name.replace(/\.json$/, '')) && name.endsWith('.json'))) {
         const file = path.join(directory(), name),
-            intent = JSON.parse(await readBoundedUtf8(file, 16000)) as Intent;
+            intent = JSON.parse(await readBoundedUtf8(file, 16000)) as IIntent;
         validate(intent);
         const completion = intent.completion;
         if (name !== completion.id + '.json') throw new Error('Идентичность подготовки не совпадает с именем файла.');

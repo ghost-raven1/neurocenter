@@ -1,10 +1,10 @@
 import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
-import type { FeatureFlagKey } from '../../../shared/feature-flags.cjs';
+import type { TFeatureFlagKey } from '../../../shared/feature-flags.cjs';
 import { FeatureFlagError, requireFeaturesEnabled as sharedRequire } from '../../../shared/feature-client.cjs';
 
 /** Общая точка постановки заданий закрывает также повтор из сохранённого payload. */
 export async function requireFeaturesEnabled(
-    keys: readonly FeatureFlagKey[],
+    keys: readonly TFeatureFlagKey[],
     env = process.env,
     request = globalThis.fetch,
     signal?: AbortSignal,
@@ -27,7 +27,7 @@ export async function requireFeaturesEnabled(
     }
 }
 export function requireFeatureEnabled(
-    key: FeatureFlagKey,
+    key: TFeatureFlagKey,
     env = process.env,
     request = globalThis.fetch,
 ): Promise<void> {

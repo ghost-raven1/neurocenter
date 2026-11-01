@@ -8,9 +8,15 @@ import {
     normalizeSnapshotManifest,
     snapshotManifestHash,
     snapshotCanonicalJson,
-    type SnapshotManifest,
+    type ISnapshotManifest,
 } from '../../../shared/project-snapshot.cjs';
-import type { SnapshotCreate, SnapshotHead, SnapshotRow, SnapshotSignature, SnapshotView } from './snapshot-types';
+import type {
+    ISnapshotCreate,
+    ISnapshotHead,
+    ISnapshotRow,
+    ISnapshotSignature,
+    ISnapshotView,
+} from './snapshot-interfaces';
 
 export const snapshotUuid = (value: unknown): value is string =>
     typeof value === 'string' &&
@@ -26,7 +32,7 @@ export function snapshotInput(value: unknown, keys: string[]): asserts value is 
     )
         throw new BadRequestException('Некорректные параметры снимка.');
 }
-export function snapshotExpectedHead(value: SnapshotHead): void {
+export function snapshotExpectedHead(value: ISnapshotHead): void {
     if (
         (value.expectedHeadId !== null && !snapshotUuid(value.expectedHeadId)) ||
         !Number.isSafeInteger(value.expectedHeadRevision) ||
@@ -34,7 +40,7 @@ export function snapshotExpectedHead(value: SnapshotHead): void {
     )
         throw new BadRequestException('Передайте текущий head и его ревизию.');
 }
-export function assertSnapshotHead(project: Record<string, unknown>, expected: SnapshotHead): void {
+export function assertSnapshotHead(project: Record<string, unknown>, expected: ISnapshotHead): void {
     snapshotExpectedHead(expected);
     if (
         (project.head_snapshot_id ?? null) !== expected.expectedHeadId ||
@@ -44,7 +50,7 @@ export function assertSnapshotHead(project: Record<string, unknown>, expected: S
             'Текущую версию проекта уже изменили. Обновите список и подтвердите действие заново.',
         );
 }
-export function snapshotCreateInput(input: SnapshotCreate): void {
+export function snapshotCreateInput(input: ISnapshotCreate): void {
     snapshotInput(input, ['requestKey', 'deviceId', 'expectedBindingId', 'expectedHeadId', 'expectedHeadRevision']);
     if (
         !snapshotUuid(input.requestKey) ||
@@ -180,10 +186,10 @@ export class SnapshotRepository {
             return { cancelled: true, requestKey: key };
         });
     }
-    async row(client: PoolClient, project: string, id: string, lock = false): Promise<SnapshotRow> {
+    async row(client: PoolClient, project: string, id: string, lock = false): Promise<ISnapshotRow> {
         if (!snapshotUuid(id)) throw new NotFoundException('Снимок не найден.');
         const row = (
-            await client.query<SnapshotRow>(
+            await client.query<ISnapshotRow>(
                 'SELECT * FROM project_snapshots WHERE project_id=$1 AND id=$2' + (lock ? ' FOR UPDATE' : ''),
                 [project, id],
             )
@@ -191,7 +197,7 @@ export class SnapshotRepository {
         if (!row) throw new NotFoundException('Снимок не найден.');
         return row;
     }
-    async create(projectId: string, actor: IAccessActor, input: SnapshotCreate): Promise<SnapshotRow> {
+    async create(projectId: string, actor: IAccessActor, input: ISnapshotCreate): Promise<ISnapshotRow> {
         snapshotCreateInput(input);
         const hash = snapshotHash({ projectId, input });
         return this.transaction(projectId, actor, 3, async (client, project) => {
@@ -205,7 +211,7 @@ export class SnapshotRepository {
             if (cancelled.rowCount)
                 throw new ConflictException('Этот запрос публикации отменён. Для нового снимка нужен новый UUID.');
             const previous = (
-                await client.query<SnapshotRow & { request_hash: string }>(
+                await client.query<ISnapshotRow & { request_hash: string }>(
                     'SELECT * FROM project_snapshots WHERE email=$1 AND request_key=$2',
                     [actor.email, input.requestKey],
                 )
@@ -241,7 +247,7 @@ export class SnapshotRepository {
                     'Достигнут лимит сохранённых снимков проекта. Удалите ненужный незакреплённый снимок или измените retention.',
                 );
             const row = (
-                await client.query<SnapshotRow>(
+                await client.query<ISnapshotRow>(
                     `INSERT INTO project_snapshots(id,project_id,request_key,request_hash,email,role,device_id,binding_id,parent_id,
                 expected_head_id,expected_head_revision,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text::uuid,$9::text,$10,'UPLOADING') RETURNING *`,
                     [
@@ -268,10 +274,10 @@ export class SnapshotRepository {
             return row;
         });
     }
-    async list(projectId: string, actor: IAccessActor): Promise<SnapshotView[]> {
+    async list(projectId: string, actor: IAccessActor): Promise<ISnapshotView[]> {
         return this.transaction(projectId, actor, 1, async (client, project) => {
             const rows = (
-                await client.query<SnapshotRow & { pinned: boolean }>(
+                await client.query<ISnapshotRow & { pinned: boolean }>(
                     `SELECT s.*,EXISTS(SELECT 1 FROM project_snapshot_profiles p WHERE p.snapshot_id=s.id) AS pinned
                 FROM project_snapshots s WHERE project_id=$1 ORDER BY created_at DESC LIMIT 200`,
                     [projectId],
@@ -294,7 +300,7 @@ export class SnapshotRepository {
             }));
         });
     }
-    async lookup(projectId: string, actor: IAccessActor, key: string): Promise<SnapshotView | null> {
+    async lookup(projectId: string, actor: IAccessActor, key: string): Promise<ISnapshotView | null> {
         if (!snapshotUuid(key)) throw new BadRequestException('Нужен UUID сохранённого запроса.');
         const id = await this.transaction(
             projectId,
@@ -314,7 +320,7 @@ export class SnapshotRepository {
     async cancelRequest(
         projectId: string,
         actor: IAccessActor,
-        input: SnapshotCreate,
+        input: ISnapshotCreate,
     ): Promise<{ cancelled: true; requestKey: string }> {
         snapshotCreateInput(input);
         const hash = snapshotHash({ projectId, input });
@@ -323,7 +329,7 @@ export class SnapshotRepository {
                 'snapshot-create:' + actor.email + ':' + input.requestKey,
             ]);
             const previous = (
-                await client.query<SnapshotRow & { request_hash: string }>(
+                await client.query<ISnapshotRow & { request_hash: string }>(
                     'SELECT * FROM project_snapshots WHERE email=$1 AND request_key=$2 FOR UPDATE',
                     [actor.email, input.requestKey],
                 )
@@ -381,7 +387,7 @@ export class SnapshotRepository {
         actor: IAccessActor,
         input: unknown,
     ): Promise<{ manifestSha256: string; missing: Array<{ sha256: string; size: number }> }> {
-        let manifest: SnapshotManifest;
+        let manifest: ISnapshotManifest;
         try {
             manifest = normalizeSnapshotManifest(input);
         } catch {
@@ -470,9 +476,9 @@ export class SnapshotRepository {
     async verified(
         id: string,
         owner: string,
-        signature: SnapshotSignature | (() => Promise<SnapshotSignature>),
+        signature: ISnapshotSignature | (() => Promise<ISnapshotSignature>),
     ): Promise<void> {
-        const row = (await this.pool.query<SnapshotRow>('SELECT * FROM project_snapshots WHERE id=$1', [id])).rows[0];
+        const row = (await this.pool.query<ISnapshotRow>('SELECT * FROM project_snapshots WHERE id=$1', [id])).rows[0];
         if (!row) throw new NotFoundException();
         await this.transaction(row.project_id, { email: row.email, activeRole: row.role }, 3, async (client) => {
             const saved = await client.query(

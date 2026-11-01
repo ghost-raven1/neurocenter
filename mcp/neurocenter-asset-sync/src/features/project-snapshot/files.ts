@@ -7,18 +7,18 @@ import { safeTarget } from '../../bridge/workspace-paths.js';
 import { assertEvaluationHistory } from './history.js';
 import { SNAPSHOT_CHUNK_BYTES, snapshotCanonicalJson, snapshotFilePath, type SnapshotFile } from './contract.js';
 
-export interface SnapshotLimits {
+export interface ISnapshotLimits {
     files: number;
     entries: number;
     depth: number;
     chunks: number;
 }
-const maximum: SnapshotLimits = { files: 50000, entries: 100000, depth: 64, chunks: 1000000 };
-export interface ImageTree {
+const maximum: ISnapshotLimits = { files: 50000, entries: 100000, depth: 64, chunks: 1000000 };
+export interface IImageTree {
     physical: string;
     entries: Record<string, string>;
 }
-export interface ImageChunk {
+export interface IImageChunk {
     path: string;
     offset: number;
     size: number;
@@ -65,8 +65,12 @@ export async function physicalSnapshotTableNames(store: string): Promise<string[
 }
 
 /** Only SDK table directories are included; private runtime/config files never enter the image. */
-export async function imageTree(store: string, names: string[], limits: SnapshotLimits = maximum): Promise<ImageTree> {
-    for (const key of Object.keys(maximum) as Array<keyof SnapshotLimits>)
+export async function imageTree(
+    store: string,
+    names: string[],
+    limits: ISnapshotLimits = maximum,
+): Promise<IImageTree> {
+    for (const key of Object.keys(maximum) as Array<keyof ISnapshotLimits>)
         if (!Number.isSafeInteger(limits[key]) || limits[key] < 1 || limits[key] > maximum[key])
             throw new Error('Некорректный предел снимка.');
     const root = await fs.lstat(store, { bigint: true });
@@ -162,11 +166,11 @@ export async function captureImageFiles(
     store: string,
     names: string[],
     checkpoint: () => Promise<void>,
-    limits: SnapshotLimits = maximum,
+    limits: ISnapshotLimits = maximum,
 ) {
     const before = await imageTree(store, names, limits),
         files: SnapshotFile[] = [],
-        chunks = new Map<string, ImageChunk>();
+        chunks = new Map<string, IImageChunk>();
     let count = 0;
     for (const [relative, proof] of Object.entries(before.entries).sort(([a], [b]) => a.localeCompare(b, 'en'))) {
         if (!proof.startsWith('f:')) continue;

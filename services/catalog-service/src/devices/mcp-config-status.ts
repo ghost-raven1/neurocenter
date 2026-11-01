@@ -6,11 +6,11 @@ import {
     assertConfigurationReport,
     configurationSchemaDigest,
     validConfigurationRevisions,
-    type ConfigurationStatus,
-    type ConfigurationRevision,
+    type IConfigurationStatus,
+    type IConfigurationRevision,
 } from './mcp-config-reports';
 
-export interface ConfigurationStatusScope {
+export interface IConfigurationStatusScope {
     deviceId: string;
     projectId: string;
     bindingId: string;
@@ -21,8 +21,8 @@ export interface ConfigurationStatusScope {
 export async function readConfigurationState(
     pool: Pick<Pool, 'query'>,
     email: string,
-    scope: ConfigurationStatusScope,
-): Promise<{ status?: ConfigurationStatus; invalidatedAt?: string; observedAt?: string }> {
+    scope: IConfigurationStatusScope,
+): Promise<{ status?: IConfigurationStatus; invalidatedAt?: string; observedAt?: string }> {
     const { rows } = await pool.query(
         `SELECT invalid.at AS "invalidatedAt",checked.result,checked.state,checked.observed_at AS "observedAt" FROM
         (SELECT max((changed.payload->>'configurationInvalidatedAt')::timestamptz) AS at FROM bridge_jobs changed
@@ -53,7 +53,7 @@ export async function readConfigurationState(
             ...scope,
             projectId: scope.projectId,
         });
-        return { status: rows[0].result as ConfigurationStatus, invalidatedAt, observedAt };
+        return { status: rows[0].result as IConfigurationStatus, invalidatedAt, observedAt };
     } catch {
         return { invalidatedAt, observedAt };
     }
@@ -61,8 +61,8 @@ export async function readConfigurationState(
 export async function latestConfigurationStatus(
     pool: Pick<Pool, 'query'>,
     email: string,
-    scope: ConfigurationStatusScope,
-): Promise<ConfigurationStatus | undefined> {
+    scope: IConfigurationStatusScope,
+): Promise<IConfigurationStatus | undefined> {
     return (await readConfigurationState(pool, email, scope)).status;
 }
 
@@ -71,9 +71,9 @@ export async function configurationRevisionsForProbe(
     pool: Pick<Pool, 'query'>,
     email: string,
     scope: { deviceId: string; projectId: string; bindingId: string; instanceId: string; packages: IPackage[] },
-): Promise<ConfigurationRevision[]> {
+): Promise<IConfigurationRevision[]> {
     const configured = scope.packages.filter((pkg) => configurationSchemaDigest(pkg));
-    const result: ConfigurationRevision[] = [];
+    const result: IConfigurationRevision[] = [];
     for (const pkg of configured) {
         const status = await latestConfigurationStatus(pool, email, { ...scope, package: pkg });
         if (!status?.ready)

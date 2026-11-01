@@ -2,19 +2,19 @@ import fs from 'node:fs/promises';
 import { safeTarget } from '../../bridge/workspace.js';
 import { hash } from '../../bridge/state.js';
 import { readBoundedSnapshot } from '../../bridge/read-bounded.js';
-import { MethodExecutionError, type MethodCommandRunner } from './process.js';
+import { MethodExecutionError, type TMethodCommandRunner } from './process.js';
 import type { AgentMethodWorkflowPayload, AgentMethodWorkflowResult } from './contract.js';
 
-export type WorkspaceSnapshot = Map<string, string>;
+export type TWorkspaceSnapshot = Map<string, string>;
 /** Git's tracked and non-ignored inventory avoids dependencies and never follows a symlink outside the project. */
-export async function snapshotWorkspace(root: string, run: MethodCommandRunner): Promise<WorkspaceSnapshot> {
+export async function snapshotWorkspace(root: string, run: TMethodCommandRunner): Promise<TWorkspaceSnapshot> {
     const result = await run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], true);
     if (result.code !== 0) throw new MethodExecutionError('OBSERVATION_LIMIT');
     const paths = [
         ...new Set(result.stdout.split('\0').filter((file) => !!file && file !== '.opencode/neurocenter/files.lock')),
     ].sort();
     if (paths.length > 20000) throw new MethodExecutionError('OBSERVATION_LIMIT');
-    const snapshot: WorkspaceSnapshot = new Map();
+    const snapshot: TWorkspaceSnapshot = new Map();
     let bytes = 0;
     for (const relative of paths) {
         const full = await safeTarget(root, relative),
@@ -33,8 +33,8 @@ export async function snapshotWorkspace(root: string, run: MethodCommandRunner):
 }
 /** Compare against the actual pre-dispatch bytes, so pre-existing dirty work is not attributed to this run. */
 export function methodChanges(
-    before: WorkspaceSnapshot,
-    after: WorkspaceSnapshot,
+    before: TWorkspaceSnapshot,
+    after: TWorkspaceSnapshot,
     method: AgentMethodWorkflowPayload['method'],
 ) {
     const paths = [...new Set([...before.keys(), ...after.keys()])].sort();

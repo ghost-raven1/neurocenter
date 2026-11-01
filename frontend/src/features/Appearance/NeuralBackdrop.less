@@ -1,17 +1,103 @@
-.app-root { position: relative; isolation: isolate; }
-.neural-backdrop { --neural-signal-speed: 6; position: fixed; z-index: -1; inset: 0; overflow: hidden; pointer-events: none;
-    background: radial-gradient(ellipse at 15% 20%, rgba(204,224,238,.36), transparent 48%), radial-gradient(ellipse at 90% 80%, rgba(195,216,235,.3), transparent 50%), #f4f7fa;
-    > svg { width: 100%; height: 100%; }
-    &__connections { stroke: #89a8c2; stroke-width: 1; opacity: .27; }
-    &__dendrites { stroke: #789ab8; stroke-width: 1; opacity: .3; }
-    &__signals path { stroke: #528caf; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 95; opacity: .7; animation: neural-signal calc(6s / var(--neural-signal-speed)) linear infinite; }
-    &__halo { fill: #89adc9; opacity: .05; transform-box: fill-box; transform-origin: center; animation: neural-pulse 4.7s ease-in-out infinite; }
-    &__soma { fill: #779dbb; opacity: .5; }
-    &__soma--hub { animation: neural-fire 4.7s ease-in-out infinite; }
+.app-root {
+    position: relative;
+    isolation: isolate;
 }
-.neural-background-enabled { .app, .app__workspace, .login-screen.app__login { background: transparent; } }
-@keyframes neural-signal { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
-@keyframes neural-pulse { 0%, 100% { opacity: .04; transform: scale(.8); } 50% { opacity: .18; transform: scale(1.35); } }
-@keyframes neural-fire { 0%, 100% { opacity: .3; } 50% { opacity: .9; } }
-@media (max-width: 680px) { .neural-backdrop > svg { width: 180%; margin-left: -40%; opacity: .8; } }
-@media (prefers-reduced-motion: reduce) { .neural-backdrop__signals { display: none; } .neural-backdrop__signals path, .neural-backdrop__halo, .neural-backdrop__soma--hub { animation: none; } }
+.neural-backdrop {
+    --neural-signal-speed: 6;
+    position: fixed;
+    z-index: -1;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse at 15% 20%, rgba(204, 224, 238, 0.36), transparent 48%),
+        radial-gradient(ellipse at 90% 80%, rgba(195, 216, 235, 0.3), transparent 50%), #f4f7fa;
+    > svg {
+        width: 100%;
+        height: 100%;
+    }
+    &__connections {
+        stroke: #89a8c2;
+        stroke-width: 1;
+        opacity: 0.27;
+    }
+    &__dendrites {
+        stroke: #789ab8;
+        stroke-width: 1;
+        opacity: 0.3;
+    }
+    &__signals path {
+        stroke: #528caf;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-dasharray: 5 95;
+        opacity: 0.7;
+        animation: neural-signal calc(6s / var(--neural-signal-speed)) linear infinite;
+    }
+    &__halo {
+        fill: #89adc9;
+        opacity: 0.05;
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: neural-pulse 4.7s ease-in-out infinite;
+    }
+    &__soma {
+        fill: #779dbb;
+        opacity: 0.5;
+    }
+    &__soma--hub {
+        animation: neural-fire 4.7s ease-in-out infinite;
+    }
+}
+.neural-background-enabled {
+    .app,
+    .app__workspace,
+    .login-screen.app__login {
+        background: transparent;
+    }
+}
+@keyframes neural-signal {
+    from {
+        stroke-dashoffset: 100;
+    }
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+@keyframes neural-pulse {
+    0%,
+    100% {
+        opacity: 0.04;
+        transform: scale(0.8);
+    }
+    50% {
+        opacity: 0.18;
+        transform: scale(1.35);
+    }
+}
+@keyframes neural-fire {
+    0%,
+    100% {
+        opacity: 0.3;
+    }
+    50% {
+        opacity: 0.9;
+    }
+}
+@media (max-width: 680px) {
+    .neural-backdrop > svg {
+        width: 180%;
+        margin-left: -40%;
+        opacity: 0.8;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .neural-backdrop__signals {
+        display: none;
+    }
+    .neural-backdrop__signals path,
+    .neural-backdrop__halo,
+    .neural-backdrop__soma--hub {
+        animation: none;
+    }
+}

@@ -1,13 +1,13 @@
-export type InventoryKind = 'skill' | 'mcp' | 'plugin' | 'unknown';
-export type InventoryState = 'managed' | 'unmanaged' | 'damaged' | 'unsafe' | 'unreadable';
-export interface InventoryEntry {
+export type TInventoryKind = 'skill' | 'mcp' | 'plugin' | 'unknown';
+export type TInventoryState = 'managed' | 'unmanaged' | 'damaged' | 'unsafe' | 'unreadable';
+export interface IInventoryEntry {
     candidateId: string;
-    kind: InventoryKind;
+    kind: TInventoryKind;
     path: string;
-    state: InventoryState;
+    state: TInventoryState;
     reason: string;
 }
-export interface ProjectInventory {
+export interface IProjectInventory {
     schemaVersion: 1;
     projectId: string;
     bindingId: string;
@@ -18,22 +18,22 @@ export interface ProjectInventory {
     expiresAt: string;
     complete: boolean;
     issues: string[];
-    entries: InventoryEntry[];
+    entries: IInventoryEntry[];
 }
-export interface InventorySnapshot {
+export interface IInventorySnapshot {
     relative: string;
     type: 'file' | 'directory';
     fingerprint: string | null;
     sha256: string | null;
 }
-export interface PrivateInventoryScan {
+export interface IPrivateInventoryScan {
     schemaVersion: 1;
     root: string;
-    summary: ProjectInventory;
-    snapshots: InventorySnapshot[];
+    summary: IProjectInventory;
+    snapshots: IInventorySnapshot[];
     selectors: Record<string, string>;
 }
-export interface AdoptCandidateOptions {
+export interface IAdoptCandidateOptions {
     scanId: string;
     candidateId: string;
     digest: string;

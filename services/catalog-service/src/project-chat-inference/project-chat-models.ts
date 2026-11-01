@@ -2,14 +2,14 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Request } from 'express';
 import { canReadCommon } from '../access/access.model';
 import { modelFromRow, type IModelRow } from '../models/model-history';
-import type { IModel, IModelList } from '../models/model.types';
+import type { IModel, IModelList } from '../models/model.interfaces';
 import type { ModelsService } from '../models/models.service';
 import { validateModelId } from '../models/model-validation';
-import type { ProjectChatDb } from '../project-chat/project-chat.types';
+import type { TProjectChatDb } from '../project-chat/project-chat.interfaces';
 import { resolveProjectChatProject } from '../project-chat/project-chat-project';
 
 /** Resolve models on the caller's connection, avoiding nested pool acquisition under a room lock. */
-export function projectChatModels(models: ModelsService, db: ProjectChatDb): ModelsService {
+export function projectChatModels(models: ModelsService, db: TProjectChatDb): ModelsService {
     const resolveProject = (
         req: Request,
         id: string,

@@ -7,5 +7,5 @@ export default defineConfig({resolve:{alias:{'@neurocenter/computer-setup':fileU
 '@neurocenter/opencode-cli-install':fileURLToPath(new URL('../services/shared/opencode-cli-install.cjs',import.meta.url)),
     '@neurocenter/project-text-knowledge':fileURLToPath(new URL('../services/shared/project-text-knowledge.cjs',import.meta.url)),
     '@neurocenter/runtime-limits':fileURLToPath(new URL('../services/shared/runtime-limits.cjs',import.meta.url))}},
-    test:{environment:'node',include:['test/**/*.test.{ts,tsx,js,cjs,mjs}'],
+    test:{environment:'node',include:['src/**/tests/**/*.test.{ts,tsx}', 'src/**/test/**/*.test.{ts,tsx}', 'integration/test/**/*.test.{ts,tsx,js,cjs,mjs}', 'test/**/*.test.{ts,tsx,js,cjs,mjs}'],
     coverage:packageCoverage(fileURLToPath(new URL('.',import.meta.url)))}});

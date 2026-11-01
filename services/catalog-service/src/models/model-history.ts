@@ -1,18 +1,18 @@
 import type { PoolClient } from 'pg';
-import type { IModel, IModelDescriptor } from './model.types';
+import type { IModel, TModelDescriptor } from './model.interfaces';
 import { projectEmbeddingPin } from './project-embedding.validation';
 import { ConflictException } from '@nestjs/common';
 
 export interface IModelRow {
     id: string;
     name: string;
-    descriptor: IModelDescriptor;
+    descriptor: TModelDescriptor;
     revision: number;
     created_at: string | Date;
     updated_at: string | Date;
     archived_at?: string | Date | null;
 }
-type Queryable = Pick<PoolClient, 'query'>;
+type TQueryable = Pick<PoolClient, 'query'>;
 const iso = (value: string | Date): string => (value instanceof Date ? value.toISOString() : value);
 export const modelFromRow = (row: IModelRow): IModel => {
     const model: IModel = {
@@ -28,7 +28,7 @@ export const modelFromRow = (row: IModelRow): IModel => {
 };
 
 /** Снимок сохраняется в той же транзакции, что карточка; служебные ключи в descriptor отсутствуют. */
-export async function saveModelVersion(db: Queryable, row: IModelRow): Promise<void> {
+export async function saveModelVersion(db: TQueryable, row: IModelRow): Promise<void> {
     const result = await db.query(
         `INSERT INTO model_catalog_versions(model_id,revision,name,descriptor,model_pin,created_at,updated_at)
         VALUES($1,$2,$3,$4::jsonb,$5,$6,$7) ON CONFLICT(model_id,revision) DO UPDATE SET model_id=EXCLUDED.model_id
@@ -49,7 +49,7 @@ export async function saveModelVersion(db: Queryable, row: IModelRow): Promise<v
 }
 
 /** Под блокировкой model head учитывает и imported snapshot-only версии; ordinal никогда не переиспользуется. */
-export async function nextModelRevision(db: Queryable, id: string, headRevision: number): Promise<number> {
+export async function nextModelRevision(db: TQueryable, id: string, headRevision: number): Promise<number> {
     const result = await db.query<{ highest: number | string | null }>(
         'SELECT MAX(revision) AS highest FROM model_catalog_versions WHERE model_id=$1',
         [id],
@@ -61,7 +61,7 @@ export async function nextModelRevision(db: Queryable, id: string, headRevision:
 }
 
 /** Отдельный snapshot позволяет старой RAG-generation использовать прежнюю модель после редактирования head. */
-export async function readPinnedModel(db: Queryable, id: string, pin: string): Promise<IModel | null> {
+export async function readPinnedModel(db: TQueryable, id: string, pin: string): Promise<IModel | null> {
     const result = await db.query<IModelRow>(
         `SELECT v.model_id AS id,v.name,v.descriptor,v.revision,v.created_at,v.updated_at,c.archived_at
         FROM model_catalog_versions v JOIN model_catalog c ON c.id=v.model_id
@@ -72,7 +72,7 @@ export async function readPinnedModel(db: Queryable, id: string, pin: string): P
 }
 
 /** Schema init сохраняет существующие heads; никаких моделей из внешней поставки здесь не создаётся. */
-export async function backfillModelHistory(db: Queryable): Promise<void> {
+export async function backfillModelHistory(db: TQueryable): Promise<void> {
     const previous = await db.query<IModelRow>(`SELECT c.* FROM model_catalog c WHERE NOT EXISTS (
         SELECT 1 FROM model_catalog_versions v WHERE v.model_id=c.id AND v.revision=c.revision)`);
     for (const row of previous.rows) {

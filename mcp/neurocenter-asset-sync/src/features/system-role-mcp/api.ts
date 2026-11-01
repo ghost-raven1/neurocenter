@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
-import { apiHub, hub, stateDir, hash, readState, type Credentials } from '../../bridge/state.js';
+import { apiHub, hub, stateDir, hash, readState, type ICredentials } from '../../bridge/state.js';
 
-export interface RoleMcpIdentity {
+export interface IRoleMcpIdentity {
     siteUrl: string;
     apiUrl: string;
     profile: string;
@@ -13,8 +13,8 @@ async function identityAt(
     siteUrl: string,
     apiUrl: string,
     profile: string,
-    credentials: Credentials,
-): Promise<RoleMcpIdentity> {
+    credentials: ICredentials,
+): Promise<IRoleMcpIdentity> {
     const stat = await fs.lstat(profile, { bigint: true });
     if (
         !stat.isDirectory() ||
@@ -35,11 +35,11 @@ async function identityAt(
     };
 }
 /** A receipt belongs to this physical profile and exact admitted connection, never a replacement token. */
-export async function captureRoleMcpIdentity(): Promise<RoleMcpIdentity> {
+export async function captureRoleMcpIdentity(): Promise<IRoleMcpIdentity> {
     const site = hub(),
         origin = apiHub(),
         profile = stateDir(),
-        credentials = await readState<Credentials>('credentials');
+        credentials = await readState<ICredentials>('credentials');
     if (!credentials?.token || !credentials.deviceId) throw new Error('Подключение MCP отсутствует.');
     return identityAt(site, origin, profile, credentials);
 }
@@ -49,18 +49,18 @@ export async function roleMcpApi<T>(
     route: 'claim' | 'authorize' | 'context' | 'next' | 'dispatch' | 'result' | 'complete',
     body: unknown,
     signal?: AbortSignal,
-    expected?: RoleMcpIdentity,
+    expected?: IRoleMcpIdentity,
 ): Promise<T> {
     const site = hub(),
         origin = apiHub(),
         profile = stateDir();
-    const credentials = await readState<Credentials>('credentials');
+    const credentials = await readState<ICredentials>('credentials');
     if (!credentials) throw new Error('Подключение MCP отсутствует.');
     if (expected) {
         const actual = await identityAt(site, origin, profile, credentials);
         if (
             Object.keys(actual).some(
-                (key) => actual[key as keyof RoleMcpIdentity] !== expected[key as keyof RoleMcpIdentity],
+                (key) => actual[key as keyof IRoleMcpIdentity] !== expected[key as keyof IRoleMcpIdentity],
             )
         )
             throw new Error('Подтверждение MCP относится к другому подключению или профилю.');

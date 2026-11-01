@@ -27,7 +27,7 @@ const ConfirmCasModal: FC<IConfirmCasModalProps> = ({
     onConfirm,
     onCancel,
 }) => {
-    const [ form ] = Form.useForm<ICasValues>();
+    const [form] = Form.useForm<ICasValues>();
 
     useEffect(() => {
         if (open) {
@@ -36,7 +36,7 @@ const ConfirmCasModal: FC<IConfirmCasModalProps> = ({
                 expectedHeadRevision: defaultExpectedRevision ?? 0,
             });
         }
-    }, [ open, defaultExpectedId, defaultExpectedRevision, form ]);
+    }, [open, defaultExpectedId, defaultExpectedRevision, form]);
 
     const handleOk = async (): Promise<void> => {
         const values = await form.validateFields();
@@ -44,19 +44,26 @@ const ConfirmCasModal: FC<IConfirmCasModalProps> = ({
     };
 
     return (
-        <Modal open={open} title={title} onOk={handleOk} onCancel={onCancel} confirmLoading={loading} okText={confirmText}>
+        <Modal
+            open={open}
+            title={title}
+            onOk={handleOk}
+            onCancel={onCancel}
+            confirmLoading={loading}
+            okText={confirmText}
+        >
             <Form form={form} layout="vertical">
                 <Form.Item
                     name="expectedHeadId"
                     label="Ожидаемый head ID"
-                    rules={[ { required: true, message: 'Введите ID текущей версии' } ]}
+                    rules={[{ required: true, message: 'Введите ID текущей версии' }]}
                 >
                     <Input placeholder="snapshot id" />
                 </Form.Item>
                 <Form.Item
                     name="expectedHeadRevision"
                     label="Ожидаемая revision"
-                    rules={[ { required: true, message: 'Введите revision' } ]}
+                    rules={[{ required: true, message: 'Введите revision' }]}
                 >
                     <InputNumber style={{ width: '100%' }} min={0} />
                 </Form.Item>

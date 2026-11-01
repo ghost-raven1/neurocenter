@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Put, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { SnapshotService } from './snapshot.service';
-import type { SnapshotCreate } from './snapshot-types';
+import type { ISnapshotCreate } from './snapshot-interfaces';
 
 /** Metadata and bounded raw chunks pass through the same authorized Gateway. */
 @Controller('api/projects/:id')
@@ -14,7 +14,7 @@ export class ProjectSnapshotsController {
         await this.snapshots.repository.transaction(id, this.snapshots.actor(req), 1, async () => undefined);
         return this.snapshots.capabilities();
     }
-    @Post('versions') create(@Req() req: Request, @Param('id') id: string, @Body() body: SnapshotCreate) {
+    @Post('versions') create(@Req() req: Request, @Param('id') id: string, @Body() body: ISnapshotCreate) {
         return this.snapshots.create(req, id, body);
     }
     @Get('versions/requests/:key') async lookup(
@@ -44,7 +44,7 @@ export class ProjectSnapshotsController {
         @Req() req: Request,
         @Param('id') id: string,
         @Param('key') key: string,
-        @Body() body: SnapshotCreate,
+        @Body() body: ISnapshotCreate,
     ) {
         if (body?.requestKey !== key) throw new BadRequestException('UUID запроса не совпадает.');
         return this.snapshots.repository.cancelRequest(id, this.snapshots.actor(req), body);

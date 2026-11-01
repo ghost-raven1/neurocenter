@@ -5,10 +5,10 @@ import bffApi from '../../../core/api/bff';
 import type { IAuthMe } from '../../../core/interfaces';
 import type { IUserBlockState } from '../interfaces';
 
-type AuthThunkConfig = { state: { userBlock: IUserBlockState }; rejectValue: 'unauthorized' | 'forbidden' };
+type TAuthThunkConfig = { state: { userBlock: IUserBlockState }; rejectValue: 'unauthorized' | 'forbidden' };
 
 /** Refresh и смена роли ждут завершения текущего изменения сессии. */
-function canStartSessionRequest(state: AuthThunkConfig['state']): boolean {
+function canStartSessionRequest(state: TAuthThunkConfig['state']): boolean {
     return !state.userBlock.request || state.userBlock.request.kind === 'init';
 }
 
@@ -16,13 +16,18 @@ function canStartSessionRequest(state: AuthThunkConfig['state']): boolean {
  * Инициализация сессии: запрос данных пользователя и политик (GET /auth/me).
  * Только 401 и подтверждённый отказ назначений 403 завершают текущую сессию.
  */
-export const authInit = createAsyncThunk<IAuthMe, void, AuthThunkConfig>(
+export const authInit = createAsyncThunk<IAuthMe, void, TAuthThunkConfig>(
     'userBlock/init',
     async (_, { rejectWithValue }) => {
-        try { return await bffApi.me(); }
-        catch (error) {
-            if (isAxiosError(error) && error.response?.status === 401) { return rejectWithValue('unauthorized'); }
-            if (isAxiosError(error) && error.response?.status === 403) { return rejectWithValue('forbidden'); }
+        try {
+            return await bffApi.me();
+        } catch (error) {
+            if (isAxiosError(error) && error.response?.status === 401) {
+                return rejectWithValue('unauthorized');
+            }
+            if (isAxiosError(error) && error.response?.status === 403) {
+                return rejectWithValue('forbidden');
+            }
             throw error;
         }
     },
@@ -34,12 +39,15 @@ export const authInit = createAsyncThunk<IAuthMe, void, AuthThunkConfig>(
  *
  * @param {string} role - ключ роли
  */
-export const authSwitchRole = createAsyncThunk<IAuthMe, string, AuthThunkConfig>(
+export const authSwitchRole = createAsyncThunk<IAuthMe, string, TAuthThunkConfig>(
     'userBlock/switchRole',
     async (role, { rejectWithValue }) => {
-        try { return await bffApi.switchRole(role); }
-        catch (error) {
-            if (isAxiosError(error) && error.response?.status === 401) { return rejectWithValue('unauthorized'); }
+        try {
+            return await bffApi.switchRole(role);
+        } catch (error) {
+            if (isAxiosError(error) && error.response?.status === 401) {
+                return rejectWithValue('unauthorized');
+            }
             throw error;
         }
     },
@@ -49,12 +57,15 @@ export const authSwitchRole = createAsyncThunk<IAuthMe, string, AuthThunkConfig>
 /**
  * Выход из системы (BFF logout + опциональный редирект на Blitz).
  */
-export const authLogout = createAsyncThunk<{ redirectUrl?: string }, void, AuthThunkConfig>(
+export const authLogout = createAsyncThunk<{ redirectUrl?: string }, void, TAuthThunkConfig>(
     'userBlock/logout',
     async (_, { rejectWithValue }) => {
-        try { return await bffApi.logout(); }
-        catch (error) {
-            if (isAxiosError(error) && error.response?.status === 401) { return rejectWithValue('unauthorized'); }
+        try {
+            return await bffApi.logout();
+        } catch (error) {
+            if (isAxiosError(error) && error.response?.status === 401) {
+                return rejectWithValue('unauthorized');
+            }
             throw error;
         }
     },
@@ -67,5 +78,7 @@ export const authLogout = createAsyncThunk<{ redirectUrl?: string }, void, AuthT
  */
 export const authLoginBlitz = (): void => {
     // Редирект на SSO-мост: /auth/login → 302 на Blitz (или mock-сессия в dev)
-    window.location.assign('/auth/login?returnTo='+encodeURIComponent(window.location.pathname+window.location.search));
+    window.location.assign(
+        '/auth/login?returnTo=' + encodeURIComponent(window.location.pathname + window.location.search),
+    );
 };

@@ -1,12 +1,12 @@
-import type { Package } from './package.js';
-import type { InstallationInspection } from './installation-inspection.model.js';
+import type { IPackage } from './package.js';
+import type { IInstallationInspection } from './installation-inspection.model.js';
 
 /** После чтения папка могла смениться; completion всегда относится к исходному заданию сервера. */
 export function assertInspectionIdentity(
-    result: InstallationInspection,
+    result: IInstallationInspection,
     projectId: string,
     bindingId: string | undefined,
-    pkg: Package,
+    pkg: IPackage,
 ): void {
     if (
         result.projectId !== projectId ||

@@ -16,8 +16,8 @@ export const {
     snapshotSchemaHash,
 } = shared;
 export type {
-    SnapshotManifest,
-    SnapshotFile,
-    SnapshotTable,
-    SnapshotChunk,
+    ISnapshotManifest as SnapshotManifest,
+    ISnapshotFile as SnapshotFile,
+    ISnapshotTable as SnapshotTable,
+    ISnapshotChunk as SnapshotChunk,
 } from '../../../../../services/shared/project-snapshot.cjs';

@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { syncDirectory } from '../../bridge/atomic-file.js';
-import { findUserOpenCode, type UserCliExecutable } from './executable.js';
+import { findUserOpenCode, type IUserCliExecutable } from './executable.js';
 import { withGlobalConfigLock } from '../../lib/global-config-lock.js';
 import {
     normalizeOpenCodeInstallResult,
@@ -18,7 +18,7 @@ export class CliInstallError extends Error {
         super('Установка OpenCode не подтверждена: ' + code);
     }
 }
-interface InstallContext {
+interface IInstallContext {
     payload: OpenCodeInstallPayload;
     jobId: string;
     home: string;
@@ -45,7 +45,7 @@ const stamp = (stat: Awaited<ReturnType<typeof fs.stat>>) =>
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 
 /** Fixed destination, no overwrite and no profile/auth/config writes. The caller owns its durable publish marker. */
-export async function installBundledOpenCode(context: InstallContext): Promise<OpenCodeInstallResult> {
+export async function installBundledOpenCode(context: IInstallContext): Promise<OpenCodeInstallResult> {
     const { payload, signal } = context;
     const current = async () => {
         signal.throwIfAborted();
@@ -81,7 +81,7 @@ export async function installBundledOpenCode(context: InstallContext): Promise<O
             ) ?? null
         );
     };
-    const unchanged = async (existing: UserCliExecutable) => {
+    const unchanged = async (existing: IUserCliExecutable) => {
         let actual: string | undefined;
         try {
             actual = observedOpenCodeVersion(

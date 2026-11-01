@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import type { Receipt } from '../../bridge/installation-receipt.js';
+import type { IReceipt } from '../../bridge/installation-receipt.js';
 import { assetKey, mcpConfigKey } from '../../bridge/installation-receipt.js';
 import { verify } from '../../bridge/package.js';
 import { projectFolder } from '../../bridge/workspace.js';
@@ -7,14 +7,14 @@ import { inspectInstallation } from '../../bridge/installation-inspection.js';
 import {
     configurationConnection,
     launcherDescriptorKey,
-    type LauncherDescriptor,
+    type ILauncherDescriptor,
 } from '../local-configuration/launcher-descriptor.js';
 import { readPrivateConfiguration } from '../local-configuration/private-store.js';
 import { localRagCore } from '../rag-core/contract.js';
 import { readHostedRagEmbedding } from '../rag-hosted/profile.js';
 import { readMcpConfiguration, parseLocalConfiguration } from '../local-configuration/index.js';
 
-export interface ManagedRagEmbedding {
+export interface IManagedRagEmbedding {
     provider?: string;
     model?: string;
     baseUrl?: string;
@@ -26,8 +26,8 @@ export async function managedRagMcpEmbedding(
     projectId: string,
     key: string,
     source: unknown,
-): Promise<ManagedRagEmbedding | undefined> {
-    const receipt = source as Receipt | undefined;
+): Promise<IManagedRagEmbedding | undefined> {
+    const receipt = source as IReceipt | undefined;
     if (
         !receipt ||
         !receipt.config ||
@@ -38,7 +38,7 @@ export async function managedRagMcpEmbedding(
         return undefined;
     try {
         if ((await projectFolder(projectId)) !== root) return undefined;
-        const descriptor = await readPrivateConfiguration<LauncherDescriptor>(
+        const descriptor = await readPrivateConfiguration<ILauncherDescriptor>(
             await launcherDescriptorKey(projectId, key, receipt.manifest),
         );
         if (!descriptor || descriptor.schemaVersion !== 1 || descriptor.projectId !== projectId) return undefined;

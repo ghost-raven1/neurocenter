@@ -1,6 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { findConfigFile, loadWorkspaceConfig, resolveConfigPaths, resolveLogConfig } from './upstream/dist/core/config.js';
+import {
+    findConfigFile,
+    loadWorkspaceConfig,
+    resolveConfigPaths,
+    resolveLogConfig,
+} from './upstream/dist/core/config.js';
 import { createEmbedder, probeEmbeddingDimension } from './upstream/dist/embedder/factory.js';
 import { createVectorStore } from './upstream/dist/vectorstore/factory.js';
 import { readStoreDimension } from './upstream/dist/vectorstore/lancedb.js';
@@ -12,7 +17,8 @@ import { managedRagConfiguration, readWorkspaceRagConfiguration } from './rag-pl
 export function workspacePath(root, requested) {
     const resolved = path.resolve(root, requested);
     const relative = path.relative(root, resolved);
-    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error('Путь выходит за пределы проекта.');
+    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative))
+        throw new Error('Путь выходит за пределы проекта.');
     return resolved;
 }
 
@@ -23,8 +29,12 @@ export async function checkedWorkspacePath(root, requested) {
     let current = root;
     for (const segment of relative.split(path.sep).filter(Boolean)) {
         current = path.join(current, segment);
-        try { if ((await fs.lstat(current)).isSymbolicLink()) throw new Error('Ссылки в путях данных RAG не поддерживаются.'); }
-        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        try {
+            if ((await fs.lstat(current)).isSymbolicLink())
+                throw new Error('Ссылки в путях данных RAG не поддерживаются.');
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+        }
     }
     return resolved;
 }
@@ -33,19 +43,32 @@ export async function checkedWorkspacePath(root, requested) {
 export async function readRagConfiguration(root, env = process.env, { ui = false } = {}) {
     const source = findConfigFile(root);
     if (source) await checkedWorkspacePath(root, source);
-    const cfg = managedRagConfiguration(loadWorkspaceConfig(root), readWorkspaceRagConfiguration(resolveConfigPaths(root)), root);
+    const cfg = managedRagConfiguration(
+        loadWorkspaceConfig(root),
+        readWorkspaceRagConfiguration(resolveConfigPaths(root)),
+        root,
+    );
     const provider = env.NEUROCENTER_RAG_EMBEDDING_PROVIDER || cfg.embedding.provider || 'ollama';
     if (!['ollama', 'openai'].includes(provider)) throw new Error('Выберите протокол эмбеддингов ollama или openai.');
     const baseUrl = env.NEUROCENTER_RAG_EMBEDDING_URL || cfg.embedding.baseUrl;
     const model = env.NEUROCENTER_RAG_EMBEDDING_MODEL || cfg.embedding.model;
     const url = new URL(baseUrl);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !model?.trim()) throw new Error('Требуются URL и модель эмбеддингов.');
-    cfg.embedding = { ...cfg.embedding, provider, baseUrl, model,
-        apiKey: env.NEUROCENTER_RAG_EMBEDDING_KEY || cfg.embedding.apiKey, timeoutMs: 30_000 };
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !model?.trim())
+        throw new Error('Требуются URL и модель эмбеддингов.');
+    cfg.embedding = {
+        ...cfg.embedding,
+        provider,
+        baseUrl,
+        model,
+        apiKey: env.NEUROCENTER_RAG_EMBEDDING_KEY || cfg.embedding.apiKey,
+        timeoutMs: 30_000,
+    };
     cfg.autoUpdate = { ...cfg.autoUpdate, enabled: false, autoInstall: false };
     if (!ui) cfg.openCode = { ...cfg.openCode, autoIndex: { ...cfg.openCode.autoIndex, enabled: false } };
     // Дополнительные модели не вызываются неявно: wizard настраивает только эмбеддинги.
-    if (!ui) for (const name of ['description', 'imageDescription', 'decision', 'reranking']) cfg[name] = { ...cfg[name], enabled: false };
+    if (!ui)
+        for (const name of ['description', 'imageDescription', 'decision', 'reranking'])
+            cfg[name] = { ...cfg[name], enabled: false };
     await checkedWorkspacePath(root, cfg.vectorStore.path);
     return managedRagConfiguration(applyLocalRuntimeProfile(cfg), cfg, root);
 }
@@ -59,14 +82,31 @@ export async function createRagContext(root, cfg) {
     const existingDimension = await readStoreDimension(storePath);
     const probe = await probeEmbeddingDimension(embedder);
     if (!probe.dimension) throw new Error('Модель эмбеддингов недоступна: проверьте локальную настройку.');
-    if (existingDimension && existingDimension !== probe.dimension) throw new Error('Размерность модели отличается от существующего индекса. Выберите исходную модель или создайте отдельную копию проекта.');
+    if (existingDimension && existingDimension !== probe.dimension)
+        throw new Error(
+            'Размерность модели отличается от существующего индекса. Выберите исходную модель или создайте отдельную копию проекта.',
+        );
     const dimension = probe.dimension;
     cfg.embedding.vectorDimension = dimension;
     await fs.mkdir(storePath, { recursive: true });
     const store = createVectorStore(cfg, storePath, dimension, root);
     let keywordIndex;
-    try { keywordIndex = await KeywordIndex.load(storePath); }
-    catch (error) { if (error.code !== 'ENOENT') { await store.close(); throw error; } keywordIndex = new KeywordIndex(storePath); }
-    return { config: cfg, embedder, store, storePath, keywordIndex, dimension,
-        logFilePath: path.resolve(root, resolveLogConfig(cfg).logFilePath) };
+    try {
+        keywordIndex = await KeywordIndex.load(storePath);
+    } catch (error) {
+        if (error.code !== 'ENOENT') {
+            await store.close();
+            throw error;
+        }
+        keywordIndex = new KeywordIndex(storePath);
+    }
+    return {
+        config: cfg,
+        embedder,
+        store,
+        storePath,
+        keywordIndex,
+        dimension,
+        logFilePath: path.resolve(root, resolveLogConfig(cfg).logFilePath),
+    };
 }

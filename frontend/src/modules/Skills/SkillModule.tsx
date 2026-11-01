@@ -21,8 +21,6 @@ export default class SkillModule extends ModuleBase {
      * @returns список компонент-роутов
      */
     public getRoute(): ReactNode[] {
-        return [
-            <ProtectedRoute key="skills" name={SKILLS_ROUTE} path={baseRoutes.skills} render={() => <Skills />} />,
-        ];
+        return [<ProtectedRoute key="skills" name={SKILLS_ROUTE} path={baseRoutes.skills} render={() => <Skills />} />];
     }
 }

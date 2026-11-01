@@ -1,9 +1,9 @@
 import { assetKey, sameValue } from './installation-receipt.js';
 import { packageDependencies } from './install-set.js';
-import { canonicalV4, type Package } from './package.js';
+import { canonicalV4, type IPackage } from './package.js';
 import { hash } from './state.js';
 
-interface Ref {
+interface IRef {
     key: string;
     kind?: string;
     id?: string;
@@ -11,15 +11,15 @@ interface Ref {
     manifest: string;
     dependencies?: string[];
 }
-interface Root {
-    root: Ref;
+interface IRoot {
+    root: IRef;
     manifest: string;
-    packages: Ref[];
+    packages: IRef[];
     retained?: true;
 }
 const keyPattern = /^[a-f0-9]{24}$/;
 const digestPattern = /^[a-f0-9]{64}$/;
-function validRef(item: Ref): boolean {
+function validRef(item: IRef): boolean {
     return (
         !!item &&
         typeof item === 'object' &&
@@ -42,9 +42,9 @@ function validRef(item: Ref): boolean {
 }
 
 /** Реестр читается как данные; проверка никогда не создаёт legacy-записи и не чинит его. */
-export function inspectLedger(raw: Buffer, pkg: Package): 'valid' | 'invalid' | 'mismatch' {
+export function inspectLedger(raw: Buffer, pkg: IPackage): 'valid' | 'invalid' | 'mismatch' {
     try {
-        const data = JSON.parse(raw.toString('utf8')) as { schemaVersion: number; roots: Record<string, Root> };
+        const data = JSON.parse(raw.toString('utf8')) as { schemaVersion: number; roots: Record<string, IRoot> };
         if (
             !data ||
             data.schemaVersion !== 1 ||
@@ -56,7 +56,7 @@ export function inspectLedger(raw: Buffer, pkg: Package): 'valid' | 'invalid' | 
             return 'invalid';
         }
         const target = assetKey(pkg);
-        const refs: Ref[] = [];
+        const refs: IRef[] = [];
         const seen = new Map<string, string>();
         for (const [key, root] of Object.entries(data.roots)) {
             if (
@@ -91,7 +91,7 @@ export function inspectLedger(raw: Buffer, pkg: Package): 'valid' | 'invalid' | 
                 if (root.packages.some((item) => !item.kind || !item.id)) {
                     return 'invalid';
                 }
-                const project = (item: Ref) => ({
+                const project = (item: IRef) => ({
                     kind: item.kind,
                     id: item.id,
                     version: item.version,
@@ -111,7 +111,7 @@ export function inspectLedger(raw: Buffer, pkg: Package): 'valid' | 'invalid' | 
             }
             const visiting = new Set<string>();
             const visited = new Set<string>();
-            const visit = (item: Ref): void => {
+            const visit = (item: IRef): void => {
                 if (visiting.has(item.key)) {
                     throw new Error();
                 }

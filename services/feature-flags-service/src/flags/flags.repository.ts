@@ -4,15 +4,15 @@ import type { Pool } from 'pg';
 import {
     FEATURE_FLAGS,
     FEATURE_FLAG_KEYS,
-    type FeatureFlagKey,
-    type FeatureFlagValues,
+    type TFeatureFlagKey,
+    type TFeatureFlagValues,
     type IFeatureFlag,
 } from '../../../shared/feature-flags.cjs';
 import { featureFlagKey, featureFlagPatch } from './flag-validation';
 import { migrateFeatureFlags } from '../database/migrations';
 
 interface IFlagRow {
-    flag_key: FeatureFlagKey;
+    flag_key: TFeatureFlagKey;
     overrides: unknown;
     revision: number | string;
     updated_at: Date | string;
@@ -86,8 +86,8 @@ export class FlagsRepository {
         });
     }
 
-    async evaluated(): Promise<FeatureFlagValues> {
-        return Object.fromEntries((await this.list()).map((item) => [item.key, item.enabled])) as FeatureFlagValues;
+    async evaluated(): Promise<TFeatureFlagValues> {
+        return Object.fromEntries((await this.list()).map((item) => [item.key, item.enabled])) as TFeatureFlagValues;
     }
 
     async patch(key: unknown, raw: unknown, authorize: () => Promise<string>): Promise<IFeatureFlag> {

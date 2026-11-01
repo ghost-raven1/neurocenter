@@ -1,12 +1,12 @@
 import { ConflictException } from '@nestjs/common';
 import type { ChatRepository } from './chat.repository';
-import type { TurnRow } from './chat.types';
+import type { ITurnRow } from './chat.interfaces';
 
 /** A rate waiter may outlive a cancelled/retried lease; only its exact pending generation can dispatch. */
 export async function assertPendingChatInference(
     repository: ChatRepository,
     conversationId: string,
-    turn: TurnRow,
+    turn: ITurnRow,
     signal: AbortSignal,
     responseId?: string,
 ): Promise<void> {

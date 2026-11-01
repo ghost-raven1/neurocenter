@@ -1,89 +1,266 @@
 import fs from 'node:fs/promises';
-import {constants} from 'node:fs';
+import { constants } from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {createHash} from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
-const root=fileURLToPath(new URL('../../',import.meta.url));
-export const PREPARED_SOURCE_MAX_FILES=160;
+const root = fileURLToPath(new URL('../../', import.meta.url));
+export const PREPARED_SOURCE_MAX_FILES = 170;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
-export const PREPARED_SOURCE_INPUTS=Object.freeze([
-    'package.json','package-lock.json',
-    ...['package.json','index.d.ts','README.md','docs/contract.md','bin/assets.mjs','SOURCE.json','NOTICE.md','SHA256SUMS',
-        ...['agent','asset','dependencies','download','index','native-delivery','producer','repository','validation'].map(name=>'lib/'+name+'.mjs')]
-        .map(name=>'vendor/asset-contract/'+name),
-    'scripts/catalog-plugins/archive-source.mjs','scripts/catalog-plugins/build.mjs','scripts/catalog-plugins/generic.mjs',
-    'scripts/catalog-plugins/manifest.mjs','scripts/catalog-plugins/pack.mjs','scripts/catalog-plugins/payload-description.mjs','scripts/catalog-plugins/prepare.mjs',
-    'scripts/catalog-plugins/prepared-source-snapshot.mjs','scripts/catalog-plugins/publish.mjs','scripts/catalog-plugins/tool-import-request.mjs','scripts/catalog-plugins/recipe-schema.mjs',
-    'scripts/catalog-plugins/release-inspection.mjs','scripts/catalog-plugins/repository-source.mjs',
-    'scripts/catalog-plugins/python-runtime.mjs','scripts/catalog-plugins/python-dependencies.mjs','scripts/catalog-plugins/python-trusted-archive.mjs','scripts/catalog-plugins/python-inspection.mjs',
-    'scripts/catalog-plugins/retain-supply.mjs','scripts/catalog-plugins/supply-layout.mjs',
-    'scripts/catalog-plugins/run.mjs','scripts/catalog-plugins/runtime-source.mjs','scripts/catalog-plugins/source-adapters.mjs',
-    'scripts/catalog-plugins/source-envelope.mjs','scripts/catalog-plugins/source-resource-validation.mjs','scripts/catalog-plugins/upload-inspection.mjs',
-    'scripts/catalog-plugins/source-inventory.mjs','scripts/catalog-plugins/inspect-build-source.mjs',
-    'services/shared/package-build-plan.cjs','services/shared/package-build-plan.d.cts',
-    'scripts/catalog-plugins/source-dependency-lock.mjs','services/shared/package-build-diagnostics.cjs','services/shared/package-build-diagnostics.d.cts',
-    'scripts/catalog-plugins/plugins/git-context.mjs','scripts/catalog-plugins/plugins/project-context.mjs',
-    'scripts/catalog-plugins/recipes/fetch-mcp.mjs','scripts/catalog-plugins/recipes/opencode-rag.mjs',
-    'scripts/catalog-plugins/recipes/opencode-rag-plugin.mjs','scripts/catalog-plugins/recipes/opencode-snip.mjs',
-    'scripts/catalog-plugins/recipes/codex-bridge.mjs','scripts/catalog-plugins/locks/codex-bridge.json',
-    ...['codex-plugin.mjs','codex-setup.mjs','codex-executable.mjs'].map(name=>'scripts/catalog-plugins/recipes/adapters/'+name),
-    ...['codex-connector-pin.json','codex-connector-source.cjs','codex-connector-source.d.cts'].map(name=>'services/shared/'+name),
-    'scripts/catalog-plugins/recipes/rag-managed-pipeline.mjs','scripts/catalog-plugins/recipes/rag-web-ui.mjs','scripts/catalog-plugins/recipes/upstream.mjs',
-    ...['opencode-rag.mjs','rag-context.mjs','rag-errors.mjs','rag-hosted.mjs','rag-index-lock.mjs','rag-index-profile.mjs','rag-index-corpus.mjs',
-        'rag-local-runtime.mjs','rag-quirks-guard.mjs','rag-mcp.mjs','rag-plugin.mjs','rag-plugin-config.mjs','rag-plugin-errors.mjs',
-        'rag-reindex.mjs','rag-reindex-source.mjs','rag-ui.mjs','rag-ui-config.mjs','rag-ui-guards.mjs','snip-plugin.mjs']
-        .map(name=>'scripts/catalog-plugins/recipes/adapters/'+name),
-    ...['filesystem.json','memory.json','opencode-rag.json','opencode-rag-plugin.json','sequential-thinking.json']
-        .map(name=>'scripts/catalog-plugins/locks/'+name),
-    'scripts/opencode-platforms.mjs','scripts/workspace/node-runtime.mjs','scripts/models/bundle-files.mjs','scripts/release-request.mjs',
-    ...['archive-source.cjs','dependency-pins.cjs','github-release-source.cjs','opencode-rag-source.cjs','rag-core-contract.cjs','rag-index-contract.cjs',
-        'rag-ui-contract.cjs','repository-source.cjs','runtime-artifacts.cjs','source-candidates.cjs','source-entrypoint.cjs','tool-runtime-source.cjs']
-        .map(name=>'services/shared/'+name),
-    ...['dependency-pins.d.cts','rag-core-contract.d.cts','rag-ui-contract.d.cts','runtime-artifacts.d.cts','source-entrypoint.d.cts'].map(name=>'services/shared/'+name),
-    ...['project-learning','project-learning-memory-sync','project-learning-quirks'].flatMap(name=>['cjs','d.cts'].map(extension=>'services/shared/'+name+'.'+extension)),
-    'services/catalog-service/package.json','services/catalog-service/package-lock.json','services/catalog-service/tsconfig.json',
-    'services/catalog-service/tsconfig.build.json','services/catalog-service/src/catalog/dto.ts',
-    'services/catalog-service/src/devices/mcp-config-schema.ts','services/catalog-service/src/publication/publication-runtime.ts',
-    'services/catalog-service/src/publication/publication-validation.ts',
-    'services/shared/tool-supply-paths.cjs','services/shared/tool-supply-paths.d.cts','services/shared/tool-import-deadline.cjs','services/shared/skill-source.mjs',
-    'services/shared/python-runtime-pins.cjs','services/shared/python-runtime-pins.d.cts','services/shared/python-source-plan.cjs','services/shared/python-source-plan.d.cts',
-    'services/shared/bundled-catalog.cjs','services/shared/bundled-catalog.d.cts','services/shared/bundled-catalog.lock.json',
-    'catalog-source/producer.json',
-    'services/shared/asset-source-client.cjs','services/shared/asset-source-client.d.cts',
-    ...['SOURCE.json','source/src/index.ts','source/src/Fetcher.ts','source/src/YouTubeTranscript.ts','source/src/types.ts',
-        'source/package.json','source/package-lock.json','source/tsconfig.json','source/LICENSE','source/README.md','source/pnpm-lock.yaml']
-        .map(name=>'catalog-source/components/fetch-mcp/'+name),
-    ...['SOURCE.json','NOTICE.md',...['auth-session.ts','auth-provider.ts','auth-login.ts','connection.ts','executable.ts','types.ts'].map(name=>'source/'+name)]
-        .map(name=>'catalog-source/components/codex-connector/'+name),
-].sort());
-const stamp=value=>[value.dev,value.ino,value.size,value.mtimeNs,value.ctimeNs].map(String).join(':');
+export const PREPARED_SOURCE_INPUTS = Object.freeze(
+    [
+        'package.json',
+        'package-lock.json',
+        ...[
+            'package.json',
+            'index.d.ts',
+            'README.md',
+            'docs/contract.md',
+            'bin/assets.mjs',
+            'SOURCE.json',
+            'NOTICE.md',
+            'SHA256SUMS',
+            ...[
+                'agent',
+                'asset',
+                'dependencies',
+                'download',
+                'index',
+                'native-delivery',
+                'producer',
+                'repository',
+                'validation',
+            ].map((name) => 'lib/' + name + '.mjs'),
+        ].map((name) => 'vendor/asset-contract/' + name),
+        'scripts/catalog-plugins/archive-source.mjs',
+        'scripts/catalog-plugins/build.mjs',
+        'scripts/catalog-plugins/generic.mjs',
+        'scripts/catalog-plugins/manifest.mjs',
+        'scripts/catalog-plugins/pack.mjs',
+        'scripts/catalog-plugins/payload-description.mjs',
+        'scripts/catalog-plugins/prepare.mjs',
+        'scripts/catalog-plugins/prepared-source-snapshot.mjs',
+        'scripts/catalog-plugins/publish.mjs',
+        'scripts/catalog-plugins/tool-import-request.mjs',
+        'scripts/catalog-plugins/recipe-schema.mjs',
+        'scripts/catalog-plugins/release-inspection.mjs',
+        'scripts/catalog-plugins/repository-source.mjs',
+        'scripts/catalog-plugins/python-runtime.mjs',
+        'scripts/catalog-plugins/python-dependencies.mjs',
+        'scripts/catalog-plugins/python-trusted-archive.mjs',
+        'scripts/catalog-plugins/python-inspection.mjs',
+        'scripts/catalog-plugins/retain-supply.mjs',
+        'scripts/catalog-plugins/supply-layout.mjs',
+        'scripts/catalog-plugins/run.mjs',
+        'scripts/catalog-plugins/runtime-source.mjs',
+        'scripts/catalog-plugins/source-adapters.mjs',
+        'scripts/catalog-plugins/source-envelope.mjs',
+        'scripts/catalog-plugins/source-resource-validation.mjs',
+        'scripts/catalog-plugins/upload-inspection.mjs',
+        'scripts/catalog-plugins/source-inventory.mjs',
+        'scripts/catalog-plugins/inspect-build-source.mjs',
+        'services/shared/package-build-plan.cjs',
+        'services/shared/package-build-plan.d.cts',
+        'scripts/catalog-plugins/source-dependency-lock.mjs',
+        'services/shared/package-build-diagnostics.cjs',
+        'services/shared/package-build-diagnostics.d.cts',
+        'scripts/catalog-plugins/plugins/git-context.mjs',
+        'scripts/catalog-plugins/plugins/project-context.mjs',
+        'scripts/catalog-plugins/recipes/fetch-mcp.mjs',
+        'scripts/catalog-plugins/recipes/opencode-rag.mjs',
+        'scripts/catalog-plugins/recipes/opencode-rag-plugin.mjs',
+        'scripts/catalog-plugins/recipes/opencode-snip.mjs',
+        'scripts/catalog-plugins/recipes/codex-bridge.mjs',
+        'scripts/catalog-plugins/locks/codex-bridge.json',
+        ...['codex-plugin.mjs', 'codex-setup.mjs', 'codex-executable.mjs'].map(
+            (name) => 'scripts/catalog-plugins/recipes/adapters/' + name,
+        ),
+        ...['codex-connector-pin.json', 'codex-connector-source.cjs', 'codex-connector-source.d.cts'].map(
+            (name) => 'services/shared/' + name,
+        ),
+        'scripts/catalog-plugins/recipes/rag-managed-pipeline.mjs',
+        'scripts/catalog-plugins/recipes/rag-web-ui.mjs',
+        'scripts/catalog-plugins/recipes/upstream.mjs',
+        ...[
+            'opencode-rag.mjs',
+            'rag-context.mjs',
+            'rag-errors.mjs',
+            'rag-hosted.mjs',
+            'rag-index-lock.mjs',
+            'rag-index-profile.mjs',
+            'rag-index-corpus.mjs',
+            'rag-local-runtime.mjs',
+            'rag-quirks-guard.mjs',
+            'rag-mcp.mjs',
+            'rag-plugin.mjs',
+            'rag-plugin-config.mjs',
+            'rag-plugin-errors.mjs',
+            'rag-reindex.mjs',
+            'rag-reindex-source.mjs',
+            'rag-ui.mjs',
+            'rag-ui-config.mjs',
+            'rag-ui-guards.mjs',
+            'snip-plugin.mjs',
+        ].map((name) => 'scripts/catalog-plugins/recipes/adapters/' + name),
+        ...[
+            'filesystem.json',
+            'memory.json',
+            'opencode-rag.json',
+            'opencode-rag-plugin.json',
+            'sequential-thinking.json',
+        ].map((name) => 'scripts/catalog-plugins/locks/' + name),
+        'scripts/opencode-platforms.mjs',
+        'scripts/workspace/node-runtime.mjs',
+        'scripts/models/bundle-files.mjs',
+        'scripts/release-request.mjs',
+        ...[
+            'archive-source.cjs',
+            'dependency-pins.cjs',
+            'github-release-source.cjs',
+            'opencode-rag-source.cjs',
+            'rag-core-contract.cjs',
+            'rag-index-contract.cjs',
+            'rag-ui-contract.cjs',
+            'repository-source.cjs',
+            'runtime-artifacts.cjs',
+            'source-candidates.cjs',
+            'source-entrypoint.cjs',
+            'tool-runtime-source.cjs',
+        ].map((name) => 'services/shared/' + name),
+        ...[
+            'dependency-pins.d.cts',
+            'rag-core-contract.d.cts',
+            'rag-ui-contract.d.cts',
+            'runtime-artifacts.d.cts',
+            'source-entrypoint.d.cts',
+        ].map((name) => 'services/shared/' + name),
+        ...['project-learning', 'project-learning-memory-sync', 'project-learning-quirks'].flatMap((name) =>
+            ['cjs', 'd.cts'].map((extension) => 'services/shared/' + name + '.' + extension),
+        ),
+        'services/catalog-service/package.json',
+        'services/catalog-service/package-lock.json',
+        'services/catalog-service/tsconfig.json',
+        'services/catalog-service/tsconfig.build.json',
+        'services/catalog-service/src/catalog/dto.ts',
+        'services/catalog-service/src/devices/mcp-config-schema.ts',
+        'services/catalog-service/src/publication/publication-runtime.ts',
+        'services/catalog-service/src/publication/publication-validation.ts',
+        'services/shared/tool-supply-paths.cjs',
+        'services/shared/tool-supply-paths.d.cts',
+        'services/shared/tool-import-deadline.cjs',
+        'services/shared/skill-source.mjs',
+        'services/shared/python-runtime-pins.cjs',
+        'services/shared/python-runtime-pins.d.cts',
+        'services/shared/python-source-plan.cjs',
+        'services/shared/python-source-plan.d.cts',
+        'services/shared/bundled-catalog.cjs',
+        'services/shared/bundled-catalog.d.cts',
+        'services/shared/bundled-catalog.lock.json',
+        'catalog-source/producer.json',
+        'services/shared/asset-source-client.cjs',
+        'services/shared/asset-source-client.d.cts',
+        ...[
+            'SOURCE.json',
+            'source/src/index.ts',
+            'source/src/Fetcher.ts',
+            'source/src/YouTubeTranscript.ts',
+            'source/src/types.ts',
+            'source/package.json',
+            'source/package-lock.json',
+            'source/tsconfig.json',
+            'source/LICENSE',
+            'source/README.md',
+            'source/pnpm-lock.yaml',
+        ].map((name) => 'catalog-source/components/fetch-mcp/' + name),
+        ...[
+            'SOURCE.json',
+            'NOTICE.md',
+            ...[
+                'auth-session/auth-session.ts',
+                'auth-session/interfaces.ts',
+                'auth-session/constants.ts',
+                'auth-provider/auth-provider.ts',
+                'auth-provider/interfaces.ts',
+                'auth-provider/constants.ts',
+                'auth-provider/utils.ts',
+                'auth-login/auth-login.ts',
+                'auth-login/interfaces.ts',
+                'connection/connection.ts',
+                'connection/interfaces.ts',
+                'executable.ts',
+                'interfaces.ts',
+                'constants.ts',
+            ].map((name) => 'source/' + name),
+        ].map((name) => 'catalog-source/components/codex-connector/' + name),
+    ].sort(),
+);
+const stamp = (value) => [value.dev, value.ino, value.size, value.mtimeNs, value.ctimeNs].map(String).join(':');
 
 /** Canonical RAG repository builds use the same local producer as its explicit prepared recipe. */
-export function preparedSourceAdapter(source){
-    return source.type==='prepared'?source.adapter:source.type==='repository'&&ragSource.isPreparedRagRepository(source)?'opencode-rag-plugin':undefined;
+export function preparedSourceAdapter(source) {
+    return source.type === 'prepared'
+        ? source.adapter
+        : source.type === 'repository' && ragSource.isPreparedRagRepository(source)
+          ? 'opencode-rag-plugin'
+          : undefined;
 }
 
 /** Retain the actual UTF-8 source bytes, with the same bounded public-file budget as local source snapshots. */
-export async function capturePreparedSource(repositoryRoot=root){
-    const directory=await fs.realpath(repositoryRoot),files=[],seen=[];let total=0;
-    if(PREPARED_SOURCE_INPUTS.length>PREPARED_SOURCE_MAX_FILES)throw new Error(`Prepared source snapshot превышает ${PREPARED_SOURCE_MAX_FILES} публичных файлов.`);
-    for(const relative of PREPARED_SOURCE_INPUTS){
-        let current=directory;
-        for(const segment of relative.split('/').slice(0,-1)){current=path.join(current,segment);const info=await fs.lstat(current);if(!info.isDirectory()||info.isSymbolicLink())throw new Error('Prepared source snapshot содержит ссылку или специальный путь.');}
-        const filename=path.join(directory,relative),handle=await fs.open(filename,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
-        try{
-            const before=await handle.stat({bigint:true});if(!before.isFile()||before.nlink!==1n||before.size>1048576n)throw new Error('Prepared source snapshot: нужны обычные публичные файлы до 1 МиБ.');
-            const bytes=Buffer.alloc(Number(before.size));let offset=0;
-            while(offset<bytes.length){const read=await handle.read(bytes,offset,bytes.length-offset,offset);if(!read.bytesRead)throw new Error('Prepared source snapshot изменился во время чтения.');offset+=read.bytesRead;}
-            const content=bytes.toString('utf8'),identity=stamp(before);total+=bytes.length;
-            if(bytes.includes(0)||!Buffer.from(content).equals(bytes)||total>5*1048576)throw new Error('Prepared source snapshot: UTF-8 без NUL и до 5 МиБ.');
-            if(stamp(await handle.stat({bigint:true}))!==identity||stamp(await fs.lstat(filename,{bigint:true}))!==identity)throw new Error('Prepared source snapshot изменился во время чтения.');
-            files.push({path:relative,content});seen.push([filename,identity]);
-        }finally{await handle.close();}
+export async function capturePreparedSource(repositoryRoot = root) {
+    const directory = await fs.realpath(repositoryRoot),
+        files = [],
+        seen = [];
+    let total = 0;
+    if (PREPARED_SOURCE_INPUTS.length > PREPARED_SOURCE_MAX_FILES)
+        throw new Error(`Prepared source snapshot превышает ${PREPARED_SOURCE_MAX_FILES} публичных файлов.`);
+    for (const relative of PREPARED_SOURCE_INPUTS) {
+        let current = directory;
+        for (const segment of relative.split('/').slice(0, -1)) {
+            current = path.join(current, segment);
+            const info = await fs.lstat(current);
+            if (!info.isDirectory() || info.isSymbolicLink())
+                throw new Error('Prepared source snapshot содержит ссылку или специальный путь.');
+        }
+        const filename = path.join(directory, relative),
+            handle = await fs.open(filename, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+        try {
+            const before = await handle.stat({ bigint: true });
+            if (!before.isFile() || before.nlink !== 1n || before.size > 1048576n)
+                throw new Error('Prepared source snapshot: нужны обычные публичные файлы до 1 МиБ.');
+            const bytes = Buffer.alloc(Number(before.size));
+            let offset = 0;
+            while (offset < bytes.length) {
+                const read = await handle.read(bytes, offset, bytes.length - offset, offset);
+                if (!read.bytesRead) throw new Error('Prepared source snapshot изменился во время чтения.');
+                offset += read.bytesRead;
+            }
+            const content = bytes.toString('utf8'),
+                identity = stamp(before);
+            total += bytes.length;
+            if (bytes.includes(0) || !Buffer.from(content).equals(bytes) || total > 5 * 1048576)
+                throw new Error('Prepared source snapshot: UTF-8 без NUL и до 5 МиБ.');
+            if (
+                stamp(await handle.stat({ bigint: true })) !== identity ||
+                stamp(await fs.lstat(filename, { bigint: true })) !== identity
+            )
+                throw new Error('Prepared source snapshot изменился во время чтения.');
+            files.push({ path: relative, content });
+            seen.push([filename, identity]);
+        } finally {
+            await handle.close();
+        }
     }
-    for(const [filename,identity] of seen)if(stamp(await fs.lstat(filename,{bigint:true}))!==identity)throw new Error('Prepared source snapshot изменился во время чтения.');
-    return {files,revision:createHash('sha256').update(JSON.stringify(seen.map(([filename,identity])=>[path.relative(directory,filename),identity]))).digest('hex')};
+    for (const [filename, identity] of seen)
+        if (stamp(await fs.lstat(filename, { bigint: true })) !== identity)
+            throw new Error('Prepared source snapshot изменился во время чтения.');
+    return {
+        files,
+        revision: createHash('sha256')
+            .update(JSON.stringify(seen.map(([filename, identity]) => [path.relative(directory, filename), identity])))
+            .digest('hex'),
+    };
 }
-export async function preparedSourceFiles(repositoryRoot=root){return (await capturePreparedSource(repositoryRoot)).files;}
+export async function preparedSourceFiles(repositoryRoot = root) {
+    return (await capturePreparedSource(repositoryRoot)).files;
+}

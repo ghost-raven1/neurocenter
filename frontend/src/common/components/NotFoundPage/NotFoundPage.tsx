@@ -18,7 +18,11 @@ const NotFoundPage: FC = () => {
             status="404"
             title="Страница не найдена"
             subTitle="Страница не найдена."
-            extra={<Button type="primary" onClick={() => history.push(baseRoutes.projects)}>К проектам</Button>}
+            extra={
+                <Button type="primary" onClick={() => history.push(baseRoutes.projects)}>
+                    К проектам
+                </Button>
+            }
         />
     );
 };

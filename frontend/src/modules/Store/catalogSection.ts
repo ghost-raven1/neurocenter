@@ -6,7 +6,13 @@ export function catalogSection(search: string, embedded = false): TCatalogSectio
     return value === 'models' || value === 'agents' || value === 'requests' ? value : 'tools';
 }
 
-export function catalogSectionUrl(pathname: string, search: string, section: TCatalogSection, embedded = false, hash = ''): string {
+export function catalogSectionUrl(
+    pathname: string,
+    search: string,
+    section: TCatalogSection,
+    embedded = false,
+    hash = '',
+): string {
     const params = new URLSearchParams(search);
     const key = embedded ? 'catalogTab' : 'tab';
     if (section !== 'tools') params.set(key, section);

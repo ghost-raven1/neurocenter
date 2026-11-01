@@ -13,7 +13,7 @@ import { CatalogService } from '../catalog/catalog.service';
 import type { IProjectDetail } from '../catalog/dto';
 import { createPool } from '../database/pool';
 import { readModelActor, type IModelActor } from './model-access';
-import type { IModel, IModelList, IModelVerification } from './model.types';
+import type { IModel, IModelList, IModelVerification } from './model.interfaces';
 import { notifyModelCatalogChange } from './model-events';
 import { validateModelId } from './model-validation';
 import { ModelsRepository } from './models.repository';

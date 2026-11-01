@@ -46,7 +46,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { IAccessActor, projectLevel } from '../access/access.model';
-import { Device, DeviceStore } from './device-store';
+import { IDevice, DeviceStore } from './device-store';
 import { DeviceArtifacts } from './device-artifacts';
 import { DeviceInstallations } from './device-installations';
 import { assertDeviceCatalogAsset } from './device-catalog-access';
@@ -68,8 +68,8 @@ import { assertInstallablePackage, verifyInstallationSet, type IInstallationSet 
 import { workspaceJobPayload, assertWorkspaceSource } from './workspace-jobs';
 import { localChangeJobPayload, assertLocalFeature, assertLocalChangeAvailable } from './local-change-jobs';
 
-import type { Job, JobInput } from './device-job.model';
-export type { JobInput } from './device-job.model';
+import type { IJob, IJobInput } from './device-job.model';
+export type { IJobInput as JobInput } from './device-job.model';
 import { PROJECT_LOCAL_KINDS } from './project-local-actions';
 import { projectLocalJobPayload, assertProjectLocalJob } from './project-local-jobs';
 import { CONFIGURATION_KINDS } from './mcp-config-reports';
@@ -147,7 +147,7 @@ export class DeviceJobs {
             id,
             actor.email,
         ]);
-        const job = rows[0] as Job | undefined;
+        const job = rows[0] as IJob | undefined;
         if (!job) {
             throw new NotFoundException('Задание не найдено в вашем профиле.');
         }
@@ -185,7 +185,7 @@ export class DeviceJobs {
                 : {}),
         });
     }
-    private async permission(device: Device, role: string, projectId?: string, minimum = 2) {
+    private async permission(device: IDevice, role: string, projectId?: string, minimum = 2) {
         const claims = await this.store.access.claims(device.email);
         if (!claims.userRoles.includes(role) || !claims.userRoles.includes(device.role)) {
             throw new ForbiddenException('Назначение роли отозвано.');
@@ -211,7 +211,7 @@ export class DeviceJobs {
     async validateReindexTarget(
         actor: IAccessActor,
         projectId: string,
-        target: import('../models/project-reindex.types').IReindexConnectionTarget,
+        target: import('../models/project-reindex.interfaces').IReindexConnectionTarget,
     ): Promise<void> {
         const device = await this.store.owned(actor, target.deviceId);
         await this.permission(device, actor.activeRole, projectId, 2);
@@ -231,7 +231,7 @@ export class DeviceJobs {
         )
             throw new ConflictException('Обновите выбранную установку OpenCodeRAG для переиндексации.');
     }
-    async create(actor: IAccessActor, input: JobInput, admit?: (db: PoolClient) => Promise<void>) {
+    async create(actor: IAccessActor, input: IJobInput, admit?: (db: PoolClient) => Promise<void>) {
         if (globalProviderKinds.includes(input?.kind)) assertGlobalProvidersInput(input);
         if (input?.kind === OPENCODE_CLI_INSPECT_JOB || input?.kind === OPENCODE_CLI_INSTALL_JOB)
             assertComputerSetupInput(input);
@@ -555,10 +555,10 @@ export class DeviceJobs {
             { state: 'CANCELLED', percent: 0, message: 'Срок ожидания моста истёк.' },
         );
     }
-    async claim(device: Device, requestToken?: string) {
+    async claim(device: IDevice, requestToken?: string) {
         await this.expire();
         const client = await this.store.pool.connect();
-        let job: Job | undefined;
+        let job: IJob | undefined;
         let discard = false;
         try {
             await client.query('BEGIN');
@@ -582,7 +582,7 @@ export class DeviceJobs {
                 "SELECT * FROM bridge_jobs WHERE device_id=$1 AND state='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1",
                 [device.id],
             );
-            job = rows[0] as Job | undefined;
+            job = rows[0] as IJob | undefined;
             if (job) {
                 job.lease = randomUUID();
                 await client.query(
@@ -722,7 +722,7 @@ export class DeviceJobs {
         return { ...job, state: 'running' };
     }
     async authorize(
-        device: Device,
+        device: IDevice,
         id: string,
         lease: string,
         options?: { snapshotReceipt?: boolean; requestToken?: string },
@@ -731,7 +731,7 @@ export class DeviceJobs {
             "SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND lease=$3 AND state='running' AND lease_until>now()",
             [id, device.id, lease],
         );
-        const job = rows[0] as Job | undefined;
+        const job = rows[0] as IJob | undefined;
         if (!job) {
             throw new ConflictException('Задание завершено, отменено или аренда истекла.');
         }
@@ -860,7 +860,7 @@ export class DeviceJobs {
                 : {}),
         };
     }
-    async memorySyncContext(device: Device, input: unknown) {
+    async memorySyncContext(device: IDevice, input: unknown) {
         const value = input as { jobId?: unknown; lease?: unknown } | null;
         if (
             !value ||
@@ -873,7 +873,7 @@ export class DeviceJobs {
             throw new BadRequestException('Нужны точное задание Memory и аренда.');
         await this.authorize(device, value.jobId, value.lease);
         const job = (
-            await this.store.pool.query<Job>(
+            await this.store.pool.query<IJob>(
                 "SELECT * FROM bridge_jobs WHERE id=$1 AND device_id=$2 AND email=$3 AND lease=$4 AND kind=$5 AND state='running' AND lease_until>now()",
                 [value.jobId, device.id, device.email, value.lease, MEMORY_SYNC_JOB],
             )
@@ -885,10 +885,10 @@ export class DeviceJobs {
             job,
         );
     }
-    async compileAgents(device: Device, input: unknown) {
+    async compileAgents(device: IDevice, input: unknown) {
         return compileAgentJob(this.store, device, input, (id, lease) => this.authorize(device, id, lease));
     }
-    async authorizeConfiguration(device: Device, input: unknown) {
+    async authorizeConfiguration(device: IDevice, input: unknown) {
         return authorizeMcpConfigurationSave(
             this.store,
             this.installations,
@@ -901,12 +901,12 @@ export class DeviceJobs {
             },
         );
     }
-    async authorizeProvider(device: Device, input: unknown) {
+    async authorizeProvider(device: IDevice, input: unknown) {
         return authorizeProviderAction(this.store, this.artifacts, device, input, (role, projectId) =>
             this.permission(device, role, projectId, 2),
         );
     }
-    async authorizeProjectConfiguration(device: Device, input: unknown) {
+    async authorizeProjectConfiguration(device: IDevice, input: unknown) {
         return authorizeProjectConfiguration(this.store, this.installations, device, input, (role, projectId) =>
             this.permission(device, role, projectId, 3),
         );
@@ -915,7 +915,7 @@ export class DeviceJobs {
     private async assertCatalogAsset(projectId: unknown, kind: unknown, id: unknown): Promise<void> {
         await assertDeviceCatalogAsset(this.store.pool, projectId, kind, id);
     }
-    private async assertJobPlan(job: Job): Promise<void> {
+    private async assertJobPlan(job: IJob): Promise<void> {
         const pkg = job.payload.package as { manifest?: { sha256?: string } } | undefined;
         if (!pkg?.manifest?.sha256) {
             throw new ConflictException('В задании нет закреплённого пакета. Подготовьте установку заново.');
@@ -938,7 +938,7 @@ export class DeviceJobs {
             throw new ConflictException('Job package differs from the approved immutable package.');
     }
     async update(
-        device: Device,
+        device: IDevice,
         id: string,
         input: {
             lease: string;

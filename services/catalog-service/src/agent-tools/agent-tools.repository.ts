@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { agentToolHash } from './agent-tools.validation';
-import type { AgentToolDb, AgentToolOwner, AgentToolStepRow } from './agent-tools.types';
+import type { TAgentToolDb, IAgentToolOwner, IAgentToolStepRow } from './agent-tools.interfaces';
 
 /** Each transaction owns one client; an uncertain rollback discards it while retaining the primary error. */
 export class AgentToolsRepository {
@@ -29,13 +29,13 @@ export class AgentToolsRepository {
         }
     }
     async reserve(
-        owner: AgentToolOwner,
+        owner: IAgentToolOwner,
         sequence: number,
         action: string,
         input: Record<string, unknown>,
         deadline: number,
-        authorize: (db: AgentToolDb) => Promise<void>,
-    ): Promise<AgentToolStepRow> {
+        authorize: (db: TAgentToolDb) => Promise<void>,
+    ): Promise<IAgentToolStepRow> {
         const hash = agentToolHash({ owner, action, input });
         return this.transaction(async (db) => {
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
@@ -43,7 +43,7 @@ export class AgentToolsRepository {
             ]);
             await authorize(db);
             const old = (
-                await db.query<AgentToolStepRow>(
+                await db.query<IAgentToolStepRow>(
                     'SELECT * FROM agent_tool_steps WHERE owner_kind=$1 AND turn_id=$2 AND recipient_id=$3 AND generation=$4 AND sequence=$5 FOR UPDATE',
                     [owner.kind, owner.turnId, owner.recipientId, owner.generation, sequence],
                 )
@@ -55,7 +55,7 @@ export class AgentToolsRepository {
             if (deadline <= Date.now()) throw new ConflictException('Истёк срок инструментального запроса.');
             // A single PostgreSQL clock owns the physical window; host clock skew cannot widen its two-minute bound.
             return (
-                await db.query<AgentToolStepRow>(
+                await db.query<IAgentToolStepRow>(
                     `INSERT INTO agent_tool_steps(id,owner_kind,origin_id,turn_id,recipient_id,generation,owner_email,actor_role,project_id,agent_id,model_id,model_pin,grant_snapshot,sequence,action,input,input_hash,deadline_at,created_at,updated_at)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16::jsonb,$17,LEAST($18::timestamptz,statement_timestamp()+interval '2 minutes'),statement_timestamp(),statement_timestamp()) RETURNING *`,
                     [
@@ -82,10 +82,10 @@ export class AgentToolsRepository {
             ).rows[0];
         });
     }
-    async dispatch(id: string, authorize: (db: AgentToolDb) => Promise<void>): Promise<AgentToolStepRow> {
+    async dispatch(id: string, authorize: (db: TAgentToolDb) => Promise<void>): Promise<IAgentToolStepRow> {
         return this.transaction(async (db) => {
             const row = (
-                await db.query<AgentToolStepRow>('SELECT * FROM agent_tool_steps WHERE id=$1 FOR UPDATE', [id])
+                await db.query<IAgentToolStepRow>('SELECT * FROM agent_tool_steps WHERE id=$1 FOR UPDATE', [id])
             ).rows[0];
             if (!row || row.state !== 'queued' || Date.parse(String(row.deadline_at)) <= Date.now())
                 throw new ConflictException(
@@ -93,7 +93,7 @@ export class AgentToolsRepository {
                 );
             await authorize(db);
             return (
-                await db.query<AgentToolStepRow>(
+                await db.query<IAgentToolStepRow>(
                     "UPDATE agent_tool_steps SET state='dispatched',dispatched_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state='queued' RETURNING *",
                     [id],
                 )
@@ -112,20 +112,20 @@ export class AgentToolsRepository {
     async complete(
         id: string,
         output: unknown,
-        authorize: (db: AgentToolDb) => Promise<void>,
-    ): Promise<AgentToolStepRow> {
+        authorize: (db: TAgentToolDb) => Promise<void>,
+    ): Promise<IAgentToolStepRow> {
         const json = JSON.stringify(output);
         if (!json || Buffer.byteLength(json) > 32768)
             throw new BadRequestException('Результат инструмента превышает 32 КиБ.');
         return this.transaction(async (db) => {
             const row = (
-                await db.query<AgentToolStepRow>('SELECT * FROM agent_tool_steps WHERE id=$1 FOR UPDATE', [id])
+                await db.query<IAgentToolStepRow>('SELECT * FROM agent_tool_steps WHERE id=$1 FOR UPDATE', [id])
             ).rows[0];
             if (!row || row.state !== 'dispatched' || Date.parse(String(row.deadline_at)) <= Date.now())
                 throw new ConflictException('Поздний результат инструмента не принят.');
             await authorize(db);
             return (
-                await db.query<AgentToolStepRow>(
+                await db.query<IAgentToolStepRow>(
                     "UPDATE agent_tool_steps SET state='succeeded',output=$2::jsonb,finished_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 RETURNING *",
                     [id, json],
                 )
@@ -155,19 +155,19 @@ export class AgentToolsRepository {
             [owner],
         );
     }
-    async list(owner: string, projectId: string, turnId: string): Promise<AgentToolStepRow[]> {
+    async list(owner: string, projectId: string, turnId: string): Promise<IAgentToolStepRow[]> {
         await this.expire(owner);
         return (
-            await this.pool.query<AgentToolStepRow>(
+            await this.pool.query<IAgentToolStepRow>(
                 'SELECT * FROM agent_tool_steps WHERE owner_email=$1 AND project_id=$2 AND turn_id=$3 ORDER BY created_at,id LIMIT 48',
                 [owner, projectId, turnId],
             )
         ).rows;
     }
-    async get(owner: string, id: string): Promise<AgentToolStepRow> {
+    async get(owner: string, id: string): Promise<IAgentToolStepRow> {
         await this.expire(owner);
         const row = (
-            await this.pool.query<AgentToolStepRow>('SELECT * FROM agent_tool_steps WHERE id=$1 AND owner_email=$2', [
+            await this.pool.query<IAgentToolStepRow>('SELECT * FROM agent_tool_steps WHERE id=$1 AND owner_email=$2', [
                 id,
                 owner,
             ])

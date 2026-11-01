@@ -6,7 +6,7 @@ import {
     type IAssetSourcePin,
 } from '../../../shared/asset-source-client.cjs';
 export type { IAssetSourcePin };
-export type AssetSourceTransport = Pick<ConstructorParameters<typeof SourceClient>[1], 'cache' | 'offline'>;
+export type TAssetSourceTransport = Pick<ConstructorParameters<typeof SourceClient>[1], 'cache' | 'offline'>;
 
 /** HTTP-граница не дублирует правила чтения источника, общие с CLI. */
 function httpError(error: unknown): never {
@@ -33,7 +33,7 @@ export class AssetSourceClient {
         pin: unknown,
         request: typeof fetch = fetch,
         signal?: AbortSignal,
-        transport: AssetSourceTransport = {},
+        transport: TAssetSourceTransport = {},
     ) {
         this.pin = validateSourcePin(pin);
         this.source = new SourceClient(this.pin, { contract, fetch: request, signal, ...transport });

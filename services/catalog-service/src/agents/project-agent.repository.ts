@@ -1,21 +1,21 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { Pool, PoolClient } from 'pg';
-import { createProjectAgentsPayload, type ProjectAgent } from '../../../shared/project-agents.cjs';
+import { createProjectAgentsPayload, type IProjectAgent } from '../../../shared/project-agents.cjs';
 import type { IAccessActor } from '../access/access.model';
 import { securityEvent } from '../access/security-events';
 import { AgentRepository, agentSummary } from './agent.repository';
 import { agentMutation } from './agent-mutation';
 import { agentId, agentManifest, effectiveDefinition, object, revision, sha } from './agent-validation';
-import type { AgentAssignmentRow, ProjectAgentAssignment, AgentDelivery } from './agent.types';
-type Db = Pick<PoolClient, 'query'>;
+import type { IAgentAssignmentRow, IProjectAgentAssignment, IAgentDelivery } from './agent.interfaces';
+type TDb = Pick<PoolClient, 'query'>;
 /** A project revision fences the full snapshot while individual version pins remain immutable. */
 export class ProjectAgentRepository {
     readonly cards: AgentRepository;
     constructor(readonly pool: Pool) {
         this.cards = new AgentRepository(pool);
     }
-    async currentRevision(projectId: string, db: Db = this.pool): Promise<number> {
+    async currentRevision(projectId: string, db: TDb = this.pool): Promise<number> {
         return Number(
             (
                 await db.query<{ revision: number }>('SELECT revision FROM project_agent_sets WHERE project_id=$1', [
@@ -24,16 +24,16 @@ export class ProjectAgentRepository {
             ).rows[0]?.revision ?? 0,
         );
     }
-    async assignments(projectId: string, db: Db = this.pool): Promise<ProjectAgentAssignment[]> {
+    async assignments(projectId: string, db: TDb = this.pool): Promise<IProjectAgentAssignment[]> {
         const rows = (
-            await db.query<AgentAssignmentRow>(
+            await db.query<IAgentAssignmentRow>(
                 'SELECT * FROM project_agents WHERE project_id=$1 ORDER BY added_at,agent_id',
                 [projectId],
             )
         ).rows;
         return Promise.all(rows.map((row) => this.assignment(row, db)));
     }
-    private async assignment(row: AgentAssignmentRow, db: Db): Promise<ProjectAgentAssignment> {
+    private async assignment(row: IAgentAssignmentRow, db: TDb): Promise<IProjectAgentAssignment> {
         const card = await this.cards.pinned(row.agent_id, Number(row.version), row.manifest, db),
             config = effectiveDefinition(card.definition, row.overrides);
         return {
@@ -47,7 +47,7 @@ export class ProjectAgentRepository {
             effective: config.effective,
         };
     }
-    async snapshot(projectId: string, db: Db = this.pool): Promise<{ revision: number; agents: ProjectAgent[] }> {
+    async snapshot(projectId: string, db: TDb = this.pool): Promise<{ revision: number; agents: IProjectAgent[] }> {
         const rows = (
             await db.query<{
                 revision: number;
@@ -57,8 +57,8 @@ export class ProjectAgentRepository {
                     name: string;
                     version: number;
                     manifest: string;
-                    definition: ProjectAgentAssignment['effective'];
-                    overrides: ProjectAgentAssignment['overrides'];
+                    definition: IProjectAgentAssignment['effective'];
+                    overrides: IProjectAgentAssignment['overrides'];
                     enabled: boolean;
                 }>;
             }>(
@@ -85,7 +85,7 @@ export class ProjectAgentRepository {
             }),
         };
     }
-    private async lock(db: Db, projectId: string, expected: number): Promise<void> {
+    private async lock(db: TDb, projectId: string, expected: number): Promise<void> {
         await db.query('INSERT INTO project_agent_sets(project_id) VALUES($1) ON CONFLICT DO NOTHING', [projectId]);
         const row = (
             await db.query<{ revision: number }>(
@@ -97,10 +97,10 @@ export class ProjectAgentRepository {
             throw new ConflictException('Настройки агентов проекта изменились. Обновите страницу перед сохранением.');
     }
     private async saved(
-        db: Db,
+        db: TDb,
         projectId: string,
         id: string,
-    ): Promise<{ revision: number; assignment: ProjectAgentAssignment }> {
+    ): Promise<{ revision: number; assignment: IProjectAgentAssignment }> {
         const next = (
             await db.query<{ revision: number }>(
                 'UPDATE project_agent_sets SET revision=revision+1,updated_at=now() WHERE project_id=$1 RETURNING revision',
@@ -123,7 +123,7 @@ export class ProjectAgentRepository {
             );
         }
         const row = (
-            await db.query<AgentAssignmentRow>('SELECT * FROM project_agents WHERE project_id=$1 AND agent_id=$2', [
+            await db.query<IAgentAssignmentRow>('SELECT * FROM project_agents WHERE project_id=$1 AND agent_id=$2', [
                 projectId,
                 id,
             ])
@@ -153,7 +153,7 @@ export class ProjectAgentRepository {
                 if (head.archivedAt) throw new ConflictException('Агент в архиве и не добавляется в новые проекты.');
                 const card = await this.cards.pinned(id, Number(input.version), String(input.manifest), db);
                 const old = (
-                    await db.query<AgentAssignmentRow>(
+                    await db.query<IAgentAssignmentRow>(
                         'SELECT * FROM project_agents WHERE project_id=$1 AND agent_id=$2',
                         [projectId, id],
                     )
@@ -208,7 +208,7 @@ export class ProjectAgentRepository {
                 ]);
                 await this.lock(db, projectId, Number(input.expectedRevision));
                 const before = (
-                    await db.query<AgentAssignmentRow>(
+                    await db.query<IAgentAssignmentRow>(
                         'SELECT * FROM project_agents WHERE project_id=$1 AND agent_id=$2',
                         [projectId, id],
                     )
@@ -289,7 +289,7 @@ export class ProjectAgentRepository {
                 ]);
                 await this.lock(db, projectId, Number(input.expectedRevision));
                 const before = (
-                    await db.query<AgentAssignmentRow>(
+                    await db.query<IAgentAssignmentRow>(
                         'SELECT * FROM project_agents WHERE project_id=$1 AND agent_id=$2',
                         [projectId, id],
                     )
@@ -319,9 +319,9 @@ export class ProjectAgentRepository {
             },
         );
     }
-    async deliveries(projectId: string, email: string, db: Db = this.pool): Promise<AgentDelivery[]> {
+    async deliveries(projectId: string, email: string, db: TDb = this.pool): Promise<IAgentDelivery[]> {
         return (
-            await db.query<AgentDelivery>(
+            await db.query<IAgentDelivery>(
                 `SELECT DISTINCT ON(device_id,payload->>'bindingId',payload->>'instanceId')
             device_id AS "deviceId",payload->>'bindingId' AS "bindingId",payload->>'instanceId' AS "instanceId",id AS "jobId",state,
             (payload->>'revision')::int AS revision,payload->>'manifestSha256' AS "manifestSha256",message,created_at AS "createdAt",updated_at AS "updatedAt",result

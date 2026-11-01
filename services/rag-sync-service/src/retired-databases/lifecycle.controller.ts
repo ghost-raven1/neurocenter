@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Post } from '@nestjs/common';
 import { DatabaseLifecycle } from './database-lifecycle';
-import type { IPurgeCommand } from './lifecycle-types';
+import type { IPurgeCommand } from './lifecycle-interfaces';
 
 /** Только catalog coordinator с internal token; публичный mainadmin guard остаётся в каталоге. */
 @Controller('internal/retired-rag')

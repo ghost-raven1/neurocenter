@@ -28,6 +28,6 @@ export const store = configureStore({
 });
 
 /* Типизация корневого state. */
-export type RootState = ReturnType<typeof store.getState>;
+export type TRootState = ReturnType<typeof store.getState>;
 /* Типизация корневого dispatch. */
 export type TRootDispatch = typeof store.dispatch;

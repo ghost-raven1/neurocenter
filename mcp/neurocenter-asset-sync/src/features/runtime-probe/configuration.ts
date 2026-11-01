@@ -1,15 +1,15 @@
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { packageRef, referenceKey } from '../../bridge/install-set.js';
 import { readMcpConfiguration } from '../local-configuration/index.js';
 import { parseLocalConfiguration } from '../local-configuration/schema.js';
-import { ProbeError, type RuntimeProbeInput, type ConfigurationRevision } from './model.js';
+import { ProbeError, type IRuntimeProbeInput, type IConfigurationRevision } from './model.js';
 
 /** Каждый MCP получает только собственные параметры; ревизии всего набора закреплены согласием. */
 export async function probeConfigurations(
-    input: RuntimeProbeInput,
-): Promise<{ revisions: ConfigurationRevision[]; packages: Map<string, Package> }> {
-    const revisions: ConfigurationRevision[] = [];
-    const packages = new Map<string, Package>();
+    input: IRuntimeProbeInput,
+): Promise<{ revisions: IConfigurationRevision[]; packages: Map<string, IPackage> }> {
+    const revisions: IConfigurationRevision[] = [];
+    const packages = new Map<string, IPackage>();
     for (const pkg of input.frozenSet.packages) {
         if (!parseLocalConfiguration(pkg)) {
             continue;

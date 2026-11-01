@@ -1,5 +1,5 @@
-import { ReactNode } from "react";
-import { TAction } from "../../../features/UserBlock/roles";
+import { ReactNode } from 'react';
+import { TAction } from '../../../features/UserBlock/roles';
 
 export interface IRoleRouteProps {
     /** Путь маршрута. */

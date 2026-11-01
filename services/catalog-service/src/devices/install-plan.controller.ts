@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { assertInternal } from '../access/access.controller';
 import type { IAccessActor } from '../access/access.model';
 import { InstallPlans } from './install-plans';
-import type { InstallPlanInput } from './install-plan.model';
+import type { IInstallPlanInput } from './install-plan.model';
 
 @Controller('api/device-install-plans')
 export class InstallPlanController {
@@ -12,7 +12,7 @@ export class InstallPlanController {
         assertInternal(req.headers['x-neurocenter-internal']);
         return JSON.parse(decodeURIComponent(String(req.headers['x-bridge-actor'] || 'null'))) as IAccessActor;
     }
-    @Post() prepare(@Req() req: Request, @Body() input: InstallPlanInput) {
+    @Post() prepare(@Req() req: Request, @Body() input: IInstallPlanInput) {
         return this.plans.prepare(this.actor(req), input);
     }
     @Get(':id') view(@Req() req: Request, @Param('id') id: string) {

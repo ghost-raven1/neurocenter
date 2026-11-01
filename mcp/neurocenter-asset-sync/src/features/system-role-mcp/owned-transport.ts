@@ -1,7 +1,7 @@
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
-import { startRoleMcpProcess, type RoleMcpProcessJournal } from './owned-process.js';
+import { startRoleMcpProcess, type IRoleMcpProcessJournal } from './owned-process.js';
 
 /** Cancellation awaits the owned group, rather than treating a delivered kill signal as cleanup. */
 export class OwnedRoleMcpTransport implements Transport {
@@ -20,7 +20,7 @@ export class OwnedRoleMcpTransport implements Transport {
         private readonly env: NodeJS.ProcessEnv,
         private readonly authorize: () => Promise<void>,
         private readonly signal: AbortSignal,
-        private readonly journal?: RoleMcpProcessJournal,
+        private readonly journal?: IRoleMcpProcessJournal,
     ) {}
     async start() {
         this.starting = (async () => {

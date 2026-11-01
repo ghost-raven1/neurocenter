@@ -1,34 +1,45 @@
-import {test} from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {createServer} from 'node:http';
-import {readFile,writeFile,readdir,lstat,rm,chmod} from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { readFile, writeFile, readdir, lstat, rm, chmod } from 'node:fs/promises';
 import path from 'node:path';
-import {fileURLToPath,pathToFileURL} from 'node:url';
-import {assetFixture,sha,clone} from './assets-sync.fixture.mjs';
-import {prepareStartupAssets} from '../assets/startup.mjs';
-import {runModelStartupProcess} from '../models/startup-process.mjs';
-import {assetRetrievalFetch} from '../assets/retrieval.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { assetFixture, sha, clone } from './assets-sync.fixture.mjs';
+import { prepareStartupAssets } from '../assets/startup.mjs';
+import { runModelStartupProcess } from '../models/startup-process.mjs';
+import { assetRetrievalFetch } from '../assets/retrieval.mjs';
 import * as contract from '@neurocenter/asset-contract';
 import sourceReader from '../../services/shared/asset-source-client.cjs';
 
-const cli=fileURLToPath(new URL('../assets/cli.mjs',import.meta.url));
+const cli = fileURLToPath(new URL('../assets/cli.mjs', import.meta.url));
 
-async function snapshot(directory){
-    const records=[];
-    for(const entry of await readdir(directory,{withFileTypes:true})){
-        const filename=path.join(directory,entry.name),info=await lstat(filename);
-        records.push([entry.name,info.mode,entry.isDirectory()?await snapshot(filename):sha(await readFile(filename))]);
+async function snapshot(directory) {
+    const records = [];
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const filename = path.join(directory, entry.name),
+            info = await lstat(filename);
+        records.push([
+            entry.name,
+            info.mode,
+            entry.isDirectory() ? await snapshot(filename) : sha(await readFile(filename)),
+        ]);
     }
-    return records.sort(([left],[right])=>left.localeCompare(right));
+    return records.sort(([left], [right]) => left.localeCompare(right));
 }
 
 /** The actual CLI receives synthetic immutable source bytes; only one explicitly owned refused socket is reachable. */
-async function startup(t,f,mode){
-    const server=createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-    const refused='http://127.0.0.1:'+server.address().port;await new Promise(resolve=>server.close(resolve));
-    const hook=path.join(f.root,'controlled-fetch.mjs'),payloads=path.join(f.root,'payloads.json'),calls=path.join(f.root,'fetch-calls.jsonl');
-    await writeFile(payloads,JSON.stringify([...f.payloads].map(([url,bytes])=>[url,bytes.toString('base64')])));
-    await writeFile(hook,`
+async function startup(t, f, mode) {
+    const server = createServer();
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const refused = 'http://127.0.0.1:' + server.address().port;
+    await new Promise((resolve) => server.close(resolve));
+    const hook = path.join(f.root, 'controlled-fetch.mjs'),
+        payloads = path.join(f.root, 'payloads.json'),
+        calls = path.join(f.root, 'fetch-calls.jsonl');
+    await writeFile(payloads, JSON.stringify([...f.payloads].map(([url, bytes]) => [url, bytes.toString('base64')])));
+    await writeFile(
+        hook,
+        `
         import fs from 'node:fs';
         const original=globalThis.fetch,payloads=new Map(JSON.parse(fs.readFileSync(process.env.ASSET_TEST_PAYLOADS,'utf8')));
         globalThis.fetch=async(input,options)=>{
@@ -43,114 +54,296 @@ async function startup(t,f,mode){
             if(binary&&process.env.ASSET_TEST_MODE==='redirect')return new Response(null,{status:302,headers:{location:'http://127.0.0.1/foreign'}});
             return new Response(bytes,{headers:{'content-length':String(bytes.length)}});
         };
-    `);
-    const events=[],environment={...process.env,HOME:f.root,USERPROFILE:f.root,NODE_BIN:process.execPath,
-        NODE_OPTIONS:'--import='+pathToFileURL(hook).href,RUNTIME_ARTIFACT_DIR:'data/runtime-artifacts',
-        ASSET_TEST_MODE:mode,ASSET_TEST_PAYLOADS:payloads,ASSET_TEST_CALLS:calls,ASSET_TEST_REFUSED:refused};
+    `,
+    );
+    const events = [],
+        environment = {
+            ...process.env,
+            HOME: f.root,
+            USERPROFILE: f.root,
+            NODE_BIN: process.execPath,
+            NODE_OPTIONS: '--import=' + pathToFileURL(hook).href,
+            RUNTIME_ARTIFACT_DIR: 'data/runtime-artifacts',
+            ASSET_TEST_MODE: mode,
+            ASSET_TEST_PAYLOADS: payloads,
+            ASSET_TEST_CALLS: calls,
+            ASSET_TEST_REFUSED: refused,
+        };
     delete environment.ASSET_SOURCE_MODE;
-    if(mode==='offline')environment.ASSET_SOURCE_MODE='offline';
-    const output={info:(...args)=>events.push(['info',...args]),success:(...args)=>events.push(['success',...args]),warning:(...args)=>events.push(['warning',...args])};
+    if (mode === 'offline') environment.ASSET_SOURCE_MODE = 'offline';
+    const output = {
+        info: (...args) => events.push(['info', ...args]),
+        success: (...args) => events.push(['success', ...args]),
+        warning: (...args) => events.push(['warning', ...args]),
+    };
     let result;
-    const run=async(command,args,options)=>{result=await runModelStartupProcess(command,[cli,'--root',f.root,...args.slice(1)],{...options,env:environment,stdio:['ignore','pipe','pipe'],timeout:15000});return result;};
+    const run = async (command, args, options) => {
+        result = await runModelStartupProcess(command, [cli, '--root', f.root, ...args.slice(1)], {
+            ...options,
+            env: environment,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            timeout: 15000,
+        });
+        return result;
+    };
     // Selection metadata has its own controlled-fetch suite; these cases exercise the actual prefetch child transport.
-    return{events,async run(){return prepareStartupAssets({root:f.root,environment,output,withoutModels:true},run,async()=>({}));},
-        get result(){return result;},async calls(){return(await readFile(calls,'utf8').catch(error=>{if(error.code==='ENOENT')return'';throw error;})).trim().split('\n').filter(Boolean).map(JSON.parse);}};
+    return {
+        events,
+        async run() {
+            return prepareStartupAssets(
+                { root: f.root, environment, output, withoutModels: true },
+                run,
+                async () => ({}),
+            );
+        },
+        get result() {
+            return result;
+        },
+        async calls() {
+            return (
+                await readFile(calls, 'utf8').catch((error) => {
+                    if (error.code === 'ENOENT') return '';
+                    throw error;
+                })
+            )
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map(JSON.parse);
+        },
+    };
 }
 
-async function nextTool(f){
-    const tool=clone(f.tool),bytes=Buffer.from('next verified archive');tool.version='2.0.0';tool.card.revision='2.0.0';
-    const artifact=tool.delivery.artifacts[0];artifact.url='https://github.com/example/assets/releases/download/v2.0.0/next.tar.gz';
-    artifact.descriptor.sha256=sha(bytes);artifact.descriptor.compressedBytes=bytes.length;f.payloads.set(artifact.url,bytes);
-    await f.publish([tool]);return tool;
+async function nextTool(f) {
+    const tool = clone(f.tool),
+        bytes = Buffer.from('next verified archive');
+    tool.version = '2.0.0';
+    tool.card.revision = '2.0.0';
+    const artifact = tool.delivery.artifacts[0];
+    artifact.url = 'https://github.com/example/assets/releases/download/v2.0.0/next.tar.gz';
+    artifact.descriptor.sha256 = sha(bytes);
+    artifact.descriptor.compressedBytes = bytes.length;
+    f.payloads.set(artifact.url, bytes);
+    await f.publish([tool]);
+    return tool;
 }
 
-test('A cold actual CLI transport refusal warns and lets startup continue without claiming asset readiness',async t=>{
-    const f=await assetFixture(t),s=await startup(t,f,'source-refused');
-    const report=await s.run();assert.deepEqual(report,{ok:false,deferred:true,reason:'assets-unavailable'});
-    assert.equal(s.result.status,1);assert.equal(JSON.parse(s.result.stdout).error.code,'UNAVAILABLE');
-    assert.equal((await s.calls()).length,1);assert.equal(s.events.some(([kind])=>kind==='success'),false);
-    assert.ok(s.events.some(([kind,...args])=>kind==='warning'&&args.join(' ').includes('продолж')));
-    assert.ok(s.events.some(([,label,value])=>label==='Повторить получение ассетов'&&value==='npm run assets:sync -- --without-models'));
-    await assert.rejects(lstat(f.receipt),{code:'ENOENT'});await assert.rejects(lstat(path.join(f.root,'data')),{code:'ENOENT'});
+test('A cold actual CLI transport refusal warns and lets startup continue without claiming asset readiness', async (t) => {
+    const f = await assetFixture(t),
+        s = await startup(t, f, 'source-refused');
+    const report = await s.run();
+    assert.deepEqual(report, { ok: false, deferred: true, reason: 'assets-unavailable' });
+    assert.equal(s.result.status, 1);
+    assert.equal(JSON.parse(s.result.stdout).error.code, 'UNAVAILABLE');
+    assert.equal((await s.calls()).length, 1);
+    assert.equal(
+        s.events.some(([kind]) => kind === 'success'),
+        false,
+    );
+    assert.ok(s.events.some(([kind, ...args]) => kind === 'warning' && args.join(' ').includes('продолж')));
+    assert.ok(
+        s.events.some(
+            ([, label, value]) =>
+                label === 'Повторить получение ассетов' && value === 'npm run assets:sync -- --without-models',
+        ),
+    );
+    await assert.rejects(lstat(f.receipt), { code: 'ENOENT' });
+    await assert.rejects(lstat(path.join(f.root, 'data')), { code: 'ENOENT' });
 });
 
-test('An unavailable new source preserves the complete earlier cache and receipt, then the next attempt succeeds',async t=>{
-    const f=await assetFixture(t);await f.run();await nextTool(f);
-    const before=await snapshot(path.join(f.root,'data')),receipt=await readFile(f.receipt),s=await startup(t,f,'source-refused');
-    assert.equal((await s.run()).deferred,true);assert.deepEqual(await snapshot(path.join(f.root,'data')),before);assert.deepEqual(await readFile(f.receipt),receipt);
-    const retry=await startup(t,f,'ok'),report=await retry.run();assert.equal(report.ok,true);assert.equal(report.downloaded,1);
-    assert.equal(retry.events.filter(([kind])=>kind==='success').length,1);assert.equal(retry.events.filter(([kind])=>kind==='warning').length,0);
-    assert.equal(JSON.parse(await readFile(f.receipt)).revision,report.revision);
+test('An unavailable new source preserves the complete earlier cache and receipt, then the next attempt succeeds', async (t) => {
+    const f = await assetFixture(t);
+    await f.run();
+    await nextTool(f);
+    const before = await snapshot(path.join(f.root, 'data')),
+        receipt = await readFile(f.receipt),
+        s = await startup(t, f, 'source-refused');
+    assert.equal((await s.run()).deferred, true);
+    assert.deepEqual(await snapshot(path.join(f.root, 'data')), before);
+    assert.deepEqual(await readFile(f.receipt), receipt);
+    const retry = await startup(t, f, 'ok'),
+        report = await retry.run();
+    assert.equal(report.ok, true);
+    assert.equal(report.downloaded, 1);
+    assert.equal(retry.events.filter(([kind]) => kind === 'success').length, 1);
+    assert.equal(retry.events.filter(([kind]) => kind === 'warning').length, 0);
+    assert.equal(JSON.parse(await readFile(f.receipt)).revision, report.revision);
 });
 
-for(const mode of ['http503','stream-error'])test('Unavailable artifact delivery stays deferred and retains old verified bytes: '+mode,async t=>{
-    const f=await assetFixture(t);await f.run();const before=await snapshot(path.join(f.root,'data/runtime-artifacts/.asset-source-blobs')),receipt=await readFile(f.receipt);
-    await nextTool(f);const s=await startup(t,f,mode);assert.equal((await s.run()).deferred,true);
-    assert.equal(JSON.parse(s.result.stdout).error.code,'ASSET_RETRIEVAL_UNAVAILABLE');
-    assert.deepEqual(await snapshot(path.join(f.root,'data/runtime-artifacts/.asset-source-blobs')),before);assert.deepEqual(await readFile(f.receipt),receipt);
-    assert.equal(s.events.some(([kind])=>kind==='success'),false);
-});
+for (const mode of ['http503', 'stream-error'])
+    test('Unavailable artifact delivery stays deferred and retains old verified bytes: ' + mode, async (t) => {
+        const f = await assetFixture(t);
+        await f.run();
+        const before = await snapshot(path.join(f.root, 'data/runtime-artifacts/.asset-source-blobs')),
+            receipt = await readFile(f.receipt);
+        await nextTool(f);
+        const s = await startup(t, f, mode);
+        assert.equal((await s.run()).deferred, true);
+        assert.equal(JSON.parse(s.result.stdout).error.code, 'ASSET_RETRIEVAL_UNAVAILABLE');
+        assert.deepEqual(await snapshot(path.join(f.root, 'data/runtime-artifacts/.asset-source-blobs')), before);
+        assert.deepEqual(await readFile(f.receipt), receipt);
+        assert.equal(
+            s.events.some(([kind]) => kind === 'success'),
+            false,
+        );
+    });
 
-for(const mode of ['hash','length','redirect'])test('Untrusted delivery remains a hard startup failure instead of a deferred success: '+mode,async t=>{
-    const f=await assetFixture(t),s=await startup(t,f,mode);await assert.rejects(s.run(),/Поставка проекта не подготовлена/);
-    assert.equal(s.events.some(([kind])=>kind==='success'||kind==='warning'),false);
-    await assert.rejects(lstat(f.receipt),{code:'ENOENT'});
-    assert.deepEqual(await readdir(path.join(f.root,'data/runtime-artifacts/.asset-source-blobs')),[]);
-});
+for (const mode of ['hash', 'length', 'redirect'])
+    test('Untrusted delivery remains a hard startup failure instead of a deferred success: ' + mode, async (t) => {
+        const f = await assetFixture(t),
+            s = await startup(t, f, mode);
+        await assert.rejects(s.run(), /Поставка проекта не подготовлена/);
+        assert.equal(
+            s.events.some(([kind]) => kind === 'success' || kind === 'warning'),
+            false,
+        );
+        await assert.rejects(lstat(f.receipt), { code: 'ENOENT' });
+        assert.deepEqual(await readdir(path.join(f.root, 'data/runtime-artifacts/.asset-source-blobs')), []);
+    });
 
-test('Only structured unsuccessful retrieval reports can defer; malformed reports and local failures stay hard',async()=>{
-    const warnings=[],input={root:'/isolated',withoutModels:true,environment:{},output:{info(){},success(){assert.fail('No readiness');},warning:value=>warnings.push(value)}};
-    for(const result of [{status:0,stdout:JSON.stringify({ok:false,error:{code:'UNAVAILABLE'}})},
-        {status:1,stdout:'fetch failed'},{status:1,stdout:JSON.stringify({ok:false,error:{code:'INVALID_SOURCE'}})},
-        {status:1,stdout:JSON.stringify({ok:false,error:{code:'ENOSPC'}})},
-        {status:1,error:Object.assign(Error('spawn failed'),{code:'ENOENT'}),stdout:JSON.stringify({ok:false,error:{code:'UNAVAILABLE'}})},
-        {status:1,signal:'SIGTERM',stdout:JSON.stringify({ok:false,error:{code:'UNAVAILABLE'}})}]){
-        await assert.rejects(prepareStartupAssets(input,async()=>result),/Поставка проекта не подготовлена/);
+test('Only structured unsuccessful retrieval reports can defer; malformed reports and local failures stay hard', async () => {
+    const warnings = [],
+        input = {
+            root: '/isolated',
+            withoutModels: true,
+            environment: {},
+            output: {
+                info() {},
+                success() {
+                    assert.fail('No readiness');
+                },
+                warning: (value) => warnings.push(value),
+            },
+        };
+    for (const result of [
+        { status: 0, stdout: JSON.stringify({ ok: false, error: { code: 'UNAVAILABLE' } }) },
+        { status: 1, stdout: 'fetch failed' },
+        { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'INVALID_SOURCE' } }) },
+        { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'ENOSPC' } }) },
+        {
+            status: 1,
+            error: Object.assign(Error('spawn failed'), { code: 'ENOENT' }),
+            stdout: JSON.stringify({ ok: false, error: { code: 'UNAVAILABLE' } }),
+        },
+        { status: 1, signal: 'SIGTERM', stdout: JSON.stringify({ ok: false, error: { code: 'UNAVAILABLE' } }) },
+    ]) {
+        await assert.rejects(
+            prepareStartupAssets(input, async () => result),
+            /Поставка проекта не подготовлена/,
+        );
     }
-    assert.deepEqual(warnings,[]);
+    assert.deepEqual(warnings, []);
 });
 
-test('Explicit user abort identity survives transport classification while a source timeout remains retryable',async()=>{
-    for(const reason of [new DOMException('User abort','AbortError'),Object.assign(Error('Cancelled'),{code:'ECANCELED'})]){
-        const abort=new AbortController();abort.abort(reason);
-        await assert.rejects(assetRetrievalFetch(async()=>{throw reason;})('https://example.invalid',{signal:abort.signal}),error=>error===reason);
+test('Explicit user abort identity survives transport classification while a source timeout remains retryable', async () => {
+    for (const reason of [
+        new DOMException('User abort', 'AbortError'),
+        Object.assign(Error('Cancelled'), { code: 'ECANCELED' }),
+    ]) {
+        const abort = new AbortController();
+        abort.abort(reason);
+        await assert.rejects(
+            assetRetrievalFetch(async () => {
+                throw reason;
+            })('https://example.invalid', { signal: abort.signal }),
+            (error) => error === reason,
+        );
     }
-    const timeout=new DOMException('Source timeout','TimeoutError'),abort=new AbortController();abort.abort(timeout);
-    await assert.rejects(assetRetrievalFetch(async()=>{throw timeout;})('https://example.invalid',{signal:abort.signal}),error=>error.code==='ASSET_RETRIEVAL_UNAVAILABLE'&&error.cause===timeout);
+    const timeout = new DOMException('Source timeout', 'TimeoutError'),
+        abort = new AbortController();
+    abort.abort(timeout);
+    await assert.rejects(
+        assetRetrievalFetch(async () => {
+            throw timeout;
+        })('https://example.invalid', { signal: abort.signal }),
+        (error) => error.code === 'ASSET_RETRIEVAL_UNAVAILABLE' && error.cause === timeout,
+    );
 });
 
-test('An empty offline cache defers the actual CLI without network and explains how to transfer a verified cache',async t=>{
-    const f=await assetFixture(t),s=await startup(t,f,'offline');assert.equal((await s.run()).deferred,true);
-    assert.equal(JSON.parse(s.result.stdout).error.code,'ASSET_METADATA_MISSING');assert.deepEqual(await s.calls(),[]);
-    assert.ok(s.events.some(([kind,...args])=>kind==='info'&&/машине с доступом/.test(args.join(' '))&&/--offline-ready --without-models/.test(args.join(' '))&&/перенесите/i.test(args.join(' '))));
-    assert.equal(s.events.some(([kind])=>kind==='success'),false);await assert.rejects(lstat(f.receipt),{code:'ENOENT'});
+test('An empty offline cache defers the actual CLI without network and explains how to transfer a verified cache', async (t) => {
+    const f = await assetFixture(t),
+        s = await startup(t, f, 'offline');
+    assert.equal((await s.run()).deferred, true);
+    assert.equal(JSON.parse(s.result.stdout).error.code, 'ASSET_METADATA_MISSING');
+    assert.deepEqual(await s.calls(), []);
+    assert.ok(
+        s.events.some(
+            ([kind, ...args]) =>
+                kind === 'info' &&
+                /машине с доступом/.test(args.join(' ')) &&
+                /--offline-ready --without-models/.test(args.join(' ')) &&
+                /перенесите/i.test(args.join(' ')),
+        ),
+    );
+    assert.equal(
+        s.events.some(([kind]) => kind === 'success'),
+        false,
+    );
+    await assert.rejects(lstat(f.receipt), { code: 'ENOENT' });
 });
 
-test('Missing offline binary bytes defer after validating pinned metadata and preserve the previous receipt and remaining cache',async t=>{
-    const f=await assetFixture(t);await f.run();await rm(f.blob(f.tool.delivery.artifacts[0].descriptor.sha256));
-    const before=await snapshot(path.join(f.root,'data')),receipt=await readFile(f.receipt),s=await startup(t,f,'offline');
-    assert.equal((await s.run()).deferred,true);assert.equal(JSON.parse(s.result.stdout).error.code,'ASSET_ARTIFACTS_MISSING');
-    assert.deepEqual(await s.calls(),[]);assert.deepEqual(await snapshot(path.join(f.root,'data')),before);assert.deepEqual(await readFile(f.receipt),receipt);
-    assert.equal(s.events.some(([kind])=>kind==='success'),false);
+test('Missing offline binary bytes defer after validating pinned metadata and preserve the previous receipt and remaining cache', async (t) => {
+    const f = await assetFixture(t);
+    await f.run();
+    await rm(f.blob(f.tool.delivery.artifacts[0].descriptor.sha256));
+    const before = await snapshot(path.join(f.root, 'data')),
+        receipt = await readFile(f.receipt),
+        s = await startup(t, f, 'offline');
+    assert.equal((await s.run()).deferred, true);
+    assert.equal(JSON.parse(s.result.stdout).error.code, 'ASSET_ARTIFACTS_MISSING');
+    assert.deepEqual(await s.calls(), []);
+    assert.deepEqual(await snapshot(path.join(f.root, 'data')), before);
+    assert.deepEqual(await readFile(f.receipt), receipt);
+    assert.equal(
+        s.events.some(([kind]) => kind === 'success'),
+        false,
+    );
 });
 
-test('Corrupt offline metadata and binary cache entries remain hard failures with their original bytes intact',async t=>{
-    for(const kind of ['metadata','binary']){
-        const f=await assetFixture(t);await f.run();const filename=kind==='metadata'?path.join(f.root,'data/runtime-artifacts/.asset-source-metadata',f.pin.index.sha256+'.json'):f.blob(f.tool.delivery.artifacts[0].descriptor.sha256);
-        await chmod(filename,0o600);const damaged=Buffer.from('corrupt immutable cache');await writeFile(filename,damaged);
-        const before=await snapshot(path.join(f.root,'data')),receipt=await readFile(f.receipt),s=await startup(t,f,'offline');
-        await assert.rejects(s.run(),/Поставка проекта не подготовлена/);assert.deepEqual(await s.calls(),[]);
-        if(kind==='metadata')assert.equal(JSON.parse(s.result.stdout).error.code,'METADATA_MISSING');
-        assert.deepEqual(await readFile(filename),damaged);assert.deepEqual(await snapshot(path.join(f.root,'data')),before);assert.deepEqual(await readFile(f.receipt),receipt);
-        assert.equal(s.events.some(([kind])=>kind==='warning'||kind==='success'),false);
+test('Corrupt offline metadata and binary cache entries remain hard failures with their original bytes intact', async (t) => {
+    for (const kind of ['metadata', 'binary']) {
+        const f = await assetFixture(t);
+        await f.run();
+        const filename =
+            kind === 'metadata'
+                ? path.join(f.root, 'data/runtime-artifacts/.asset-source-metadata', f.pin.index.sha256 + '.json')
+                : f.blob(f.tool.delivery.artifacts[0].descriptor.sha256);
+        await chmod(filename, 0o600);
+        const damaged = Buffer.from('corrupt immutable cache');
+        await writeFile(filename, damaged);
+        const before = await snapshot(path.join(f.root, 'data')),
+            receipt = await readFile(f.receipt),
+            s = await startup(t, f, 'offline');
+        await assert.rejects(s.run(), /Поставка проекта не подготовлена/);
+        assert.deepEqual(await s.calls(), []);
+        if (kind === 'metadata') assert.equal(JSON.parse(s.result.stdout).error.code, 'METADATA_MISSING');
+        assert.deepEqual(await readFile(filename), damaged);
+        assert.deepEqual(await snapshot(path.join(f.root, 'data')), before);
+        assert.deepEqual(await readFile(f.receipt), receipt);
+        assert.equal(
+            s.events.some(([kind]) => kind === 'warning' || kind === 'success'),
+            false,
+        );
     }
 });
 
-test('The shared offline reader distinguishes absent metadata from corrupt bytes without fetching either',async t=>{
-    const f=await assetFixture(t);let calls=0;
-    for(const cached of [undefined,null,Buffer.alloc(0),Buffer.from('damaged')]){
-        const client=new sourceReader.AssetSourceClient(f.pin,{contract,offline:true,cache:{read:async()=>cached},fetch:async()=>{calls++;throw Error('No offline network');}});
-        await assert.rejects(client.index(),error=>error.code===(cached==null?'ASSET_METADATA_MISSING':'METADATA_MISSING'));
+test('The shared offline reader distinguishes absent metadata from corrupt bytes without fetching either', async (t) => {
+    const f = await assetFixture(t);
+    let calls = 0;
+    for (const cached of [undefined, null, Buffer.alloc(0), Buffer.from('damaged')]) {
+        const client = new sourceReader.AssetSourceClient(f.pin, {
+            contract,
+            offline: true,
+            cache: { read: async () => cached },
+            fetch: async () => {
+                calls++;
+                throw Error('No offline network');
+            },
+        });
+        await assert.rejects(
+            client.index(),
+            (error) => error.code === (cached == null ? 'ASSET_METADATA_MISSING' : 'METADATA_MISSING'),
+        );
     }
-    assert.equal(calls,0);
+    assert.equal(calls, 0);
 });

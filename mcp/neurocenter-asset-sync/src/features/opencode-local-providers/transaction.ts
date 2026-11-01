@@ -1,17 +1,17 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { configurationObject } from '../project-configuration/json.js';
-import { snapshot, publish, conflict, type LocalSnapshot } from './files.js';
-export interface ProviderChange {
-    before: LocalSnapshot;
+import { snapshot, publish, conflict, type ILocalSnapshot } from './files.js';
+export interface IProviderChange {
+    before: ILocalSnapshot;
     after: string;
 }
-export interface ProviderIntent {
+export interface IProviderIntent {
     schemaVersion: 1;
     id: string;
     providerId: string;
     phase: 'pending' | 'complete';
-    changes: ProviderChange[];
+    changes: IProviderChange[];
 }
 /** Secret snapshots stay in a private local intent; public jobs never carry this record or its digest. */
 export class ProviderTransactions {
@@ -32,8 +32,8 @@ export class ProviderTransactions {
         );
         this.maximum = fileBytes * 5 + 4096;
     }
-    private validate(raw: Record<string, unknown>): ProviderIntent {
-        const value = raw as unknown as ProviderIntent;
+    private validate(raw: Record<string, unknown>): IProviderIntent {
+        const value = raw as unknown as IProviderIntent;
         if (
             value.schemaVersion !== 1 ||
             typeof value.id !== 'string' ||
@@ -66,7 +66,7 @@ export class ProviderTransactions {
             intent: before.text === null ? undefined : this.validate(configurationObject(before.text, true)),
         };
     }
-    private async write(intent: ProviderIntent, before: LocalSnapshot) {
+    private async write(intent: IProviderIntent, before: ILocalSnapshot) {
         const text = JSON.stringify(intent);
         if (Buffer.byteLength(text) > this.maximum) throw conflict();
         await publish(before, text, this.maximum, this.authorize, async () => {
@@ -93,11 +93,11 @@ export class ProviderTransactions {
                 : 'partial';
         return { intentId: record.intent.id, providerId: record.intent.providerId, status };
     }
-    async begin(providerId: string, changes: ProviderChange[]) {
+    async begin(providerId: string, changes: IProviderChange[]) {
         const previous = await this.read(),
             status = await this.inspect();
         if (status && status.status !== 'saved') throw conflict();
-        const intent: ProviderIntent = { schemaVersion: 1, id: randomUUID(), providerId, phase: 'pending', changes };
+        const intent: IProviderIntent = { schemaVersion: 1, id: randomUUID(), providerId, phase: 'pending', changes };
         await this.write(intent, previous.before);
         return intent;
     }

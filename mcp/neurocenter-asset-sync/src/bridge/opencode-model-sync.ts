@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 import os from 'node:os';
-import { api, apiHub, readState, type Credentials } from './state.js';
+import { api, apiHub, readState, type ICredentials } from './state.js';
 import { projectBindingId, projectFolder, projectInstanceId } from './workspace.js';
 import { readOpenCodeModelMetadata } from './opencode-model-scan.js';
-import type { IOpenCodeModelScan, IOpenCodeModelSource } from '../../../../services/shared/opencode-model-scan.cjs';
+import type { TOpenCodeModelScan, TOpenCodeModelSource } from '../../../../services/shared/opencode-model-scan.cjs';
 
-interface Context {
+interface IContext {
     schemaVersion: 2;
     global: { deviceId: string };
     revision: number;
@@ -24,7 +24,7 @@ const canonical = (value: unknown): unknown =>
             )
           : value;
 /** UUIDs and timestamps never turn an unchanged configuration into a fresh import. */
-export function openCodeSnapshotFingerprint(scan: IOpenCodeModelScan, credentials: Record<string, string>): string {
+export function openCodeSnapshotFingerprint(scan: TOpenCodeModelScan, credentials: Record<string, string>): string {
     const candidates = scan.candidates
         .map(({ candidateId, ...candidate }) => ({
             ...candidate,
@@ -89,9 +89,9 @@ export function createOpenCodeModelSynchronizer(
         if (stopped() || Date.now() - lastAttempt < 60000) return Promise.resolve();
         lastAttempt = Date.now();
         pending = (async () => {
-            const identity = await dependencies.readState<Credentials>('credentials');
+            const identity = await dependencies.readState<ICredentials>('credentials');
             if (!identity || stopped()) return;
-            const context = await dependencies.api<Context>('opencode-models/context', {}, identity.token);
+            const context = await dependencies.api<IContext>('opencode-models/context', {}, identity.token);
             if (
                 context?.schemaVersion !== 2 ||
                 context.global?.deviceId !== identity.deviceId ||
@@ -101,11 +101,11 @@ export function createOpenCodeModelSynchronizer(
             )
                 return;
             const authorize = async (): Promise<void> => {
-                const current = await dependencies.readState<Credentials>('credentials');
+                const current = await dependencies.readState<ICredentials>('credentials');
                 if (stopped() || current?.deviceId !== identity.deviceId || current.token !== identity.token)
                     throw Error('Подключение компьютера изменилось.');
             };
-            const sources: IOpenCodeModelSource[] = [
+            const sources: TOpenCodeModelSource[] = [
                 { scope: 'global', deviceId: identity.deviceId },
                 ...context.bindings.map((binding) => ({ scope: 'project' as const, ...binding })),
             ];

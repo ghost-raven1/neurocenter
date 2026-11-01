@@ -1,1 +1,1 @@
-export {SetupProgress} from '../../features/ComputerSetup/SetupProgress';
+export { SetupProgress } from '../../features/ComputerSetup/SetupProgress';

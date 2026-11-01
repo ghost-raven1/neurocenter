@@ -10,12 +10,12 @@ export const learningQueueLockFile = (name: string) =>
         LEARNING_QUEUE_MUTEX + '-wal',
         LEARNING_QUEUE_MUTEX + '-shm',
     ].includes(name);
-interface MutexDatabase {
+interface IMutexDatabase {
     exec(sql: string): unknown;
     close(): void;
 }
-type MutexConstructor = new (file: string, options?: { create: boolean }) => MutexDatabase;
-let constructor: Promise<MutexConstructor> | undefined;
+type TMutexConstructor = new (file: string, options?: { create: boolean }) => IMutexDatabase;
+let constructor: Promise<TMutexConstructor> | undefined;
 const prepared = new Map<string, Promise<{ ino: number; dev: number }>>();
 const damaged = () => new Error('Блокировка приватной очереди наблюдений недоступна.');
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
@@ -25,11 +25,11 @@ const busy = (error: unknown) => {
 };
 
 /** Node and the pinned OpenCode/Bun use their own builtin SQLite against the same kernel lock. */
-async function openDatabase(file: string): Promise<MutexDatabase> {
+async function openDatabase(file: string): Promise<IMutexDatabase> {
     constructor ??= (async () => {
         const bun = !!(process.versions as Record<string, string | undefined>).bun;
         const moduleName = bun ? 'bun:sqlite' : 'node:sqlite';
-        const sqlite = (await import(moduleName)) as { Database?: MutexConstructor; DatabaseSync?: MutexConstructor };
+        const sqlite = (await import(moduleName)) as { Database?: TMutexConstructor; DatabaseSync?: TMutexConstructor };
         const selected = bun ? sqlite.Database : sqlite.DatabaseSync;
         if (!selected) throw damaged();
         return selected;

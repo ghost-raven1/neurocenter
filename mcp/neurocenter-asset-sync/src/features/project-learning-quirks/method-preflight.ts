@@ -5,7 +5,7 @@ import { readBoundedSnapshot } from '../../bridge/read-bounded.js';
 import { safeTarget, workspaceDirectory } from '../../bridge/workspace-paths.js';
 import { readQuirksSource } from './source.js';
 
-export interface MethodQuirkStorage {
+export interface IMethodQuirkStorage {
     status: 'absent' | 'verified';
     fileSha256?: string;
     assertCurrent: () => Promise<void>;
@@ -38,7 +38,7 @@ async function configurationPin(root: string): Promise<string> {
 export async function assertMethodQuirkStorage(
     root: string,
     authorize: () => Promise<unknown>,
-): Promise<MethodQuirkStorage> {
+): Promise<IMethodQuirkStorage> {
     const observe = async () => {
         const directory = await workspaceDirectory(root),
             configuration = await configurationPin(root);

@@ -9,18 +9,18 @@ import {
     roleDefinitionPin,
     systemRole,
 } from './system-role.definitions';
-import type { RoleGuidanceEvidence } from './system-role.types';
+import type { IRoleGuidanceEvidence } from './system-role.interfaces';
 import { legacyRoleDefinitionPin } from './system-role.legacy-contract';
 import { previousRoleDefinitionPin } from './system-role.previous-contract';
 import type {
-    DiagnosticFact,
-    RolePrepared,
-    RoleResult,
-    RoleSelection,
-    RoleTargetSelection,
-    StartRoleRun,
-    SystemRoleId,
-} from './system-role.types';
+    IDiagnosticFact,
+    IRolePrepared,
+    IRoleResult,
+    IRoleSelection,
+    IRoleTargetSelection,
+    IStartRoleRun,
+    TSystemRoleId,
+} from './system-role.interfaces';
 
 export const roleObject = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -42,7 +42,7 @@ export const roleRequestId = (value: unknown): string => {
         return fail();
     return value;
 };
-export function roleSelection(id: SystemRoleId, value: unknown, start = false): RoleSelection {
+export function roleSelection(id: TSystemRoleId, value: unknown, start = false): IRoleSelection {
     const raw = exact(value, [
         'projectId',
         'instruction',
@@ -75,7 +75,7 @@ export function roleSelection(id: SystemRoleId, value: unknown, start = false): 
         raw.targets.length > ROLE_BUDGET.targets
     )
         return fail();
-    const targets: RoleTargetSelection[] = raw.targets.map((value) => {
+    const targets: IRoleTargetSelection[] = raw.targets.map((value) => {
         const target = exact(value, ['kind', 'id', 'text']);
         if (
             !definition.targets.includes(target.kind as never) ||
@@ -85,17 +85,17 @@ export function roleSelection(id: SystemRoleId, value: unknown, start = false): 
             (target.kind !== 'prompt' && target.text !== undefined)
         )
             return fail();
-        return target as unknown as RoleTargetSelection;
+        return target as unknown as IRoleTargetSelection;
     });
     if (new Set(targets.map((item) => JSON.stringify([item.kind, item.id]))).size !== targets.length) return fail();
-    let mcp: RoleSelection['mcp'];
+    let mcp: IRoleSelection['mcp'];
     try {
         mcp = normalizeRoleMcpSelection(raw.mcp);
     } catch {
         return fail();
     }
     if (mcp?.length && !raw.projectId) return fail();
-    let textContext: RoleSelection['textContext'];
+    let textContext: IRoleSelection['textContext'];
     try {
         textContext =
             raw.textContext === undefined ? undefined : normalizeTextContext(raw.textContext, TEXT_KNOWLEDGE_CEILINGS);
@@ -106,14 +106,14 @@ export function roleSelection(id: SystemRoleId, value: unknown, start = false): 
     return {
         projectId: raw.projectId as string | null,
         instruction: raw.instruction,
-        diagnostics: raw.diagnostics as RoleSelection['diagnostics'],
+        diagnostics: raw.diagnostics as IRoleSelection['diagnostics'],
         targets,
         ...(mcp?.length ? { mcp } : {}),
         ...(textContext ? { textContext } : {}),
     };
 }
 /** A start repeats the preview selection; the server re-reads versions before checking the consent digest. */
-export function startRoleRun(id: SystemRoleId, value: unknown): StartRoleRun {
+export function startRoleRun(id: TSystemRoleId, value: unknown): IStartRoleRun {
     const selection = roleSelection(id, value, true),
         raw = value as Record<string, unknown>;
     if (
@@ -123,7 +123,7 @@ export function startRoleRun(id: SystemRoleId, value: unknown): StartRoleRun {
         (raw.sourceFeature !== undefined && raw.sourceFeature !== 'system_role_chat')
     )
         return fail();
-    let source: StartRoleRun['source'];
+    let source: IStartRoleRun['source'];
     if (raw.source !== undefined) {
         const selected = exact(raw.source, ['kind', 'dialogId', 'turnId']);
         if (selected.kind !== 'system-role-chat' || raw.sourceFeature !== 'system_role_chat') return fail();
@@ -152,11 +152,11 @@ export function roleAction(value: unknown): { expectedRevision: number; requestI
 /** Model output can reference only server-held evidence and explicitly selected target identities. */
 export function roleResult(
     content: string,
-    prepared: RolePrepared,
-    facts: DiagnosticFact[],
-    projectContext?: RoleResult['projectContext'],
-    guidance?: RoleGuidanceEvidence,
-): RoleResult {
+    prepared: IRolePrepared,
+    facts: IDiagnosticFact[],
+    projectContext?: IRoleResult['projectContext'],
+    guidance?: IRoleGuidanceEvidence,
+): IRoleResult {
     const invalid = (): never => {
         throw new ConflictException('Ответ системного агента не прошёл проверку JSON-контракта.');
     };
@@ -218,9 +218,9 @@ export function roleResult(
         (value.kind === 'diagnosis' ? value.changes.length !== 0 : value.changes.length === 0) ||
         (['agent-packager', 'agent-coordinator'].some(
             (id) =>
-                prepared.definitionPin === roleDefinitionPin(id as SystemRoleId) ||
-                prepared.definitionPin === legacyRoleDefinitionPin(id as SystemRoleId) ||
-                prepared.definitionPin === previousRoleDefinitionPin(id as SystemRoleId),
+                prepared.definitionPin === roleDefinitionPin(id as TSystemRoleId) ||
+                prepared.definitionPin === legacyRoleDefinitionPin(id as TSystemRoleId) ||
+                prepared.definitionPin === previousRoleDefinitionPin(id as TSystemRoleId),
         ) &&
             value.kind !== 'diagnosis')
     )
@@ -229,5 +229,5 @@ export function roleResult(
         ...value,
         ...(projectContext ? { projectContext } : {}),
         ...(guidance ? { guidance } : {}),
-    } as unknown as RoleResult;
+    } as unknown as IRoleResult;
 }

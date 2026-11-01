@@ -1,9 +1,9 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { DeviceCodexService } from './device-codex.service';
-import type { IModel } from './model.types';
+import type { IModel } from './model.interfaces';
 import { OllamaClient } from './ollama-client';
 import { RemoteConnectionService } from './remote-connection.service';
-import { isRemoteModel } from './remote-model.types';
+import { isRemoteModel } from './remote-model.utils';
 import { ModelUsageService } from '../model-usage/model-usage.service';
 import { currentModelUsage } from '../model-usage/model-usage.context';
 import { requiredInferenceFeatures } from '../../../shared/feature-policy.cjs';

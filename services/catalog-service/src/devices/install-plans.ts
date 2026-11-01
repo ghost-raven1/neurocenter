@@ -14,7 +14,7 @@ import type { IPackage } from '../catalog/bundle-package';
 import { DeviceArtifacts } from './device-artifacts';
 import { DeviceStore } from './device-store';
 import { assertDeviceCatalogAsset, projectAssignedPackage } from './device-catalog-access';
-import { installPlanView, type InstallPlanInput, type InstallPlanRow } from './install-plan.model';
+import { installPlanView, type IInstallPlanInput, type IInstallPlanRow } from './install-plan.model';
 import {
     assertInstallablePackage,
     packageDependencies,
@@ -51,7 +51,7 @@ export class InstallPlans {
         }
     }
 
-    async prepare(actor: IAccessActor, input: InstallPlanInput) {
+    async prepare(actor: IAccessActor, input: IInstallPlanInput) {
         if (!input || typeof input.projectId !== 'string' || !input.projectId || input.projectId.length > 240) {
             throw new BadRequestException('Выберите серверный проект.');
         }
@@ -86,7 +86,7 @@ export class InstallPlans {
                 { version: pkg.plugin.version, manifest: pkg.manifest.sha256 },
                 true,
             );
-            const { rows } = await client.query<InstallPlanRow>(
+            const { rows } = await client.query<IInstallPlanRow>(
                 `INSERT INTO device_install_plans
                 (id,project_id,asset_kind,asset_id,version,manifest,package,created_by,installation_set) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
                 ON CONFLICT(project_id,asset_kind,asset_id,version,manifest) DO UPDATE SET manifest=EXCLUDED.manifest RETURNING *`,
@@ -142,7 +142,7 @@ export class InstallPlans {
         const client = await this.store.pool.connect();
         try {
             await client.query('BEGIN');
-            const { rows } = await client.query<InstallPlanRow>(
+            const { rows } = await client.query<IInstallPlanRow>(
                 'SELECT * FROM device_install_plans WHERE id=$1 FOR UPDATE',
                 [id],
             );
@@ -162,7 +162,7 @@ export class InstallPlans {
                 await client.query('COMMIT');
                 return installPlanView(row);
             }
-            const saved = await client.query<InstallPlanRow>(
+            const saved = await client.query<IInstallPlanRow>(
                 `UPDATE device_install_plans SET status=$2,revision=revision+1,
                 approved_by=CASE WHEN $2='approved' THEN $3 ELSE approved_by END,
                 approved_at=CASE WHEN $2='approved' THEN now() ELSE approved_at END,
@@ -170,7 +170,7 @@ export class InstallPlans {
                 revoked_at=CASE WHEN $2='revoked' THEN now() ELSE NULL END,updated_at=now() WHERE id=$1 RETURNING *`,
                 [id, status, actor.email],
             );
-            const summary = (value: InstallPlanRow) => ({
+            const summary = (value: IInstallPlanRow) => ({
                 projectId: value.project_id,
                 assetKind: value.asset_kind,
                 assetId: value.asset_id,
@@ -243,7 +243,7 @@ export class InstallPlans {
 
     /** Повторная проверка и восстановление используют действующее одобрение именно установленного SHA. */
     async approvedInstalled(projectId: string, pkg: IPackage, db: Pick<PoolClient, 'query'> = this.store.pool) {
-        const { rows } = await db.query<InstallPlanRow>(
+        const { rows } = await db.query<IInstallPlanRow>(
             `SELECT * FROM device_install_plans
             WHERE project_id=$1 AND asset_kind=$2 AND asset_id=$3 AND version=$4 AND package->'manifest'->>'sha256'=$5
                 AND status='approved' ORDER BY updated_at DESC,id LIMIT 1 FOR SHARE`,
@@ -267,7 +267,7 @@ export class InstallPlans {
 
     /** Настройка зависимости сохраняет одобрение исходного графа, не создавая отдельного разрешения для leaf. */
     async approvedConfiguration(projectId: string, pkg: IPackage) {
-        const { rows } = await this.store.pool.query<InstallPlanRow>(
+        const { rows } = await this.store.pool.query<IInstallPlanRow>(
             `SELECT * FROM device_install_plans p WHERE project_id=$1 AND status='approved'
             AND ((asset_kind=$2 AND asset_id=$3 AND version=$4 AND package->'manifest'->>'sha256'=$5)
                 OR EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(p.installation_set->'packages','[]'::jsonb)) member
@@ -291,7 +291,7 @@ export class InstallPlans {
 
     private async read(id: string, db: Pick<PoolClient, 'query'> = this.store.pool) {
         this.validId(id);
-        const { rows } = await db.query<InstallPlanRow>('SELECT * FROM device_install_plans WHERE id=$1', [id]);
+        const { rows } = await db.query<IInstallPlanRow>('SELECT * FROM device_install_plans WHERE id=$1', [id]);
         if (!rows[0]) {
             throw new NotFoundException('План установки не найден.');
         }
@@ -302,7 +302,7 @@ export class InstallPlans {
             throw new BadRequestException('Некорректный идентификатор плана.');
         }
     }
-    private assertRow(row: InstallPlanRow) {
+    private assertRow(row: IInstallPlanRow) {
         assertInstallablePackage(row.package);
         if (
             row.installation_set
@@ -326,7 +326,7 @@ export class InstallPlans {
             throw new ConflictException('Сохранённый пакет не соответствует плану. Установка остановлена.');
         }
     }
-    private async catalog(row: InstallPlanRow, db: Pick<PoolClient, 'query'> = this.store.pool, lock = false) {
+    private async catalog(row: IInstallPlanRow, db: Pick<PoolClient, 'query'> = this.store.pool, lock = false) {
         await assertDeviceCatalogAsset(
             db,
             row.project_id,

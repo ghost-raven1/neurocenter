@@ -17,12 +17,12 @@ export const WORKSPACE_BINDING_FAILURE_CODES = [
     'installation-mismatch',
     'unknown',
 ] as const;
-export type WorkspaceBindingFailureCode = (typeof WORKSPACE_BINDING_FAILURE_CODES)[number];
+export type TWorkspaceBindingFailureCode = (typeof WORKSPACE_BINDING_FAILURE_CODES)[number];
 
 /** В сеть уходит только код отказа; локальное сообщение и пути остаются на компьютере. */
 export class WorkspaceBindingError extends Error {
     constructor(
-        public readonly code: WorkspaceBindingFailureCode,
+        public readonly code: TWorkspaceBindingFailureCode,
         message: string,
     ) {
         super(message);
@@ -30,7 +30,7 @@ export class WorkspaceBindingError extends Error {
 }
 
 /** Неизвестные исключения и системные сообщения не превращаются в публичную диагностику. */
-export function workspaceBindingFailure(error: unknown): WorkspaceBindingFailureCode {
+export function workspaceBindingFailure(error: unknown): TWorkspaceBindingFailureCode {
     if (error instanceof WorkspaceBindingError && WORKSPACE_BINDING_FAILURE_CODES.includes(error.code)) {
         return error.code;
     }
@@ -41,7 +41,7 @@ export function workspaceBindingFailure(error: unknown): WorkspaceBindingFailure
             changed: 'preparation-stale',
             unavailable: 'folder-unavailable',
             verified: 'unknown',
-        }[error.identityStatus] as WorkspaceBindingFailureCode;
+        }[error.identityStatus] as TWorkspaceBindingFailureCode;
     }
     const code = error && typeof error === 'object' ? (error as NodeJS.ErrnoException).code : undefined;
     if (code === 'EACCES' || code === 'EPERM') {
@@ -58,7 +58,7 @@ export function workspaceBindingFailureResult(
     kind: string,
     version: unknown,
     error: unknown,
-): { workspaceFailure?: WorkspaceBindingFailureCode } {
+): { workspaceFailure?: TWorkspaceBindingFailureCode } {
     return version === 1 && ['prepare-bind-project', 'bind-project'].includes(kind)
         ? { workspaceFailure: workspaceBindingFailure(error) }
         : {};

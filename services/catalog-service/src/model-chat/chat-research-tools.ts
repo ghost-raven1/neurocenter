@@ -6,9 +6,9 @@ import { normalizeRuntimeArtifacts } from '../../../shared/runtime-artifacts.cjs
 import { FeatureFlagError, readFeatures } from '../../../shared/feature-client.cjs';
 import type { ModelsService } from '../models/models.service';
 import type { ModelChatProjectContext } from './chat-project-context';
-import type { ChatDb } from './chat.repository';
-import type { ConversationRow } from './chat.types';
-import type { ChatResearchRequest } from './chat-research.types';
+import type { TChatDb } from './chat.repository';
+import type { IConversationRow } from './chat.interfaces';
+import type { IChatResearchRequest } from './chat-research.interfaces';
 import { RESEARCH_TOOL_NAMES } from './chat-research-client';
 import { MODEL_CHAT_ROUND_TIMEOUT_MS } from '../../../shared/model-chat-deadline.cjs';
 
@@ -19,7 +19,7 @@ export const RESEARCH_LIMITS = {
     gatheredTextBytes: 98304,
     roundTimeoutMs: MODEL_CHAT_ROUND_TIMEOUT_MS,
 } as const;
-export interface ResearchChoice {
+export interface IResearchChoice {
     assetId: string;
     name: string;
     version: number;
@@ -27,9 +27,9 @@ export interface ResearchChoice {
     available: boolean;
     reason?: string;
 }
-export interface ResearchChoices {
+export interface IResearchChoices {
     project: { available: boolean; reason?: string };
-    external: ResearchChoice[];
+    external: IResearchChoice[];
     limits: typeof RESEARCH_LIMITS;
 }
 
@@ -63,7 +63,7 @@ export class ChatResearchTools {
         private readonly models: ModelsService,
         private readonly projectContext: ModelChatProjectContext,
     ) {}
-    async choices(req: Request, row: ConversationRow): Promise<ResearchChoices> {
+    async choices(req: Request, row: IConversationRow): Promise<IResearchChoices> {
         if (!row.project_id)
             return {
                 project: { available: false, reason: 'Сначала выберите проект.' },
@@ -110,9 +110,9 @@ export class ChatResearchTools {
     }
     async resolve(
         req: Request,
-        row: ConversationRow,
-        ref: NonNullable<ChatResearchRequest['external']>,
-        db?: ChatDb,
+        row: IConversationRow,
+        ref: NonNullable<IChatResearchRequest['external']>,
+        db?: TChatDb,
     ): Promise<IPackage> {
         if (!row.project_id) throw new ForbiddenException('Поисковый MCP должен быть назначен проекту этого диалога.');
         await this.models.resolveProject(req, row.project_id, 2);

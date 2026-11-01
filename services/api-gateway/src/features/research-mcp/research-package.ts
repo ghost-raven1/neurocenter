@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { normalizeRuntimeArtifacts } from '../../../../shared/runtime-artifacts.cjs';
-import type { HostedMcpClaim } from '../mcp-host/ticket';
+import type { IHostedMcpClaim } from '../mcp-host/ticket';
 import { hostRuntimeTarget } from '../mcp-host/host-target';
 
 export const RESEARCH_TOOL_NAMES = ['web_search_exa', 'web_fetch_exa'] as const;
@@ -22,7 +22,7 @@ const canonical = (value: unknown): unknown =>
 const invalid = () => new BadRequestException('Нужен одобренный пакет поискового MCP с проверенной поставкой Gateway.');
 
 /** Accept only the full immutable native package, including config and every file hash. */
-export function researchPackage(raw: unknown, target = hostRuntimeTarget()): HostedMcpClaim {
+export function researchPackage(raw: unknown, target = hostRuntimeTarget()): IHostedMcpClaim {
     if (
         !object(raw) ||
         raw.schemaVersion !== 5 ||

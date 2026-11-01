@@ -18,7 +18,7 @@ import {
     retiredBridgeSourceMessage,
 } from './bridge-source-feed';
 import { BridgeSourceRepository, bridgeSourceRepository, staleBridgeSource } from './bridge-source.repository';
-import { importView } from './import-types';
+import { importView } from './import-utils';
 import { assertBridgeHead } from './bridge-source-head';
 import type { IBridgeSourceView, IBridgeSourceRelease } from './bridge-source.dto';
 import { assetSourceMode } from './source-cache';

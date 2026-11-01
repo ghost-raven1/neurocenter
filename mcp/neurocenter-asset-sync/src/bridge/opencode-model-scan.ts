@@ -10,8 +10,8 @@ import { readBoundedSnapshot, fileFingerprint } from './read-bounded.js';
 import { ollamaAdapterUrl } from '../features/opencode-providers/ollama-entry.js';
 import type {
     IOpenCodeModelCandidate,
-    IOpenCodeModelScan,
-    IOpenCodeModelSource,
+    TOpenCodeModelScan,
+    TOpenCodeModelSource,
 } from '../../../../services/shared/opencode-model-scan.cjs';
 const parameters = createRequire(import.meta.url)(
     fileURLToPath(
@@ -33,8 +33,8 @@ const shared = createRequire(import.meta.url)(
         ),
     ),
 ) as typeof import('../../../../services/shared/opencode-model-scan.cjs');
-type Json = Record<string, unknown>;
-const object = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
+type TJson = Record<string, unknown>;
+const object = (value: unknown): value is TJson => !!value && typeof value === 'object' && !Array.isArray(value);
 const text = (value: unknown, max: number): value is string =>
     typeof value === 'string' && !!value && value.length <= max && !/[\x00-\x1f\x7f]/.test(value);
 const id = (value: unknown): value is string =>
@@ -100,7 +100,7 @@ function modelOptions(value: unknown, responses: boolean, ollama = false): IOpen
     }
     return projected;
 }
-function merge(base: Json, next: Json): Json {
+function merge(base: TJson, next: TJson): TJson {
     for (const [key, value] of Object.entries(next)) {
         if (['__proto__', 'constructor', 'prototype'].includes(key)) continue;
         base[key] = object(base[key]) && object(value) ? merge(base[key], value) : value;
@@ -132,12 +132,12 @@ function endpoint(value: unknown): { url: string | null; blocker: IOpenCodeModel
 }
 /** Pure metadata projection: provider keys, custom headers and file contents are deliberately absent. */
 export function opencodeModelCandidates(
-    config: Json,
-    auth: Json = {},
+    config: TJson,
+    auth: TJson = {},
     experimentalModels = false,
     requestedSelectors: readonly string[] = [],
 ): IOpenCodeModelCandidate[] {
-    const providers: Json = JSON.parse(JSON.stringify(object(config.provider) ? config.provider : {}));
+    const providers: TJson = JSON.parse(JSON.stringify(object(config.provider) ? config.provider : {}));
     for (const selected of [
         config.model,
         config.small_model,
@@ -257,7 +257,7 @@ export function opencodeModelCandidates(
 /** Читает документированные конфиги выбранного проекта и пользователя, без рекурсивного сканирования home. */
 export async function readOpenCodeModelMetadata(
     root: string,
-    context: IOpenCodeModelSource,
+    context: TOpenCodeModelSource,
     options: {
         home?: string;
         environment?: NodeJS.ProcessEnv;
@@ -271,7 +271,7 @@ export async function readOpenCodeModelMetadata(
         requestedSelectors?: readonly string[];
         agentNamespaceTarget?: { names: Set<string>; directories: Set<string> };
     } = {},
-): Promise<IOpenCodeModelScan> {
+): Promise<TOpenCodeModelScan> {
     const home = options.home ?? os.homedir(),
         env = options.environment ?? process.env,
         authorize = options.authorize ?? (async () => {});
@@ -281,7 +281,7 @@ export async function readOpenCodeModelMetadata(
         ...(process.platform === 'darwin' ? ['managed-preferences-not-scanned'] : []),
     ]);
     const snapshots: Array<{ file: string; fingerprint: string }> = [];
-    const read = async (file: string): Promise<Json | null> => {
+    const read = async (file: string): Promise<TJson | null> => {
         await authorize();
         try {
             const parsed = path.parse(path.resolve(file));
@@ -313,9 +313,9 @@ export async function readOpenCodeModelMetadata(
             return null;
         }
     };
-    let config: Json = {};
+    let config: TJson = {};
     const keyDirectories: Record<string, string> = {};
-    const apply = (value: Json, directory: string): void => {
+    const apply = (value: TJson, directory: string): void => {
         if (object(value.provider) && options.providerNamespaceTarget)
             for (const id of Object.keys(value.provider)) options.providerNamespaceTarget.add(id);
         if (Array.isArray(value.plugin) && options.providerPluginTarget)
@@ -524,7 +524,7 @@ export async function readOpenCodeModelMetadata(
         }
     }
     const now = new Date();
-    const scan: IOpenCodeModelScan = {
+    const scan: TOpenCodeModelScan = {
         schemaVersion: 2,
         ...context,
         scanId: randomUUID(),
@@ -541,7 +541,7 @@ export async function readOpenCodeModelMetadata(
 export async function scanOpenCodeModels(
     projectId: string,
     authorize: () => Promise<unknown>,
-): Promise<IOpenCodeModelScan> {
+): Promise<TOpenCodeModelScan> {
     await authorize();
     const root = await projectFolder(projectId),
         bindingId = await projectBindingId(projectId),
@@ -561,7 +561,7 @@ export async function scanOpenCodeModels(
 export async function scanGlobalOpenCodeModels(
     deviceId: string,
     authorize: () => Promise<unknown>,
-): Promise<IOpenCodeModelScan> {
+): Promise<TOpenCodeModelScan> {
     await authorize();
     return readOpenCodeModelMetadata(os.homedir(), { scope: 'global', deviceId }, { authorize });
 }

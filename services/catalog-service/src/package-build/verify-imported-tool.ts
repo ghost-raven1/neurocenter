@@ -9,7 +9,7 @@ import type { AssetBlobStore } from '../asset-sources/asset-blob-store';
 import type { IPreparedLocalAsset } from '../asset-sources/local-asset-ingest';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
 import { assertToolSupplyLayout, toolRuntimePath, toolSourcePath } from '../../../shared/tool-supply-paths.cjs';
-import { assertRuntimeCandidate, verifyBuildRuntime, type BuildRuntimeReport } from './build-runtime';
+import { assertRuntimeCandidate, verifyBuildRuntime, type IBuildRuntimeReport } from './build-runtime';
 import { TOOL_IMPORT_TIMEOUT_MS } from '../../../shared/tool-import-deadline.cjs';
 
 /** An unreaped verifier keeps its supply and capacity reserved for operator recovery. */
@@ -25,7 +25,7 @@ export class ToolImportCleanupPendingError extends ConflictException {
 export async function withVerifiedToolImport<T>(
     prepared: IPreparedLocalAsset,
     blobs: Pick<AssetBlobStore, 'checkedPath'>,
-    publish: (report: BuildRuntimeReport) => Promise<T>,
+    publish: (report: IBuildRuntimeReport) => Promise<T>,
     signal: AbortSignal = AbortSignal.timeout(TOOL_IMPORT_TIMEOUT_MS),
 ): Promise<T> {
     signal.throwIfAborted();

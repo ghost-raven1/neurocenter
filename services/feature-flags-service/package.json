@@ -2,7 +2,7 @@
   "name": "feature-flags-service",
   "version": "0.1.0",
   "private": true,
-  "description": "Серверные переключатели функций Нейроцентра",
+  "description": "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u044b\u0435 \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0430\u0442\u0435\u043b\u0438 \u0444\u0443\u043d\u043a\u0446\u0438\u0439 \u041d\u0435\u0439\u0440\u043e\u0446\u0435\u043d\u0442\u0440\u0430",
   "scripts": {
     "test": "vitest run",
     "build": "nest build",
@@ -11,10 +11,10 @@
     "start:prod": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src integration --no-error-on-unmatched-pattern --max-warnings=0",
     "lint:fix": "npm run lint -- --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\"",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\""
   },
   "dependencies": {
     "@nestjs/common": "11.2.7",

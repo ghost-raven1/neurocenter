@@ -2,7 +2,7 @@
   "name": "api-gateway",
   "version": "0.1.0",
   "private": true,
-  "description": "Front-facing api-gateway: /api/* → микросервисы (fan-out), /socket.io → real-time; auth-guard",
+  "description": "Front-facing api-gateway: /api/* \u2192 \u043c\u0438\u043a\u0440\u043e\u0441\u0435\u0440\u0432\u0438\u0441\u044b (fan-out), /socket.io \u2192 real-time; auth-guard",
   "scripts": {
     "docs:generate": "node ../../scripts/openapi/generate.mjs --output src/docs/openapi.json",
     "build": "npm run docs:generate && nest build",
@@ -12,10 +12,10 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint src --max-warnings=0",
+    "lint": "eslint src integration --no-error-on-unmatched-pattern --max-warnings=0",
     "lint:fix": "npm run lint -- --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\"",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" \"integration/test/**/*.{ts,mjs,cjs}\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

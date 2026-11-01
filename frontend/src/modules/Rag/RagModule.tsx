@@ -23,8 +23,6 @@ export default class RagModule extends ModuleBase {
      * @returns список компонент-роутов
      */
     public getRoute(): ReactNode[] {
-        return [
-            <ProtectedRoute key="rag" name={RAG_ROUTE} path={baseRoutes.rag} render={() => <Rag />} />,
-        ];
+        return [<ProtectedRoute key="rag" name={RAG_ROUTE} path={baseRoutes.rag} render={() => <Rag />} />];
     }
 }

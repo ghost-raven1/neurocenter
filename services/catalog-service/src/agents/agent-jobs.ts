@@ -8,14 +8,14 @@ import {
     normalizeProjectAgentsPayload,
     validateProjectAgentsResult,
 } from '../../../shared/project-agents.cjs';
-import type { Device, DeviceStore } from '../devices/device-store';
-import type { Job, JobInput } from '../devices/device-job.model';
+import type { IDevice, DeviceStore } from '../devices/device-store';
+import type { IJob, IJobInput } from '../devices/device-job.model';
 import { managedBinding, assertExpectedBinding } from '../devices/device-compatibility';
 import { assertLocalFeature } from '../devices/local-change-jobs';
 import { ProjectAgentRepository } from './project-agent.repository';
 import { revision } from './agent-validation';
 import { agentModelRequirements } from './agent-model-requirements';
-function context(device: Device, projectId: string | undefined, expected: unknown, instance: unknown) {
+function context(device: IDevice, projectId: string | undefined, expected: unknown, instance: unknown) {
     assertLocalFeature(device.report, PROJECT_AGENTS_CAPABILITY);
     const bindingId = managedBinding(device.report, projectId);
     assertExpectedBinding(bindingId, expected, true);
@@ -27,7 +27,7 @@ function context(device: Device, projectId: string | undefined, expected: unknow
     return { bindingId, instanceId: binding.instanceId };
 }
 /** Only server-pinned desired state becomes a bridge job; the browser cannot supply prompt bytes directly. */
-export async function agentConfigurationJobPayload(store: DeviceStore, device: Device, input: JobInput) {
+export async function agentConfigurationJobPayload(store: DeviceStore, device: IDevice, input: IJobInput) {
     if (input.kind !== PROJECT_AGENTS_JOB) return;
     if (
         Object.keys(input).some(
@@ -60,8 +60,8 @@ export async function agentConfigurationJobPayload(store: DeviceStore, device: D
 /** Rechecked before lease delivery and before local commit; editing desired state invalidates an old queued snapshot. */
 export async function assertAgentConfigurationJob(
     store: DeviceStore,
-    device: Device,
-    job: Pick<Job, 'kind' | 'payload' | 'project_id'>,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id'>,
     db: Pick<PoolClient, 'query'> = store.pool,
 ): Promise<void> {
     if (job.kind !== PROJECT_AGENTS_JOB) return;
@@ -86,7 +86,7 @@ export async function assertAgentConfigurationJob(
 }
 /** Old valid receipts remain historical evidence and cannot confirm a newer desired revision or another target. */
 export function assertAgentConfigurationResult(
-    job: Pick<Job, 'kind' | 'payload' | 'project_id'>,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id'>,
     result: Record<string, unknown>,
     failed: boolean,
 ): void {

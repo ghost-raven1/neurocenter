@@ -16,7 +16,7 @@ import {
     sendSystemTurn,
 } from './system-role-chat.validation';
 import { systemDialogContext } from './system-role-chat.context';
-import type { SystemDialog, SystemDialogRow, SystemTurn, SystemTurnRow } from './system-role-chat.types';
+import type { ISystemDialog, ISystemDialogRow, ISystemTurn, ISystemTurnRow } from './system-role-chat.interfaces';
 
 /** Private durable conversations project the existing bounded role workflow and its owner operations. */
 @Injectable()
@@ -28,19 +28,19 @@ export class SystemRoleChatService {
     ) {
         this.repository = new SystemRoleChatRepository(models.pool);
     }
-    async list(req: Request, projectId?: string, rawAgent?: unknown): Promise<SystemDialog[]> {
+    async list(req: Request, projectId?: string, rawAgent?: unknown): Promise<ISystemDialog[]> {
         await this.models.ready();
         const project = chatProject(projectId),
             agent = chatRole(rawAgent),
             actor = await this.roles.policy.actor(req, project, 1);
         return (await this.repository.dialogs(actor.email, project, agent)).map((row) => this.dialogView(row, agent));
     }
-    async create(req: Request, raw: unknown): Promise<SystemDialog> {
+    async create(req: Request, raw: unknown): Promise<ISystemDialog> {
         await this.models.ready();
         const input = createSystemDialog(raw),
             actor = await this.roles.policy.actor(req, input.projectId, 1);
         const old = (
-            await this.models.pool.query<SystemDialogRow>(
+            await this.models.pool.query<ISystemDialogRow>(
                 'SELECT * FROM system_role_dialogs WHERE id=$1 AND owner_email=$2',
                 [input.id, actor.email],
             )
@@ -86,7 +86,7 @@ export class SystemRoleChatService {
             turns: await Promise.all(turns.map((row) => this.turnView(req, row))),
         };
     }
-    async request(req: Request, dialogId: string, requestId: string): Promise<SystemTurn> {
+    async request(req: Request, dialogId: string, requestId: string): Promise<ISystemTurn> {
         const dialog = await this.owned(req, dialogId),
             turn = await this.repository.turn(dialog.id, dialog.owner_email, roleRequestId(requestId));
         if (!turn) throw new NotFoundException('Принятое сообщение не найдено.');
@@ -125,7 +125,7 @@ export class SystemRoleChatService {
         const prepared = await this.roles.prepare(req, agentId, selection);
         return { selection, prepared };
     }
-    async send(req: Request, dialogId: string, raw: unknown): Promise<SystemTurn> {
+    async send(req: Request, dialogId: string, raw: unknown): Promise<ISystemTurn> {
         const dialog = await this.owned(req, dialogId),
             { agentId, input } = sendSystemTurn(dialog.id, raw);
         this.scope(dialog, input.projectId);
@@ -169,7 +169,7 @@ export class SystemRoleChatService {
             run,
         };
     }
-    async cancel(req: Request, dialogId: string, turnId: string, raw: unknown): Promise<SystemTurn> {
+    async cancel(req: Request, dialogId: string, turnId: string, raw: unknown): Promise<ISystemTurn> {
         const dialog = await this.owned(req, dialogId),
             action = roleAction(raw),
             turn = await this.repository.turn(dialog.id, dialog.owner_email, roleRequestId(turnId));
@@ -182,34 +182,34 @@ export class SystemRoleChatService {
             );
         return this.request(req, dialog.id, turn.id);
     }
-    private async owned(req: Request, dialogId: string, minimum = 1): Promise<SystemDialogRow> {
+    private async owned(req: Request, dialogId: string, minimum = 1): Promise<ISystemDialogRow> {
         await this.models.ready();
         const actor = await this.models.actor(req),
             dialog = await this.repository.dialog(roleRequestId(dialogId), actor.email);
         await this.roles.policy.actor(req, dialog.project_id, minimum);
         return dialog;
     }
-    private async assertOrigin(req: Request, dialog: SystemDialogRow): Promise<void> {
+    private async assertOrigin(req: Request, dialog: ISystemDialogRow): Promise<void> {
         await this.roles.repository.transaction(async (db) => {
             const actor = await this.roles.policy.actor(req, dialog.project_id);
             await this.roles.policy.authorize(db, actor, dialog.project_id);
             await assertChatSystemRoleOrigin(db, dialog.id, actor.email, dialog.project_id);
         });
     }
-    private scope(dialog: SystemDialogRow, project: string | null): void {
+    private scope(dialog: ISystemDialogRow, project: string | null): void {
         if (dialog.project_id !== project) throw new ConflictException('Сообщение относится к другому проекту.');
     }
-    private requirePinned(dialog: SystemDialogRow): void {
+    private requirePinned(dialog: ISystemDialogRow): void {
         if (!dialog.agent_id)
             throw new ConflictException(
                 'Начните новый чат выбранной роли. Прежняя история и проверка отправки сохранены.',
             );
     }
-    private assertRole(dialog: SystemDialogRow, agentId: string): void {
+    private assertRole(dialog: ISystemDialogRow, agentId: string): void {
         if (dialog.agent_id && dialog.agent_id !== agentId)
             throw new ConflictException('Этот чат закреплён за другой системной ролью.');
     }
-    private dialogView(row: SystemDialogRow, agent?: SystemDialog['agentId']): SystemDialog {
+    private dialogView(row: ISystemDialogRow, agent?: ISystemDialog['agentId']): ISystemDialog {
         return {
             id: row.id,
             projectId: row.project_id,
@@ -220,7 +220,7 @@ export class SystemRoleChatService {
             updatedAt: new Date(row.updated_at).toISOString(),
         };
     }
-    private async turnView(req: Request, row: SystemTurnRow): Promise<SystemTurn> {
+    private async turnView(req: Request, row: ISystemTurnRow): Promise<ISystemTurn> {
         return {
             id: row.id,
             agentId: row.agent_id,

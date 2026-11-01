@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { verify, type Package } from '../../bridge/package.js';
+import { verify, type IPackage } from '../../bridge/package.js';
 import { assetBase } from '../../bridge/installation-receipt.js';
 import { projectFolder, projectBindingId } from '../../bridge/workspace.js';
 import { inspectInstallation } from '../../bridge/installation-inspection.js';
@@ -14,7 +14,7 @@ import { localRagCore } from './contract.js';
 export async function probeInstalledRagMcp(
     projectId: string,
     bindingId: string,
-    pkg: Package,
+    pkg: IPackage,
     authorize: () => Promise<void>,
 ) {
     const scope = new ProbeScope(12000);

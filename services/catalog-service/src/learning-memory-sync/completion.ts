@@ -6,7 +6,7 @@ import {
     normalizeMemorySyncPayload,
     normalizeMemorySyncResult,
 } from '../../../shared/project-learning-memory-sync.cjs';
-import type { DeviceCompletion } from '../devices/device-completion';
+import type { IDeviceCompletion } from '../devices/device-completion';
 import { recordDeviceOperation } from '../devices/device-operations';
 
 /** Late delivery preserves cancellation and accepts partial recovery even after the feature is disabled. */
@@ -21,7 +21,7 @@ export async function completeLearningMemory(
         payload: Record<string, unknown>;
         result?: unknown;
     },
-    input: DeviceCompletion,
+    input: IDeviceCompletion,
 ) {
     if (job.kind !== MEMORY_SYNC_JOB) return;
     let result;

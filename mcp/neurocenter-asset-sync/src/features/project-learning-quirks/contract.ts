@@ -16,7 +16,7 @@ export const {
     fileURLToPath(source),
 ) as typeof import('../../../../../services/shared/project-learning-quirks.cjs');
 export type {
-    QuirksReceipt,
-    QuirksSnapshot,
-    LearningQuirksLimits,
+    IQuirksReceipt as QuirksReceipt,
+    IQuirksSnapshot as QuirksSnapshot,
+    ILearningQuirksLimits as LearningQuirksLimits,
 } from '../../../../../services/shared/project-learning-quirks.cjs';

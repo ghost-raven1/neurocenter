@@ -1,4 +1,4 @@
-import {readyManifest} from '../manifest.mjs';
+import { readyManifest } from '../manifest.mjs';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -15,25 +15,50 @@ import fixture from '../../test/runtime-artifact-fixture.cjs';
 
 const commit = 'a'.repeat(40);
 const source = { type: 'repository', url: 'https://github.com/fixture/demo', commit, entrypoint: 'src/index.ts' };
-const recipe = { schemaVersion: 1, key: 'repository-fixture', name: 'Тестовый репозиторий', kind: 'plugin', revision: 'git-' + commit,
-    description: 'Сборка закреплённого репозитория', source, targets: ['darwin-arm64'] };
-const temporary = () => fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-repository-')).then(value => fs.realpath(value));
-const archive = files => fixture.artifactFixture(files.map(file => ({ ...file, path: `demo-${commit}/${file.path}` }))).archive;
+const recipe = {
+    schemaVersion: 1,
+    key: 'repository-fixture',
+    name: 'Тестовый репозиторий',
+    kind: 'plugin',
+    revision: 'git-' + commit,
+    description: 'Сборка закреплённого репозитория',
+    source,
+    targets: ['darwin-arm64'],
+};
+const temporary = () =>
+    fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-repository-')).then((value) => fs.realpath(value));
+const archive = (files) =>
+    fixture.artifactFixture(files.map((file) => ({ ...file, path: `demo-${commit}/${file.path}` }))).archive;
 
 test('Репозиторий требует полный commit и безопасную точку входа; dry-run не скачивает и не пишет', async () => {
-    const root = await temporary(), previous = globalThis.fetch;
+    const root = await temporary(),
+        previous = globalThis.fetch;
     try {
-        const normalized = validateRecipe({ ...recipe, source: { ...source, url: 'https://github.com/Fixture/Demo.git', commit: commit.toUpperCase() } });
+        const normalized = validateRecipe({
+            ...recipe,
+            source: { ...source, url: 'https://github.com/Fixture/Demo.git', commit: commit.toUpperCase() },
+        });
         assert.deepEqual(normalized.source, source);
-        for (const change of [{ commit: 'main' }, { url: 'https://git.example/demo' }, { entrypoint: '../outside.ts' }, { subdirectory: '.git' }, { hooks: [] }]) {
+        for (const change of [
+            { commit: 'main' },
+            { url: 'https://git.example/demo' },
+            { entrypoint: '../outside.ts' },
+            { subdirectory: '.git' },
+            { hooks: [] },
+        ]) {
             assert.throws(() => validateRecipe({ ...recipe, source: { ...source, ...change } }));
         }
-        globalThis.fetch = () => { throw new Error('Dry-run не должен обращаться к сети'); };
+        globalThis.fetch = () => {
+            throw new Error('Dry-run не должен обращаться к сети');
+        };
         const output = path.join(root, 'output');
         const result = await buildRecipe({ recipe, recipePath: path.join(root, 'recipe.json'), output, dryRun: true });
         assert.equal(result.dryRun, true);
         await assert.rejects(fs.stat(output), { code: 'ENOENT' });
-    } finally { globalThis.fetch = previous; await fs.rm(root, { recursive: true, force: true }); }
+    } finally {
+        globalThis.fetch = previous;
+        await fs.rm(root, { recursive: true, force: true });
+    }
 });
 
 test('Архив скачивается один раз по codeload commit, кэш проверяется SHA и не маскирует подмену', async () => {
@@ -48,15 +73,21 @@ test('Архив скачивается один раз по codeload commit, к
             assert.equal(options.headers.Authorization, undefined);
             return new Response(bytes, { headers: { 'content-length': String(bytes.length) } });
         };
-        const [first, concurrent] = await Promise.all([downloadRepositoryArchive(source, root, { fetch }), downloadRepositoryArchive(source, root, { fetch })]);
+        const [first, concurrent] = await Promise.all([
+            downloadRepositoryArchive(source, root, { fetch }),
+            downloadRepositoryArchive(source, root, { fetch }),
+        ]);
         assert.deepEqual(first, concurrent);
         assert.equal(first.sha256, createHash('sha256').update(bytes).digest('hex'));
         assert.deepEqual(await downloadRepositoryArchive(source, root, { fetch }), first);
         assert.equal(requests, 1);
-        await fs.chmod(first.archivePath, 0o600); await fs.appendFile(first.archivePath, 'tampered');
+        await fs.chmod(first.archivePath, 0o600);
+        await fs.appendFile(first.archivePath, 'tampered');
         await assert.rejects(downloadRepositoryArchive(source, root, { fetch }), /повреждён/);
         assert.equal(requests, 1);
-    } finally { await fs.rm(root, { recursive: true, force: true }); }
+    } finally {
+        await fs.rm(root, { recursive: true, force: true });
+    }
 });
 
 test('Переполнение, обрыв и редирект загрузки не оставляют partial или готовый архив', async () => {
@@ -69,26 +100,50 @@ test('Переполнение, обрыв и редирект загрузки 
         try {
             await assert.rejects(downloadRepositoryArchive(source, root, { fetch: async () => response() }));
             assert.deepEqual(await fs.readdir(root), []);
-        } finally { await fs.rm(root, { recursive: true, force: true }); }
+        } finally {
+            await fs.rm(root, { recursive: true, force: true });
+        }
     }
 });
 
 test('Один repository pipeline собирает две платформы из monorepo, сохраняет commit, лицензии и main guard', async () => {
-    const root = await temporary(), previous = globalThis.fetch;
+    const root = await temporary(),
+        previous = globalThis.fetch;
     try {
         const files = [
             { path: 'LICENSE', content: 'Root license' },
             { path: 'packages/tool/NOTICE.md', content: 'Package notice' },
             { path: 'packages/tool/package.json', content: '{"type":"module"}' },
-            { path: 'packages/tool/src/index.ts', content: "import {pathToFileURL} from 'node:url'; export default async function plugin(input:{name:string}){return {name:input.name}}; if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)console.log('REPOSITORY_MAIN');" },
-            ...Array.from({ length: 105 }, (_, index) => ({ path: `packages/tool/docs/${index}.md`, content: 'Documentation' })),
+            {
+                path: 'packages/tool/src/index.ts',
+                content:
+                    "import {pathToFileURL} from 'node:url'; export default async function plugin(input:{name:string}){return {name:input.name}}; if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)console.log('REPOSITORY_MAIN');",
+            },
+            ...Array.from({ length: 105 }, (_, index) => ({
+                path: `packages/tool/docs/${index}.md`,
+                content: 'Documentation',
+            })),
         ];
-        const bytes = archive(files); let requests = 0;
-        globalThis.fetch = async () => { requests++; return new Response(bytes); };
+        const bytes = archive(files);
+        let requests = 0;
+        globalThis.fetch = async () => {
+            requests++;
+            return new Response(bytes);
+        };
         const output = path.join(root, 'output');
-        const result = await buildRecipe({ recipe: { ...recipe, source: { ...source, subdirectory: 'packages/tool' }, targets: ['darwin-arm64', 'linux-x64-glibc'] }, recipePath: path.join(root, 'recipe.json'), output });
-        assert.equal(result.runtimeChecked, false); assert.equal(requests, 1);
-        const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
+        const result = await buildRecipe({
+            recipe: {
+                ...recipe,
+                source: { ...source, subdirectory: 'packages/tool' },
+                targets: ['darwin-arm64', 'linux-x64-glibc'],
+            },
+            recipePath: path.join(root, 'recipe.json'),
+            output,
+        });
+        assert.equal(result.runtimeChecked, false);
+        assert.equal(requests, 1);
+        const [built] = await readyManifest(result.manifest);
+        const manifest = { tools: [built] };
         assert.equal(manifest.tools[0].publication.origin, source.url);
         assert.equal(manifest.tools[0].artifacts.length, 2);
         const provenance = JSON.parse(await fs.readFile(path.join(output, 'provenance.json'), 'utf8'));
@@ -100,12 +155,22 @@ test('Один repository pipeline собирает две платформы и
         await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: unpacked });
         const entry = path.join(unpacked, descriptor.entrypoint);
         assert.equal(execFileSync(process.execPath, [entry], { encoding: 'utf8' }).trim(), 'REPOSITORY_MAIN');
-        const { default: plugin } = await import(pathToFileURL(entry)); assert.deepEqual(await plugin({ name: 'Проверка' }), { name: 'Проверка' });
+        const { default: plugin } = await import(pathToFileURL(entry));
+        assert.deepEqual(await plugin({ name: 'Проверка' }), { name: 'Проверка' });
         assert.equal(await fs.readFile(path.join(unpacked, 'upstream-licenses/root/LICENSE'), 'utf8'), 'Root license');
-        assert.equal(await fs.readFile(path.join(unpacked, 'upstream-licenses/package/NOTICE.md'), 'utf8'), 'Package notice');
+        assert.equal(
+            await fs.readFile(path.join(unpacked, 'upstream-licenses/package/NOTICE.md'), 'utf8'),
+            'Package notice',
+        );
         assert.equal(JSON.parse(await fs.readFile(path.join(unpacked, 'repository.json'), 'utf8')).commit, commit);
-        assert.deepEqual((await fs.readdir(output)).filter(name => name.startsWith('.')), []);
-    } finally { globalThis.fetch = previous; await fs.rm(root, { recursive: true, force: true }); }
+        assert.deepEqual(
+            (await fs.readdir(output)).filter((name) => name.startsWith('.')),
+            [],
+        );
+    } finally {
+        globalThis.fetch = previous;
+        await fs.rm(root, { recursive: true, force: true });
+    }
 });
 
 test('Ссылки, traversal и чужой корень TAR блокируются до компиляции и готового manifest', async () => {
@@ -119,47 +184,91 @@ test('Ссылки, traversal и чужой корень TAR блокируют�
         ]) {
             const root = await temporary();
             try {
-                const bytes = fixture.artifactFixture([{ path: `demo-${commit}/src/index.ts`, content: 'export default 1;' }, bad]).archive;
+                const bytes = fixture.artifactFixture([
+                    { path: `demo-${commit}/src/index.ts`, content: 'export default 1;' },
+                    bad,
+                ]).archive;
                 globalThis.fetch = async () => new Response(bytes);
                 const output = path.join(root, 'output');
-                await assert.rejects(buildRecipe({ recipe, recipePath: path.join(root, 'recipe.json'), output }), /Архив репозитория/);
+                await assert.rejects(
+                    buildRecipe({ recipe, recipePath: path.join(root, 'recipe.json'), output }),
+                    /Архив репозитория/,
+                );
                 assert.deepEqual(await fs.readdir(output), []);
                 assert.deepEqual(await fs.readdir(root), ['output']);
-            } finally { await fs.rm(root, { recursive: true, force: true }); }
+            } finally {
+                await fs.rm(root, { recursive: true, force: true });
+            }
         }
-    } finally { globalThis.fetch = previous; }
+    } finally {
+        globalThis.fetch = previous;
+    }
 });
 
 test('Репозиторий с рецептом native использует общий адаптер, сохраняет SHA и только заявленные платформы', async () => {
-    const root = await temporary(), previous = globalThis.fetch;
+    const root = await temporary(),
+        previous = globalThis.fetch;
     try {
-        const runtimeSource = { type: 'runtime', adapter: 'go', assets: { 'darwin-arm64': { app: { directory: 'payload', entrypoint: 'server' } } } };
+        const runtimeSource = {
+            type: 'runtime',
+            adapter: 'go',
+            assets: { 'darwin-arm64': { app: { directory: 'payload', entrypoint: 'server' } } },
+        };
         const manifestBytes = JSON.stringify({ schemaVersion: 1, name: 'Готовый MCP', source: runtimeSource });
         const manifestSha256 = createHash('sha256').update(manifestBytes).digest('hex');
-        const bytes = archive([{ path: 'neurocenter.tool.json', content: manifestBytes }, { path: 'payload/server', content: 'prepared native program' }, { path: 'LICENSE', content: 'Native license' }]);
+        const bytes = archive([
+            { path: 'neurocenter.tool.json', content: manifestBytes },
+            { path: 'payload/server', content: 'prepared native program' },
+            { path: 'LICENSE', content: 'Native license' },
+        ]);
         globalThis.fetch = async () => new Response(bytes);
         const pinned = { ...source, entrypoint: 'neurocenter.tool.json', runtimeSource, manifestSha256 };
         const input = { ...recipe, kind: 'mcp', source: pinned };
         assert.throws(() => validateRecipe({ ...input, kind: 'plugin' }), /MCP|mcp/);
         assert.throws(() => validateRecipe({ ...input, targets: ['win32-x64'] }), /платформ/);
-        const result = await buildRecipe({ recipe: input, recipePath: path.join(root, 'recipe.json'), output: path.join(root, 'output') });
-        const [built]=await readyManifest(result.manifest);const manifest={tools:[built]};
+        const result = await buildRecipe({
+            recipe: input,
+            recipePath: path.join(root, 'recipe.json'),
+            output: path.join(root, 'output'),
+        });
+        const [built] = await readyManifest(result.manifest);
+        const manifest = { tools: [built] };
         assert.equal(manifest.tools[0].publication.kind, 'mcp');
         assert.doesNotMatch(manifest.tools[0].publication.compatibility, /JavaScript/);
         assert.equal(manifest.tools[0].artifacts.length, 1);
         const artifact = manifest.tools[0].artifacts[0];
         const descriptor = artifact.descriptor;
-        assert.equal(descriptor.entrypoint, 'app/server'); assert.equal(descriptor.executable, true);
+        assert.equal(descriptor.entrypoint, 'app/server');
+        assert.equal(descriptor.executable, true);
         const unpacked = path.join(root, 'unpacked');
         await runtime.inspectRuntimeArchive(artifact.archivePath, descriptor, { destination: unpacked });
         const origin = JSON.parse(await fs.readFile(path.join(unpacked, 'repository.json'), 'utf8'));
-        assert.equal(origin.manifestSha256, manifestSha256); assert.equal(origin.adapter, 'go');
+        assert.equal(origin.manifestSha256, manifestSha256);
+        assert.equal(origin.adapter, 'go');
         assert.equal(await fs.readFile(path.join(unpacked, 'app/server'), 'utf8'), 'prepared native program');
-        assert.equal(await fs.readFile(path.join(unpacked, 'upstream-licenses/root/LICENSE'), 'utf8'), 'Native license');
-        await assert.rejects(buildRecipe({ recipe: { ...input, source: { ...pinned, manifestSha256: '0'.repeat(64) } },
-            recipePath: path.join(root, 'recipe.json'), output: path.join(root, 'tampered') }), /закреплённым SHA/);
+        assert.equal(
+            await fs.readFile(path.join(unpacked, 'upstream-licenses/root/LICENSE'), 'utf8'),
+            'Native license',
+        );
+        await assert.rejects(
+            buildRecipe({
+                recipe: { ...input, source: { ...pinned, manifestSha256: '0'.repeat(64) } },
+                recipePath: path.join(root, 'recipe.json'),
+                output: path.join(root, 'tampered'),
+            }),
+            /закреплённым SHA/,
+        );
         await assert.rejects(fs.stat(path.join(root, 'tampered/asset.json')), { code: 'ENOENT' });
-        await assert.rejects(buildRecipe({ recipe: { ...input, source: { ...pinned, runtimeSource: { ...runtimeSource, adapter: 'rust' } } },
-            recipePath: path.join(root, 'recipe.json'), output: path.join(root, 'changed') }), /Адаптер поставки изменился/);
-    } finally { globalThis.fetch = previous; await fs.rm(root, { recursive: true, force: true }); }
+        await assert.rejects(
+            buildRecipe({
+                recipe: { ...input, source: { ...pinned, runtimeSource: { ...runtimeSource, adapter: 'rust' } } },
+                recipePath: path.join(root, 'recipe.json'),
+                output: path.join(root, 'changed'),
+            }),
+            /Адаптер поставки изменился/,
+        );
+    } finally {
+        globalThis.fetch = previous;
+        await fs.rm(root, { recursive: true, force: true });
+    }
 });

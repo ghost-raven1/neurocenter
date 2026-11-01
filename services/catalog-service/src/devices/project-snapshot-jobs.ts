@@ -1,14 +1,14 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import { managedBinding, assertExpectedBinding } from './device-compatibility';
-import type { JobInput } from './device-job.model';
+import type { IJobInput } from './device-job.model';
 
 export const SNAPSHOT_JOB_KIND = 'publish-project-snapshot';
 /** Snapshot jobs are bound to an existing durable publication and cannot choose another local folder. */
 export async function projectSnapshotPayload(
     store: DeviceStore,
-    device: Device,
-    input: JobInput,
+    device: IDevice,
+    input: IJobInput,
 ): Promise<Record<string, unknown> | undefined> {
     if (input.kind !== SNAPSHOT_JOB_KIND) return;
     if (typeof input.snapshotId !== 'string' || !/^[a-f0-9-]{36}$/.test(input.snapshotId))
@@ -26,7 +26,7 @@ export async function projectSnapshotPayload(
 }
 export async function assertProjectSnapshotJob(
     store: DeviceStore,
-    device: Device,
+    device: IDevice,
     job: { project_id: string | null; payload: Record<string, unknown> },
 ): Promise<void> {
     if (

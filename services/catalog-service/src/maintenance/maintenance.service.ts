@@ -7,7 +7,7 @@ import {
     defaultPolicy,
     nextMaintenanceRun,
     validateMaintenancePolicy,
-    type MaintenancePolicy,
+    type IMaintenancePolicy,
 } from '../../../shared/maintenance-policy.cjs';
 
 /** Политика и аудит сохраняются одной транзакцией; runtime-квитанции пишет только операторский runner. */
@@ -44,7 +44,7 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
             await this.pool.query(
                 'SELECT revision,policy,updated_at AS "updatedAt" FROM maintenance_settings WHERE singleton',
             )
-        ).rows[0] as { revision: number; policy: MaintenancePolicy; updatedAt: string };
+        ).rows[0] as { revision: number; policy: IMaintenancePolicy; updatedAt: string };
         const runs = (
             await this.pool.query(
                 'SELECT id,slot,state,error_code AS "errorCode",started_at AS "startedAt",finished_at AS "finishedAt" FROM maintenance_runs ORDER BY started_at DESC LIMIT 10',
@@ -91,7 +91,7 @@ export class MaintenanceService implements OnModuleInit, OnModuleDestroy {
         ) {
             throw new BadRequestException('Передайте исходную ревизию настроек.');
         }
-        let policy: MaintenancePolicy;
+        let policy: IMaintenancePolicy;
         try {
             policy = validateMaintenancePolicy(input.policy);
         } catch (error) {

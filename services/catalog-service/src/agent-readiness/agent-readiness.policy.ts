@@ -5,15 +5,15 @@ import type { IModelActor } from '../models/model-access';
 import type { ModelsService } from '../models/models.service';
 import { modelFromRow, type IModelRow } from '../models/model-history';
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
-import type { ProjectAgentAssignment } from '../agents/agent.types';
+import type { IProjectAgentAssignment } from '../agents/agent.interfaces';
 import { ProjectEmbeddingRepository } from '../models/project-embedding.repository';
 import { projectEmbeddingPin } from '../models/project-embedding.validation';
 import { resolveAgentChatModel } from '../models/resolve-agent-chat-model';
-import type { IModel, IModelList } from '../models/model.types';
-import type { TrialDb, TrialRow } from './agent-readiness.repository';
+import type { IModel, IModelList } from '../models/model.interfaces';
+import type { TTrialDb, ITrialRow } from './agent-readiness.repository';
 import { trialHash } from './agent-readiness.validation';
 
-export const agentTrialPin = (agent: ProjectAgentAssignment): string =>
+export const agentTrialPin = (agent: IProjectAgentAssignment): string =>
     trialHash({ id: agent.agentId, version: agent.version, manifest: agent.manifest, definition: agent.effective });
 export class AgentTrialPolicy {
     readonly agents: ProjectAgentRepository;
@@ -30,7 +30,7 @@ export class AgentTrialPolicy {
         if (project.id !== projectId) throw new ForbiddenException('Выберите точный идентификатор проекта.');
         return actor;
     }
-    async authorize(db: TrialDb, actor: IModelActor, project: string): Promise<void> {
+    async authorize(db: TTrialDb, actor: IModelActor, project: string): Promise<void> {
         const account = (
             await db.query<{ enabled: boolean; is_main_admin: boolean }>(
                 'SELECT enabled,is_main_admin FROM platform_users WHERE email=$1 FOR SHARE',
@@ -51,7 +51,7 @@ export class AgentTrialPolicy {
         if (Math.min(roleLevel(grant?.role), roleLevel(actor.activeRole)) < 2)
             throw new ForbiddenException('Для испытания нужна рабочая роль в проекте.');
     }
-    async assignment(project: string, id: string, db: TrialDb = this.models.pool): Promise<ProjectAgentAssignment> {
+    async assignment(project: string, id: string, db: TTrialDb = this.models.pool): Promise<IProjectAgentAssignment> {
         const agent = (await this.agents.assignments(project, db)).find((row) => row.agentId === id);
         if (!agent || agent.removed || (await this.agents.cards.get(id, db)).archivedAt)
             throw new NotFoundException('Агент больше не доступен для испытания в проекте.');
@@ -60,10 +60,10 @@ export class AgentTrialPolicy {
     async model(
         req: Request,
         project: string,
-        agent: ProjectAgentAssignment,
+        agent: IProjectAgentAssignment,
         id: string,
         catalog?: IModelList,
-        db?: TrialDb,
+        db?: TTrialDb,
     ): Promise<IModel> {
         const rows =
             !catalog && db
@@ -105,8 +105,8 @@ export class AgentTrialPolicy {
     }
     async tool(
         project: string,
-        agent: ProjectAgentAssignment,
-        db: TrialDb = this.models.pool,
+        agent: IProjectAgentAssignment,
+        db: TTrialDb = this.models.pool,
     ): Promise<{ available: boolean; requiresConsent: boolean; reason?: string; pin: string | null }> {
         const permission = agent.effective.permission?.read;
         if (permission !== 'allow' && permission !== 'ask')
@@ -157,7 +157,7 @@ export class AgentTrialPolicy {
         };
     }
     /** Share locks fence role, assignment and model edits through the terminal receipt commit. */
-    async assertCurrent(req: Request, row: TrialRow, db: TrialDb): Promise<IModel> {
+    async assertCurrent(req: Request, row: ITrialRow, db: TTrialDb): Promise<IModel> {
         const actor = await this.actor(req, row.project_id);
         if (actor.email !== row.owner_email) throw new ForbiddenException('Владелец испытания изменился.');
         await this.authorize(db, actor, row.project_id);

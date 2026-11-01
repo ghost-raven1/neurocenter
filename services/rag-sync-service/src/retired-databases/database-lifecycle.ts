@@ -11,7 +11,7 @@ import { createPool } from '../database/pool';
 import { projectDatabaseName } from '../rag/project-database-name';
 import { ragRequestHash } from '../../../shared/rag-index-contract.cjs';
 import { databaseLock, LIFECYCLE_LOCK, setupDatabaseLifecycle } from './lifecycle-schema';
-import type { IDatabaseIdentity, IPurgeCommand, IPurgeReceipt, IRetiredDatabaseFacts } from './lifecycle-types';
+import type { IDatabaseIdentity, IPurgeCommand, IPurgeReceipt, IRetiredDatabaseFacts } from './lifecycle-interfaces';
 import { migrateRag } from '../database/migrations';
 import { IDENTITY_MIGRATION } from '../database/migration-definitions';
 

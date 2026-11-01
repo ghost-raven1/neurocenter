@@ -6,15 +6,15 @@ import {
 } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { canReadCommon, projectLevel } from '../access/access.model';
-import type { AssetType, RequestActor, RequestTarget, TargetInput } from './request.types';
-type Db = Pick<PoolClient, 'query'>;
-interface SkillSummary {
+import type { TAssetType, IRequestActor, IRequestTarget, ITargetInput } from './request.interfaces';
+type TDb = Pick<PoolClient, 'query'>;
+interface ISkillSummary {
     path: string;
     meta: { name?: string; version: number; archivedAt?: string };
 }
 
 /** Only the configured internal service is fetched; submitted source URLs are inert text. */
-async function skills(): Promise<SkillSummary[]> {
+async function skills(): Promise<ISkillSummary[]> {
     const token = process.env.NEUROCENTER_INTERNAL_TOKEN;
     if (!token) throw new ServiceUnavailableException('Соединение со скиллами не настроено.');
     try {
@@ -38,14 +38,14 @@ async function skills(): Promise<SkillSummary[]> {
             )
         )
             throw Error('invalid');
-        return data as SkillSummary[];
+        return data as ISkillSummary[];
     } catch {
         throw new ServiceUnavailableException(
             'Не удалось проверить каталог скиллов. Повторите после восстановления связи.',
         );
     }
 }
-async function project(db: Db, actor: RequestActor, id: string) {
+async function project(db: TDb, actor: IRequestActor, id: string) {
     if (projectLevel(actor.claims, actor.activeRole, id) < 1)
         throw new ForbiddenException('Нет доступа к выбранному проекту.');
     const row = (
@@ -58,15 +58,15 @@ async function project(db: Db, actor: RequestActor, id: string) {
     return row;
 }
 export async function listTargets(
-    db: Db,
-    actor: RequestActor,
-    type: AssetType,
+    db: TDb,
+    actor: IRequestActor,
+    type: TAssetType,
     projectId: string | null,
     q = '',
     limit = 50,
     exactId?: string,
     lock = false,
-): Promise<RequestTarget[]> {
+): Promise<IRequestTarget[]> {
     const scope = projectId ? await project(db, actor, projectId) : null;
     const projectIds = scope
         ? [scope.id]
@@ -137,12 +137,12 @@ export async function listTargets(
 }
 /** Target identity/type/scope are checked again when a reviewer completes the request. */
 export async function checkedTarget(
-    db: Db,
-    actor: RequestActor,
-    input: TargetInput,
-    type: AssetType,
+    db: TDb,
+    actor: IRequestActor,
+    input: ITargetInput,
+    type: TAssetType,
     projectId: string | null,
-): Promise<RequestTarget> {
+): Promise<IRequestTarget> {
     if (input.type !== type) throw new BadRequestException('Тип карточки не совпадает с заявкой.');
     const result = (await listTargets(db, actor, type, projectId, '', 1, input.id, true)).find(
         (item) => item.id === input.id,
@@ -179,7 +179,7 @@ export async function checkedTarget(
     return result;
 }
 /** Historical snapshots remain readable; absence/outage never pretends the card is available. */
-export async function targetAvailability(db: Db, targets: RequestTarget[]): Promise<Map<string, boolean | null>> {
+export async function targetAvailability(db: TDb, targets: IRequestTarget[]): Promise<Map<string, boolean | null>> {
     const result = new Map<string, boolean | null>();
     for (const type of ['plugin', 'mcp', 'model'] as const) {
         const ids = targets.filter((item) => item.type === type).map((item) => item.id);

@@ -6,7 +6,9 @@ import { afterEach, test } from 'node:test';
 import projectContext from '../plugins/project-context.mjs';
 
 const directories = [];
-afterEach(async () => { for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true }); });
+afterEach(async () => {
+    for (const directory of directories.splice(0)) await fs.rm(directory, { recursive: true, force: true });
+});
 
 async function transform(content) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'project-context-'));
@@ -33,7 +35,12 @@ test('Контекст проекта не принимает строку, ма
 });
 
 test('Контекст проекта сохраняет допустимые scripts и не включает команды или недопустимые имена', async () => {
-    const output = await transform(JSON.stringify({ scripts: { test: 'DO_NOT_EXECUTE', 'lint:all': 'DO_NOT_EXECUTE', 'bad\nname': 'DO_NOT_EXECUTE' }, packageManager: 'pnpm@10.18.3' }));
+    const output = await transform(
+        JSON.stringify({
+            scripts: { test: 'DO_NOT_EXECUTE', 'lint:all': 'DO_NOT_EXECUTE', 'bad\nname': 'DO_NOT_EXECUTE' },
+            packageManager: 'pnpm@10.18.3',
+        }),
+    );
     assert.equal(output[0], 'Исходный контекст');
     assert.match(output[1], /pnpm@10\.18\.3; доступные scripts — test, lint:all\./);
     assert.doesNotMatch(output[1], /DO_NOT_EXECUTE|bad/);

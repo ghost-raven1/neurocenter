@@ -2,17 +2,17 @@ import { createHash } from 'node:crypto';
 import { RAG_GENERATION_SCHEMA } from '../rag/rag-generation-schema';
 import { RAG_QUOTA_MIGRATION, RAG_QUOTA_SCHEMA } from '../rag/quota/rag-quota-schema';
 import { DATABASE_LIFECYCLE_SCHEMA, PROJECT_IDENTITY_SCHEMA } from './migration-sql';
-import type { SchemaObjects } from './schema-inspection';
+import type { ISchemaObjects } from './schema-inspection';
 import { PLATFORM_QUOTA_SCHEMA, PLATFORM_QUOTA_CACHE_SCHEMA } from '../rag/quota/platform-quota-schema';
 import { PROJECT_TEXT_SCHEMA, PROJECT_TEXT_OBJECTS } from '../project-text/text-schema';
 import { PROJECT_TEXT_LIMITS_SCHEMA, PROJECT_TEXT_LIMITS_OBJECTS } from '../project-text/text-limits-schema';
 
-export interface RagMigration {
+export interface IRagMigration {
     version: string;
     name: string;
     scope: 'data' | 'base' | 'project';
     sql: string;
-    objects: SchemaObjects;
+    objects: ISchemaObjects;
     schemaSha256: string;
     lockTables?: readonly string[];
     replacesSchemaOf?: readonly string[];
@@ -20,7 +20,7 @@ export interface RagMigration {
 export const sqlChecksum = (sql: string): string => createHash('sha256').update(sql).digest('hex');
 
 /** Structural digests come from these frozen SQL statements on PostgreSQL 16; physical column order is deliberately irrelevant. */
-export const GENERATION_MIGRATION: RagMigration = {
+export const GENERATION_MIGRATION: IRagMigration = {
     version: 'project-generations-1',
     name: 'project-generations',
     scope: 'data',
@@ -33,7 +33,7 @@ export const GENERATION_MIGRATION: RagMigration = {
     },
     schemaSha256: 'a5a340232a164d5bed5f5da816510e958797fe4d192e589e83b9f416e5d94797',
 };
-export const LIFECYCLE_MIGRATION: RagMigration = {
+export const LIFECYCLE_MIGRATION: IRagMigration = {
     version: 'database-lifecycle-1',
     name: 'database-lifecycle',
     scope: 'base',
@@ -41,7 +41,7 @@ export const LIFECYCLE_MIGRATION: RagMigration = {
     objects: { tables: ['neurocenter_project_databases', 'neurocenter_database_purge_receipts'] },
     schemaSha256: 'c143148c4c6b0d83f810845db4cb0227bffa5ee06820b9d5c6e58a40d309537c',
 };
-export const IDENTITY_MIGRATION: RagMigration = {
+export const IDENTITY_MIGRATION: IRagMigration = {
     version: 'project-identity-1',
     name: 'project-identity',
     scope: 'project',
@@ -49,7 +49,7 @@ export const IDENTITY_MIGRATION: RagMigration = {
     objects: { tables: ['neurocenter_database_identity'] },
     schemaSha256: 'b1744d2c2f30dab3cf2435ee74da5815e9cbed6a5f07f3799c00511ab920eaa3',
 };
-export const PLATFORM_QUOTA_MIGRATION: RagMigration = {
+export const PLATFORM_QUOTA_MIGRATION: IRagMigration = {
     version: 'platform-quota-policy-1',
     name: 'platform-quota-policy',
     scope: 'base',
@@ -57,7 +57,7 @@ export const PLATFORM_QUOTA_MIGRATION: RagMigration = {
     objects: { tables: ['rag_platform_quota_policy', 'rag_platform_quota_events'] },
     schemaSha256: 'ee6db88af1409567bf4775b1d306dbbe632fc4d14a4d5ad273b689a7b4dfa18c',
 };
-export const PLATFORM_QUOTA_CACHE_MIGRATION: RagMigration = {
+export const PLATFORM_QUOTA_CACHE_MIGRATION: IRagMigration = {
     version: 'platform-quota-applied-1',
     name: 'platform-quota-applied',
     scope: 'data',
@@ -66,7 +66,7 @@ export const PLATFORM_QUOTA_CACHE_MIGRATION: RagMigration = {
     schemaSha256: '01eee6249c42330df2f100871cda22772e60314f71843a0e740cabc64c0c8575',
 };
 /** Measured on the owned PostgreSQL 16.15 fixture with the frozen semantic/quota schemas. */
-export const PROJECT_TEXT_MIGRATION: RagMigration = {
+export const PROJECT_TEXT_MIGRATION: IRagMigration = {
     version: 'project-text-1',
     name: 'project-text-knowledge',
     scope: 'project',
@@ -76,7 +76,7 @@ export const PROJECT_TEXT_MIGRATION: RagMigration = {
     schemaSha256: '9f7cbeee84d8b4cca72dd912a2ff1cfa60ebf342c26a1a458f453bdf2fce07ec',
 };
 /** Measured full text object set on the owned PostgreSQL16.15 fixture; both historical SQL checksums remain verified. */
-export const PROJECT_TEXT_LIMITS_MIGRATION: RagMigration = {
+export const PROJECT_TEXT_LIMITS_MIGRATION: IRagMigration = {
     version: 'project-text-limits-1',
     name: 'configurable-project-text-limits',
     scope: 'project',
@@ -95,7 +95,7 @@ export const RAG_MIGRATIONS = [
     PROJECT_TEXT_MIGRATION,
     PROJECT_TEXT_LIMITS_MIGRATION,
 ] as const;
-export const QUOTA_MIGRATION: RagMigration = {
+export const QUOTA_MIGRATION: IRagMigration = {
     version: RAG_QUOTA_MIGRATION,
     name: 'rag-storage-budget',
     scope: 'data',

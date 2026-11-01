@@ -32,25 +32,7 @@ WORKDIR /app/mcp/neurocenter-asset-sync
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --install-links=true --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
 COPY mcp/neurocenter-asset-sync/ .
 # MCP использует общие контракты и их типы уже во время собственной сборки.
-COPY services/shared/runtime-artifacts.cjs services/shared/runtime-artifacts.d.cts \
-    services/shared/runtime-cache-policy.cjs services/shared/runtime-cache-policy.d.cts \
-    services/shared/bridge-update-cleanup.cjs services/shared/bridge-update-cleanup.d.cts \
-    services/shared/adapter-parameters.cjs services/shared/adapter-parameters.d.cts \
-    services/shared/rag-index-contract.cjs services/shared/rag-index-contract.d.cts \
-    services/shared/rag-ui-contract.cjs services/shared/rag-ui-contract.d.cts \
-    services/shared/rag-core-contract.cjs services/shared/rag-core-contract.d.cts \
-    services/shared/opencode-model-scan.cjs services/shared/opencode-model-scan.d.cts \
-    services/shared/opencode-providers.cjs services/shared/opencode-providers.d.cts \
-    services/shared/adapter-parameters.cjs services/shared/adapter-parameters.d.cts \
-    services/shared/device-codex-inference.cjs services/shared/device-codex-inference.d.cts \
-    services/shared/codex-connector-pin.json \
-    services/shared/codex-connector-source.cjs services/shared/codex-connector-source.d.cts \
-    services/shared/project-snapshot.cjs services/shared/project-snapshot.d.cts \
-    services/shared/project-agents.cjs services/shared/project-agents.d.cts \
-    services/shared/project-configuration.cjs services/shared/project-configuration.d.cts \
-    services/shared/project-learning.cjs services/shared/project-learning.d.cts \
-    services/shared/project-learning-memory-sync.cjs services/shared/project-learning-memory-sync.d.cts \
-    services/shared/project-learning-quirks.cjs services/shared/project-learning-quirks.d.cts /app/services/shared/
+COPY services/shared/ /app/services/shared/
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
 

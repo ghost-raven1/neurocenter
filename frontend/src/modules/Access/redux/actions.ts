@@ -9,6 +9,11 @@ import { errorMessage } from '../../../common/utils/errorMessage';
  * @param {string} scope - project | collection | skill | package
  */
 export const fetchDecisions = createAsyncThunk('access/fetchDecisions', async (scope: string, { rejectWithValue }) => {
-    try { return await bffApi.getDecisions(scope); }
-    catch (error: unknown) { return rejectWithValue(errorMessage(error, 'Не удалось получить права. Проверьте соединение и повторите попытку.')); }
+    try {
+        return await bffApi.getDecisions(scope);
+    } catch (error: unknown) {
+        return rejectWithValue(
+            errorMessage(error, 'Не удалось получить права. Проверьте соединение и повторите попытку.'),
+        );
+    }
 });

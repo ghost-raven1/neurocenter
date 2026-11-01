@@ -1,8 +1,8 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import type { DeviceInstallations } from './device-installations';
 import type { InstallPlans } from './install-plans';
-import type { Job, JobInput } from './device-job.model';
+import type { IJob, IJobInput } from './device-job.model';
 import { assertExpectedBinding, managedBinding, assertPackageBridge } from './device-compatibility';
 import { assertLocalFeature } from './local-change-jobs';
 import {
@@ -26,7 +26,7 @@ const inputKeys = [
     'configurationPreparationJobId',
     'expectedConfigurationSchemaDigest',
 ];
-function binding(device: Device, projectId: string | undefined, expected: unknown) {
+function binding(device: IDevice, projectId: string | undefined, expected: unknown) {
     assertLocalFeature(device.report, 'local-mcp-config-v1');
     const id = managedBinding(device.report, projectId);
     assertExpectedBinding(id, expected, true);
@@ -38,7 +38,7 @@ function binding(device: Device, projectId: string | undefined, expected: unknow
 }
 async function preparation(
     store: DeviceStore,
-    device: Device,
+    device: IDevice,
     projectId: string,
     payload: Record<string, unknown>,
     id: unknown,
@@ -67,8 +67,8 @@ export async function mcpConfigurationJobPayload(
     store: DeviceStore,
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
-    input: JobInput,
+    device: IDevice,
+    input: IJobInput,
 ): Promise<Record<string, unknown> | undefined> {
     if (!CONFIGURATION_KINDS.includes(input.kind)) return undefined;
     if (Object.keys(input).some((key) => !inputKeys.includes(key)) || input.assetKind !== 'mcp')
@@ -116,8 +116,8 @@ export async function assertMcpConfigurationJob(
     store: DeviceStore,
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
-    job: Pick<Job, 'kind' | 'payload' | 'project_id'>,
+    device: IDevice,
+    job: Pick<IJob, 'kind' | 'payload' | 'project_id'>,
 ): Promise<void> {
     if (!CONFIGURATION_KINDS.includes(job.kind)) return;
     const payload = job.payload;

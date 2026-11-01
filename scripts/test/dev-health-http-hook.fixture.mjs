@@ -1,5 +1,5 @@
 /** Adapt the existing isolated fetch fixtures to direct HTTP probes, without opening real sockets. */
-export const healthHttpHook=`{
+export const healthHttpHook = `{
     const {EventEmitter}=await import('node:events');
     const cp=(await import('node:child_process')).default,originalSpawn=cp.spawn;
     cp.spawn=function(binary,...args){

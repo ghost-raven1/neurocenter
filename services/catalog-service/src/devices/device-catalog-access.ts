@@ -3,10 +3,10 @@ import type { PoolClient } from 'pg';
 import { assertProjectCatalogAsset, isProjectSkill } from './project-skill';
 import { checkedProjectPackage, projectAssetColumns, type IProjectPinRow } from '../catalog/project-asset-pins';
 
-type Queryable = Pick<PoolClient, 'query'>;
+type TQueryable = Pick<PoolClient, 'query'>;
 /** Root назначения проверяется по exact package SHA; leaf разрешены immutable графом root. */
 export async function assertDeviceCatalogAsset(
-    db: Queryable,
+    db: TQueryable,
     projectId: unknown,
     kind: unknown,
     id: unknown,
@@ -33,7 +33,7 @@ export async function assertDeviceCatalogAsset(
 
 /** Выдаёт immutable bytes назначения; архивирование head не требует связи с файловым сервисом. */
 export async function projectAssignedPackage(
-    db: Queryable,
+    db: TQueryable,
     projectId: string,
     kind: string,
     id: string,

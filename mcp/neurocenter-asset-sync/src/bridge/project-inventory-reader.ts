@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { safeTarget } from './workspace.js';
 import { fileFingerprint, readBoundedSnapshot } from './read-bounded.js';
 import { hash } from './state.js';
-import type { InventorySnapshot } from './project-inventory.model.js';
+import type { IInventorySnapshot } from './project-inventory.model.js';
 
 export const inventoryRelative = (value: string): boolean =>
     typeof value === 'string' &&
@@ -28,7 +28,7 @@ export class InventoryReadError extends Error {
 }
 /** Ограниченный снимок включает списки папок: новый соседний файл также отменяет принятие. */
 export class InventoryReader {
-    private readonly snapshots = new Map<string, InventorySnapshot>();
+    private readonly snapshots = new Map<string, IInventorySnapshot>();
     private bytes = 0;
     constructor(readonly root: string) {}
     private async target(relative: string): Promise<string> {
@@ -41,7 +41,7 @@ export class InventoryReader {
             throw new InventoryReadError('unsafe-path');
         }
     }
-    private remember(item: InventorySnapshot): void {
+    private remember(item: IInventorySnapshot): void {
         if (this.snapshots.size >= 2000 && !this.snapshots.has(item.relative)) {
             throw new InventoryReadError('read-limit');
         }
@@ -150,7 +150,7 @@ export class InventoryReader {
         }
         return files;
     }
-    values(): InventorySnapshot[] {
+    values(): IInventorySnapshot[] {
         return [...this.snapshots.values()].sort((a, b) => (a.relative < b.relative ? -1 : 1));
     }
     async verify(snapshots = this.values()): Promise<void> {

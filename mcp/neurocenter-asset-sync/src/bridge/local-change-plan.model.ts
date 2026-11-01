@@ -1,8 +1,8 @@
-import type { InstallSet, PackageRef } from './install-set.js';
-import type { FileChange } from './installation-journal.js';
-import type { SnapshotFingerprint } from './installation-plan.js';
+import type { IInstallSet, IPackageRef } from './install-set.js';
+import type { IFileChange } from './installation-journal.js';
+import type { ISnapshotFingerprint } from './installation-plan.js';
 
-export interface LocalChangeFile {
+export interface ILocalChangeFile {
     path: string;
     operation: 'add' | 'replace' | 'remove';
     beforeSha256: string | null;
@@ -11,7 +11,7 @@ export interface LocalChangeFile {
     afterBytes: number;
     binary: boolean;
 }
-export interface LocalChangeSummary {
+export interface ILocalChangeSummary {
     schemaVersion: 1;
     planId: string;
     revision: 1;
@@ -26,25 +26,25 @@ export interface LocalChangeSummary {
     checkedAt: string;
     expiresAt: string;
     status: 'prepared';
-    files: LocalChangeFile[];
+    files: ILocalChangeFile[];
     runtimeRepairRequired?: true;
 }
-export interface PrivateLocalChangePlan {
+export interface IPrivateLocalChangePlan {
     schemaVersion: 1;
-    summary: LocalChangeSummary;
+    summary: ILocalChangeSummary;
     root: string;
     installationManifest: string;
-    packages: PackageRef[];
-    changes: FileChange[];
-    snapshots: SnapshotFingerprint[];
+    packages: IPackageRef[];
+    changes: IFileChange[];
+    snapshots: ISnapshotFingerprint[];
     reportSha256: string;
     purpose?: 'adopt' | 'restore-local';
     sourceId?: string;
 }
-export interface ApplyLocalChangeOptions {
+export interface IApplyLocalChangeOptions {
     planId: string;
     revision: 1;
     digest: string;
     expectedBindingId: string;
-    installSet?: InstallSet;
+    installSet?: IInstallSet;
 }

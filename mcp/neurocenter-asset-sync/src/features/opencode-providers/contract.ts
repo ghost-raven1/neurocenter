@@ -15,8 +15,8 @@ export const {
     normalizeProviderReport,
 } = shared;
 export type {
-    OpenCodeProviderDescriptor,
-    OpenCodeProviderPreparation,
-    OpenCodeProviderStatus,
-    OpenCodeProviderOpened,
+    IOpenCodeProviderDescriptor as OpenCodeProviderDescriptor,
+    IOpenCodeProviderPreparation as OpenCodeProviderPreparation,
+    IOpenCodeProviderStatus as OpenCodeProviderStatus,
+    IOpenCodeProviderOpened as OpenCodeProviderOpened,
 } from '../../../../../services/shared/opencode-providers.cjs';

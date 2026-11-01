@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { hash, jobContext } from '../../bridge/state.js';
 import { InstallationPlan } from '../../bridge/installation-plan.js';
 import { withProjectFiles, commitChanges } from '../../bridge/installation-files.js';
-import type { ConfigurationContext, Authorize } from './context.js';
-import { discoverFiles, MAX_TEXT_BYTES, type ConfigurationFile } from './discovery.js';
+import type { TConfigurationContext, TAuthorize } from './context.js';
+import { discoverFiles, MAX_TEXT_BYTES, type TConfigurationFile } from './discovery.js';
 import { agentSection } from './agents.js';
 import {
     managedProtection,
@@ -19,25 +19,25 @@ export const conflict = () =>
         Error('Файлы изменились после открытия или предпросмотра. Скопируйте черновик и откройте файл заново.'),
         { code: 'PROJECT_CONFIGURATION_CONFLICT' },
     );
-interface OpenFile {
-    file: ConfigurationFile;
+interface IOpenFile {
+    file: TConfigurationFile;
     plan: InstallationPlan;
     before: string | null;
     revision: string;
 }
-interface Preview extends OpenFile {
+interface IPreview extends IOpenFile {
     after: string;
     digest: string;
     previewId: string;
 }
 /** Session snapshots and previews stay only in local memory; writes use the existing CAS journal. */
 export class ConfigurationEditor {
-    private files: ConfigurationFile[] = [];
-    private opened?: OpenFile;
-    private preview?: Preview;
+    private files: TConfigurationFile[] = [];
+    private opened?: IOpenFile;
+    private preview?: IPreview;
     constructor(
-        readonly context: ConfigurationContext,
-        private readonly authorize: Authorize,
+        readonly context: TConfigurationContext,
+        private readonly authorize: TAuthorize,
         private readonly current: () => void = () => {},
     ) {}
     private async admit() {

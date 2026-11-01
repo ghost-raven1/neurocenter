@@ -14,7 +14,7 @@ import { normalizeRuntimeArtifacts } from '../../../shared/runtime-artifacts.cjs
 import { randomUUID } from 'node:crypto';
 import type { IAccessActor } from '../access/access.model';
 import { projectLevel } from '../access/access.model';
-import { DeviceStore, type Device } from '../devices/device-store';
+import { DeviceStore, type IDevice } from '../devices/device-store';
 import { DeviceInstallations } from '../devices/device-installations';
 import { DeviceJobs } from '../devices/device-jobs';
 import { InstallPlans } from '../devices/install-plans';
@@ -27,7 +27,8 @@ import {
 } from '../../../shared/codex-connector-source.cjs';
 import { PluginAutoUpdateRepository } from './auto-update.repository';
 import { autoUpdateMutation, autoUpdateTarget, pendingAutoUpdate } from './auto-update.validation';
-import { autoUpdateView, type AutoUpdateRow, type AutoUpdateStatus, type AutoUpdateTarget } from './auto-update.types';
+import { autoUpdateView } from './auto-update.utils';
+import { type IAutoUpdateRow, type TAutoUpdateStatus, type IAutoUpdateTarget } from './auto-update.interfaces';
 
 /** Only archive byte inventory varies on a normal runtime release; launch/settings contracts stay exact. */
 function updateSettings(config: IPackage['config']): unknown {
@@ -41,7 +42,7 @@ function updateSettings(config: IPackage['config']): unknown {
 
 class UpdateBlocked extends Error {
     constructor(
-        readonly status: AutoUpdateStatus,
+        readonly status: TAutoUpdateStatus,
         message: string,
         readonly delay: number | null,
     ) {
@@ -85,7 +86,7 @@ export class PluginAutoUpdateService implements OnModuleInit, OnModuleDestroy {
     }
     async save(actor: IAccessActor, raw: unknown) {
         const input = autoUpdateMutation(raw);
-        const authorize = async (db: PoolClient, previous: AutoUpdateRow | undefined) => {
+        const authorize = async (db: PoolClient, previous: IAutoUpdateRow | undefined) => {
             if (input.enabled) {
                 const device = await this.permission(actor, input, 2, db);
                 await requireFeatureEnabled('plugin_auto_updates');
@@ -106,10 +107,10 @@ export class PluginAutoUpdateService implements OnModuleInit, OnModuleDestroy {
     }
     private async permission(
         actor: IAccessActor,
-        target: AutoUpdateTarget,
+        target: IAutoUpdateTarget,
         level: number,
         db?: PoolClient,
-    ): Promise<Device> {
+    ): Promise<IDevice> {
         const claims = await this.store.access.claims(actor.email),
             device = await this.store.owned(actor, target.deviceId, level === 1, db);
         if (
@@ -119,7 +120,7 @@ export class PluginAutoUpdateService implements OnModuleInit, OnModuleDestroy {
             throw new ForbiddenException('Недостаточно прав для автообновления плагина в выбранном проекте.');
         return device;
     }
-    private async installed(actor: IAccessActor, target: AutoUpdateTarget, device: Device, db?: PoolClient) {
+    private async installed(actor: IAccessActor, target: IAutoUpdateTarget, device: IDevice, db?: PoolClient) {
         if (managedBinding(device.report, target.projectId) !== target.bindingId)
             throw new ConflictException('Привязка папки изменилась. Выберите текущую установку.');
         const packages = await this.installations.workspacePackages(
@@ -155,7 +156,7 @@ export class PluginAutoUpdateService implements OnModuleInit, OnModuleDestroy {
             await this.process(row);
         }
     }
-    async process(row: AutoUpdateRow): Promise<void> {
+    async process(row: IAutoUpdateRow): Promise<void> {
         const actor = { email: row.owner_email, activeRole: row.actor_role },
             target = {
                 deviceId: row.device_id,

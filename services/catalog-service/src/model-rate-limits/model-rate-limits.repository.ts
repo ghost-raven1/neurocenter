@@ -2,16 +2,16 @@ import { ConflictException, NotFoundException, ServiceUnavailableException } fro
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { authorizeAccessWrite } from '../access/access-write-policy';
+import { DEFAULT_MODEL_RATE_LIMIT } from './model-rate-limits.constants';
 import {
-    DEFAULT_MODEL_RATE_LIMIT,
-    type ModelRateAdmission,
-    type ModelRateLimitInput,
-    type ModelRateLimitPolicy,
-} from './model-rate-limits.types';
+    type IModelRateAdmission,
+    type IModelRateLimitInput,
+    type IModelRateLimitPolicy,
+} from './model-rate-limits.interfaces';
 import { modelRateBeforeAttempt } from './model-rate-limits.wait';
 import { modelRateCheckout, modelRateClient } from './model-rate-limits.client';
 
-interface PolicyRow {
+interface IPolicyRow {
     model_id: string;
     revision: string | number;
     requests: number;
@@ -20,7 +20,7 @@ interface PolicyRow {
     updated_at: Date | string;
     updated_by: string;
 }
-const policy = (id: string, row?: PolicyRow): ModelRateLimitPolicy =>
+const policy = (id: string, row?: IPolicyRow): IModelRateLimitPolicy =>
     row
         ? {
               modelId: id,
@@ -49,10 +49,10 @@ export const ratePolicySaveUnconfirmed = () =>
 /** One nonblocking transaction admits one physical call across all catalog replicas. */
 export class ModelRateLimitsRepository {
     constructor(readonly pool: Pool) {}
-    async read(id: string): Promise<ModelRateLimitPolicy> {
+    async read(id: string): Promise<IModelRateLimitPolicy> {
         return policy(
             id,
-            (await this.pool.query<PolicyRow>('SELECT * FROM model_api_rate_limits WHERE model_id=$1', [id])).rows[0],
+            (await this.pool.query<IPolicyRow>('SELECT * FROM model_api_rate_limits WHERE model_id=$1', [id])).rows[0],
         );
     }
     private async lock(db: PoolClient, id: string): Promise<boolean> {
@@ -67,7 +67,7 @@ export class ModelRateLimitsRepository {
         id: string,
         signal?: AbortSignal,
         beforeAttempt?: () => Promise<boolean | void>,
-    ): Promise<ModelRateAdmission> {
+    ): Promise<IModelRateAdmission> {
         const db = await modelRateCheckout(this.pool, signal),
             client = modelRateClient(db, signal);
         let begun = false;
@@ -87,7 +87,7 @@ export class ModelRateLimitsRepository {
             signal?.throwIfAborted();
             const current = policy(
                 id,
-                (await db.query<PolicyRow>('SELECT * FROM model_api_rate_limits WHERE model_id=$1', [id])).rows[0],
+                (await db.query<IPolicyRow>('SELECT * FROM model_api_rate_limits WHERE model_id=$1', [id])).rows[0],
             );
             const clock = (await db.query<{ instant: string }>('SELECT clock_timestamp()::text AS instant')).rows[0]
                 .instant;
@@ -132,11 +132,11 @@ export class ModelRateLimitsRepository {
     }
     async trySave(
         id: string,
-        input: ModelRateLimitInput,
+        input: IModelRateLimitInput,
         actor: string,
         authorize: () => Promise<unknown>,
         signal?: AbortSignal,
-    ): Promise<ModelRateLimitPolicy | null> {
+    ): Promise<IModelRateLimitPolicy | null> {
         const db = await modelRateCheckout(this.pool, signal),
             client = modelRateClient(db, signal);
         let begun = false;
@@ -160,14 +160,14 @@ export class ModelRateLimitsRepository {
             signal?.throwIfAborted();
             const current = policy(
                 id,
-                (await db.query<PolicyRow>('SELECT * FROM model_api_rate_limits WHERE model_id=$1', [id])).rows[0],
+                (await db.query<IPolicyRow>('SELECT * FROM model_api_rate_limits WHERE model_id=$1', [id])).rows[0],
             );
             if (current.revision !== input.expectedRevision)
                 throw new ConflictException('Настройки лимита изменились. Обновите сведения и повторите сохранение.');
             if (!Number.isSafeInteger(current.revision + 1))
                 throw new ConflictException('Достигнут предел ревизий настроек лимита. Обратитесь к администратору.');
             const saved = (
-                await db.query<PolicyRow>(
+                await db.query<IPolicyRow>(
                     `INSERT INTO model_api_rate_limits(model_id,revision,requests,window_ms,enabled,updated_by,updated_at) VALUES($1,$2,$3,$4,$5,$6,clock_timestamp())
     ON CONFLICT(model_id) DO UPDATE SET revision=EXCLUDED.revision,requests=EXCLUDED.requests,window_ms=EXCLUDED.window_ms,enabled=EXCLUDED.enabled,updated_by=EXCLUDED.updated_by,updated_at=EXCLUDED.updated_at RETURNING *`,
                     [id, current.revision + 1, input.requests, input.windowMs, input.enabled, actor],

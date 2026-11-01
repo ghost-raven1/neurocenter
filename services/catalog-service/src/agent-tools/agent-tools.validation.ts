@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { AgentToolAction, AgentToolGrant } from './agent-tools.types';
-import type { ChatMessage } from '../model-chat/chat.types';
+import type { TAgentToolAction, IAgentToolGrant } from './agent-tools.interfaces';
+import type { IChatMessage } from '../model-chat/chat.interfaces';
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value: unknown, keys: string[]): value is Record<string, unknown> =>
@@ -10,7 +10,7 @@ const text = (value: unknown, max: number): value is string =>
     typeof value === 'string' && !!value.trim() && Buffer.byteLength(value) <= max && !value.includes('\0');
 export const agentToolHash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** A new tool grant is explicit and carries the exact embedding version; no MCP capability is inferred. */
-export function agentToolGrant(raw: unknown, projectId?: string | null): AgentToolGrant | undefined {
+export function agentToolGrant(raw: unknown, projectId?: string | null): IAgentToolGrant | undefined {
     if (raw === undefined || raw === null) return undefined;
     if (
         !exact(raw, ['protocol', 'rag', 'publicChats', 'systemRoles']) ||
@@ -21,7 +21,7 @@ export function agentToolGrant(raw: unknown, projectId?: string | null): AgentTo
         !projectId
     )
         throw new BadRequestException('Выберите инструменты для этого проекта.');
-    let publicChats: AgentToolGrant['publicChats'];
+    let publicChats: IAgentToolGrant['publicChats'];
     if (raw.publicChats !== undefined) {
         const value = raw.publicChats;
         if (
@@ -50,7 +50,7 @@ export function agentToolGrant(raw: unknown, projectId?: string | null): AgentTo
     };
 }
 /** Parse one complete JSON document, optionally fenced; never extract or repair actions from prose. */
-export function agentToolAction(content: string, grant: AgentToolGrant): AgentToolAction {
+export function agentToolAction(content: string, grant: IAgentToolGrant): TAgentToolAction {
     if (Buffer.byteLength(content) > 8192)
         throw new BadRequestException(
             'Ответ шага инструмента превышает предел 8 КиБ. Сузьте задачу перед новым явным запуском. Автоматического повтора нет.',
@@ -84,7 +84,7 @@ export function agentToolAction(content: string, grant: AgentToolGrant): AgentTo
         return { action: 'request_system_role', roleId: value.roleId as string, instruction: value.instruction };
     throw new BadRequestException('Шаг не входит в подтверждённые возможности агента.');
 }
-export function agentToolPrompt(grant: AgentToolGrant): string {
+export function agentToolPrompt(grant: IAgentToolGrant): string {
     return (
         'Сейчас выполняется только выбор следующего шага инструмента. Обычный ответ по профилю агента будет отдельным этапом после завершения работы инструментов. ' +
         'Используется явный протокол json-actions-v1, не native function calling. Выбери один следующий шаг и верни только законченный JSON, без пояснений и Markdown. ' +
@@ -102,7 +102,7 @@ export function agentToolPrompt(grant: AgentToolGrant): string {
     );
 }
 /** The same mandatory envelope is fitted before retrieval and used by the real planner. */
-export function agentToolContext(projectId: string, grant: AgentToolGrant): ChatMessage[] {
+export function agentToolContext(projectId: string, grant: IAgentToolGrant): IChatMessage[] {
     return [
         { role: 'system', content: agentToolPrompt(grant) },
         {

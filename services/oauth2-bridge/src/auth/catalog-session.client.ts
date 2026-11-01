@@ -1,6 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import axios, { type AxiosInstance } from 'axios';
-import type { SessionCreate, SessionIdentity, StoredSession } from './catalog-session.types';
+import type { ISessionCreate, ISessionIdentity, IStoredSession } from './catalog-session.interfaces';
 
 function exact(value: unknown, keys: string[]): value is Record<string, unknown> {
     return (
@@ -14,7 +14,7 @@ function exact(value: unknown, keys: string[]): value is Record<string, unknown>
 function text(value: unknown, max: number): value is string {
     return typeof value === 'string' && !!value.trim() && value.length <= max && !/[\x00-\x1f\x7f]/.test(value);
 }
-function identity(value: unknown): value is SessionIdentity {
+function identity(value: unknown): value is ISessionIdentity {
     return (
         exact(value, ['id', 'principalName', 'email', 'displayName']) &&
         text(value.id, 512) &&
@@ -55,11 +55,11 @@ export class CatalogSessionClient {
             throw unavailable();
         }
     }
-    async create(input: SessionCreate): Promise<void> {
+    async create(input: ISessionCreate): Promise<void> {
         const value = await this.request('post', '', input);
         if (!exact(value, ['created']) || value.created !== true) throw unavailable();
     }
-    async find(hash: string): Promise<StoredSession | null> {
+    async find(hash: string): Promise<IStoredSession | null> {
         const value = await this.request('get', '/' + hash);
         if (exact(value, ['found']) && value.found === false) return null;
         if (

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { BadGatewayException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { normalizeDependencyPins, type IDependencyPin } from '../../../shared/dependency-pins.cjs';
-import { parseSkillFile } from './frontmatter';
+import { parseSkillFile } from './frontmatter/frontmatter';
 
 export interface ISkillDependencyReservation {
     key: string;

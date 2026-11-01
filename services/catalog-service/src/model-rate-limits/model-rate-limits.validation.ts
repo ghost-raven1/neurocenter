@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import type { ModelRateLimitInput } from './model-rate-limits.types';
+import type { IModelRateLimitInput } from './model-rate-limits.interfaces';
 
 /** Policy changes do not mutate a model descriptor or invalidate its verification pin. */
-export function modelRateLimitInput(raw: unknown): ModelRateLimitInput {
+export function modelRateLimitInput(raw: unknown): IModelRateLimitInput {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw))
         throw new BadRequestException('Передайте настройки лимита модели.');
     const value = raw as Record<string, unknown>;

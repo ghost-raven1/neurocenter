@@ -3,16 +3,16 @@ import { pathToFileURL } from 'node:url';
 import { runtimeArtifactConnection } from '../features/runtime-artifacts/connection.js';
 import { projectFolder, projectBindingId, safeTarget } from './workspace.js';
 import { hash } from './state.js';
-import { verify, type Package } from './package.js';
+import { verify, type IPackage } from './package.js';
 import { InstallationPlan } from './installation-plan.js';
 import { InstallationLedger } from './installation-ledger.js';
 import { assetBase, assetKey, receiptPath, removalReceipt, sameValue } from './installation-receipt.js';
-import { commitChanges, removalCompleted, withProjectFiles, type FileChange } from './installation-files.js';
+import { commitChanges, removalCompleted, withProjectFiles, type IFileChange } from './installation-files.js';
 
 /** Удаляет только неизменённые файлы пакета; личный журнал сохраняет данные для восстановления. */
 export async function uninstall(
     projectId: string,
-    pkg: Package,
+    pkg: IPackage,
     authorize: () => Promise<unknown>,
     progress: (percent: number, message: string) => Promise<unknown>,
 ) {
@@ -43,7 +43,7 @@ export async function uninstall(
         const receipt = removalReceipt(raw, pkg);
         const ledger = await InstallationLedger.load(plan);
         ledger.assertRemoval(pkg);
-        const changes: FileChange[] = [];
+        const changes: IFileChange[] = [];
         for (const [relative, digest] of Object.entries(receipt.files)) {
             const current = await plan.read(relative, 'base64');
             if (current === null) {

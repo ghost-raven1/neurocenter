@@ -4,31 +4,31 @@ import {
     normalizeAgentMethodWorkflowPayload,
     normalizeAgentMethodWorkflowResult,
 } from '../../../shared/agent-method-workflow.cjs';
-import type { ProjectChatActor } from '../project-chat/project-chat.policy';
-import type { ProjectChatDb } from '../project-chat/project-chat.types';
+import type { IProjectChatActor } from '../project-chat/project-chat.policy';
+import type { TProjectChatDb } from '../project-chat/project-chat.interfaces';
 import type {
-    ProjectChatMethodWorkflow,
-    ProjectChatMethodWorkflowPage,
-    MethodChatPublication,
-} from './chat-workflows.types';
+    IProjectChatMethodWorkflow,
+    IProjectChatMethodWorkflowPage,
+    TMethodChatPublication,
+} from './chat-workflows.interfaces';
 
-interface ReceiptRow {
+interface IReceiptRow {
     id: string;
     source_message_id: string;
     email: string;
     payload: unknown;
-    state: ProjectChatMethodWorkflow['state'];
+    state: IProjectChatMethodWorkflow['state'];
     percent: number | null;
     created_at: Date | string;
     started_at: Date | string | null;
     updated_at: Date | string;
-    publication_state: MethodChatPublication;
+    publication_state: TMethodChatPublication;
     public_result: unknown;
 }
 const instant = (value: Date | string) => new Date(value).toISOString();
 const columns =
     'job.id,link.source_message_id,job.email,job.payload,job.state,job.percent,job.created_at,job.started_at,job.updated_at,link.publication_state,link.public_result';
-function receipt(row: ReceiptRow, actor: ProjectChatActor): ProjectChatMethodWorkflow {
+function receipt(row: IReceiptRow, actor: IProjectChatActor): IProjectChatMethodWorkflow {
     const payload = normalizeAgentMethodWorkflowPayload(row.payload);
     if (!payload.agent) throw new Error('Linked workflow requires an accepted project agent.');
     return {
@@ -49,7 +49,7 @@ function receipt(row: ReceiptRow, actor: ProjectChatActor): ProjectChatMethodWor
             : {}),
     };
 }
-function page(rows: ReceiptRow[], limit: number, actor: ProjectChatActor): ProjectChatMethodWorkflowPage {
+function page(rows: IReceiptRow[], limit: number, actor: IProjectChatActor): IProjectChatMethodWorkflowPage {
     const items = rows.slice(0, limit).map((row) => receipt(row, actor)),
         hasMore = rows.length > limit;
     return { items, hasMore, nextCursor: hasMore ? items.at(-1)!.jobId : null };
@@ -57,15 +57,15 @@ function page(rows: ReceiptRow[], limit: number, actor: ProjectChatActor): Proje
 
 /** Initial history carries only the newest receipt per source and a source-scoped continuation. */
 export async function projectChatMethodWorkflows(
-    db: ProjectChatDb,
+    db: TProjectChatDb,
     projectId: string,
     roomId: string,
     messageIds: string[],
-    actor: ProjectChatActor,
-): Promise<Map<string, ProjectChatMethodWorkflowPage>> {
-    const grouped = new Map<string, ReceiptRow[]>();
+    actor: IProjectChatActor,
+): Promise<Map<string, IProjectChatMethodWorkflowPage>> {
+    const grouped = new Map<string, IReceiptRow[]>();
     if (!messageIds.length) return new Map();
-    const { rows } = await db.query<ReceiptRow>(
+    const { rows } = await db.query<IReceiptRow>(
         `SELECT latest.* FROM unnest($3::uuid[]) AS source(id) CROSS JOIN LATERAL (
         SELECT ${columns} FROM project_chat_method_workflows link JOIN bridge_jobs job ON job.id=link.job_id
         WHERE link.project_id=$1 AND link.room_id=$2 AND link.source_message_id=source.id ORDER BY link.created_at DESC,link.job_id DESC LIMIT 2) latest`,
@@ -81,14 +81,14 @@ export async function projectChatMethodWorkflows(
 
 /** A foreign cursor cannot enumerate another room or source; timestamp text preserves PostgreSQL precision. */
 export async function projectChatMethodWorkflowPage(
-    db: ProjectChatDb,
+    db: TProjectChatDb,
     projectId: string,
     roomId: string,
     messageId: string,
-    actor: ProjectChatActor,
+    actor: IProjectChatActor,
     before?: string,
     limit = 8,
-): Promise<ProjectChatMethodWorkflowPage> {
+): Promise<IProjectChatMethodWorkflowPage> {
     let cursor: string | null = null;
     if (before) {
         const row = (
@@ -101,7 +101,7 @@ export async function projectChatMethodWorkflowPage(
         if (!row) throw new NotFoundException('Квитанция задачи не найдена в этом сообщении.');
         cursor = row.at;
     }
-    const { rows } = await db.query<ReceiptRow>(
+    const { rows } = await db.query<IReceiptRow>(
         `SELECT ${columns} FROM project_chat_method_workflows link JOIN bridge_jobs job ON job.id=link.job_id
         WHERE link.project_id=$1 AND link.room_id=$2 AND link.source_message_id=$3
         AND ($4::timestamptz IS NULL OR (link.created_at,link.job_id)<($4::timestamptz,$5::text)) ORDER BY link.created_at DESC,link.job_id DESC LIMIT $6`,

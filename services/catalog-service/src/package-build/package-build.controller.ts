@@ -1,4 +1,4 @@
-import type { RepositoryRelease } from '../../../shared/github-release-source.cjs';
+import type { IRepositoryRelease } from '../../../shared/github-release-source.cjs';
 import { BadRequestException, Body, Controller, Delete, Get, Head, Param, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { assertInternal } from '../access/access.controller';
@@ -46,7 +46,7 @@ export class PackageBuildController {
             ref,
             subdirectory,
             entrypoint,
-            ...(parsed !== undefined ? { release: parsed as RepositoryRelease } : {}),
+            ...(parsed !== undefined ? { release: parsed as IRepositoryRelease } : {}),
         });
     }
     @Get('requests/:requestKey') request(@Req() req: Request, @Param('requestKey') key: string) {

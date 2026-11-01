@@ -13,19 +13,19 @@ import type { IOperation, IOperationPage, TOperationState } from '../catalog/dto
 import { ModelsService } from '../models/models.service';
 import type { IModelActor } from '../models/model-access';
 import { ProjectReindexService } from '../models/project-reindex.service';
-import type { IReindexRow } from '../models/project-reindex.types';
+import type { IReindexRow } from '../models/project-reindex.interfaces';
 import { DeviceJobs } from '../devices/device-jobs';
 import { deviceJobRetryPolicy } from '../devices/device-job-retry';
 import { projectLevel } from '../access/access.model';
 import { publicationHash } from '../publication/publication-validation';
 import { PackageBuildService } from '../package-build/package-build.service';
-import type { BuildRow } from '../package-build/package-build.model';
+import type { IBuildRow } from '../package-build/package-build.model';
 import { OperationActionStore } from './operation-action-store';
 import { canCancelBridgeJob } from './operation-action-policy';
 import { projectRoleState } from '../system-roles/system-role.operations';
 
-type Action = 'retry' | 'cancel';
-type Capabilities = NonNullable<IOperation['actions']>;
+type TAction = 'retry' | 'cancel';
+type TCapabilities = NonNullable<IOperation['actions']>;
 interface IResult {
     operationId: string;
     state: TOperationState;
@@ -33,7 +33,7 @@ interface IResult {
 }
 interface IReceipt {
     operation_id: string;
-    action: Action;
+    action: TAction;
     digest: string;
     target: Record<string, unknown>;
     result: IResult | null;
@@ -69,12 +69,12 @@ export class OperationActionsService implements OnModuleInit {
     private async snapshot(
         operation: IOperation,
         actor: IModelActor,
-    ): Promise<{ capabilities: Capabilities; target: Record<string, unknown> }> {
+    ): Promise<{ capabilities: TCapabilities; target: Record<string, unknown> }> {
         const own = operation.actor === actor.email;
         let target: Record<string, unknown> = {};
-        let executor: Capabilities['executor'] = 'history';
-        let retry: Capabilities['retry'] = no('Историческая запись не содержит исполняемого задания.'),
-            cancel: Capabilities['cancel'] = no('Историческая запись не содержит исполняемого задания.');
+        let executor: TCapabilities['executor'] = 'history';
+        let retry: TCapabilities['retry'] = no('Историческая запись не содержит исполняемого задания.'),
+            cancel: TCapabilities['cancel'] = no('Историческая запись не содержит исполняемого задания.');
         if (operation.resourceType === 'system-role' && uuid(operation.resourceId)) {
             const row = (
                 await this.models.pool.query(
@@ -194,7 +194,7 @@ export class OperationActionsService implements OnModuleInit {
             const job = uuid(operation.resourceId)
                 ? (
                       await this.models.pool.query<
-                          Pick<BuildRow, 'id' | 'state' | 'actor' | 'request_key' | 'publication_started_at'>
+                          Pick<IBuildRow, 'id' | 'state' | 'actor' | 'request_key' | 'publication_started_at'>
                       >('SELECT id,state,actor,request_key,publication_started_at FROM tool_build_jobs WHERE id=$1', [
                           operation.resourceId,
                       ])
@@ -262,7 +262,7 @@ export class OperationActionsService implements OnModuleInit {
             throw new BadRequestException('Нужны ключ запроса и актуальная проверка действия.');
         return input as { requestKey: string; expectedDigest: string };
     }
-    async dispatch(request: Request, id: string, action: Action, raw: unknown): Promise<IResult> {
+    async dispatch(request: Request, id: string, action: TAction, raw: unknown): Promise<IResult> {
         const input = this.input(raw),
             actor = await this.models.actor(request),
             lease = await this.requests.connect();
@@ -369,10 +369,10 @@ export class OperationActionsService implements OnModuleInit {
     private async execute(
         request: Request,
         operation: IOperation,
-        action: Action,
+        action: TAction,
         key: string,
         target: Record<string, unknown>,
-        executor: Capabilities['executor'],
+        executor: TCapabilities['executor'],
         actor: IModelActor,
     ): Promise<IResult> {
         if (executor === 'system-role' && action === 'cancel') {

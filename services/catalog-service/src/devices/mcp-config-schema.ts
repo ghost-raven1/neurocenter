@@ -11,7 +11,7 @@ const canonicalV4 = (value: unknown): unknown =>
             )
           : value;
 
-export interface LocalConfigurationField {
+export interface ILocalConfigurationField {
     id: string;
     label: string;
     type: 'string' | 'url' | 'number' | 'boolean';
@@ -19,11 +19,11 @@ export interface LocalConfigurationField {
     secret?: boolean;
     target: { kind: 'env' | 'header'; name: string; prefix?: string };
 }
-export interface LocalConfigurationSchema {
+export interface ILocalConfigurationSchema {
     schemaVersion: 1;
-    fields: LocalConfigurationField[];
+    fields: ILocalConfigurationField[];
 }
-export type ConfigurationValues = Record<string, string | number | boolean>;
+export type TConfigurationValues = Record<string, string | number | boolean>;
 const forbiddenEnv =
     /^(HOME|USERPROFILE|PATH|SHELL|ENV|BASH_ENV|APPDATA|LOCALAPPDATA|TMPDIR|TMP|TEMP|NODE_OPTIONS|NODE_PATH|XDG_.*|OPENCODE_.*|BUN_.*|NPM_.*|PIP_.*|PYTHON.*|LD_.*|DYLD_.*)$/i;
 const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(value).every((key) => keys.includes(key));
@@ -32,13 +32,13 @@ const exact = (value: Record<string, unknown>, keys: string[]) => Object.keys(va
 export function parseLocalConfiguration(pkg: {
     plugin: { kind: string };
     config: unknown;
-}): LocalConfigurationSchema | undefined {
+}): ILocalConfigurationSchema | undefined {
     const config = pkg.config as { extra?: { localConfiguration?: unknown }; transport?: string } | null;
     const source = config?.extra?.localConfiguration;
     if (source === undefined) {
         return undefined;
     }
-    const schema = source as LocalConfigurationSchema;
+    const schema = source as ILocalConfigurationSchema;
     if (
         pkg.plugin.kind !== 'mcp' ||
         !schema ||
@@ -107,7 +107,7 @@ export function parseLocalConfiguration(pkg: {
     }
     return structuredClone(schema);
 }
-export function localConfigurationDigest(schema: LocalConfigurationSchema): string {
+export function localConfigurationDigest(schema: ILocalConfigurationSchema): string {
     return createHash('sha256')
         .update(JSON.stringify(canonicalV4(schema)))
         .digest('hex');

@@ -3,8 +3,8 @@ import { hash } from './state.js';
 import { projectFolder, projectBindingId, projectInstanceId } from './workspace.js';
 import { CONFIG_PATHS, commitChanges, withProjectFiles } from './installation-files.js';
 import { assetBase, assetKey, legacyMcpConfigKey, mcpConfigKey, sameValue } from './installation-receipt.js';
-import { packageRef, sortedRefs, type InstallSet } from './install-set.js';
-import type { Package } from './package.js';
+import { packageRef, sortedRefs, type IInstallSet } from './install-set.js';
+import type { IPackage } from './package.js';
 import { validateChanges } from './installation-journal.js';
 import { InventoryReader } from './project-inventory-reader.js';
 import { readInventoryScan } from './project-inventory-storage.js';
@@ -18,11 +18,15 @@ import {
     saveLocalChangePlan,
     verifyLocalChangeSnapshot,
 } from './local-change-plan-storage.js';
-import type { ApplyLocalChangeOptions, LocalChangeSummary, PrivateLocalChangePlan } from './local-change-plan.model.js';
-import type { AdoptCandidateOptions } from './project-inventory.model.js';
+import type {
+    IApplyLocalChangeOptions,
+    ILocalChangeSummary,
+    IPrivateLocalChangePlan,
+} from './local-change-plan.model.js';
+import type { IAdoptCandidateOptions } from './project-inventory.model.js';
 
-type Authorize = () => Promise<unknown>;
-type Progress = (percent: number, message: string) => Promise<unknown>;
+type TAuthorize = () => Promise<unknown>;
+type TProgress = (percent: number, message: string) => Promise<unknown>;
 async function assertIdentity(projectId: string, root: string, bindingId: string, instanceId: string): Promise<void> {
     if (
         (await projectFolder(projectId)) !== root ||
@@ -41,11 +45,11 @@ const fresh = (checkedAt: string, expiresAt: string): void => {
 /** Готовит принятие точного локального совпадения: исходные файлы и подключения не переписываются. */
 export async function prepareAdoptInstallation(
     projectId: string,
-    pkg: Package,
-    set: InstallSet | undefined,
-    options: AdoptCandidateOptions,
-    authorize: Authorize,
-): Promise<LocalChangeSummary> {
+    pkg: IPackage,
+    set: IInstallSet | undefined,
+    options: IAdoptCandidateOptions,
+    authorize: TAuthorize,
+): Promise<ILocalChangeSummary> {
     options = structuredClone(options);
     const frozen = frozenAdoption(pkg, set);
     pkg = frozen.root;
@@ -97,7 +101,7 @@ export async function prepareAdoptInstallation(
         await prepared.plan.verifySnapshot();
         await prepared.reader.verify();
         const checkedAt = new Date();
-        const summary: LocalChangeSummary = {
+        const summary: ILocalChangeSummary = {
             schemaVersion: 1,
             planId: randomUUID(),
             revision: 1,
@@ -106,7 +110,7 @@ export async function prepareAdoptInstallation(
             bindingId: inventory.bindingId,
             instanceId: inventory.instanceId,
             assetId: pkg.plugin.id,
-            assetKind: pkg.plugin.kind as LocalChangeSummary['assetKind'],
+            assetKind: pkg.plugin.kind as ILocalChangeSummary['assetKind'],
             version: pkg.plugin.version,
             manifest: pkg.manifest.sha256,
             checkedAt: checkedAt.toISOString(),
@@ -114,7 +118,7 @@ export async function prepareAdoptInstallation(
             status: 'prepared',
             files: localChangeFiles(changes),
         };
-        const saved: PrivateLocalChangePlan = {
+        const saved: IPrivateLocalChangePlan = {
             schemaVersion: 1,
             summary,
             root,
@@ -137,10 +141,10 @@ export async function prepareAdoptInstallation(
 /** После отдельного разрешения атомарно создаёт только metadata и сохраняет исходные байты без изменений. */
 export async function applyAdoptInstallation(
     projectId: string,
-    pkg: Package,
-    options: ApplyLocalChangeOptions,
-    authorize: Authorize,
-    progress: Progress,
+    pkg: IPackage,
+    options: IApplyLocalChangeOptions,
+    authorize: TAuthorize,
+    progress: TProgress,
 ) {
     options = structuredClone(options);
     const frozen = frozenAdoption(pkg, options.installSet);

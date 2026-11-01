@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable, Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { hash, stateDir } from '../../bridge/state.js';
 import { atomicText } from '../../bridge/atomic-file.js';
 import { enforcePrivateWindowsAcl } from '../local-configuration/private-store.js';
@@ -19,26 +19,26 @@ import {
 } from './model.js';
 import { RuntimeArtifactCapacityError } from './capacity-error.js';
 
-export interface RuntimeArtifactResolution {
+export interface IRuntimeArtifactResolution {
     target: string;
     sha256: string;
     root: string;
     entrypoint: string;
     executable: boolean;
 }
-export interface ArtifactDownloadOptions {
+export interface IArtifactDownloadOptions {
     download: (artifact: RuntimeArtifact) => Promise<Readable>;
     cacheRoot?: string;
     repairCorrupt?: boolean;
     beforeCommit?: () => Promise<unknown>;
 }
-interface StagingOwner {
+interface IStagingOwner {
     schemaVersion: number;
     id: string;
     pid: number;
     replacement?: { sha256: string; quarantine: string };
 }
-interface CacheIndex {
+interface ICacheIndex {
     schemaVersion: 1;
     artifact: RuntimeArtifact;
     entries: RuntimeArtifactEntry[];
@@ -183,7 +183,7 @@ async function recoverStaging(root: string): Promise<void> {
         } finally {
             await ownerHandle.close();
         }
-        const owner = JSON.parse(raw) as StagingOwner;
+        const owner = JSON.parse(raw) as IStagingOwner;
         if (
             owner.schemaVersion !== 1 ||
             name !== '.' + owner.id + '.partial' ||
@@ -236,7 +236,7 @@ async function recoverStaging(root: string): Promise<void> {
     }
 }
 
-function selected(pkg: Package): RuntimeArtifact | undefined {
+function selected(pkg: IPackage): RuntimeArtifact | undefined {
     const artifacts = normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts);
     if (!artifacts.length) {
         return undefined;
@@ -254,7 +254,7 @@ async function verified(
     root: string,
     artifact: RuntimeArtifact,
     folder = path.join(root, artifact.sha256),
-): Promise<RuntimeArtifactResolution> {
+): Promise<IRuntimeArtifactResolution> {
     const info = await fs.lstat(folder);
     if (!info.isDirectory() || info.isSymbolicLink()) {
         throw new Error('Кэш готового комплекта повреждён.');
@@ -263,13 +263,13 @@ async function verified(
         path.join(folder, INDEX),
         constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
     );
-    let index: CacheIndex;
+    let index: ICacheIndex;
     try {
         const stat = await handle.stat();
         if (!stat.isFile() || stat.nlink !== 1 || stat.size > 8 * 1024 ** 2) {
             throw new Error('Повреждена опись готового комплекта.');
         }
-        index = JSON.parse(await handle.readFile('utf8')) as CacheIndex;
+        index = JSON.parse(await handle.readFile('utf8')) as ICacheIndex;
     } finally {
         await handle.close();
     }
@@ -387,9 +387,9 @@ async function verified(
 
 /** Целевой объём кэша мягкий; физическое место проверяется до сети, прежний комплект не удаляется. */
 export async function ensureRuntimeArtifact(
-    pkg: Package,
-    options: ArtifactDownloadOptions,
-): Promise<RuntimeArtifactResolution | undefined> {
+    pkg: IPackage,
+    options: IArtifactDownloadOptions,
+): Promise<IRuntimeArtifactResolution | undefined> {
     const artifact = selected(pkg);
     if (!artifact) {
         return undefined;
@@ -542,9 +542,9 @@ export async function ensureRuntimeArtifact(
 
 /** Планировщик и launcher используют только уже загруженный полностью проверенный комплект. */
 export async function resolvePreparedRuntimeArtifact(
-    pkg: Package,
+    pkg: IPackage,
     root = cacheRoot(),
-): Promise<RuntimeArtifactResolution | undefined> {
+): Promise<IRuntimeArtifactResolution | undefined> {
     const artifact = selected(pkg);
     return artifact ? verified(root, artifact) : undefined;
 }

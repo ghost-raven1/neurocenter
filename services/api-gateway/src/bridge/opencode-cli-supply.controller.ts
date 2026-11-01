@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
-import { normalizeOpenCodeInstallSupply, type OpenCodeInstallSupply } from '../../../shared/opencode-cli-install.cjs';
+import { normalizeOpenCodeInstallSupply, type IOpenCodeInstallSupply } from '../../../shared/opencode-cli-install.cjs';
 import { BridgeSupplyService } from './bridge-supply.service';
 
 /** Catalog approves installation against the same current supply that Gateway actually serves. */
@@ -25,7 +25,7 @@ export class OpenCodeCliSupplyController {
         @Param('target') target: string,
         @Req() req: Request,
         @Res({ passthrough: true }) res: Response,
-    ): Promise<OpenCodeInstallSupply> {
+    ): Promise<IOpenCodeInstallSupply> {
         const expected = process.env.NEUROCENTER_INTERNAL_TOKEN || '';
         if (
             !expected ||

@@ -1,1 +1,1 @@
-export function ggufImportContentRoute(method:unknown,path:unknown):string|undefined;
+export function ggufImportContentRoute(method: unknown, path: unknown): string | undefined;

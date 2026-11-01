@@ -49,24 +49,14 @@ export interface IPackageChanged {
     newHeadVersionId: string;
 }
 
-/**
- * Словарь событий → обработчиков (типизация `on`/`off`).
- */
-export interface TSocketHandlers {
-    'connect': () => void;
-    'disconnect': () => void;
-    'connect_error': () => void;
-    'section:changed': (payload: {sections:TLiveSection[];at:string}) => void;
-    'bridge:changed': (payload: {deviceId?:string;jobId?:string}) => void;
-    'auth:changed': () => void;
-    'operation:progress': (payload: IOperationProgress) => void;
-    'operation:state': (payload: IOperationStateEvent) => void;
-    'version:verified': (payload: IVersionVerified) => void;
-    'version:rejected': (payload: IVersionRejected) => void;
-    'head:moved': (payload: IHeadMoved) => void;
-    'profile:published': (payload: IProfilePublished) => void;
-    'skill:changed': (payload: ISkillChanged) => void;
-    'package:changed': (payload: IPackageChanged) => void;
-}
-
-export type TLiveSection='projects'|'catalog'|'knowledge'|'access'|'maintenance'|'audit'|'operations'|'bridge'|'requests'|'project_chat';
+export type TLiveSection =
+    | 'projects'
+    | 'catalog'
+    | 'knowledge'
+    | 'access'
+    | 'maintenance'
+    | 'audit'
+    | 'operations'
+    | 'bridge'
+    | 'requests'
+    | 'project_chat';

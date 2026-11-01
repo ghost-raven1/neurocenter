@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { hash, stateDir, jobContext, readState, type Workspace } from './state.js';
+import { hash, stateDir, jobContext, readState, type IWorkspace } from './state.js';
 import { projectFolder, safeTarget } from './workspace.js';
 import { saveCompletion } from './completions.js';
 import { atomicText, syncDirectory } from './atomic-file.js';
@@ -17,14 +17,14 @@ import {
     journalDirectory,
     parseJournal,
     validateChanges,
-    type FileChange,
-    type ChangeIdentity,
-    type Journal,
+    type IFileChange,
+    type IChangeIdentity,
+    type IJournal,
 } from './installation-journal.js';
 import { assertInstallationSpace, recoveryDirectory, withRecoveryBudget } from './installation-space.js';
 import { indexLocalRecovery, recoveryIndexRecord } from './local-recovery-index.js';
 import { PROJECT_AGENTS_NOTE } from '../features/project-agents/contract.js';
-export type { FileChange, ChangeIdentity } from './installation-journal.js';
+export type { IFileChange, IChangeIdentity } from './installation-journal.js';
 
 export const CONFIG_PATHS = ['.opencode/opencode.jsonc', '.opencode/opencode.json', 'opencode.jsonc', 'opencode.json'];
 export async function readText(
@@ -45,7 +45,7 @@ export async function readText(
 }
 async function snapshot(
     root: string,
-    change: FileChange,
+    change: IFileChange,
 ): Promise<{ text: string; fingerprint: string; mode: number } | null> {
     const target = await safeTarget(root, change.relative);
     let current;
@@ -143,7 +143,7 @@ async function replace(
         await fs.rm(temporary, { force: true });
     }
 }
-async function archive(journal: Journal): Promise<string> {
+async function archive(journal: IJournal): Promise<string> {
     const directory = journalDirectory(journal.root);
     const destination = path.join(directory, 'history', journal.id + '.json');
     await recoveryDirectory(path.dirname(destination));
@@ -199,7 +199,7 @@ async function archive(journal: Journal): Promise<string> {
     await syncDirectory(directory);
     return destination;
 }
-async function rollback(journal: Journal): Promise<void> {
+async function rollback(journal: IJournal): Promise<void> {
     const observed = new Map<string, string | null>();
     // Проверяем весь набор до отката: посторонние правки не заменяются резервной копией.
     for (const change of journal.changes) {
@@ -348,8 +348,8 @@ export async function withProjectFilesAt<T>(projectRoot: string, action: (root: 
 /** Снимки остаются в личной папке MCP с правами 0600; в репозиторий проекта они не записываются. */
 export async function commitChanges(
     root: string,
-    changes: FileChange[],
-    identity: ChangeIdentity,
+    changes: IFileChange[],
+    identity: IChangeIdentity,
     options: { verifySnapshot?: () => Promise<void> } = {},
 ): Promise<string> {
     validateChanges(changes);
@@ -357,7 +357,7 @@ export async function commitChanges(
         await safeTarget(root, change.relative);
     }
     const observed = new Map<string, string | null>();
-    const preparedChanges: FileChange[] = [];
+    const preparedChanges: IFileChange[] = [];
     // Права фиксируются до кодирования и расчёта бюджета, в том числе для вызовов без InstallationPlan.
     for (const change of changes) {
         const current = await snapshot(root, change);
@@ -371,7 +371,7 @@ export async function commitChanges(
         observed.set(change.relative, current?.fingerprint ?? null);
         preparedChanges.push({ ...change, ...(current ? { beforeMode: current.mode } : {}) });
     }
-    const journal: Journal = {
+    const journal: IJournal = {
         ...identity,
         version: 1,
         root,
@@ -453,7 +453,7 @@ export async function commitChanges(
 
 /** После перезапуска завершаем только собственные журналы с известным заданием и неизменной привязкой. */
 export async function recoverFileJobs(): Promise<void> {
-    const workspace = await readState<Workspace>('workspace');
+    const workspace = await readState<IWorkspace>('workspace');
     const parent = path.join(stateDir(), 'file-changes');
     try {
         await recoveryDirectory(parent, false);
@@ -479,9 +479,9 @@ export async function recoverFileJobs(): Promise<void> {
         if (!raw) {
             continue;
         }
-        let candidate: Journal;
+        let candidate: IJournal;
         try {
-            const parsed = JSON.parse(raw) as Journal | null;
+            const parsed = JSON.parse(raw) as IJournal | null;
             if (!parsed || typeof parsed.root !== 'string') {
                 throw new Error();
             }

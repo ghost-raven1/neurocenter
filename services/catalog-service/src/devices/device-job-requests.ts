@@ -9,23 +9,23 @@ export function deviceJobRequestHash(role: string, input: Record<string, unknown
         .digest('hex');
 }
 
-interface RequestIdentity {
+interface IRequestIdentity {
     email: string;
     deviceId: string;
     requestKey: string;
     requestHash: string;
 }
-type JobRow = Record<string, unknown> & { id: string };
-type ReceiptRow = JobRow & { request_hash: string | null; request_device_id: string };
-type Queryable = Pick<PoolClient, 'query'>;
+type TJobRow = Record<string, unknown> & { id: string };
+type TReceiptRow = TJobRow & { request_hash: string | null; request_device_id: string };
+type TQueryable = Pick<PoolClient, 'query'>;
 
 /** Ключ объединённого запроса принадлежит своему actor/device и сохраняется до удаления job. */
 export async function findDeviceJobRequest(
-    db: Queryable,
+    db: TQueryable,
     view: string,
-    input: RequestIdentity,
-): Promise<JobRow | undefined> {
-    const { rows } = await db.query<ReceiptRow>(
+    input: IRequestIdentity,
+): Promise<TJobRow | undefined> {
+    const { rows } = await db.query<TReceiptRow>(
         `WITH receipt AS (
         SELECT job_id,request_hash AS receipt_hash,device_id AS receipt_device_id
         FROM bridge_job_requests WHERE email=$1 AND request_key=$2)
@@ -45,11 +45,11 @@ export async function findDeviceJobRequest(
 
 /** Привязка не перезаписывается: конкурентный запрос получает прежний job либо конфликт. */
 export async function saveDeviceJobRequest(
-    client: Queryable,
+    client: TQueryable,
     view: string,
-    input: RequestIdentity,
+    input: IRequestIdentity,
     jobId: string,
-): Promise<JobRow> {
+): Promise<TJobRow> {
     await client.query(
         `INSERT INTO bridge_job_requests(email,request_key,device_id,request_hash,job_id)
         VALUES($1,$2,$3,$4,$5) ON CONFLICT(email,request_key) DO NOTHING`,

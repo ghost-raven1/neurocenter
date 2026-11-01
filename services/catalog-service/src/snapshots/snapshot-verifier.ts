@@ -10,7 +10,7 @@ import {
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import { SnapshotRepository, snapshotUuid, snapshotInput, snapshotHash } from './snapshot-repository';
-import type { SnapshotRow } from './snapshot-types';
+import type { ISnapshotRow } from './snapshot-interfaces';
 import type { SnapshotService } from './snapshot.service';
 import { snapshotSignedPayload } from './snapshot-commands';
 import { securityEvent } from '../access/security-events';
@@ -58,7 +58,7 @@ export class SnapshotVerifier {
         );
         await requireFeaturesEnabled(['project_snapshots']);
         const candidate = (
-            await this.repository.pool.query<SnapshotRow>(`SELECT * FROM project_snapshots WHERE status='VERIFYING'
+            await this.repository.pool.query<ISnapshotRow>(`SELECT * FROM project_snapshots WHERE status='VERIFYING'
             AND (verifier_owner IS NULL OR verifier_lease_until<=now()) ORDER BY created_at LIMIT 1`)
         ).rows[0];
         if (!candidate) return null;
@@ -69,7 +69,7 @@ export class SnapshotVerifier {
                 3,
                 async (client) => {
                     const claimed = (
-                        await client.query<SnapshotRow>(
+                        await client.query<ISnapshotRow>(
                             `UPDATE project_snapshots SET verifier_owner=$2,verifier_lease_until=now()+interval '2 minutes'
                     WHERE id=$1 AND status='VERIFYING' AND (verifier_owner IS NULL OR verifier_lease_until<=now()) RETURNING *`,
                             [candidate.id, input.workerId],
@@ -112,10 +112,10 @@ export class SnapshotVerifier {
             }
         }
     }
-    async lease(id: string, worker: string): Promise<SnapshotRow> {
+    async lease(id: string, worker: string): Promise<ISnapshotRow> {
         if (!snapshotUuid(id) || !snapshotUuid(worker)) throw new BadRequestException('Некорректная аренда снимка.');
         const row = (
-            await this.repository.pool.query<SnapshotRow>(
+            await this.repository.pool.query<ISnapshotRow>(
                 "SELECT * FROM project_snapshots WHERE id=$1 AND verifier_owner=$2 AND status='VERIFYING' AND verifier_lease_until>now()",
                 [id, worker],
             )

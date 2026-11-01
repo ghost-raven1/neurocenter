@@ -9,7 +9,7 @@ export const OPEN_CODE_CONFIGS = [
     '.opencode/opencode.jsonc',
 ];
 export const RAG_CONFIGS = ['opencode-rag.json', '.opencode/opencode-rag.json', '.opencode/rag.json'];
-export type ConfigurationFile = {
+export type TConfigurationFile = {
     path: string;
     kind: 'markdown' | 'opencode' | 'rag';
     exists: boolean;
@@ -33,10 +33,10 @@ const skipped = new Set([
 ]);
 /** Bounded project-only discovery never follows directory links or package/runtime trees. */
 export async function discoverFiles(root: string, plan: InstallationPlan, rag: boolean) {
-    const files = new Map<string, ConfigurationFile>();
+    const files = new Map<string, TConfigurationFile>();
     let entries = 0,
         limited = false;
-    const add = async (relative: string, kind: ConfigurationFile['kind'], create = false) => {
+    const add = async (relative: string, kind: TConfigurationFile['kind'], create = false) => {
         const raw = await plan.read(relative);
         if (raw === null && !create) return;
         if (raw !== null && Buffer.byteLength(raw) > MAX_TEXT_BYTES) throw Error('Файл настройки превышает 256 КиБ.');

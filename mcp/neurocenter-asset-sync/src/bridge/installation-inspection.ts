@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { parse, type ParseError } from 'jsonc-parser';
 import { hash, hub, apiHub, stateDir } from './state.js';
 import { isHostedMcpUrl } from '../features/mcp-host/connect.js';
-import { verify, type Package } from './package.js';
+import { verify, type IPackage } from './package.js';
 import { projectFolder, projectBindingId, safeTarget } from './workspace.js';
 import {
     assetBase,
@@ -16,13 +16,13 @@ import {
     receiptPath,
     removalReceipt,
     sameValue,
-    type Receipt,
+    type IReceipt,
 } from './installation-receipt.js';
 import { CONFIG_PATHS } from './installation-files.js';
 import { LEDGER_PATH } from './installation-ledger.js';
 import { inspectLedger } from './inspection-ledger.js';
 import { InspectionReader, InspectionReadError } from './inspection-reader.js';
-import type { InstallationInspection, InspectionIssue, InspectionStatus } from './installation-inspection.model.js';
+import type { IInstallationInspection, TInspectionIssue, TInspectionStatus } from './installation-inspection.model.js';
 import { isManagedCodexConnectorPackage } from './managed-codex-connector.js';
 
 const severity = { synced: 0, missing: 1, modified: 2, unknown: 3 };
@@ -52,7 +52,7 @@ async function busy(root: string): Promise<boolean> {
     }
     return false;
 }
-function expectedConnection(root: string, pkg: Package): unknown {
+function expectedConnection(root: string, pkg: IPackage): unknown {
     const configured = configurationConnection(root, pkg);
     if (configured) {
         return configured;
@@ -106,7 +106,7 @@ function expectedConnection(root: string, pkg: Package): unknown {
         ...(config.env ? { environment: config.env } : {}),
     };
 }
-function connectionMatches(value: unknown, expected: unknown, pkg: Package): 'equal' | 'runtime' | 'different' {
+function connectionMatches(value: unknown, expected: unknown, pkg: IPackage): 'equal' | 'runtime' | 'different' {
     if (sameValue(value, expected)) {
         return 'equal';
     }
@@ -131,7 +131,7 @@ function connectionMatches(value: unknown, expected: unknown, pkg: Package): 'eq
 }
 
 /** Сверяет только данные известного пакета; не запускает его и не восстанавливает файловый журнал. */
-export async function inspectInstallation(projectId: string, pkg: Package): Promise<InstallationInspection> {
+export async function inspectInstallation(projectId: string, pkg: IPackage): Promise<IInstallationInspection> {
     const root = await projectFolder(projectId);
     const bindingId = await projectBindingId(projectId);
     return inspectInstallationAt(root, projectId, bindingId, pkg);
@@ -142,11 +142,11 @@ export async function inspectInstallationAt(
     root: string,
     projectId: string,
     bindingId: string,
-    pkg: Package,
+    pkg: IPackage,
     options: { lockHeld?: boolean; configRoot?: string; assertIdentity?: () => Promise<void> } = {},
-): Promise<InstallationInspection> {
+): Promise<IInstallationInspection> {
     const configRoot = options.configRoot ?? root;
-    const result: InstallationInspection = {
+    const result: IInstallationInspection = {
         schemaVersion: 1,
         projectId,
         bindingId,
@@ -160,7 +160,7 @@ export async function inspectInstallationAt(
         status: 'synced',
         issues: [],
     };
-    const issue = (code: InspectionIssue, status: InspectionStatus = 'unknown'): void => {
+    const issue = (code: TInspectionIssue, status: TInspectionStatus = 'unknown'): void => {
         if (!result.issues.includes(code)) {
             result.issues.push(code);
         }
@@ -168,7 +168,7 @@ export async function inspectInstallationAt(
             result.status = status;
         }
     };
-    const occupied = (code: InspectionIssue): InstallationInspection => ({
+    const occupied = (code: TInspectionIssue): IInstallationInspection => ({
         ...result,
         state: 'busy',
         status: 'unknown',
@@ -191,12 +191,12 @@ export async function inspectInstallationAt(
         verify(pkg);
         if (isManagedCodexConnectorPackage(pkg)) issue('config-modified', 'modified');
         const rawReceipt = await read(receiptPath(pkg), 256 * 1024);
-        let receipt: Receipt | undefined;
+        let receipt: IReceipt | undefined;
         if (rawReceipt === null) {
             issue('receipt-missing', 'missing');
         } else if (rawReceipt) {
             try {
-                const parsed = JSON.parse(utf8(rawReceipt)) as Receipt;
+                const parsed = JSON.parse(utf8(rawReceipt)) as IReceipt;
                 if (
                     !parsed ||
                     typeof parsed !== 'object' ||

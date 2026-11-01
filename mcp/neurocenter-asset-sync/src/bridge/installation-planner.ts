@@ -5,14 +5,14 @@ import { pathToFileURL } from 'node:url';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
 import { hash, hub, apiHub } from './state.js';
 import { safeTarget } from './workspace.js';
-import type { Package } from './package.js';
+import type { IPackage } from './package.js';
 import {
     assetBase,
     legacyMcpConfigKey,
     mcpConfigKey,
     receiptPath as managedReceiptPath,
     sameValue as same,
-    type Receipt,
+    type IReceipt,
 } from './installation-receipt.js';
 import { isHostedMcpUrl } from '../features/mcp-host/connect.js';
 import { CONFIG_PATHS } from './installation-files.js';
@@ -20,9 +20,9 @@ import type { InstallationPlan } from './installation-plan.js';
 import { repairReceipt } from './installation-repair.js';
 import { CODEX_MANAGED_INSTALL_MESSAGE, isManagedCodexConnectorPackage } from './managed-codex-connector.js';
 
-function parsePreviousReceipt(raw: string, base: string): Receipt {
+function parsePreviousReceipt(raw: string, base: string): IReceipt {
     try {
-        const receipt = JSON.parse(raw) as Receipt;
+        const receipt = JSON.parse(raw) as IReceipt;
         if (
             !receipt ||
             !Number.isSafeInteger(receipt.version) ||
@@ -45,16 +45,16 @@ function parsePreviousReceipt(raw: string, base: string): Receipt {
 }
 
 /** Готовит пакет без записи: все участники набора используют один снимок конфигурации. */
-export interface PlanInstallOptions {
+export interface IPlanInstallOptions {
     repair?: boolean;
     runtimeRepairPreview?: boolean;
-    hostedMcp?: (pkg: Package) => Promise<string>;
+    hostedMcp?: (pkg: IPackage) => Promise<string>;
 }
 
 export async function planInstall(
     plan: InstallationPlan,
-    pkg: Package,
-    options: PlanInstallOptions = {},
+    pkg: IPackage,
+    options: IPlanInstallOptions = {},
 ): Promise<void> {
     if (isManagedCodexConnectorPackage(pkg)) throw new Error(CODEX_MANAGED_INSTALL_MESSAGE);
     const root = plan.root;
@@ -127,7 +127,7 @@ export async function planInstall(
             await plan.write(relative, after, 'base64');
         }
     }
-    const receipt: Receipt = {
+    const receipt: IReceipt = {
         version: pkg.plugin.version,
         manifest: pkg.manifest.sha256,
         files,

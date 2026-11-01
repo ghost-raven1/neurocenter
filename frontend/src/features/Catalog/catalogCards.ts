@@ -1,5 +1,5 @@
 import type { IAiPlugin, ISkillListSummary } from '../../core/api/interfaces';
-import type { IStoreApp } from './types';
+import type { IStoreApp } from './interfaces';
 
 /** Маппинг MCP/плагина каталога в карточку витрины. */
 export const fromPlugin = (p: IAiPlugin): IStoreApp => ({
@@ -12,7 +12,7 @@ export const fromPlugin = (p: IAiPlugin): IStoreApp => ({
     origin: p.origin,
     revision: p.revision,
     config: (p.config ?? undefined) as Record<string, unknown> | undefined,
-    files: (p.files ?? []).map(f => ({ path: f.path, content: f.content })),
+    files: (p.files ?? []).map((f) => ({ path: f.path, content: f.content })),
 });
 
 /** Маппинг скилла каталога в карточку витрины. */
@@ -27,4 +27,3 @@ export const fromSkill = (s: ISkillListSummary): IStoreApp => ({
     path: s.path,
     skillSlug: s.meta.slug,
 });
-

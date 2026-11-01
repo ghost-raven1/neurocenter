@@ -5,7 +5,7 @@ import {
     normalizeDeviceCodexResult,
     deviceCodexResultDigest,
 } from '../../../shared/device-codex-inference.cjs';
-import type { DeviceCompletion } from '../devices/device-completion';
+import type { IDeviceCompletion } from '../devices/device-completion';
 import { projectDeviceCodexOperation } from './device-codex-operation';
 /** Completes within the caller's locked job transaction; the public queue receives a digest only. */
 export async function completeDeviceCodex(
@@ -16,7 +16,7 @@ export async function completeDeviceCodex(
         state: string;
         payload: Record<string, unknown>;
     },
-    input: DeviceCompletion,
+    input: IDeviceCompletion,
 ): Promise<
     | {
           ok: true;

@@ -1,19 +1,19 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-export interface ProjectDataSize {
+export interface IProjectDataSize {
     scope: 'opencode';
     bytes: number | null;
     measuredAt: string;
     error?: 'unavailable' | 'limit-exceeded';
 }
-type Measurement = Pick<ProjectDataSize, 'bytes' | 'error'>;
-interface Request {
+type TMeasurement = Pick<IProjectDataSize, 'bytes' | 'error'>;
+interface IRequest {
     key: string;
     root: string;
     isCurrent: () => Promise<boolean>;
 }
-interface Walk {
+interface IWalk {
     entries: number;
     stopped: boolean;
     deadline: number;
@@ -27,11 +27,11 @@ const REFRESH_MS = 30000,
     MAX_CACHED = 256;
 class LimitExceeded extends Error {}
 
-function budget(walk: Walk): void {
+function budget(walk: IWalk): void {
     if (walk.stopped || performance.now() >= walk.deadline) throw new LimitExceeded();
 }
 
-async function directoryBytes(directory: string, depth: number, walk: Walk): Promise<number> {
+async function directoryBytes(directory: string, depth: number, walk: IWalk): Promise<number> {
     budget(walk);
     if (depth > MAX_DEPTH) throw new LimitExceeded();
     const before = await fs.lstat(directory);
@@ -60,16 +60,16 @@ async function directoryBytes(directory: string, depth: number, walk: Walk): Pro
     return bytes;
 }
 
-function startMeasurement(root: string): { result: Promise<Measurement>; settled: Promise<void> } {
-    const walk: Walk = { entries: 0, stopped: false, deadline: performance.now() + TIMEOUT_MS };
+function startMeasurement(root: string): { result: Promise<TMeasurement>; settled: Promise<void> } {
+    const walk: IWalk = { entries: 0, stopped: false, deadline: performance.now() + TIMEOUT_MS };
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<Measurement>((resolve) => {
+    const timeout = new Promise<TMeasurement>((resolve) => {
         timer = setTimeout(() => {
             walk.stopped = true;
             resolve({ bytes: null, error: 'limit-exceeded' });
         }, TIMEOUT_MS);
     });
-    const scan = async (): Promise<Measurement> => {
+    const scan = async (): Promise<TMeasurement> => {
         try {
             const before = await fs.lstat(root);
             budget(walk);
@@ -100,14 +100,14 @@ function startMeasurement(root: string): { result: Promise<Measurement>; settled
 }
 
 /** Reads metadata only; an incomplete traversal never becomes a partial successful size. */
-export function measureProjectDataSize(root: string): Promise<Measurement> {
+export function measureProjectDataSize(root: string): Promise<TMeasurement> {
     return startMeasurement(root).result;
 }
 
 /** The physical scan keeps its slot after a deadline, so stuck OS I/O cannot accumulate across heartbeats. */
-export function createProjectDataSizeReporter(measure?: (root: string) => Promise<Measurement>) {
-    const cache = new Map<string, { at: number; value: ProjectDataSize }>(),
-        queue = new Map<string, Request>(),
+export function createProjectDataSizeReporter(measure?: (root: string) => Promise<TMeasurement>) {
+    const cache = new Map<string, { at: number; value: IProjectDataSize }>(),
+        queue = new Map<string, IRequest>(),
         pending = new Set<string>();
     let running = false;
     const drain = async (): Promise<void> => {
@@ -154,7 +154,7 @@ export function createProjectDataSizeReporter(measure?: (root: string) => Promis
             running = false;
         }
     };
-    return (request: Request): ProjectDataSize | undefined => {
+    return (request: IRequest): IProjectDataSize | undefined => {
         const cached = cache.get(request.key),
             age = cached ? Date.now() - cached.at : Infinity;
         if ((age < 0 || age >= REFRESH_MS) && !pending.has(request.key) && pending.size < MAX_PENDING) {

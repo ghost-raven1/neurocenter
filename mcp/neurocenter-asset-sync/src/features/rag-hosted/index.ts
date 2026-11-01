@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { api, hub, readState, writeState } from '../../bridge/state.js';
-import type { Package } from '../../bridge/package.js';
+import type { IPackage } from '../../bridge/package.js';
 import { projectFolder } from '../../bridge/workspace.js';
 import { readPrivateConfiguration } from '../local-configuration/private-store.js';
 import {
@@ -14,15 +14,15 @@ import {
     supportsHostedGrants,
     usableHostedGrant,
     validateSelection,
-    type HostedProfile,
-    type HostedRequestProfile,
-    type HostedSelection,
+    type IHostedProfile,
+    type IHostedRequestProfile,
+    type IHostedSelection,
 } from './profile.js';
-import { createHostedRelay, inferHosted, hostedInstallationIdentity, type HostedRelay } from './relay.js';
+import { createHostedRelay, inferHosted, hostedInstallationIdentity, type IHostedRelay } from './relay.js';
 export { readHostedRagEmbedding } from './profile.js';
-export type { HostedSelection } from './profile.js';
+export type { IHostedSelection } from './profile.js';
 const registry = 'rag-hosted-connections';
-const relays = new Map<string, HostedRelay>();
+const relays = new Map<string, IHostedRelay>();
 let operations: Promise<void> = Promise.resolve();
 async function exclusive<T>(action: () => Promise<T>): Promise<T> {
     const previous = operations;
@@ -48,8 +48,8 @@ async function keys(): Promise<string[]> {
         throw new Error('Повреждён список подключений RAG.');
     return value as string[];
 }
-async function assertCurrent(profile: HostedRequestProfile): Promise<void> {
-    const value = await api<{ revision: number; modelPin: string; profile: HostedSelection['profile'] }>(
+async function assertCurrent(profile: IHostedRequestProfile): Promise<void> {
+    const value = await api<{ revision: number; modelPin: string; profile: IHostedSelection['profile'] }>(
         'embedding/context',
         {
             projectId: profile.projectId,
@@ -72,22 +72,22 @@ export interface IHostedConnectionTransaction {
     key: string;
     before: unknown | null;
     after: unknown;
-    embedding: { profile: HostedSelection['profile']; baseUrl: string; apiKey: string };
+    embedding: { profile: IHostedSelection['profile']; baseUrl: string; apiKey: string };
 }
 /** Проверка модели предшествует единой транзакции подключения и изолированной переиндексации. */
 export async function connectHostedRag(
     projectId: string,
     bindingId: string,
     instanceId: string,
-    pkg: Package,
-    selection: HostedSelection,
+    pkg: IPackage,
+    selection: IHostedSelection,
     authorize: () => Promise<void>,
     transaction: (context: IHostedConnectionTransaction) => Promise<IHostedReindexResult>,
 ): Promise<{
     status: 'connected';
     revision: number;
     modelPin: string;
-    profile: HostedSelection['profile'];
+    profile: IHostedSelection['profile'];
     requiresRestart: true;
     reindex: IHostedReindexResult;
 }> {
@@ -142,7 +142,7 @@ export async function connectHostedRag(
         }
         const grants = [...retained, grant];
         if (grants.length > 16) throw new Error('Достигнут лимит явно подключённых пакетов RAG.');
-        const candidate: HostedProfile = {
+        const candidate: IHostedProfile = {
             schemaVersion: 2,
             server: hub(),
             root,
@@ -155,7 +155,7 @@ export async function connectHostedRag(
         const request = () => requestProfile(candidate, grant);
         await assertHostedInstallation(request());
         await assertCurrent(request());
-        let created: HostedRelay | undefined;
+        let created: IHostedRelay | undefined;
         const running = relays.get(key);
         if (running && !isDeepStrictEqual(running.profile.relay, candidate.relay))
             throw new Error('Локальное подключение изменилось. Перезапустите мост.');

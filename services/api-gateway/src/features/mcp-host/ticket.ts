@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /** Билет хоста без хранения в БД: HMAC от заявлений. Срок ограничен, замену выдает новая установка. */
-export interface HostedMcpClaim {
+export interface IHostedMcpClaim {
     artifactSha256: string;
     entrypoint: string;
     executable: boolean;
@@ -9,7 +9,7 @@ export interface HostedMcpClaim {
     compressedBytes: number;
     unpackedBytes?: number;
     filesCount?: number;
-    session?: HostedMcpSession;
+    session?: IHostedMcpSession;
     /** Internal research requests use a private, short-lived child; never serialized into public tickets. */
     researchSessionId?: string;
     /** Private role sessions are never serialized into public device tickets. */
@@ -20,7 +20,7 @@ export interface HostedMcpClaim {
     operationArgs?: string[];
     exp: number;
 }
-export interface HostedMcpSession {
+export interface IHostedMcpSession {
     deviceId: string;
     projectId: string;
     assetId: string;
@@ -28,8 +28,8 @@ export interface HostedMcpSession {
     manifest: string;
 }
 /** A signed host ticket identifies a revocable device and one immutable project assignment. */
-export function validHostedMcpSession(value: unknown): value is HostedMcpSession {
-    const session = value as Partial<HostedMcpSession> | null;
+export function validHostedMcpSession(value: unknown): value is IHostedMcpSession {
+    const session = value as Partial<IHostedMcpSession> | null;
     return (
         !!session &&
         typeof session === 'object' &&
@@ -37,9 +37,9 @@ export function validHostedMcpSession(value: unknown): value is HostedMcpSession
         Object.keys(session).sort().join(',') === 'assetId,deviceId,manifest,projectId,version' &&
         ['deviceId', 'projectId', 'assetId'].every(
             (key) =>
-                typeof session[key as keyof HostedMcpSession] === 'string' &&
-                String(session[key as keyof HostedMcpSession]).length > 0 &&
-                String(session[key as keyof HostedMcpSession]).length <= 200,
+                typeof session[key as keyof IHostedMcpSession] === 'string' &&
+                String(session[key as keyof IHostedMcpSession]).length > 0 &&
+                String(session[key as keyof IHostedMcpSession]).length <= 200,
         ) &&
         Number.isSafeInteger(session.version) &&
         Number(session.version) > 0 &&
@@ -51,7 +51,7 @@ export function validHostedMcpSession(value: unknown): value is HostedMcpSession
 const secret = () => process.env.NEUROCENTER_MCP_HOST_SECRET || process.env.NEUROCENTER_INTERNAL_TOKEN || '';
 export const HOSTED_MCP_TTL_MS = 30 * 86400 * 1000;
 
-export function issueHostedMcpTicket(claim: Omit<HostedMcpClaim, 'exp'>): string {
+export function issueHostedMcpTicket(claim: Omit<IHostedMcpClaim, 'exp'>): string {
     const guard = secret();
     if (guard.length < 16) {
         throw new Error('Секрет хоста MCP не задан.');
@@ -75,7 +75,7 @@ export function issueHostedMcpTicket(claim: Omit<HostedMcpClaim, 'exp'>): string
     return payload + '.' + createHmac('sha256', guard).update(payload).digest('base64url');
 }
 
-export function verifyHostedMcpTicket(ticket: string): HostedMcpClaim | undefined {
+export function verifyHostedMcpTicket(ticket: string): IHostedMcpClaim | undefined {
     const guard = secret();
     if (guard.length < 16 || typeof ticket !== 'string' || ticket.length > 2048) {
         return undefined;
@@ -101,7 +101,7 @@ export function verifyHostedMcpTicket(ticket: string): HostedMcpClaim | undefine
     } catch {
         return undefined;
     }
-    const claim = raw as Partial<HostedMcpClaim> | null;
+    const claim = raw as Partial<IHostedMcpClaim> | null;
     if (!claim || typeof claim !== 'object' || Array.isArray(claim)) {
         return undefined;
     }

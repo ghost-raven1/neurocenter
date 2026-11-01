@@ -1,6 +1,6 @@
-import type { PackagingFile } from './types';
+import type { IPackagingFile } from './interfaces';
 
-export type PackagingSourceMode = 'npm' | 'files' | 'repository' | 'upload';
+export type TPackagingSourceMode = 'npm' | 'files' | 'repository' | 'upload';
 
 /** Ссылка из буфера выбирает поддерживаемый источник, не обходя серверную проверку. */
 export function packagingReferenceSource(value: string): 'npm' | 'repository' | undefined {
@@ -10,14 +10,17 @@ export function packagingReferenceSource(value: string): 'npm' | 'repository' | 
 }
 
 /** Название и описание локального пакета заполняют карточку без ручного копирования. */
-export function packagingFilesMetadata(files: PackagingFile[]): { name?: string; description?: string } {
+export function packagingFilesMetadata(files: IPackagingFile[]): { name?: string; description?: string } {
     try {
-        const value: unknown = JSON.parse(files.find(file => file.path === 'package.json')?.content ?? '{}');
+        const value: unknown = JSON.parse(files.find((file) => file.path === 'package.json')?.content ?? '{}');
         if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
         const metadata = value as { name?: unknown; description?: unknown };
         return {
             name: typeof metadata.name === 'string' ? metadata.name.trim() || undefined : undefined,
-            description: typeof metadata.description === 'string' ? metadata.description.trim() || undefined : undefined,
+            description:
+                typeof metadata.description === 'string' ? metadata.description.trim() || undefined : undefined,
         };
-    } catch { return {}; }
+    } catch {
+        return {};
+    }
 }

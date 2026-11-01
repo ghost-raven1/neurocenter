@@ -2,22 +2,22 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { authorizeAccessWrite } from '../access/access-write-policy';
-import type { IModel } from '../models/model.types';
+import type { IModel } from '../models/model.interfaces';
 import {
     emptyQuotaCounters,
     quotaCoverage,
     quotaPolicy,
     quotaRequestText,
-    type ModelTokenQuotaPolicyRow,
+    type IModelTokenQuotaPolicyRow,
 } from './model-token-quotas.model';
+import { MODEL_TOKEN_QUOTA_DEFAULT_PERIOD_MS } from './model-token-quotas.constants';
 import {
-    MODEL_TOKEN_QUOTA_DEFAULT_PERIOD_MS,
-    type ModelTokenQuotaInput,
-    type ModelTokenQuotaPolicy,
-    type ModelTokenQuotaReceipt,
-    type ModelTokenQuotaView,
-    type ModelTokenQuotaCounters,
-} from './model-token-quotas.types';
+    type IModelTokenQuotaInput,
+    type IModelTokenQuotaPolicy,
+    type IModelTokenQuotaReceipt,
+    type IModelTokenQuotaView,
+    type IModelTokenQuotaCounters,
+} from './model-token-quotas.interfaces';
 import { quotaTransaction, quotaPairLock } from './quota-database';
 import { quotaCounters } from './quota-counters';
 
@@ -25,9 +25,9 @@ export const quotaPolicyRow = async (
     db: Pick<PoolClient, 'query'>,
     modelId: string,
     email: string,
-): Promise<ModelTokenQuotaPolicy | null> => {
+): Promise<IModelTokenQuotaPolicy | null> => {
     const row = (
-        await db.query<ModelTokenQuotaPolicyRow>(
+        await db.query<IModelTokenQuotaPolicyRow>(
             'SELECT * FROM model_user_token_quotas WHERE model_id=$1 AND user_email=$2',
             [modelId, email],
         )
@@ -37,7 +37,7 @@ export const quotaPolicyRow = async (
 /** This repository owns configuration receipts only; paid attempt accounting stays on model_usage_calls. */
 export class ModelTokenQuotasRepository {
     constructor(readonly pool: Pool) {}
-    async read(model: IModel, email: string): Promise<ModelTokenQuotaView> {
+    async read(model: IModel, email: string): Promise<IModelTokenQuotaView> {
         return quotaTransaction(
             this.pool,
             async (db) => {
@@ -46,7 +46,7 @@ export class ModelTokenQuotasRepository {
                 const policy = await quotaPolicyRow(db, model.id, email),
                     clock = (await db.query<{ at: string }>('SELECT clock_timestamp()::text AS at')).rows[0].at;
                 const balance = policy ? await quotaCounters(db, policy, clock) : undefined;
-                const counters: ModelTokenQuotaCounters = balance
+                const counters: IModelTokenQuotaCounters = balance
                     ? {
                           actualInputTokens: balance.actualInputTokens,
                           actualOutputTokens: balance.actualOutputTokens,
@@ -74,12 +74,12 @@ export class ModelTokenQuotasRepository {
         );
     }
     /** PUT may recover its own global key before looking up a now-deleted requested target. */
-    async accepted(writer: string, key: string): Promise<ModelTokenQuotaReceipt | null> {
+    async accepted(writer: string, key: string): Promise<IModelTokenQuotaReceipt | null> {
         return quotaTransaction(
             this.pool,
             async (db) => {
                 const row = (
-                    await db.query<{ receipt: ModelTokenQuotaReceipt }>(
+                    await db.query<{ receipt: IModelTokenQuotaReceipt }>(
                         'SELECT receipt FROM model_user_token_quota_requests WHERE writer_email=$1 AND request_key=$2',
                         [writer, key],
                     )
@@ -89,12 +89,12 @@ export class ModelTokenQuotasRepository {
             { readOnly: true },
         );
     }
-    async receipt(writer: string, modelId: string, email: string, key: string): Promise<ModelTokenQuotaReceipt> {
+    async receipt(writer: string, modelId: string, email: string, key: string): Promise<IModelTokenQuotaReceipt> {
         return quotaTransaction(
             this.pool,
             async (db) => {
                 const row = (
-                    await db.query<{ receipt: ModelTokenQuotaReceipt }>(
+                    await db.query<{ receipt: IModelTokenQuotaReceipt }>(
                         'SELECT receipt FROM model_user_token_quota_requests WHERE writer_email=$1 AND request_key=$2 AND model_id=$3 AND user_email=$4',
                         [writer, key, modelId, email],
                     )
@@ -109,9 +109,9 @@ export class ModelTokenQuotasRepository {
         writer: string,
         model: IModel,
         email: string,
-        input: ModelTokenQuotaInput,
+        input: IModelTokenQuotaInput,
         signal?: AbortSignal,
-    ): Promise<ModelTokenQuotaReceipt> {
+    ): Promise<IModelTokenQuotaReceipt> {
         const fingerprint = createHash('sha256')
             .update(quotaRequestText(writer, model.id, email, input))
             .digest('hex');
@@ -122,7 +122,7 @@ export class ModelTokenQuotasRepository {
                 await quotaPairLock(db, email, model.id);
                 signal?.throwIfAborted();
                 const prior = (
-                    await db.query<{ request_fingerprint: string; receipt: ModelTokenQuotaReceipt }>(
+                    await db.query<{ request_fingerprint: string; receipt: IModelTokenQuotaReceipt }>(
                         'SELECT request_fingerprint,receipt FROM model_user_token_quota_requests WHERE writer_email=$1 AND request_key=$2',
                         [writer, input.requestKey],
                     )
@@ -163,14 +163,14 @@ export class ModelTokenQuotasRepository {
                 const revision = (current?.revision ?? 0) + 1;
                 if (!Number.isSafeInteger(revision)) throw new ConflictException('Достигнут предел ревизий квоты.');
                 const saved = (
-                    await db.query<ModelTokenQuotaPolicyRow>(
+                    await db.query<IModelTokenQuotaPolicyRow>(
                         `INSERT INTO model_user_token_quotas(model_id,user_email,revision,enabled,token_limit,period_ms,updated_by)
  VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(model_id,user_email) DO UPDATE SET revision=EXCLUDED.revision,enabled=EXCLUDED.enabled,
  token_limit=EXCLUDED.token_limit,period_ms=EXCLUDED.period_ms,updated_by=EXCLUDED.updated_by,updated_at=clock_timestamp() RETURNING *`,
                         [model.id, email, revision, input.enabled, input.tokenLimit, input.periodMs, writer],
                     )
                 ).rows[0];
-                const receipt: ModelTokenQuotaReceipt = {
+                const receipt: IModelTokenQuotaReceipt = {
                     modelId: model.id,
                     userEmail: email,
                     writerEmail: writer,

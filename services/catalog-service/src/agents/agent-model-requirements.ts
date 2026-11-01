@@ -1,17 +1,17 @@
 import { ConflictException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
-import type { ProjectAgent, ProjectAgentModelRequirement } from '../../../shared/project-agents.cjs';
+import type { IProjectAgent, TProjectAgentModelRequirement } from '../../../shared/project-agents.cjs';
 import { modelFromRow, type IModelRow } from '../models/model-history';
 import { remoteModelBaseUrl } from '../models/remote-model-validation';
 import { managedBinding } from '../devices/device-compatibility';
-import type { Device } from '../devices/device-store';
-import type { DeviceCodexCandidate, DeviceCodexSource } from '../../../shared/device-codex-inference.cjs';
+import type { IDevice } from '../devices/device-store';
+import type { IDeviceCodexCandidate, TDeviceCodexSource } from '../../../shared/device-codex-inference.cjs';
 import { assertLocalFeature } from '../devices/local-change-jobs';
 import { DEVICE_CODEX_CAPABILITY } from '../../../shared/device-codex-inference.cjs';
 import { remoteModelOptions } from '../models/remote-model-options';
 import type { IRemoteConnectionRow } from '../models/remote-connection.repository';
 import type { IOpenCodeModelOptions } from '../../../shared/opencode-model-scan.cjs';
-type Db = Pick<PoolClient, 'query'>;
+type TDb = Pick<PoolClient, 'query'>;
 /** Public setup guidance deliberately carries no private provider URL, prompt or credential. */
 export function agentModelSetupRequired(agentId: string, modelId?: string): ConflictException {
     return new ConflictException({
@@ -25,12 +25,12 @@ export function agentModelSetupRequired(agentId: string, modelId?: string): Conf
 }
 /** An accessible project model is pinned without reading or decrypting its credential. */
 export async function agentModelRequirements(
-    db: Db,
+    db: TDb,
     projectId: string,
-    agents: ProjectAgent[],
-    device?: Device,
-): Promise<ProjectAgentModelRequirement[]> {
-    const requirements: ProjectAgentModelRequirement[] = [];
+    agents: IProjectAgent[],
+    device?: IDevice,
+): Promise<TProjectAgentModelRequirement[]> {
+    const requirements: TProjectAgentModelRequirement[] = [];
     for (const agent of agents) {
         if (!agent.enabled || !agent.model) continue;
         if (!agent.model.startsWith('neurocenter/')) {
@@ -53,9 +53,9 @@ export async function agentModelRequirements(
                 await db.query<{
                     device_id: string;
                     owner_email: string;
-                    source: DeviceCodexSource;
+                    source: TDeviceCodexSource;
                     semantic_sha: string;
-                    expected_candidate: DeviceCodexCandidate;
+                    expected_candidate: IDeviceCodexCandidate;
                 }>(
                     `SELECT device_id,owner_email,source,semantic_sha,expected_candidate FROM model_device_connections WHERE model_id=$1 AND revoked_at IS NULL FOR SHARE`,
                     [id],

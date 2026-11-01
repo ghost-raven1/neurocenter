@@ -1,28 +1,54 @@
 {
-    "compilerOptions": {
-        "target": "ES2020",
-        "useDefineForClassFields": true,
-        "lib": ["ES2020", "DOM", "DOM.Iterable"],
-        "module": "ESNext",
-        "skipLibCheck": true,
-        "moduleResolution": "bundler",
-        "paths": {
-            "@neurocenter/computer-setup": ["../services/shared/computer-setup.d.cts"],
-            "@neurocenter/opencode-local-providers": ["../services/shared/opencode-local-providers.d.cts"],
-            "@neurocenter/opencode-cli-install": ["../services/shared/opencode-cli-install.d.cts"],
-            "@neurocenter/project-text-knowledge": ["../services/shared/project-text-knowledge.d.cts"],
-            "@neurocenter/runtime-limits": ["../services/shared/runtime-limits.d.cts"]
-        },
-        "allowImportingTsExtensions": true,
-        "resolveJsonModule": true,
-        "isolatedModules": true,
-        "noEmit": true,
-        "jsx": "react-jsx",
-        "strict": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "noFallthroughCasesInSwitch": true
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "paths": {
+      "@neurocenter/computer-setup": [
+        "../services/shared/computer-setup.d.cts"
+      ],
+      "@neurocenter/opencode-local-providers": [
+        "../services/shared/opencode-local-providers.d.cts"
+      ],
+      "@neurocenter/opencode-cli-install": [
+        "../services/shared/opencode-cli-install.d.cts"
+      ],
+      "@neurocenter/project-text-knowledge": [
+        "../services/shared/project-text-knowledge.d.cts"
+      ],
+      "@neurocenter/runtime-limits": [
+        "../services/shared/runtime-limits.d.cts"
+      ]
     },
-    "include": ["src"],
-    "references": [{ "path": "./tsconfig.node.json" }]
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ],
+  "exclude": [
+    "src/**/test/**",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/tests/**"
+  ]
 }

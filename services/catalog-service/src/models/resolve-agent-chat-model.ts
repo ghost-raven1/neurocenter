@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
-import type { IModel, IModelList } from './model.types';
+import type { IModel, IModelList } from './model.interfaces';
 import type { ModelsService } from './models.service';
 
 /** Native aliases resolve only through an exact project source or a single assigned catalog identity. */

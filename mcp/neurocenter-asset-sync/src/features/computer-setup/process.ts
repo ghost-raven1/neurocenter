@@ -1,14 +1,14 @@
 import {
     startRoleMcpProcess,
     RoleMcpCleanupError,
-    type RoleMcpProcessJournal,
+    type IRoleMcpProcessJournal,
 } from '../system-role-mcp/owned-process.js';
 import { assertUserCliCurrent, findUserOpenCode } from './executable.js';
 import { normalizeOpenCodeCliResult, type OpenCodeCliResult } from './contract.js';
 import { CliCleanupError } from './receipts.js';
 import { observedOpenCodeVersion } from './version.js';
 
-export interface CliObservationContext {
+export interface ICliObservationContext {
     deviceId: string;
     jobId: string;
     home: string;
@@ -16,9 +16,9 @@ export interface CliObservationContext {
     directories: readonly string[];
     bridgeRoots: readonly string[];
     pathOnly?: boolean;
-    journal: () => Promise<RoleMcpProcessJournal>;
+    journal: () => Promise<IRoleMcpProcessJournal>;
 }
-export type CliAuthorization = (signal: AbortSignal) => Promise<void>;
+export type TCliAuthorization = (signal: AbortSignal) => Promise<void>;
 class CliAuthorizationError extends Error {
     constructor() {
         super('Доступ к проверке OpenCode не подтверждён.');
@@ -47,8 +47,8 @@ async function beforeAbort<T>(start: () => Promise<T>, signal: AbortSignal): Pro
 
 /** Executes only --version; output stays local, bounded, and cannot escape as an error message. */
 export async function observeOpenCodeCli(
-    context: CliObservationContext,
-    authorize: CliAuthorization,
+    context: ICliObservationContext,
+    authorize: TCliAuthorization,
     signal: AbortSignal,
 ): Promise<OpenCodeCliResult> {
     const receipt = (status: OpenCodeCliResult['status'], version?: string) =>

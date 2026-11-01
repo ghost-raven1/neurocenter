@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
-import type { Device, DeviceStore } from './device-store';
+import type { IDevice, DeviceStore } from './device-store';
 import type { DeviceInstallations } from './device-installations';
 import type { InstallPlans } from './install-plans';
 import { managedBinding, assertExpectedBinding, assertPackageBridge } from './device-compatibility';
@@ -10,7 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { configurationRevisionsForProbe } from './mcp-config-status';
 import { validConfigurationRevisions } from './mcp-config-reports';
 
-export interface LocalChangeInput {
+export interface ILocalChangeInput {
     deviceId: string;
     projectId?: string;
     kind: string;
@@ -73,8 +73,8 @@ export async function localChangeJobPayload(
     store: DeviceStore,
     installations: DeviceInstallations,
     plans: InstallPlans,
-    device: Device,
-    input: LocalChangeInput,
+    device: IDevice,
+    input: ILocalChangeInput,
 ): Promise<Record<string, unknown>> {
     const runtime = input.kind === 'probe-runtime';
     assertLocalFeature(device.report, runtime ? 'runtime-probe-v1' : 'local-change-plan-v1');

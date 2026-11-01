@@ -1,12 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { visionFixture } from '../../../shared/vision-fixture.cjs';
-import type { IModel } from './model.types';
-import type { IModelHosting } from './hosting.types';
+import type { IModel } from './model.interfaces';
+import type { IModelHosting } from './hosting.interfaces';
 import { ModelsService } from './models.service';
 import { RemoteConnectionRepository } from './remote-connection.repository';
 import { RemoteModelClient, RemoteModelError } from './remote-model-client';
 import { remoteConnectionInput, remoteVerificationDigest } from './remote-model-validation';
-import { isRemoteModel } from './remote-model.types';
+import { isRemoteModel } from './remote-model.utils';
 import { notifyModelCatalogChange } from './model-events';
 import { ModelUsageService } from '../model-usage/model-usage.service';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
