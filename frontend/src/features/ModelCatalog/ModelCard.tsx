@@ -140,17 +140,6 @@ export function ModelCard({
         ...Object.entries(actions)
             .filter(([key]) => key !== primary)
             .map(([, action]) => action),
-        remote && canHost && !model.archivedAt && onConfigure && (
-            <FeatureButton
-                key="api"
-                features={['model_catalog']}
-                disabled={busy || disabled}
-                aria-label={`Настроить API модели ${model.name}`}
-                onClick={onConfigure}
-            >
-                Настроить API
-            </FeatureButton>
-        ),
         deviceCodex && canHost && !model.archivedAt && onConfigure && (
             <Button
                 key="codex"
@@ -233,6 +222,15 @@ export function ModelCard({
             {feedback}
             <div className="model-card__actions">
                 {primary && actions[primary]}
+                {remote && !model.archivedAt && (
+                    <Button
+                        disabled={busy || disabled}
+                        aria-label={`Провайдер и API-ключ модели ${model.name}`}
+                        onClick={onView}
+                    >
+                        Провайдер и API-ключ
+                    </Button>
+                )}
                 {!assignable && (
                     <Typography.Text type="secondary">
                         {projectSelected

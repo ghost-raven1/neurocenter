@@ -8,6 +8,7 @@ import { roleMcpProcessOwner, roleMcpOwnerAlive } from '../system-role-mcp/owned
 import type { IRoleMcpOwner } from '../system-role-mcp/session-journal.js';
 import type { ICompletion } from '../../bridge/completions.js';
 import { contract } from './contract.js';
+import { localProviderKinds, normalizeLocalPayload, normalizeLocalResult } from './job-contract.js';
 export interface IGlobalJob {
     id: string;
     lease: string;
@@ -84,14 +85,9 @@ function validate(value: IGlobalReceipt) {
         typeof value.owner.entry !== 'string'
     )
         throw failure();
-    if (
-        ![contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB, contract.OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB].includes(
-            value.job.kind as typeof contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
-        )
-    )
+    if (!localProviderKinds.includes(value.job.kind as typeof contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB))
         throw failure();
-    if (contract.normalizeGlobalProvidersPayload(value.job.payload, value.job.kind).deviceId !== value.job.deviceId)
-        throw failure();
+    if (normalizeLocalPayload(value.job.payload, value.job.kind).deviceId !== value.job.deviceId) throw failure();
     if (value.phase === 'closed') {
         const completion = value.completion;
         if (
@@ -102,11 +98,12 @@ function validate(value: IGlobalReceipt) {
             !['succeeded', 'failed'].includes(completion.state)
         )
             throw failure();
-        const result = contract.normalizeGlobalProvidersResult(completion.result, {
+        const result = normalizeLocalResult(completion.result, {
+            adapter: normalizeLocalPayload(value.job.payload, value.job.kind).adapter,
             deviceId: value.job.deviceId,
             jobId: value.job.id,
             kind: value.job.kind,
-            expiresAt: contract.normalizeGlobalProvidersPayload(value.job.payload, value.job.kind).expiresAt,
+            expiresAt: normalizeLocalPayload(value.job.payload, value.job.kind).expiresAt,
         });
         if ((result.status !== 'failed') !== (completion.state === 'succeeded')) throw failure();
     } else if (value.completion || value.outboxed) throw failure();

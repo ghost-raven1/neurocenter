@@ -49,6 +49,9 @@ export async function assertOpenCodeAuthOwner(
     deviceId: string,
     authorize: (signal?: AbortSignal) => Promise<unknown>,
     external?: AbortSignal,
+    expectedVersion:
+        | typeof localProviders.OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION
+        | typeof localProviders.OPENCODE_V2_ACCOUNTS_VERSION = localProviders.OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION,
 ): Promise<IOpenCodeAuthOwnerProof> {
     if (stopping || active.size) throw new OpenCodeAuthOwnerError();
     const controller = new AbortController(),
@@ -97,11 +100,7 @@ export async function assertOpenCodeAuthOwner(
                 },
                 signal,
             );
-            if (
-                result.status !== 'installed' ||
-                result.version !== localProviders.OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION
-            )
-                throw new OpenCodeAuthOwnerError();
+            if (result.status !== 'installed' || result.version !== expectedVersion) throw new OpenCodeAuthOwnerError();
             await current();
             return { assertCurrent: current };
         } catch (error) {

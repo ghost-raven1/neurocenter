@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,7 +27,22 @@ async function start(signal = new AbortController().signal, detached = false) {
     ports.push(port);
     return { root, port, tools: await port.list() };
 }
+/** An opened marker is not ready until the descendant PID has actually been published. */
+async function descendantPid(root: string): Promise<number> {
+    for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+            const marker = await fs.readFile(path.join(root, 'descendant.pid'), 'utf8');
+            const pid = Number(marker);
+            if (/^[1-9]\d*$/.test(marker) && Number.isSafeInteger(pid)) return pid;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        await delay(10);
+    }
+    throw new Error('Owned descendant did not publish a valid PID within the readiness budget.');
+}
 afterEach(async () => {
+    vi.restoreAllMocks();
     await Promise.all(ports.splice(0).map((port) => port.close()));
     await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
@@ -84,15 +99,18 @@ describe('role MCP actual SDK stdio boundary (synthetic state, no Playwright acc
                     () => false,
                     () => true,
                 );
-            let pid = 0;
-            for (let attempt = 0; attempt < 100; attempt++) {
-                try {
-                    pid = Number(await fs.readFile(path.join(root, 'descendant.pid'), 'utf8'));
-                    break;
-                } catch {
-                    await delay(10);
+            const readFile = fs.readFile.bind(fs);
+            // Reproduce the real open-before-write window without replacing the MCP client or process.
+            let pendingPublication = true;
+            vi.spyOn(fs, 'readFile').mockImplementation(async (...args) => {
+                if (pendingPublication && args[0] === path.join(root, 'descendant.pid')) {
+                    pendingPublication = false;
+                    return '';
                 }
-            }
+                return readFile(...args);
+            });
+            const pid = await descendantPid(root);
+            expect(pendingPublication).toBe(false);
             expect(pid).toBeGreaterThan(0);
             controller.abort();
             expect(await pending).toBe(true);
@@ -117,15 +135,7 @@ describe('role MCP actual SDK stdio boundary (synthetic state, no Playwright acc
                 { port, tools, root } = await start(controller.signal, true),
                 tool = tools.find((tool) => tool.name === 'browser_slow')!;
             const pending = port.call(tool.name, tool.schemaDigest, {}, async () => {}).catch(() => undefined);
-            let pid = 0;
-            for (let attempt = 0; attempt < 100; attempt++) {
-                try {
-                    pid = Number(await fs.readFile(path.join(root, 'descendant.pid'), 'utf8'));
-                    break;
-                } catch {
-                    await delay(10);
-                }
-            }
+            const pid = await descendantPid(root);
             expect(pid).toBeGreaterThan(0);
             controller.abort();
             await pending;

@@ -35,6 +35,7 @@ COPY services/oauth2-bridge/src/ /openapi/services/oauth2-bridge/src/
 COPY services/api-gateway/src/ /openapi/services/api-gateway/src/
 COPY services/api-gateway/package.json /openapi/services/api-gateway/package.json
 COPY services/shared/ /openapi/services/shared/
+COPY vendor/asset-contract/index.d.ts /openapi/vendor/asset-contract/index.d.ts
 RUN ln -s /app/node_modules /openapi/node_modules
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 NEUROCENTER_OPENAPI_ROOT=/openapi npm run build
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund

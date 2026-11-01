@@ -2,11 +2,16 @@ export const OPENCODE_GLOBAL_PROVIDERS_READ_JOB: 'inspect-opencode-global-provid
 export const OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB: 'open-opencode-global-providers';
 export const OPENCODE_GLOBAL_PROVIDERS_CAPABILITY: 'opencode-global-providers-v1';
 export const OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION: '1.14.48';
+export const OPENCODE_V2_ACCOUNTS_ADAPTER: 'opencode-v2-accounts';
+export const OPENCODE_V2_ACCOUNTS_CAPABILITY: 'opencode-v2-accounts-2.2.2';
+export const OPENCODE_V2_ACCOUNTS_VERSION: '2.2.2';
+export type TOpenCodeProvidersAdapter = typeof OPENCODE_V2_ACCOUNTS_ADAPTER;
 export const OPENCODE_GLOBAL_PROVIDERS_SCHEMAS: {
     request: Record<string, unknown>;
     payloadRead: Record<string, unknown>;
     payloadOpen: Record<string, unknown>;
     inventory: Record<string, unknown>;
+    accountInventory: Record<string, unknown>;
     results: Record<string, unknown>;
 };
 export type TGlobalProvidersKind =
@@ -39,12 +44,14 @@ export interface IOpenCodeGlobalProvidersInventory {
     issues: TGlobalProvidersIssue[];
 }
 export interface IOpenCodeGlobalProvidersRequest {
+    adapter?: TOpenCodeProvidersAdapter;
     deviceId: string;
     kind: TGlobalProvidersKind;
     scope: 'global';
     requestKey: string;
 }
 export interface IOpenCodeGlobalProvidersPayload {
+    adapter?: TOpenCodeProvidersAdapter;
     schemaVersion: 1;
     scope: 'global';
     deviceId: string;
@@ -57,10 +64,25 @@ interface IIdentity extends IOpenCodeGlobalProvidersPayload {
 }
 export type TOpenCodeGlobalProvidersResult = IIdentity &
     (
-        | { status: 'checked' | 'partial'; inventory: IOpenCodeGlobalProvidersInventory }
+        | { adapter?: undefined; status: 'checked' | 'partial'; inventory: IOpenCodeGlobalProvidersInventory }
+        | {
+              adapter: TOpenCodeProvidersAdapter;
+              status: 'checked' | 'partial';
+              accountInventory: IOpenCodeAccountInventory;
+          }
         | { status: 'opened'; expiresAt: string }
         | { status: 'failed'; issue: TGlobalProvidersIssue }
     );
+export interface IOpenCodeAccountMetadata {
+    integrationId: string;
+    hasApiKey: boolean;
+    hasOAuth: boolean;
+    hasExternal: boolean;
+}
+export interface IOpenCodeAccountInventory {
+    accounts: IOpenCodeAccountMetadata[];
+    issues: TGlobalProvidersIssue[];
+}
 export interface IGlobalProvidersLimits {
     fileBytes: number;
     providers: number;
@@ -79,9 +101,16 @@ export function globalProvidersLimits(env?: Record<string, string | undefined>):
 export function normalizeGlobalProvidersRequest(value: unknown): IOpenCodeGlobalProvidersRequest;
 export function normalizeGlobalProvidersPayload(value: unknown, kind?: string): IOpenCodeGlobalProvidersPayload;
 export function normalizeGlobalProvidersInventory(value: unknown): IOpenCodeGlobalProvidersInventory;
+export function normalizeOpenCodeAccountInventory(value: unknown): IOpenCodeAccountInventory;
 export function normalizeGlobalProvidersResult(
     value: unknown,
-    expected?: { deviceId: string; jobId: string; kind: string; expiresAt?: string },
+    expected?: {
+        deviceId: string;
+        jobId: string;
+        kind: string;
+        expiresAt?: string;
+        adapter?: TOpenCodeProvidersAdapter;
+    },
 ): TOpenCodeGlobalProvidersResult;
 export function globalProviderId(value: unknown): value is string;
 export function globalProviderModelId(value: unknown): value is string;

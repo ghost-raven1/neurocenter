@@ -1,3 +1,4 @@
+import { useBundledBuildRetry } from './hooks/useBundledBuildRetry';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Card, Form, Input, Modal, Space, Tag, Typography } from 'antd';
 import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
@@ -19,6 +20,7 @@ export function BundledCatalogSources({
     onPublished,
     onImportArchive,
     prepareId,
+    recoverBuildId,
     plansReady = true,
 }: {
     plans: IBundledSourcePlan[];
@@ -27,6 +29,7 @@ export function BundledCatalogSources({
     onPublished: () => void;
     onImportArchive: () => void;
     prepareId?: string;
+    recoverBuildId?: string;
     plansReady?: boolean;
 }): JSX.Element {
     const { captureOwner } = useAuthRequestOwner(),
@@ -46,13 +49,32 @@ export function BundledCatalogSources({
         'tool_catalog',
         'tool_build_validation',
     );
+    const retry = useBundledBuildRetry({
+        scope,
+        recoverBuildId,
+        prepareId,
+        captureOwner,
+        plans,
+        blocked,
+        enabled: availability.enabled,
+        build,
+        publication,
+        onPrepared: (request, original) => {
+            setPlan(original);
+            setName(request.name);
+            setTargets(request.targets);
+            setLinkError('');
+        },
+    });
+    const { recovery, retrySource, preparingRetry, recoveryConflict, recoveryTerminal, exactPlan, prepareRetry } =
+        retry;
     useEffect(() => {
-        setOpen(false);
+        setOpen(!!recoverBuildId);
         setPlan(undefined);
         setName('');
         setTargets(undefined);
         observed.current = undefined;
-    }, [scope]);
+    }, [scope, recoverBuildId]);
     useEffect(() => {
         if (!build.draft) return;
         const request = build.draft.request;
@@ -83,9 +105,11 @@ export function BundledCatalogSources({
             !retained,
         captureOwner,
     );
-    const locked = build.active || build.recovering || build.recoveryBlocked || retained || nameCheck.loading;
+    const locked =
+        preparingRetry || build.active || build.recovering || build.recoveryBlocked || retained || nameCheck.loading;
     const choose = (value: IBundledSourcePlan): void => {
         if (blocked || locked || !captureOwner()()) return;
+        retry.clear();
         setPlan(value);
         setName(value.imported?.name || value.name);
         setTargets(undefined);
@@ -95,6 +119,7 @@ export function BundledCatalogSources({
         else publication.clear();
     };
     useEffect(() => {
+        if (recoverBuildId) return;
         const key = scope + ':' + prepareId;
         if (
             !prepareId ||
@@ -133,6 +158,7 @@ export function BundledCatalogSources({
     }, [
         scope,
         prepareId,
+        recoverBuildId,
         plansReady,
         build.recovering,
         build.recoveryBlocked,
@@ -149,7 +175,9 @@ export function BundledCatalogSources({
     const submit = (): void => {
         if (
             blocked ||
+            !availability.enabled ||
             locked ||
+            (!!recoverBuildId && !retrySource) ||
             !plan ||
             !['mcp', 'plugin'].includes(plan.kind) ||
             !captureOwner()() ||
@@ -158,11 +186,13 @@ export function BundledCatalogSources({
             targets?.length === 0
         )
             return;
-        const send = () => {
-            void build.submit({
+        const send = async () => {
+            if (!(await retry.validateRetry())) return;
+            await build.submit({
                 kind: plan.kind as 'mcp' | 'plugin',
                 name: name.trim(),
-                description: plan.description || plan.name,
+                description: retrySource?.description ?? plan.description ?? plan.name,
+                ...(retrySource ? { tags: retrySource.tags } : {}),
                 source: { type: 'bundled', id: plan.id, revision: plan.revision },
                 ...(targets ? { targets } : {}),
                 ...(publication.selection
@@ -176,7 +206,7 @@ export function BundledCatalogSources({
                     : {}),
             });
         };
-        if (publication.selection) send();
+        if (publication.selection) void send();
         else
             void nameCheck.check(send, (target) => {
                 void publication.select(target);
@@ -184,6 +214,7 @@ export function BundledCatalogSources({
     };
     const finish = async (): Promise<void> => {
         if (await build.reset()) {
+            retry.clear();
             setPlan(undefined);
             setName('');
             setTargets(undefined);
@@ -191,7 +222,7 @@ export function BundledCatalogSources({
             setOpen(false);
         }
     };
-    if (!plans.length && !retained && !build.recoveryBlocked && !linkError) return <></>;
+    if (!plans.length && !retained && !build.recoveryBlocked && !linkError && !recoverBuildId) return <></>;
     return (
         <section aria-label="Исходники текущей версии приложения">
             {linkError && <Alert type="warning" showIcon message={linkError} />}
@@ -321,7 +352,27 @@ export function BundledCatalogSources({
                         {(build.job || build.cancelled) && !build.active && (
                             <Button onClick={() => void finish()}>К списку исходников</Button>
                         )}
-                        {!retained && (
+                        {recoverBuildId && !retrySource && (
+                            <FeatureButton
+                                features={['asset_sources', 'tool_builds', 'tool_catalog', 'tool_build_validation']}
+                                disabled={
+                                    blocked ||
+                                    !recoveryTerminal ||
+                                    !exactPlan ||
+                                    recoveryConflict ||
+                                    build.recovering ||
+                                    build.recoveryBlocked ||
+                                    build.unresolved ||
+                                    build.cancelPending ||
+                                    preparingRetry
+                                }
+                                loading={preparingRetry}
+                                onClick={() => void prepareRetry()}
+                            >
+                                Подготовить повтор этой сборки
+                            </FeatureButton>
+                        )}
+                        {!retained && (!recoverBuildId || retrySource) && (
                             <FeatureButton
                                 features={['asset_sources', 'tool_builds', 'tool_catalog', 'tool_build_validation']}
                                 type="primary"
@@ -341,6 +392,40 @@ export function BundledCatalogSources({
                     </Space>
                 }
             >
+                {recoverBuildId && (
+                    <>
+                        {recovery.loading && <Typography.Text>Читаем журнал сборки…</Typography.Text>}
+                        {recovery.error && (
+                            <Alert
+                                type="error"
+                                message={recovery.error}
+                                action={<Button onClick={() => void recovery.read()}>Повторить чтение</Button>}
+                            />
+                        )}
+                        {recoveryConflict && (
+                            <Alert
+                                type="warning"
+                                message="В журнале сохранена другая подготовка. Завершите её восстановление; текущие исходники не изменены."
+                            />
+                        )}
+                        {recovery.job && !retrySource && (!retained || recoveryConflict) && (
+                            <PackagingBuildStatus
+                                job={recovery.job}
+                                name={recovery.job.recovery?.name ?? ''}
+                                active={open}
+                                cancelPending={false}
+                                cancelled={recovery.job.state === 'CANCELLED'}
+                            />
+                        )}
+                        {recovery.job && !exactPlan && (
+                            <Alert
+                                type="warning"
+                                message="Закреплённая версия рецепта недоступна. Текущая версия не будет подставлена вместо исходной."
+                            />
+                        )}
+                    </>
+                )}
+                {retry.error && <Alert type="warning" showIcon message={retry.error} />}
                 {build.error && <Alert type="error" showIcon message={build.error} />}
                 {nameCheck.error && <Alert type="warning" showIcon message={nameCheck.error} />}
                 {nameCheck.loading && <Typography.Text>Проверяем название в каталоге…</Typography.Text>}

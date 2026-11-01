@@ -25,7 +25,7 @@
 - **THEN** мастер сохраняет исходные данные, показывает конфликт и доступное продолжение; пустой файл не подставляется автоматически.
 
 ### Requirement: Local secret boundary
-Ключи, OAuth-токены и секретные значения SHALL оставаться на выбранном компьютере. Сайт, очереди, completion, чат, логи и persistent browser draft MUST не получать секрет либо его производный отпечаток. Сохранение MUST повторно проверять локальную сессию и полномочия.
+В командах локальной настройки ключи, OAuth-токены и секретные значения SHALL оставаться на выбранном компьютере. Отдельный явно подтверждённый перенос личного API-ключа регулируется контрактом catalog-actionable-workflows и MUST NOT включаться открытием локального редактора или фоновой синхронизацией. Сайт, очереди, completion, чат, логи и persistent browser draft MUST не получать секрет либо его производный отпечаток. Сохранение MUST повторно проверять локальную сессию и полномочия.
 
 #### Scenario: Local setup session expires
 - **WHEN** локальная форма просрочена или доступ к компьютеру отозван до сохранения
@@ -83,3 +83,35 @@
 #### Scenario: Metadata import overlaps dispatch or manual configuration
 - **WHEN** отправка держит свежие полномочия до завершения quota claim либо ручная настройка уже владеет провайдером
 - **THEN** импорт ожидает тот же provider fence до блокировки модели, сохраняет семантическую идентичность и историю, а уже допущенный запрос не ждёт завершения ответа провайдера для освобождения этого fence.
+
+### Requirement: Versioned inventory scope and safe partial explanations
+Inventory SHALL describe only global V1 files under HOME/XDG, not effective V2 authorization. Unknown versions MUST NOT confirm readiness. Known versions other than 1.14.48 SHALL retain legacy-file reading and manual continuation without enabling writes.
+
+See [pinned primary evidence](../../opencode-provider-version-evidence.md).
+
+#### Scenario: Inventory contains known issue codes
+- **WHEN** inventory содержит одну или несколько известных причин неполного чтения
+- **THEN** UI показывает фиксированные понятные причины и следующий шаг без исходных ошибок, путей, значений окружения, ключей и отпечатков; пустой частичный список не объявляется отсутствием настройки.
+
+#### Scenario: Unsupported CLI with partial legacy inventory
+- **WHEN** известная версия CLI отличается от1.14.48 и прежние файлы прочитаны частично
+- **THEN** запись остаётся запрещённой; UI объясняет ограниченность чтения и доступность ручного продолжения, не обещая эффективную авторизацию V2 и не утверждая, что продолжение запрещено.
+
+### Requirement: Separate OpenCode 2 stored-account adapter
+OpenCode 2 SHALL use the explicit `opencode-v2-accounts` adapter and exact tested CLI/server version2.2.2. It MUST require capability `opencode-v2-accounts-2.2.2` and default-OFF flag `opencode_v2_accounts` for opening and writing. V1 behavior remains separately versioned. Reading existing safe account inventory and history SHALL remain possible when the write flag is OFF, subject to fresh access rights.
+
+#### Scenario: Read registered V2 accounts
+- **WHEN** the bridge discovers a private regular managed-server registration and verifies loopback address, authenticated server version/PID and OS process owner/birth
+- **THEN** it reads credential metadata without starting a server or initializing project integrations; public output contains only integration IDs and API-key/OAuth/external-presence booleans, with fixed safe issue codes. It MUST NOT contain keys, account IDs, labels, fingerprints or server credentials, and MUST NOT claim effective project configuration or model readiness.
+
+#### Scenario: Add a supported V2 API-key account
+- **WHEN** the user explicitly prepares and confirms an Anthropic API-key account in the private local form
+- **THEN** the bridge rechecks permissions, CLI/server identity and observed inventory, persists a private intent with one fixed credential ID, and creates only that account. Existing accounts are preserved. The form explains that upstream activates the first account even with `activate:false`; replacing keys, deleting accounts and editing provider configuration are not supported by this slice.
+
+#### Scenario: Unknown save acknowledgement
+- **WHEN** the create response is lost
+- **THEN** recovery reads the same credential ID and compares its private value before declaring success or retrying with that same ID; it MUST NOT create another ID. A changed server registration blocks the previous intent without writing to the replacement server. Cross-process atomic CAS against arbitrary external writers is not claimed.
+
+#### Scenario: Input changes during preparation
+- **WHEN** the user changes the key while a prepare response is pending
+- **THEN** that late response cannot enable saving the previous key; the current input remains available for a new explicit preparation.

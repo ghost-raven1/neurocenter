@@ -4,6 +4,7 @@ export const BRIDGE_SHARED_RUNTIME_FILES = Object.freeze([
     'computer-setup.cjs',
     'opencode-cli-install.cjs',
     'opencode-local-providers.cjs',
+    'opencode-personal-key.cjs',
     'device-codex-inference.cjs',
     'runtime-cache-policy.cjs',
     'bridge-update-cleanup.cjs',

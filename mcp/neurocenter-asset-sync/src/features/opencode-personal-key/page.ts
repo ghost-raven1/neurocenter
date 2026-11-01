@@ -1,0 +1,17 @@
+/** Recipient metadata is rendered as text; the selected local key never enters the DOM. */
+export const personalKeyPage = `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Личный доступ — ключ OpenCode</title>
+<style>body{font:16px system-ui;max-width:720px;margin:32px auto;padding:16px}button{padding:10px;margin:8px 8px 8px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere}#status{min-height:48px}</style>
+<h1>Использовать ключ OpenCode</h1><p>Ключ OpenAI будет отправлен выбранному серверу Нейроцентра и сохранён только для вашего личного доступа. Локальная настройка останется прежней. Запрос модели не выполняется.</p><p>Поддерживается сохранённый API-ключ OpenAI в OpenCode 1.14.48. OAuth и ссылки на переменные окружения не переносятся. Если такой записи нет, задайте личный ключ вручную на сайте.</p>
+<pre id="recipient"></pre><button id="prepare" disabled>Проверить локальный API-ключ</button><button id="save" disabled>Подтвердить передачу ключа</button><button id="receipt" disabled>Проверить результат</button><button id="close">Закрыть</button><p id="status" role="status" aria-live="polite"></p>
+<script>
+const token=location.hash.slice(1);history.replaceState(null,'',location.pathname);let csrf='',preview='',busy=false;const el=id=>document.getElementById(id);const status=text=>el('status').textContent=text;
+async function api(route,value={}){const response=await fetch(route,{method:'POST',headers:{'Content-Type':'application/json','x-global-providers-csrf':csrf},body:JSON.stringify(value)});if(!response.ok)throw Error('Действие не подтверждено. Проверьте прежний результат перед повтором.');return response.json()}
+function controls(){el('prepare').disabled=busy||!csrf;el('save').disabled=busy||!preview;el('receipt').disabled=busy||!csrf}
+async function run(work){if(busy)return;busy=true;controls();try{await work()}catch{status('Ответ не подтверждён. Проверьте результат прежнего запроса; новый запрос не создаётся.')}finally{busy=false;controls()}}
+function saved(receipt){if(receipt){preview='';status('Ключ сохранён для вашего личного доступа. Вернитесь на сайт и перечитайте состояние.');return true}return false}
+el('prepare').onclick=()=>run(async()=>{preview='';const value=await api('/prepare');preview=value.previewId;status('Локальный API-ключ найден. Подтвердите передачу указанному получателю.')});
+el('save').onclick=()=>run(async()=>{const value=await api('/save',{previewId:preview});saved(value.receipt)});
+el('receipt').onclick=()=>run(async()=>{const value=await api('/inventory');if(!saved(value.lastSave))status('Подтверждённой квитанции пока нет. Повтор передачи использует прежний запрос.')});
+el('close').onclick=()=>api('/close').then(()=>window.close()).catch(()=>status('Закройте это окно.'));
+run(async()=>{const session=await api('/session',{token});csrf=session.csrf;const value=await api('/inventory'),v=value.inventory,r=v.recipient;el('recipient').textContent='Сайт: '+v.siteOrigin+'\\nСервер-получатель ключа: '+v.apiOrigin+'\\nПользователь: '+r.ownerEmail+'\\nМодель: '+r.modelName+'\\nПровайдер: '+r.providerUrl+'\\nРевизия подключения: '+r.connectionRevision+'\\nРевизия личного ключа: '+r.credentialRevision+'\\nИсточник: '+v.source;saved(value.lastSave)});
+</script></html>`;

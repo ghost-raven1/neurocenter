@@ -2,7 +2,7 @@ import type { ICliIntent, ICliJob } from '../model';
 import { readCliJob, record } from '../model';
 
 /** Matches DeviceJobs' hash of the original role and all four fixed request fields. */
-export async function cliRequestFingerprint(intent: ICliIntent): Promise<string> {
+export async function cliRequestFingerprint(intent: { role: string; request: object }): Promise<string> {
     if (!globalThis.crypto?.subtle)
         throw Error('Браузер не может проверить исходную отправку. Откройте сайт по HTTPS или через localhost.');
     const input = JSON.stringify({

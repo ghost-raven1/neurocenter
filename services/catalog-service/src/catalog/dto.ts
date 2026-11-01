@@ -147,6 +147,7 @@ export interface ISnapshotManifest {
 }
 
 export interface IOperation {
+    toolBuildSource?: { id: string; revision: string };
     operationId: string;
     type: TOperationType;
     projectId: string | null;

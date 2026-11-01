@@ -14,6 +14,10 @@ export interface IJob {
     percent: number | null;
 }
 export interface IJobInput {
+    modelId?: string;
+    providerId?: string;
+    expectedConnectionRevision?: number;
+    expectedCredentialRevision?: number;
     deviceId: string;
     projectId?: string;
     expectedLearningRevision?: number;
@@ -22,6 +26,7 @@ export interface IJobInput {
     kind: string;
     requestKey: string;
     scope?: 'global' | 'project';
+    adapter?: import('../../../shared/opencode-local-providers.cjs').TOpenCodeProvidersAdapter;
     runtimeCachePolicy?: import('../../../shared/runtime-cache-policy.cjs').TRuntimeCachePolicyPayload;
     assetKind?: string;
     assetId?: string;

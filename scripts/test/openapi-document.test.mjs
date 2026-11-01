@@ -116,9 +116,21 @@ test('Fixed computer OpenCode admission and observations reuse shared schemas wi
     const { OPENCODE_CLI_SCHEMAS } = await import('../../services/shared/computer-setup.cjs');
     const create = actual.paths['/api/device-jobs'].post,
         schema = create.requestBody.content['application/json'].schema;
-    const inspect = schema.oneOf[0].allOf[0].oneOf[0].allOf[0];
-    assert.equal(inspect.oneOf[1].$ref, '#/components/schemas/OpenCodeCliRequest');
-    assert.deepEqual(inspect.oneOf[0].allOf[1].properties.kind.not.enum, ['inspect-opencode-cli']);
+    const alternatives = [];
+    const visit = (value) => {
+        if (!value || typeof value !== 'object') return;
+        if (Array.isArray(value.oneOf)) alternatives.push(value.oneOf);
+        for (const child of Object.values(value)) {
+            if (Array.isArray(child)) child.forEach(visit);
+            else visit(child);
+        }
+    };
+    visit(schema);
+    const inspect = alternatives.find((branches) =>
+        branches.some((branch) => branch.$ref === '#/components/schemas/OpenCodeCliRequest'),
+    );
+    assert.ok(inspect, 'CLI inspection remains a dedicated strict admission alternative');
+    assert.deepEqual(inspect[0].allOf[1].properties.kind.not.enum, ['inspect-opencode-cli']);
     assert.deepEqual(actual.components.schemas.OpenCodeCliRequest, OPENCODE_CLI_SCHEMAS.request);
     assert.equal(actual.components.schemas.OpenCodeCliRequest.additionalProperties, false);
     assert.deepEqual(actual.components.schemas.OpenCodeCliRequest.required, [
@@ -287,10 +299,10 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 328);
+    assert.equal(Object.keys(actual.paths).length, 332);
     assert.equal(
         Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0),
-        402,
+        406,
     );
     for (const representative of [
         '/api/projects',
@@ -737,6 +749,39 @@ test('Redirects, manual OAuth JSON, binary streams and HEAD reflect the actual H
     );
 });
 
+test('A retained checkout resolves its own asset declaration instead of a live dependency symlink', () => {
+    const directory = fixture(`
+        import { Controller, Get } from '@nestjs/common';
+        import type { Asset } from '@neurocenter/asset-contract';
+        @Controller('api/pinned') class PinnedController {
+            @Get() read(): Asset { throw new Error('Never execute source'); }
+        }
+    `);
+    const vendor = path.join(directory, 'vendor/asset-contract');
+    fs.mkdirSync(vendor, { recursive: true });
+    fs.writeFileSync(path.join(vendor, 'index.d.ts'), "export interface Asset { ownedPin: 'snapshot'; }\n");
+    const response = jsonResponse(generateOpenApi(directory).paths['/api/pinned'].get);
+    assert.deepEqual(response.properties.ownedPin, { type: 'string', enum: ['snapshot'] });
+    fs.unlinkSync(path.join(vendor, 'index.d.ts'));
+    const absent = jsonResponse(generateOpenApi(directory).paths['/api/pinned'].get);
+    assert.equal(absent['x-neurocenter-untyped'], true);
+    fs.symlinkSync(path.join(root, 'vendor/asset-contract/index.d.ts'), path.join(vendor, 'index.d.ts'));
+    const linked = jsonResponse(generateOpenApi(directory).paths['/api/pinned'].get);
+    assert.equal(linked['x-neurocenter-untyped'], true);
+    // An ordinary installed package must not become a fallback when the retained pin is absent.
+    fs.unlinkSync(path.join(vendor, 'index.d.ts'));
+    fs.unlinkSync(path.join(directory, 'node_modules'));
+    const installed = path.join(directory, 'node_modules/@neurocenter/asset-contract');
+    fs.mkdirSync(installed, { recursive: true });
+    fs.writeFileSync(
+        path.join(installed, 'package.json'),
+        JSON.stringify({ name: '@neurocenter/asset-contract', types: 'index.d.ts' }),
+    );
+    fs.writeFileSync(path.join(installed, 'index.d.ts'), 'export interface Asset { foreignPin: true; }');
+    const installedOnly = jsonResponse(generateOpenApi(directory).paths['/api/pinned'].get);
+    assert.equal(installedOnly['x-neurocenter-untyped'], true);
+});
+
 test('Device and MCP routes expose the actual public authentication and protocol requirements', () => {
     assert.deepEqual(actual.paths['/api/device-channel/pair/start'].post.security, []);
     assert.deepEqual(actual.paths['/api/device-channel/identity'].post.security, [{ deviceBearer: [] }]);
@@ -852,6 +897,11 @@ test('Source-only Docker context and full checkout produce identical complete co
         fs.cpSync(path.join(root, 'services', service, 'src'), path.join(destination, 'src'), { recursive: true });
     }
     fs.cpSync(path.join(root, 'services/shared'), path.join(directory, 'services/shared'), { recursive: true });
+    fs.mkdirSync(path.join(directory, 'vendor/asset-contract'), { recursive: true });
+    fs.copyFileSync(
+        path.join(root, 'vendor/asset-contract/index.d.ts'),
+        path.join(directory, 'vendor/asset-contract/index.d.ts'),
+    );
     fs.copyFileSync(
         path.join(root, 'services/api-gateway/package.json'),
         path.join(directory, 'services/api-gateway/package.json'),
@@ -881,4 +931,25 @@ test('CLI requires an explicit destination, supports build root override and wri
     });
     assert.equal(fallback.status, 0, fallback.stderr);
     assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), fixtureDocument);
+});
+
+test('Personal key transfer keeps the key write-only and outside public jobs and receipts', () => {
+    const schemas = actual.components.schemas;
+    assert.equal(schemas.OpenCodePersonalKeyRequest.additionalProperties, false);
+    assert.equal(schemas.OpenCodePersonalKeyRequest.properties.apiKey, undefined);
+    assert.equal(schemas.OpenCodePersonalKeyReceipt.properties.apiKey, undefined);
+    assert.equal(schemas.OpenCodePersonalKeyReceipt.properties.requestHash, undefined);
+    for (const action of ['context', 'save', 'receipt']) {
+        const route = actual.paths['/api/device-channel/opencode-personal-key/' + action].post;
+        assert.deepEqual(route.security, [{ deviceBearer: [] }]);
+        assert.ok(route.responses['200']);
+        assert.equal(route.responses['201'], undefined);
+        const request = route.requestBody.content['application/json'].schema;
+        assert.equal(request.additionalProperties, false);
+        assert.deepEqual(request.required, action === 'save' ? ['jobId', 'apiKey'] : ['jobId']);
+        if (action === 'save') assert.equal(request.properties.apiKey.writeOnly, true);
+    }
+    const lookup = jsonResponse(actual.paths['/api/models/{id}/my-access/transfers/{jobId}'].get);
+    assert.deepEqual(lookup.required, ['receipt', 'canStartNew']);
+    assert.deepEqual(lookup.properties.canStartNew, { type: 'boolean' });
 });

@@ -3,12 +3,14 @@ import {
     type IOpenCodeGlobalProvidersRequest,
     type TOpenCodeGlobalProvidersResult,
     type TGlobalProvidersKind,
+    type TOpenCodeProvidersAdapter,
 } from '@neurocenter/opencode-local-providers';
 export const uuid = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
 export const record = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 export interface IProviderJob {
+    adapter?: TOpenCodeProvidersAdapter;
     id: string;
     deviceId: string;
     projectId: null;
@@ -31,12 +33,14 @@ export function readProviderJob(
     deviceId: string,
     kind: TGlobalProvidersKind,
     previous?: IProviderJob,
+    adapter?: TOpenCodeProvidersAdapter,
 ): IProviderJob {
     if (
         !record(value) ||
         !uuid(value.id) ||
         value.deviceId !== deviceId ||
         value.projectId !== null ||
+        (value.adapter ?? undefined) !== adapter ||
         value.kind !== kind ||
         !['queued', 'running', 'reconciling', 'succeeded', 'failed', 'cancelled'].includes(String(value.state)) ||
         typeof value.createdAt !== 'string' ||
@@ -47,8 +51,14 @@ export function readProviderJob(
         throw Error('Состояние локальной проверки не подтверждено.');
     let result: TOpenCodeGlobalProvidersResult | undefined;
     if (record(value.result) && Object.keys(value.result).length)
-        result = normalizeGlobalProvidersResult(value.result, { deviceId, jobId: value.id, kind });
+        result = normalizeGlobalProvidersResult(value.result, {
+            deviceId,
+            jobId: value.id,
+            kind,
+            ...(adapter ? { adapter } : {}),
+        });
     const job = {
+        ...(adapter ? { adapter } : {}),
         id: value.id,
         deviceId,
         projectId: null,

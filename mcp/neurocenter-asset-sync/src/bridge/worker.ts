@@ -105,11 +105,7 @@ import {
     stopGlobalProvidersJobs,
     recoverGlobalProvidersJobs,
 } from '../features/opencode-local-providers/index.js';
-import { contract as globalProvidersContract } from '../features/opencode-local-providers/contract.js';
-const globalProviderJobs: readonly string[] = [
-    globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
-    globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB,
-];
+import { localProviderKinds as globalProviderJobs } from '../features/opencode-local-providers/job-contract.js';
 
 interface IJob {
     id: string;

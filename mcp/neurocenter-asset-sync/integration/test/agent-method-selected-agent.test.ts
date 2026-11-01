@@ -9,7 +9,7 @@ import { compileProjectAgents } from '../../src/features/project-agents/contract
 import { agentFile, AGENTS_RECEIPT } from '../../src/features/project-agents/receipt.js';
 import { assertSelectedMethodAgent } from '../../src/features/agent-method-workflow/selected-agent.js';
 import { runAgentMethodWorkflow, stopMethodWorkflows } from '../../src/features/agent-method-workflow/executor.js';
-import { methodDeliveryResult } from '../../src/features/agent-method-workflow/receipts.js';
+import { methodDeliveryResult, readMethodReceipt } from '../../src/features/agent-method-workflow/receipts.js';
 import { agentMethodWorkflowAgentIdentity } from '../../src/features/agent-method-workflow/contract.js';
 
 describe('Selected project agent: real local compilation receipts, safe metadata and harmless subprocesses, no model/API', () => {
@@ -130,19 +130,17 @@ describe('Selected project agent: real local compilation receipts, safe metadata
         expect(await fs.readFile(path.join(f.root, 'dispatch-count'), 'utf8')).toBe('1');
     }, 30000);
     it('fails closed when the agent file changes after coding completed and the final check returns zero', async () => {
-        const check = path.join(f.root, 'check.cjs');
-        await fs.writeFile(
-            check,
-            (await fs.readFile(check, 'utf8')) +
-                `require('node:fs').appendFileSync(${JSON.stringify(agentFile(f.payload.agent!.slug))},'\\nChanged after coding completed.\\n');`,
-        );
-        await runAgentMethodWorkflow(
-            f.job,
-            f.deviceId,
-            async () => {},
-            async () => {},
-            { prepare: f.prepare },
-        );
+        let changedAfterPassedCheck = false;
+        const authorize = async () => {
+            const receipt = await readMethodReceipt(f.payload.workflowId);
+            if (changedAfterPassedCheck || receipt?.result.checks[0]?.state !== 'passed') return;
+            expect(receipt.result.checks[0].exitCode).toBe(0);
+            changedAfterPassedCheck = true;
+            // Introduce the external edit only after the real check outcome has been durably recorded.
+            await fs.appendFile(selectedFile(), '\nChanged after the final check completed.\n');
+        };
+        await runAgentMethodWorkflow(f.job, f.deviceId, authorize, async () => {}, { prepare: f.prepare });
+        expect(changedAfterPassedCheck).toBe(true);
         const result = await methodDeliveryResult(f.job.id, f.deviceId, f.payload.workflowId);
         expect(result).toMatchObject({
             state: 'needs_setup',

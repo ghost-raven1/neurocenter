@@ -32,6 +32,22 @@
 - **WHEN** ответ потерян, страница перезагружена или флаг выключен
 - **THEN** разрешённые история, проверка результата и отмена остаются доступны; новая операция не создаётся без подтверждения состояния прежней
 
+#### Scenario: Восстановление неудачной bundled-сборки
+- **WHEN** администратор открывает восстановление FAILED/CANCELLED bundled-сборки из операции
+- **THEN** открываются точный рецепт и журнал сборки с сохранёнными revision, платформами и параметрами; открытие не отправляет новый запрос, другой незавершённый журнал не заменяется
+
+#### Scenario: Явный повтор после подтверждённого отказа
+- **WHEN** пользователь повторяет терминально завершённую сборку после свежего чтения её состояния
+- **THEN** новый ключ создаётся только для явно подтверждённого повтора; исходная revision сохраняется, публикация требует свежего preview/CAS, а неизвестный результат прежнего запроса продолжает проверяться с прежним ключом
+
+#### Scenario: Рецепт или владелец изменился при восстановлении
+- **WHEN** закреплённая revision недоступна либо пользователь или его права изменились во время чтения
+- **THEN** система не подменяет исходники текущей revision и не применяет ответ прежнего владельца; сохранённая история остаётся отдельной от разрешения нового запуска
+
+#### Scenario: Встроенный импорт в квитанции пересборки
+- **WHEN** пользователь открывает незавершённый встроенный импорт из новой либо прежней квитанции
+- **THEN** ссылка читает точный принятый импорт по его id, не ищет несуществующую операцию и не создаёт новый импорт; другой сохранённый запрос остаётся неизменным, а повтор использует действие существующего задания
+
 ### Requirement: Единая навигация каталога и поставок
 Система SHALL предоставлять поставки внутри каталога с единой основой карточек и термином «Поставка». Исходники, опубликованный пакет, версия проекта и установленная версия SHALL оставаться различимыми.
 
@@ -45,6 +61,10 @@
 #### Scenario: Личный ключ на сервере
 - **WHEN** пользователь открывает настройку удалённой модели
 - **THEN** видит получателя запросов и место ввода личного ключа; отсутствие административных прав не скрывает разрешённую настройку личного доступа
+
+#### Scenario: Провайдер недоступен или хранилище не настроено
+- **WHEN** сведения о провайдере не загрузились, отсутствует общий endpoint или хранилище личных ключей недоступно
+- **THEN** интерфейс объясняет причину, сохраняет введённый ключ при отказе сохранения и предлагает перечитать сведения; общие настройки доступны отдельно только главному администратору, открытие не вызывает модель и не сохраняет ключ автоматически
 
 #### Scenario: Использование конфигурации OpenCode
 - **WHEN** пользователь выбирает конфигурацию подключённого компьютера
@@ -67,3 +87,18 @@
 #### Scenario: Архив превышает допустимый размер
 - **WHEN** архив не проходит ограничение файла или общего размера
 - **THEN** пользователь видит нарушенный лимит и доступный путь: рецепт известного пакета, импорт готовой поставки или повторный выбор исходников; лимит не обходится молча
+
+### Requirement: Explicit transfer to personal server access
+The system SHALL offer a separate default-OFF, capability-gated action for an explicitly selected local API key and exact personal server recipient. Opening its private window MUST NOT transfer the key. Background metadata synchronization MUST remain credential-free.
+
+#### Scenario: Supported local key and recipient
+- **WHEN** the user prepares a stored `openai` API-key entry from exact OpenCode1.14.48 for a `remote-openai` model at `https://api.openai.com/v1`
+- **THEN** the private form shows the site/API origin, owner, model, endpoint and connection/credential revisions; only explicit confirmation sends the key through the authenticated device channel, after fresh CLI/source/owner/role/flag checks. OAuth, external references and unsupported CLI/provider mappings are rejected without modifying local auth.
+
+#### Scenario: Server acknowledgement is unknown
+- **WHEN** a transfer response is lost
+- **THEN** the client keeps the same request/job identity and reads the original receipt before retrying. The server reuses personal credential CAS, encryption and idempotency with transfer-specific provenance; no key or key-derived hash enters public receipts, job payloads, browser drafts or logs.
+
+#### Scenario: Window expires or feature is disabled
+- **WHEN** an opened window expires or the write feature becomes disabled
+- **THEN** fresh authorized receipt reads remain available, new writes require the current flag, and a new explicit attempt is permitted only by the server's retry decision after fencing any admitted transfer. Browser time and a missing response MUST NOT imply permission to open another window.

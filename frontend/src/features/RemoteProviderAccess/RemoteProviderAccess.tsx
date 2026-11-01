@@ -1,3 +1,5 @@
+import { LocalKeyTransfer } from './LocalKeyTransfer/LocalKeyTransfer';
+import { OPENCODE_PERSONAL_KEY_PROVIDER_URL } from './LocalKeyTransfer/contract';
 import { Alert, Button, Input, Popconfirm, Space, Tag, Typography } from 'antd';
 import { usePersonalProviderAccess } from './hooks/usePersonalProviderAccess';
 import { useSelector } from 'react-redux';
@@ -76,6 +78,9 @@ function PersonalProviderAccess({ modelId }: { modelId: string }): JSX.Element {
                         </details>
                     )}
                 </>
+            )}
+            {view && view.providerUrl === OPENCODE_PERSONAL_KEY_PROVIDER_URL && view.authMode !== 'none' && (
+                <LocalKeyTransfer view={view} manualPending={!!pending} busy={value.busy} onUpdated={value.read} />
             )}
             <Space wrap>
                 {pending ? (

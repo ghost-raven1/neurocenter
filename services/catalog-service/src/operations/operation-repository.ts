@@ -1,3 +1,4 @@
+import { bundledRecoverySource } from '../package-build/build-recovery';
 import type { Pool } from 'pg';
 
 import type { IOperation, IOperationDetail, IOperationPage } from '../catalog/dto';
@@ -18,6 +19,28 @@ function readScopeCondition(scope: IOperationReadScope, params: unknown[]): stri
 /** Хранит журнал операций; исполнение заданий остаётся в соответствующих очередях. */
 export class OperationRepository {
     constructor(private readonly pool: Pool) {}
+
+    /** Only bundled identity is loaded; full build configuration stays in its protected endpoint. */
+    private async withToolBuilds(rows: IOperationRow[]): Promise<IOperationRow[]> {
+        const eligible = (row: IOperationRow) =>
+            row.resource_type === 'tool-build' &&
+            row.project_id === null &&
+            /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(row.resource_id);
+        const ids = [...new Set(rows.filter(eligible).map((row) => row.resource_id))];
+        if (!ids.length) return rows;
+        const result = await this.pool.query<{ id: string; actor: string; source: unknown }>(
+            `SELECT id, actor, jsonb_build_object('type','bundled','id',config#>>'{source,id}',
+                'revision',config#>>'{source,revision}') AS source FROM tool_build_jobs
+             WHERE id=ANY($1::uuid[]) AND config#>>'{source,type}'='bundled'`,
+            [ids],
+        );
+        const jobs = new Map(result.rows.map((job) => [job.id, job]));
+        return rows.map((row) => {
+            const job = eligible(row) ? jobs.get(row.resource_id) : undefined;
+            const source = job && job.actor === row.actor ? bundledRecoverySource(job.source) : undefined;
+            return source ? { ...row, tool_build_source: { id: source.id, revision: source.revision } } : row;
+        });
+    }
 
     /** Метаданные берём из личного задания, сверяя владельца и проект; обычный журнал не затрагивает очередь. */
     private async withBridgeJobs(rows: IOperationRow[]): Promise<IOperationRow[]> {
@@ -120,7 +143,7 @@ export class OperationRepository {
                 [...filterParams, size, offset],
             ),
         ]);
-        const rows = await this.withSystemRoles(await this.withBridgeJobs(rowsResult.rows));
+        const rows = await this.withToolBuilds(await this.withSystemRoles(await this.withBridgeJobs(rowsResult.rows)));
         return {
             items: rows.map(toOperation),
             page,
@@ -142,7 +165,7 @@ export class OperationRepository {
             'SELECT * FROM operations WHERE operation_id = $1' + condition,
             params,
         );
-        const [row] = await this.withSystemRoles(await this.withBridgeJobs(result.rows));
+        const [row] = await this.withToolBuilds(await this.withSystemRoles(await this.withBridgeJobs(result.rows)));
         return row ? toOperationDetail(row) : null;
     }
 

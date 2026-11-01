@@ -1,19 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { GlobalProviderEditor, GlobalProviderInputError, type ICompatibleCliProof } from './editor.js';
+import { GlobalProviderEditor, GlobalProviderInputError } from './editor.js';
 import { globalProvidersPage } from './page.js';
-import type { GlobalProvidersLimits } from './contract.js';
-interface IOptions {
-    id: string;
-    home: string;
-    environment: NodeJS.ProcessEnv;
-    expiresAt: string;
-    limits: Readonly<GlobalProvidersLimits>;
-    authorize: (signal?: AbortSignal) => Promise<unknown>;
-    assertCurrent: () => Promise<void>;
-    assertCompatibleCli: (signal?: AbortSignal) => Promise<ICompatibleCliProof>;
-    open: (url: string) => Promise<boolean>;
-}
+import { AccountsEditor } from './v2-accounts/editor.js';
+import { accountsPage } from './v2-accounts/page.js';
+import { contract } from './contract.js';
+import type { IOptions } from './server.interfaces.js';
 const active = new Map<string, () => Promise<void>>();
 const json = (res: ServerResponse, status: number, value: unknown) => {
     res.writeHead(status, {
@@ -74,14 +66,24 @@ export async function startGlobalProvidersSession(options: IOptions) {
             },
         };
     };
-    const editor = new GlobalProviderEditor({
-        home: options.home,
-        environment: options.environment,
-        limits: options.limits,
-        authorize: admit,
-        current,
-        assertCompatibleCli: compatible,
-    });
+    const v2 = options.adapter === contract.OPENCODE_V2_ACCOUNTS_ADAPTER;
+    const Editor = v2 ? AccountsEditor : GlobalProviderEditor;
+    const editor =
+        options.privateEditor?.create({
+            signal: session.signal,
+            authorize: admit,
+            current,
+            assertCompatibleCli: compatible,
+        }) ??
+        new Editor({
+            signal: session.signal,
+            home: options.home,
+            environment: options.environment,
+            limits: options.limits,
+            authorize: admit,
+            current,
+            assertCompatibleCli: compatible,
+        });
     const server = createServer((req, res) => {
         let abandoned = false;
         res.once('close', () => {
@@ -110,7 +112,7 @@ export async function startGlobalProvidersSession(options: IOptions) {
                     'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'`,
                 });
                 res.end(
-                    globalProvidersPage
+                    (options.privateEditor?.page ?? (v2 ? accountsPage : globalProvidersPage))
                         .replace('<style>', `<style nonce="${nonce}">`)
                         .replace('<script>', `<script nonce="${nonce}">`),
                 );
@@ -153,7 +155,7 @@ export async function startGlobalProvidersSession(options: IOptions) {
                 let result: unknown;
                 if (req.url === '/inventory' && Object.keys(value).length === 0)
                     result = {
-                        inventory: await editor.inventory(),
+                        [v2 ? 'accountInventory' : 'inventory']: await editor.inventory(),
                         lastSave: await editor.lastSave(),
                         limits: options.limits,
                     };
@@ -181,7 +183,9 @@ export async function startGlobalProvidersSession(options: IOptions) {
                         error instanceof GlobalProviderInputError
                             ? error.message
                             : code === 'OPENCODE_GLOBAL_PROVIDER_CLI_UNSUPPORTED'
-                              ? 'Сохранение доступно для обычного OpenCode1.14.48. Неизвестная или другая версия оставлена без изменений; чтение доступно.'
+                              ? v2
+                                  ? 'Для этой настройки нужен обычный OpenCode 2.2.2. Проверьте версию и перечитайте состояние.'
+                                  : 'Сохранение доступно для обычного OpenCode1.14.48. Неизвестная или другая версия оставлена без изменений; чтение доступно.'
                               : code === 'GLOBAL_PROVIDER_UNKNOWN'
                                 ? 'Сохранение выполнено частично. Перечитайте состояние и завершите сохранённое изменение.'
                                 : code === 'GLOBAL_PROVIDER_CONFLICT'

@@ -3,11 +3,18 @@ import {
     OPENCODE_GLOBAL_PROVIDERS_READ_JOB as READ,
     OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB as OPEN,
     OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION,
+    OPENCODE_V2_ACCOUNTS_ADAPTER,
+    OPENCODE_V2_ACCOUNTS_VERSION,
 } from '@neurocenter/opencode-local-providers';
 import type { useBridge } from '../McpBridge/hooks/useBridge';
 import { useLocalProviders } from './hooks/useLocalProviders';
-import { terminal } from './model';
-import { providerAuthenticationLabel } from './presentation';
+import { LocalProviderHistory } from './LocalProviderHistory/LocalProviderHistory';
+import { OpenCodeAccountsStep } from './OpenCodeAccountsStep/OpenCodeAccountsStep';
+import {
+    providerAuthenticationLabel,
+    providerIssueExplanation,
+    unsupportedProviderVersionExplanation,
+} from './presentation';
 import './LocalOpenCodeProviders.less';
 
 /** Stage three uses the selected bridge before a folder exists; secret inputs are offered only by its private local window. */
@@ -22,14 +29,13 @@ export function LocalOpenCodeProvidersStep({
     onContinue: () => void;
     cliVersion?: string;
 }): JSX.Element {
-    const compatible = cliVersion === OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION,
+    const adapter = cliVersion === OPENCODE_V2_ACCOUNTS_VERSION ? OPENCODE_V2_ACCOUNTS_ADAPTER : undefined;
+    const compatible = !!adapter || cliVersion === OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION,
         legacy = cliVersion !== undefined && !compatible;
-    const { state, controller, canRead, canInspect, canOpen, blocker, openingBlocker } = useLocalProviders(
-            bridge,
-            enabled,
-            compatible,
-        ),
-        inventory = state?.inventory;
+    const value = useLocalProviders(bridge, enabled, compatible, adapter);
+    const { state, controller, canRead, canInspect, canOpen, blocker, openingBlocker } = value;
+    const inventory = state?.inventory;
+    if (adapter) return <OpenCodeAccountsStep value={value} onContinue={onContinue} />;
     const known =
         compatible &&
         canRead &&
@@ -47,13 +53,7 @@ export function LocalOpenCodeProvidersStep({
                 отправляет ключи на сервер.
             </Typography.Paragraph>
             {blocker && <Alert type="info" showIcon message={blocker} />}
-            {legacy && (
-                <Alert
-                    type="info"
-                    showIcon
-                    message="Для этой версии доступно только чтение прежних файлов. Настройте провайдеров в OpenCode."
-                />
-            )}
+            {legacy && <Alert type="info" showIcon message={unsupportedProviderVersionExplanation(cliVersion!)} />}
             {cliVersion === undefined && (
                 <Alert
                     type="info"
@@ -93,7 +93,13 @@ export function LocalOpenCodeProvidersStep({
                         emptyText: (
                             <Empty
                                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                                description="Локальные провайдеры пока не настроены."
+                                description={
+                                    inventory.issues.length
+                                        ? 'Полный список провайдеров не получен.'
+                                        : legacy
+                                          ? 'В прежних глобальных файлах провайдеры не найдены.'
+                                          : 'В глобальных файлах провайдеры пока не найдены.'
+                                }
                             />
                         ),
                     }}
@@ -126,9 +132,30 @@ export function LocalOpenCodeProvidersStep({
                     type="warning"
                     showIcon
                     message="Состояние прочитано частично"
-                    description="Проверьте локальные файлы, переопределения окружения и ограничения. Исходные данные сохранены; переход ждёт полного чтения."
+                    description={
+                        <>
+                            <ul>
+                                {inventory.issues.map((issue) => (
+                                    <li key={issue}>{providerIssueExplanation(issue)}</li>
+                                ))}
+                            </ul>
+                            <Typography.Paragraph>
+                                {legacy
+                                    ? canContinue
+                                        ? 'Исходные файлы сохранены. Можно продолжить с настройкой в OpenCode; этот список не подтверждает готовность провайдеров.'
+                                        : 'Исходные файлы сохранены. Проверьте доступ к компьютеру; этот список не подтверждает готовность провайдеров.'
+                                    : 'Исходные файлы сохранены. Использование текущей настройки станет доступно после полного чтения и проверки версии.'}
+                            </Typography.Paragraph>
+                        </>
+                    }
                 />
             )}
+            {([READ, OPEN] as const).map((kind) => {
+                const result = state?.jobs[kind]?.result;
+                return result?.status === 'failed' && (kind !== OPEN || result.issue !== 'unsupported-version') ? (
+                    <Alert key={kind} type="warning" showIcon message={providerIssueExplanation(result.issue)} />
+                ) : null;
+            })}
             {state?.jobs[OPEN]?.result?.status === 'opened' && (
                 <Alert
                     type="info"
@@ -170,39 +197,13 @@ export function LocalOpenCodeProvidersStep({
                     {legacy ? 'Продолжить с настройкой OpenCode' : 'Использовать текущую настройку'}
                 </Button>
             </Space>
-            <details>
-                <summary>История и восстановление</summary>
-                <Button disabled={state?.busy} onClick={() => void controller.refresh()}>
-                    Обновить историю
-                </Button>
-            </details>
-            {state?.replayKinds.map((kind) => (
-                <Button
-                    key={kind}
-                    disabled={state.busy || (kind === OPEN ? !canOpen : !canRead)}
-                    onClick={() => void controller.replay(kind)}
-                >
-                    Повторить тот же запрос: {kind === OPEN ? 'открытие окна' : 'чтение'}
-                </Button>
-            ))}
-            {([READ, OPEN] as const).map(
-                (kind) =>
-                    state?.jobs[kind] &&
-                    !terminal(state.jobs[kind]) && (
-                        <Button
-                            key={kind}
-                            danger
-                            disabled={state.busy || !canRead}
-                            onClick={() => void controller.cancel(kind)}
-                        >
-                            Отменить {kind === OPEN ? 'открытие' : 'чтение'}
-                        </Button>
-                    ),
-            )}
+            <LocalProviderHistory value={value} />
             <Typography.Paragraph type="secondary">
                 {legacy
                     ? 'Прежние файлы не подтверждают эффективную настройку текущей версии OpenCode.'
-                    : 'Это подтверждает сохранённую настройку.'}{' '}
+                    : known
+                      ? 'Это подтверждает сохранённую настройку в глобальных файлах.'
+                      : 'Готовность провайдеров пока не подтверждена.'}{' '}
                 Модель автоматически не выбирается, запрос модели не выполняется.
             </Typography.Paragraph>
         </section>

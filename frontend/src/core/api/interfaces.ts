@@ -274,6 +274,7 @@ export interface ISkillsListQuery {
 
 /** Сущность операции (передача/проверка). */
 export interface IOperation {
+    toolBuildSource?: { id: string; revision: string };
     operationId: string;
     type: TOperationType;
     projectId: string | null;

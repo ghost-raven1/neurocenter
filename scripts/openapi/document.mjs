@@ -1,3 +1,4 @@
+import { personalKeySchemas } from './opencode-personal-key.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { controllerFiles, scanRoutes } from './routes.mjs';
@@ -69,6 +70,7 @@ export function generateOpenApi(root) {
                 ...computerSetupSchemas,
                 ...openCodeCliInstallSchemas,
                 ...globalProvidersSchemas,
+                ...personalKeySchemas,
                 ApiError: {
                     type: 'object',
                     properties: {

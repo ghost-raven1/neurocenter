@@ -422,6 +422,7 @@ export class ProxyService {
     /** Устройство имеет узкий канал; произвольные internal-маршруты не проксируются. */
     private async deviceChannel(req: Request, res: Response): Promise<void> {
         const suffix = req.path.slice('/api/device-channel/'.length);
+        const personalKeyTransfer = /^opencode-personal-key\/(?:context|save|receipt)$/.test(suffix);
         if (req.method === 'GET' && /^jobs\/[a-f0-9-]{36}\/runtime\/[a-f0-9]{64}$/.test(suffix)) {
             const identity = await this.authGuard.authenticate({
                 headers: { authorization: req.headers.authorization },
@@ -437,7 +438,7 @@ export class ProxyService {
         if (
             req.method !== 'POST' ||
             (!publicPair &&
-                !/^(identity|heartbeat|presence|configuration-authorize|project-configuration\/authorize|opencode-provider\/authorize|opencode-global-providers\/authorize|embedding(?:\/context)?|codex-inference\/(context|dispatch)|system-role-mcp\/(claim|authorize|context|next|dispatch|result|complete)|opencode-models\/(context|sync)|agents\/compile|learning-quirks\/import|learning-memory\/context|learning\/(context|record|propose|observe)|worker\/(pause|resume|update-cleanup\/authorize)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(
+                !/^(identity|heartbeat|presence|configuration-authorize|project-configuration\/authorize|opencode-provider\/authorize|opencode-global-providers\/authorize|opencode-personal-key\/(context|save|receipt)|embedding(?:\/context)?|codex-inference\/(context|dispatch)|system-role-mcp\/(claim|authorize|context|next|dispatch|result|complete)|opencode-models\/(context|sync)|agents\/compile|learning-quirks\/import|learning-memory\/context|learning\/(context|record|propose|observe)|worker\/(pause|resume|update-cleanup\/authorize)|jobs\/claim|jobs\/[a-f0-9-]{36}\/(authorize|progress|complete))$/.test(
                     suffix,
                 ))
         ) {
@@ -445,9 +446,10 @@ export class ProxyService {
             return;
         }
         if (
-            suffix === 'opencode-models/sync' &&
-            req.body?.credentials &&
-            Object.keys(req.body.credentials).length &&
+            (suffix === 'opencode-personal-key/save' ||
+                (suffix === 'opencode-models/sync' &&
+                    req.body?.credentials &&
+                    Object.keys(req.body.credentials).length)) &&
             !deviceCredentialTransport(req)
         ) {
             res.status(403).json({
@@ -519,11 +521,18 @@ export class ProxyService {
         }
         try {
             const response = await this.http.post(`${this.catalogUrl}/internal/device-channel/${suffix}`, req.body, {
+                ...(personalKeyTransfer ? { maxRedirects: 0, proxy: false as const } : {}),
                 headers: {
                     'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',
                     ...(!publicPair || suffix === 'pair/start' ? { authorization: req.headers.authorization } : {}),
                 },
             });
+            if (personalKeyTransfer && (response.status < 200 || response.status >= 300)) {
+                res.status(response.status >= 400 && response.status < 600 ? response.status : 502).json({
+                    message: 'Перенос ключа не подтверждён. Проверьте сохранённую квитанцию перед повтором.',
+                });
+                return;
+            }
             res.status(response.status).json(response.data === '' ? null : response.data);
             if (response.status >= 200 && response.status < 300 && auth && !suffix.startsWith('embedding')) {
                 this.live.bridge(auth.email, auth.deviceId, /^jobs\//.test(suffix) ? suffix.split('/')[1] : undefined);

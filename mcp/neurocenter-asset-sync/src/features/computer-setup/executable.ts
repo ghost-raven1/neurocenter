@@ -6,7 +6,7 @@ export interface IUserCliExecutable {
     file: string;
     identity: string;
 }
-const identity = (value: Awaited<ReturnType<typeof fs.stat>>) =>
+const identity = (value: NonNullable<Awaited<ReturnType<typeof fs.stat>>>) =>
     [value.dev, value.ino, value.size, value.mtimeMs, value.ctimeMs].join(':');
 const missing = (error: unknown) => ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '');
 const inside = (root: string, file: string) => file === root || file.startsWith(root + path.sep);

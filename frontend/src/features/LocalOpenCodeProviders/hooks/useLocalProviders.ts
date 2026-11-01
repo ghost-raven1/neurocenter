@@ -5,6 +5,8 @@ import base from '../../../core/api/base';
 import {
     OPENCODE_GLOBAL_PROVIDERS_READ_JOB as READ,
     OPENCODE_GLOBAL_PROVIDERS_CAPABILITY,
+    OPENCODE_V2_ACCOUNTS_CAPABILITY,
+    type TOpenCodeProvidersAdapter,
 } from '@neurocenter/opencode-local-providers';
 import { useFeatureAvailability } from '../../FeatureFlags/FeatureAvailability';
 import { useAuthRequestOwner } from '../../UserBlock/hooks/useAuthRequestOwner';
@@ -17,19 +19,27 @@ import { createLocalProvidersController, type ILocalProvidersState } from './con
 import { terminal, uuid } from '../model';
 
 /** Durable identity survives changed grants; full auth scope and selected computer fence every asynchronous reply. */
-export function useLocalProviders(bridge: ReturnType<typeof useBridge>, enabled: boolean, compatible: boolean) {
+export function useLocalProviders(
+    bridge: ReturnType<typeof useBridge>,
+    enabled: boolean,
+    compatible: boolean,
+    adapter?: TOpenCodeProvidersAdapter,
+) {
     const user = useSelector((state: TRootState) => state.userBlock.user),
         { scope, captureOwner } = useAuthRequestOwner();
+    const v2Availability = useFeatureAvailability('opencode_v2_accounts');
     const availability = useFeatureAvailability('computer_setup', 'computer_connections'),
         device = bridge.device,
         role = user?.activeRole ?? '';
     const owner = durableJournalOwner(user, base.defaults.baseURL || window.location.origin),
         deviceId = device?.id ?? '',
-        identity = JSON.stringify([scope, deviceId]);
+        identity = JSON.stringify([scope, deviceId, adapter, compatible]);
     const selected = useRef(identity);
     selected.current = identity;
     const assigned = !!user?.userRoles.includes(role),
-        supported = !!device?.report.capabilities?.includes(OPENCODE_GLOBAL_PROVIDERS_CAPABILITY);
+        supported = !!device?.report.capabilities?.includes(
+            adapter ? OPENCODE_V2_ACCOUNTS_CAPABILITY : OPENCODE_GLOBAL_PROVIDERS_CAPABILITY,
+        );
     const canRead =
         !!scope &&
         !!owner &&
@@ -44,6 +54,7 @@ export function useLocalProviders(bridge: ReturnType<typeof useBridge>, enabled:
         supported;
     const canOpen =
         compatible &&
+        (!adapter || v2Availability.enabled) &&
         canRead &&
         enabled &&
         availability.enabled &&
@@ -63,6 +74,7 @@ export function useLocalProviders(bridge: ReturnType<typeof useBridge>, enabled:
             /* Existing history remains readable without storage. */
         }
         return createLocalProvidersController({
+            adapter,
             owner,
             role,
             deviceId,
@@ -77,7 +89,7 @@ export function useLocalProviders(bridge: ReturnType<typeof useBridge>, enabled:
             },
             onChange: (state) => setView({ identity, state }),
         });
-    }, [scope, owner, role, deviceId, lock, captureOwner]);
+    }, [owner, role, deviceId, lock, captureOwner, adapter, identity]);
     useEffect(() => {
         controller.activate();
         void controller.refresh().then(() => {
@@ -104,28 +116,33 @@ export function useLocalProviders(bridge: ReturnType<typeof useBridge>, enabled:
             controller.dispose();
             window.removeEventListener('storage', changed);
         };
-    }, [controller]);
+    }, [controller, supportsJournal]);
     const state = view.identity === identity ? view.state : undefined;
+    const jobs = state?.jobs;
     useEffect(() => {
-        if (!state || !Object.values(state.jobs).some((job) => job && !terminal(job))) return;
+        if (!jobs || !Object.values(jobs).some((job) => job && !terminal(job))) return;
         const timer = window.setInterval(() => {
             if (document.visibilityState !== 'hidden') void controller.refresh();
         }, 2500);
         return () => window.clearInterval(timer);
-    }, [controller, state?.jobs]);
+    }, [controller, jobs]);
     const blocker = !device
         ? 'Выберите подключённый компьютер.'
         : !supported
-          ? 'Обновите мост: глобальное чтение провайдеров пока недоступно.'
+          ? adapter
+              ? 'Обновите мост: чтение учётных записей OpenCode 2 пока недоступно.'
+              : 'Обновите мост: глобальное чтение провайдеров пока недоступно.'
           : !canRead
             ? 'Подтвердите подключение компьютера и действующую роль для чтения.'
             : '';
     const openingBlocker =
-        !enabled || !availability.enabled
-            ? availability.reason || 'Новая настройка выключена. Чтение, история и отмена доступны.'
-            : roleLevel(role) < 2
-              ? 'Локальная настройка доступна разработчику или администратору.'
-              : '';
+        adapter && !v2Availability.enabled
+            ? v2Availability.reason || 'Добавление учётной записи выключено. Чтение и история доступны.'
+            : !enabled || !availability.enabled
+              ? availability.reason || 'Новая настройка выключена. Чтение, история и отмена доступны.'
+              : roleLevel(role) < 2
+                ? 'Локальная настройка доступна разработчику или администратору.'
+                : '';
     return {
         controller,
         state,

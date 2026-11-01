@@ -9,6 +9,7 @@ export function toOperation(row: IOperationRow): IOperation {
         row.bridge_job_project_exists === true || (row.project_id === null && row.bridge_job_kind === 'choose-root');
     return {
         operationId: row.operation_id,
+        ...(row.tool_build_source ? { toolBuildSource: row.tool_build_source } : {}),
         type: row.type as IOperation['type'],
         projectId: row.project_id,
         resourceType: row.resource_type,

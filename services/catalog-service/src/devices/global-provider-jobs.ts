@@ -1,3 +1,11 @@
+import { personalKeyTarget } from '../opencode-personal-key/target';
+import {
+    OPENCODE_PERSONAL_KEY_JOB,
+    OPENCODE_PERSONAL_KEY_CAPABILITY,
+    normalizeOpenCodePersonalKeyRequest,
+    normalizeOpenCodePersonalKeyPayload,
+    normalizeOpenCodePersonalKeyResult,
+} from '../../../shared/opencode-personal-key.cjs';
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import type { PoolClient } from 'pg';
@@ -5,6 +13,8 @@ import {
     OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
     OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB,
     OPENCODE_GLOBAL_PROVIDERS_CAPABILITY,
+    OPENCODE_V2_ACCOUNTS_ADAPTER,
+    OPENCODE_V2_ACCOUNTS_CAPABILITY,
     normalizeGlobalProvidersRequest,
     normalizeGlobalProvidersPayload,
     normalizeGlobalProvidersResult,
@@ -18,9 +28,22 @@ import { recordDeviceOperation } from './device-operations';
 
 type TGlobalProviderJob = Pick<IJob, 'kind' | 'payload' | 'project_id' | 'device_id' | 'email' | 'role'>;
 type TDatabase = Pick<PoolClient, 'query'>;
-const kinds: readonly string[] = [OPENCODE_GLOBAL_PROVIDERS_READ_JOB, OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB];
-const minimum = (kind: string) => (kind === OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB ? 2 : 1);
-const capability = (_kind: string) => OPENCODE_GLOBAL_PROVIDERS_CAPABILITY;
+const kinds: readonly string[] = [
+    OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
+    OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB,
+    OPENCODE_PERSONAL_KEY_JOB,
+];
+const normalizeProviderPayload = (value: unknown, kind: string) =>
+    kind === OPENCODE_PERSONAL_KEY_JOB
+        ? normalizeOpenCodePersonalKeyPayload(value)
+        : normalizeGlobalProvidersPayload(value, kind);
+const minimum = (kind: string) => (kind === OPENCODE_GLOBAL_PROVIDERS_READ_JOB ? 1 : 2);
+const capability = (payload: Record<string, unknown>) =>
+    payload.modelId
+        ? OPENCODE_PERSONAL_KEY_CAPABILITY
+        : payload.adapter === OPENCODE_V2_ACCOUNTS_ADAPTER
+          ? OPENCODE_V2_ACCOUNTS_CAPABILITY
+          : OPENCODE_GLOBAL_PROVIDERS_CAPABILITY;
 
 /** Receipt-only identity never starts work or reads a result; current credentials must bind an already terminal lease. */
 export async function globalProvidersReceiptIdentity(
@@ -57,7 +80,9 @@ export async function lockGlobalProvidersCompletionDevice(
 /** Reject malformed browser input before any device lookup or accepted-request replay. */
 export function assertGlobalProvidersInput(input: unknown): void {
     try {
-        normalizeGlobalProvidersRequest(input);
+        if ((input as { kind?: unknown })?.kind === OPENCODE_PERSONAL_KEY_JOB)
+            normalizeOpenCodePersonalKeyRequest(input);
+        else normalizeGlobalProvidersRequest(input);
     } catch {
         throw new BadRequestException({
             code: 'global-providers-invalid-request',
@@ -82,14 +107,14 @@ export function assertGlobalProvidersJob(device: IDevice, job: TGlobalProviderJo
             message: 'Проверка провайдеров OpenCode относится только к вашему компьютеру и действующей роли.',
         });
     }
-    if (!Array.isArray(device.report.capabilities) || !device.report.capabilities.includes(capability(job.kind))) {
+    if (!Array.isArray(device.report.capabilities) || !device.report.capabilities.includes(capability(job.payload))) {
         throw new ConflictException({
             code: 'global-providers-upgrade-required',
             message: 'Обновите мост, чтобы проверить пользовательский OpenCode.',
         });
     }
     try {
-        if (normalizeGlobalProvidersPayload(job.payload, job.kind).deviceId !== device.id) throw Error();
+        if (normalizeProviderPayload(job.payload, job.kind).deviceId !== device.id) throw Error();
     } catch {
         throw new ConflictException({
             code: 'global-providers-invalid-context',
@@ -106,17 +131,35 @@ export function globalProvidersJobPayload(
 ): Record<string, unknown> | undefined {
     if (!kinds.includes(input.kind)) return;
     assertGlobalProvidersInput(input);
-    const payload = normalizeGlobalProvidersPayload(
-        {
-            schemaVersion: 1,
-            scope: 'global',
-            deviceId: input.deviceId,
-            ...(input.kind === OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB
-                ? { expiresAt: new Date(Date.now() + globalProvidersLimits(process.env).sessionMs).toISOString() }
-                : {}),
-        },
-        input.kind,
-    );
+    const payload =
+        input.kind === OPENCODE_PERSONAL_KEY_JOB
+            ? normalizeOpenCodePersonalKeyPayload({
+                  schemaVersion: 1,
+                  scope: 'global',
+                  deviceId: input.deviceId,
+                  requestKey: input.requestKey,
+                  modelId: input.modelId,
+                  providerId: input.providerId,
+                  expectedConnectionRevision: input.expectedConnectionRevision,
+                  expectedCredentialRevision: input.expectedCredentialRevision,
+                  expiresAt: new Date(Date.now() + globalProvidersLimits(process.env).sessionMs).toISOString(),
+              })
+            : normalizeGlobalProvidersPayload(
+                  {
+                      schemaVersion: 1,
+                      scope: 'global',
+                      deviceId: input.deviceId,
+                      ...(input.adapter ? { adapter: input.adapter } : {}),
+                      ...(input.kind === OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB
+                          ? {
+                                expiresAt: new Date(
+                                    Date.now() + globalProvidersLimits(process.env).sessionMs,
+                                ).toISOString(),
+                            }
+                          : {}),
+                  },
+                  input.kind,
+              );
     assertGlobalProvidersJob(device, {
         kind: input.kind,
         payload: { ...payload },
@@ -129,7 +172,7 @@ export function globalProvidersJobPayload(
 }
 
 /** Membership rows and their projects stay locked through the first completion's commit. */
-async function freshGlobalProvidersAccess(db: TDatabase, job: TGlobalProviderJob): Promise<IDevice> {
+export async function freshGlobalProvidersAccess(db: TDatabase, job: TGlobalProviderJob): Promise<IDevice> {
     const device = (
         await db.query<IDevice>(
             'SELECT * FROM bridge_devices WHERE id=$1 AND email=$2 AND NOT revoked AND expires_at>now() FOR SHARE',
@@ -162,6 +205,12 @@ async function freshGlobalProvidersAccess(db: TDatabase, job: TGlobalProviderJob
 /** Called under the enqueue device lock, after exact receipt lookup and fresh feature checks. */
 export async function assertGlobalProvidersAdmission(db: TDatabase, job: TGlobalProviderJob): Promise<void> {
     if (kinds.includes(job.kind)) await freshGlobalProvidersAccess(db, job);
+    if (job.kind === OPENCODE_PERSONAL_KEY_JOB)
+        await personalKeyTarget(
+            db,
+            { email: job.email, activeRole: job.role },
+            normalizeOpenCodePersonalKeyPayload(job.payload),
+        );
 }
 
 /** The final read fences a cancelled lease, revoked role and changed device after async checks. */
@@ -200,7 +249,7 @@ export async function assertGlobalProvidersAuthority(
             job.kind,
             JSON.stringify(job.payload),
             device.role,
-            capability(job.kind),
+            capability(job.payload),
             requestToken === undefined ? null : digest(requestToken),
         ],
     );
@@ -226,19 +275,24 @@ export async function completeGlobalProviders(
     if (job.state === 'cancelled') return { ok: true as const, repeated: true, cancelled: true };
     let result: Record<string, unknown>;
     try {
-        if (
-            job.project_id !== null ||
-            normalizeGlobalProvidersPayload(job.payload, job.kind).deviceId !== job.device_id
-        )
+        if (job.project_id !== null || normalizeProviderPayload(job.payload, job.kind).deviceId !== job.device_id)
             throw Error();
         // Existing worker/transport failures have no observation; never invent a timestamp or missing CLI.
         if (input.state === 'failed' && Object.keys(input.result).length === 0) result = {};
         else {
-            const observed = normalizeGlobalProvidersResult(input.result, {
+            const observed = (
+                job.kind === OPENCODE_PERSONAL_KEY_JOB
+                    ? normalizeOpenCodePersonalKeyResult
+                    : normalizeGlobalProvidersResult
+            )(input.result, {
                 deviceId: job.device_id,
                 jobId: job.id,
                 kind: job.kind,
-                expiresAt: normalizeGlobalProvidersPayload(job.payload, job.kind).expiresAt,
+                expiresAt: normalizeProviderPayload(job.payload, job.kind).expiresAt,
+                adapter:
+                    job.kind === OPENCODE_PERSONAL_KEY_JOB
+                        ? undefined
+                        : normalizeGlobalProvidersPayload(job.payload, job.kind).adapter,
             });
             if ((input.state === 'succeeded') !== (observed.status !== 'failed')) throw Error();
             result = { ...observed };
@@ -267,7 +321,9 @@ export async function completeGlobalProviders(
         result.status === 'opened'
             ? 'Локальное окно настройки OpenCode открыто. Сохранение проверяется отдельно.'
             : result.status === 'checked'
-              ? 'Состояние глобальных провайдеров OpenCode прочитано.'
+              ? result.adapter === OPENCODE_V2_ACCOUNTS_ADAPTER
+                  ? 'Сохранённые учётные записи OpenCode 2 прочитаны.'
+                  : 'Состояние глобальных провайдеров OpenCode прочитано.'
               : result.status === 'partial'
                 ? 'Часть локальной настройки не подтверждена. Проверьте компьютер.'
                 : 'Локальная настройка OpenCode не подтверждена.';
@@ -288,7 +344,7 @@ export async function authorizeGlobalProvidersSession(
     store: { pool: TDatabase },
     device: IDevice,
     input: unknown,
-    requireEnabled: () => Promise<unknown>,
+    requireEnabled: (payload: Record<string, unknown>) => Promise<unknown>,
     bearer: string,
 ) {
     if (typeof bearer !== 'string' || !/^[a-f0-9]{64}$/.test(bearer))
@@ -310,9 +366,9 @@ export async function authorizeGlobalProvidersSession(
         )
     ).rows[0];
     if (!job) throw new ConflictException('Локальное окно не открыто этим компьютером.');
-    const payload = normalizeGlobalProvidersPayload(job.payload, job.kind);
+    const payload = normalizeProviderPayload(job.payload, job.kind);
     await freshGlobalProvidersAccess(store.pool, job);
-    await requireEnabled();
+    await requireEnabled({ ...payload });
     const selected = await store.pool.query<{ authorized: boolean }>(
         `SELECT account.enabled AND
         (CASE WHEN job.role='Главный админ' THEN account.is_main_admin ELSE EXISTS(SELECT 1 FROM project_members member JOIN projects project ON project.id=member.project_id WHERE lower(member.principal_name)=job.email AND member.role=job.role AND member.role IN ('Разработчик','Админ проекта')) END)
@@ -328,7 +384,7 @@ export async function authorizeGlobalProvidersSession(
             job.kind,
             JSON.stringify(payload),
             device.role,
-            OPENCODE_GLOBAL_PROVIDERS_CAPABILITY,
+            capability(job.payload),
             digest(bearer),
         ],
     );

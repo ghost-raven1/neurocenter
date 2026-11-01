@@ -1,3 +1,4 @@
+import { describePersonalKey } from './opencode-personal-key.mjs';
 import { describeRemoteProviderAccess } from './remote-provider-access.mjs';
 import { decorators, values } from './typescript.mjs';
 import { describeComputerSetup } from './computer-setup.mjs';
@@ -394,5 +395,5 @@ export function operation(ts, checker, mapper, route) {
         path,
         http,
     );
-    return Object.assign(described, ggufImportOperation(http, path) ?? {});
+    return Object.assign(describePersonalKey(described, path, http), ggufImportOperation(http, path) ?? {});
 }

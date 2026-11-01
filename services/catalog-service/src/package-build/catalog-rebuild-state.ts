@@ -10,6 +10,7 @@ export interface ICatalogRebuildItem {
     state: 'ready' | 'pending' | 'attention' | 'archive-required';
     message: string;
     operationId?: string;
+    importId?: string;
     catalogId?: string;
 }
 export interface ICatalogRebuildState {
@@ -99,6 +100,14 @@ export async function readCatalogRebuildState(file: string | undefined): Promise
                     typeof item.id !== 'string' ||
                     typeof item.name !== 'string' ||
                     typeof item.message !== 'string' ||
+                    (item.operationId !== undefined &&
+                        (typeof item.operationId !== 'string' ||
+                            !/^(?:tool-build-)?[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(
+                                item.operationId,
+                            ))) ||
+                    (item.importId !== undefined &&
+                        (typeof item.importId !== 'string' ||
+                            !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(item.importId))) ||
                     !['ready', 'pending', 'attention', 'archive-required'].includes(item.state),
             )
         )

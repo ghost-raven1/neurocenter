@@ -54,7 +54,8 @@ const itemStates: Record<string, string> = {
 export default function AssetSources(): JSX.Element {
     const location = useLocation(),
         history = useHistory(),
-        prepareId = new URLSearchParams(location.search).get('prepare') ?? undefined;
+        prepareId = new URLSearchParams(location.search).get('prepare') ?? undefined,
+        recoverImportId = new URLSearchParams(location.search).get('recoverImport') ?? undefined;
     const isMain = useSelector(canReadCatalogSources);
     const { scope, captureOwner } = useAuthRequestOwner(),
         [data, setData] = useState<ISourceList>(),
@@ -111,6 +112,10 @@ export default function AssetSources(): JSX.Element {
         [captureOwner, isMain],
     );
     const imports = useAssetImports(() => void load());
+    useEffect(() => {
+        if (isMain && recoverImportId) void imports.recover(recoverImportId);
+        return imports.cancelRecovery;
+    }, [isMain, recoverImportId, imports.recover, imports.cancelRecovery]);
     const archiveBlocked =
         imports.blocked ||
         !!editing ||
@@ -354,6 +359,7 @@ export default function AssetSources(): JSX.Element {
                     plans={data?.sourcePlans ?? []}
                     plansReady={!!data}
                     prepareId={prepareId}
+                    recoverBuildId={new URLSearchParams(location.search).get('recoverBuild') ?? undefined}
                     scope={scope}
                     blocked={archiveBlocked || archive.busy}
                     onPublished={() => void load()}
@@ -368,6 +374,11 @@ export default function AssetSources(): JSX.Element {
                         message="Каталог из исходников приложения"
                         description="Текущие версии и закреплённые рецепты обновляются вместе с приложением через Git. Готовые пакеты подготавливаются явно; локальные настройки и история сохраняются."
                     />
+                )}
+                {recoverImportId && imports.job?.id !== recoverImportId && (
+                    <Button disabled={imports.busy} onClick={() => void imports.recover(recoverImportId)}>
+                        Проверить импорт по ссылке
+                    </Button>
                 )}
                 <AssetImportRecovery
                     imports={imports}

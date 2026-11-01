@@ -136,7 +136,9 @@ export async function captureNativeCliJson(
         let state = group();
         if (state === 'alive') stop(failure('NATIVE_CLI_CHILDREN_REMAIN', 'Native CLI left an owned process running.'));
         const drainUntil = Date.now() + 2000;
-        while (state === 'alive' && Date.now() < drainUntil) {
+        // macOS can report EPERM briefly after a successful group kill, before ESRCH.
+        // Observe within the existing drain budget; unknown is never proof of cleanup.
+        while ((state === 'alive' || state === 'unknown') && Date.now() < drainUntil) {
             await pause(25);
             state = group();
         }

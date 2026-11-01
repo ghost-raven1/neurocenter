@@ -44,6 +44,7 @@ async function fixture(t) {
         'scripts/catalog-plugins/recipes/tests',
         'scripts/catalog-plugins/integration/test',
         'scripts/agent-kit/test',
+        'services/shared/tests',
     ])
         await put(folder + '/contract.test.mjs', "import test from 'node:test';\n");
     await put('scripts/catalog-plugins/recipes/tests/typed.test.ts', "import test from 'node:test';\n");
@@ -315,6 +316,7 @@ test('cached manifest and discovery adapters reproduce the full planner without 
         'scripts/catalog-plugins/recipes/tests',
         'scripts/catalog-plugins/integration/test',
         'scripts/agent-kit/test',
+        'services/shared/tests',
     ]) {
         const names = await fs.readdir(path.join(f.root, directory));
         entries.set(directory, names);

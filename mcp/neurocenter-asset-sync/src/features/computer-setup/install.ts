@@ -40,7 +40,7 @@ interface IInstallContext {
         parentIno: number;
     }) => Promise<void>;
 }
-const stamp = (stat: Awaited<ReturnType<typeof fs.stat>>) =>
+const stamp = (stat: NonNullable<Awaited<ReturnType<typeof fs.stat>>>) =>
     [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 

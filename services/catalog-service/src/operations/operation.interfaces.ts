@@ -28,6 +28,7 @@ export interface IOperationStatePatch {
 }
 
 export interface IOperationRow {
+    tool_build_source?: { id: string; revision: string };
     created_at: string;
     operation_id: string;
     type: string;

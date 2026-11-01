@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureNativeCliJson } from './native-cli-json.fixture.js';
 
 describe('Native CLI regular-file JSON capture', () => {
@@ -72,53 +72,89 @@ describe('Native CLI regular-file JSON capture', () => {
         );
         await empty();
     });
-    it('drains cancellation even when the owned leader exits before its TERM-ignoring descendant', async () => {
-        const controller = new AbortController(),
-            marker = path.join(temporary, 'ready.json'),
-            descendantMarker = path.join(temporary, 'descendant.json');
-        const publish = (file: string, value: string) =>
-            `require('node:fs').writeFileSync(${JSON.stringify(file + '.tmp')},${value});require('node:fs').renameSync(${JSON.stringify(file + '.tmp')},${JSON.stringify(file)});`;
-        const descendant = `process.on('SIGTERM',()=>{});${publish(descendantMarker, 'JSON.stringify({pid:process.pid})')}setInterval(()=>{},1000);`;
-        const launch =
-            process.platform === 'win32'
-                ? ''
-                : `const descendant=require('node:child_process').spawn(process.execPath,['--eval',${JSON.stringify(descendant)}],{stdio:'ignore'});process.on('SIGTERM',()=>process.exit(0));`;
-        const outcome = execute(
-            `${launch}${publish(marker, 'JSON.stringify({pid:process.pid})')}setInterval(()=>{},1000);`,
-            controller.signal,
-        ).then(
-            (value) => ({ value, error: undefined }),
-            (error) => ({ value: undefined, error }),
-        );
-        let pid: number | undefined, descendantPid: number | undefined;
-        try {
-            const until = Date.now() + 3000;
-            while (Date.now() < until) {
-                try {
-                    pid = JSON.parse(await fs.readFile(marker, 'utf8')).pid;
-                    if (process.platform !== 'win32')
-                        descendantPid = JSON.parse(await fs.readFile(descendantMarker, 'utf8')).pid;
-                    break;
-                } catch (error) {
-                    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-                    await new Promise((resolve) => setTimeout(resolve, 10));
+    it.each(process.platform === 'win32' ? ['real'] : ['real', 'transient-unknown', 'persistent-unknown'])(
+        'drains cancellation after the leader exits with %s group observation',
+        async (observation) => {
+            const nativeKill = process.kill.bind(process);
+            let killedGroup: number | undefined;
+            let unknownObserved = false;
+            let signalAfterUnknown = false;
+            const kill = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+                if (
+                    pid === killedGroup &&
+                    signal === 0 &&
+                    observation !== 'real' &&
+                    (!unknownObserved || observation === 'persistent-unknown')
+                ) {
+                    unknownObserved = true;
+                    throw Object.assign(new Error('Injected group observation unavailable'), { code: 'EPERM' });
                 }
+                if (unknownObserved && signal !== 0) signalAfterUnknown = true;
+                const result = nativeKill(pid, signal);
+                if (signal === 'SIGKILL') killedGroup = pid;
+                return result;
+            });
+            const controller = new AbortController(),
+                marker = path.join(temporary, 'ready.json'),
+                descendantMarker = path.join(temporary, 'descendant.json');
+            const publish = (file: string, value: string) =>
+                `require('node:fs').writeFileSync(${JSON.stringify(file + '.tmp')},${value});require('node:fs').renameSync(${JSON.stringify(file + '.tmp')},${JSON.stringify(file)});`;
+            const descendant = `process.on('SIGTERM',()=>{});${publish(descendantMarker, 'JSON.stringify({pid:process.pid})')}setInterval(()=>{},1000);`;
+            const launch =
+                process.platform === 'win32'
+                    ? ''
+                    : `const descendant=require('node:child_process').spawn(process.execPath,['--eval',${JSON.stringify(descendant)}],{stdio:'ignore'});process.on('SIGTERM',()=>process.exit(0));`;
+            const outcome = execute(
+                `${launch}${publish(marker, 'JSON.stringify({pid:process.pid})')}setInterval(()=>{},1000);`,
+                controller.signal,
+            ).then(
+                (value) => ({ value, error: undefined }),
+                (error) => ({ value: undefined, error }),
+            );
+            let pid: number | undefined, descendantPid: number | undefined;
+            try {
+                const until = Date.now() + 3000;
+                while (Date.now() < until) {
+                    try {
+                        pid = JSON.parse(await fs.readFile(marker, 'utf8')).pid;
+                        if (process.platform !== 'win32')
+                            descendantPid = JSON.parse(await fs.readFile(descendantMarker, 'utf8')).pid;
+                        break;
+                    } catch (error) {
+                        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+                        await new Promise((resolve) => setTimeout(resolve, 10));
+                    }
+                }
+                controller.abort();
+                const result = await outcome;
+                expect(result.error).toMatchObject({
+                    code: observation === 'persistent-unknown' ? 'NATIVE_CLI_OWNERSHIP_UNKNOWN' : 'ABORT_ERR',
+                });
+                expect(signalAfterUnknown).toBe(false);
+                if (observation !== 'real') expect(unknownObserved).toBe(true);
+                kill.mockRestore();
+                expect(pid).toBeTypeOf('number');
+                expect(gone(pid!)).toBe(true);
+                if (process.platform !== 'win32') {
+                    expect(descendantPid).toBeTypeOf('number');
+                    expect(gone(descendantPid!)).toBe(true);
+                    await fs.unlink(descendantMarker);
+                }
+                await fs.unlink(marker);
+                if (observation === 'persistent-unknown') {
+                    const captures = await fs.readdir(temporary);
+                    expect(captures).toHaveLength(1);
+                    expect(await fs.readdir(path.join(temporary, captures[0]!))).toEqual(['stderr.raw', 'stdout.raw']);
+                    // Both owned PIDs are confirmed gone above; remove the intentionally retained evidence.
+                    await fs.rm(path.join(temporary, captures[0]!), { recursive: true });
+                    preserveTemporary = false;
+                }
+                await empty();
+            } finally {
+                controller.abort();
+                await outcome;
+                kill.mockRestore();
             }
-            controller.abort();
-            const result = await outcome;
-            expect(result.error).toMatchObject({ code: 'ABORT_ERR' });
-            expect(pid).toBeTypeOf('number');
-            expect(gone(pid!)).toBe(true);
-            if (process.platform !== 'win32') {
-                expect(descendantPid).toBeTypeOf('number');
-                expect(gone(descendantPid!)).toBe(true);
-                await fs.unlink(descendantMarker);
-            }
-            await fs.unlink(marker);
-            await empty();
-        } finally {
-            controller.abort();
-            await outcome;
-        }
-    });
+        },
+    );
 });

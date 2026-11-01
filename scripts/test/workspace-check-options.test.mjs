@@ -55,6 +55,7 @@ async function fixture(t, args, { withPackages = true, packageFolders = workspac
         'scripts/catalog-plugins/recipes/tests',
         'scripts/catalog-plugins/integration/test',
         'scripts/agent-kit/test',
+        'services/shared/tests',
     ]) {
         await fs.mkdir(path.join(checkout, folder), { recursive: true });
     }

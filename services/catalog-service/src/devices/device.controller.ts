@@ -191,7 +191,7 @@ export class DeviceController {
             this.devices,
             await this.device(req),
             input,
-            () => requireFeaturesEnabled(requiredJobFeatures(OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB)),
+            (payload) => requireFeaturesEnabled(requiredJobFeatures(OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB, payload, true)),
             String(req.headers.authorization || '').replace(/^Bearer /, ''),
         );
     }

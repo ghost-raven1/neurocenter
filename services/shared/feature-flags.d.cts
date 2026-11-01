@@ -1,4 +1,6 @@
 export type TFeatureFlagKey =
+    | 'opencode_v2_accounts'
+    | 'opencode_personal_key_transfer'
     | 'personal_remote_provider_credentials'
     | 'gguf_import'
     | 'unified_project_setup'

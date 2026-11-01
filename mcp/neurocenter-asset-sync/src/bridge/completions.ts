@@ -10,6 +10,7 @@ import { acknowledgeCodexReceipt, codexDeliveryResult } from '../features/device
 import { acknowledgeRuntimeCachePolicyReceipt } from '../features/runtime-artifacts/cache-policy.js';
 import { AGENT_METHOD_WORKFLOW_PROTOCOL } from '../features/agent-method-workflow/contract.js';
 import { acknowledgeMethodReceipt, methodDeliveryResult } from '../features/agent-method-workflow/receipts.js';
+import { localProviderKinds, normalizeLocalResult } from '../features/opencode-local-providers/job-contract.js';
 import { contract as globalProvidersContract } from '../features/opencode-local-providers/contract.js';
 
 export interface ICompletion {
@@ -24,13 +25,13 @@ const uuid = /^[-a-f0-9]{36}$/;
 const directory = () => path.join(stateDir(), 'completions');
 function providerInventory(item: ICompletion): boolean {
     const kind = item.result?.kind;
-    if (
-        kind !== globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB &&
-        kind !== globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB
-    )
-        return false;
+    if (typeof kind !== 'string' || !localProviderKinds.includes(kind)) return false;
     if (!item.deviceId) throw new Error('Локальная квитанция OpenCode не содержит компьютер.');
-    const result = globalProvidersContract.normalizeGlobalProvidersResult(item.result, {
+    const result = normalizeLocalResult(item.result, {
+        adapter:
+            item.result.adapter === globalProvidersContract.OPENCODE_V2_ACCOUNTS_ADAPTER
+                ? globalProvidersContract.OPENCODE_V2_ACCOUNTS_ADAPTER
+                : undefined,
         deviceId: item.deviceId,
         jobId: item.id,
         kind,

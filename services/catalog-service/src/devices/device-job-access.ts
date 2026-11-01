@@ -1,3 +1,4 @@
+import { OPENCODE_PERSONAL_KEY_JOB } from '../../../shared/opencode-personal-key.cjs';
 import { ForbiddenException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { projectLevel, roleLevel, type IAccessClaims } from '../access/access.model';
@@ -98,7 +99,7 @@ export async function reclaimUnauthorizedQueuedJobs(
               (job.kind === OPENCODE_GLOBAL_PROVIDERS_READ_JOB &&
                   roleLevel(job.role) >= 1 &&
                   roleLevel(device.role) >= 1) ||
-              (job.kind === OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB &&
+              ((job.kind === OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB || job.kind === OPENCODE_PERSONAL_KEY_JOB) &&
                   roleLevel(job.role) >= 2 &&
                   roleLevel(device.role) >= 2) ||
               (job.kind === OPENCODE_CLI_INSTALL_JOB && roleLevel(job.role) >= 2 && roleLevel(device.role) >= 2) ||

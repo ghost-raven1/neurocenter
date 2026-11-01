@@ -65,6 +65,7 @@ export function nodeTestFiles(
         'scripts/catalog-plugins/recipes/tests',
         'scripts/catalog-plugins/integration/test',
         'scripts/agent-kit/test',
+        'services/shared/tests',
     ]
         .flatMap((directory) =>
             readDirectory(directory)

@@ -4,10 +4,10 @@ import { applyEdits, modify } from 'jsonc-parser';
 import { configurationObject, object } from '../project-configuration/json.js';
 import {
     contract,
-    type GlobalProvidersLimits,
-    type GlobalProvidersIssue,
-    type OpenCodeGlobalProvidersInventory,
-    type GlobalProvider,
+    type IGlobalProvidersLimits,
+    type TGlobalProvidersIssue,
+    type IOpenCodeGlobalProvidersInventory,
+    type IGlobalProvider,
 } from './contract.js';
 import { snapshot, unchanged, publish, conflict, type ILocalSnapshot } from './files.js';
 import { ProviderTransactions } from './transaction.js';
@@ -21,7 +21,7 @@ interface IOptions {
     authorize: () => Promise<unknown>;
     assertCompatibleCli?: () => Promise<ICompatibleCliProof>;
     current?: () => void;
-    limits?: Readonly<GlobalProvidersLimits>;
+    limits?: Readonly<IGlobalProvidersLimits>;
 }
 interface IChange {
     before: ILocalSnapshot;
@@ -51,7 +51,7 @@ const merge = (a: Record<string, unknown>, b: Record<string, unknown>): Record<s
     }
     return result;
 };
-function authKind(value: unknown): GlobalProvider['authentication'] {
+function authKind(value: unknown): IGlobalProvider['authentication'] {
     if (value === undefined) return 'none';
     if (!object(value)) return 'unknown';
     const metadata =
@@ -79,7 +79,7 @@ const update = (text: string | null, keys: string[], value: unknown) =>
 
 /** Global inventory is local metadata, not SDK discovery, a default-model choice or a paid readiness probe. */
 export class GlobalProviderEditor {
-    readonly limits: Readonly<GlobalProvidersLimits>;
+    readonly limits: Readonly<IGlobalProvidersLimits>;
     readonly configDirectory: string;
     readonly authFile: string;
     private readonly configurations: string[];
@@ -143,8 +143,8 @@ export class GlobalProviderEditor {
         await this.admit();
         return { config, authentication, snapshots };
     }
-    async inventory(): Promise<OpenCodeGlobalProvidersInventory> {
-        const issues = new Set<GlobalProvidersIssue>(),
+    async inventory(): Promise<IOpenCodeGlobalProvidersInventory> {
+        const issues = new Set<TGlobalProvidersIssue>(),
             environment = this.options.environment;
         const overrideDetected = !!(
             environment.OPENCODE_AUTH_CONTENT ||
@@ -157,7 +157,7 @@ export class GlobalProviderEditor {
             const pending = await this.transactions.inspect();
             if (pending && pending.status !== 'saved') issues.add('source-changed');
             const { config, authentication, snapshots } = await this.read(),
-                providers: GlobalProvider[] = [];
+                providers: IGlobalProvider[] = [];
             const entries = object(config.provider) ? config.provider : {};
             const ids = [...new Set([...Object.keys(entries), ...Object.keys(authentication)])].sort();
             for (const id of ids) {

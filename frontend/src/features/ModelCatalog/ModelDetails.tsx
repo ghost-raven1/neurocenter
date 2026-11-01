@@ -8,7 +8,7 @@ import type { ICatalogModel } from './interfaces';
 import { ModelHosting } from './ModelHosting';
 import { ModelRateLimits } from '../ModelRateLimits/ModelRateLimits';
 import { ModelTokenQuotas } from '../ModelTokenQuotas/ModelTokenQuotas';
-import { RemoteProviderAccess } from '../RemoteProviderAccess/RemoteProviderAccess';
+import { ModelProviderSettings } from './ModelProviderSettings/ModelProviderSettings';
 
 interface IProps {
     model: ICatalogModel;
@@ -39,6 +39,7 @@ export function ModelDetails({
         if (!busy) setOpen(false);
     };
     const endpoint = (typeof window === 'undefined' ? '' : window.location.origin) + modelCatalogApi.endpoint(model.id);
+    const remote = model.runtime === 'remote-openai' || model.runtime === 'remote-ollama';
     return (
         <Modal
             open={open}
@@ -56,12 +57,16 @@ export function ModelDetails({
         >
             {error && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
             <Typography.Paragraph>{model.description || 'Описание пока не добавлено.'}</Typography.Paragraph>
-            <ModelHosting model={model} canManage={canManage && !model.archivedAt} onManage={onConfigure} />
+            {remote && (
+                <ModelProviderSettings model={model} canManage={canManage} busy={busy} onConfigure={onConfigure} />
+            )}
+            <ModelHosting
+                model={model}
+                canManage={canManage && !model.archivedAt}
+                onManage={remote ? undefined : onConfigure}
+            />
             <ModelRateLimits modelId={model.id} projectId={projectId} />
             <ModelTokenQuotas modelId={model.id} />
-            {(model.runtime === 'remote-openai' || model.runtime === 'remote-ollama') && (
-                <RemoteProviderAccess modelId={model.id} />
-            )}
             {canManage && !model.archivedAt && (
                 <details className="model-catalog__more model-details__management">
                     <summary aria-label={`Управление моделью ${model.name}`}>Управление моделью</summary>

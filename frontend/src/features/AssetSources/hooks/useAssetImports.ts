@@ -17,6 +17,7 @@ export function useAssetImports(onComplete: () => void) {
     const [stateScope, setStateScope] = useState(scope),
         loadedScope = useRef(scope);
     const pending = useRef<symbol>(),
+        recoveryRequest = useRef<{ finish: () => void }>(),
         currentIntent = useRef<IImportIntent>(),
         currentJob = useRef<IAssetImport>(),
         refresh = useRef(onComplete);
@@ -226,6 +227,50 @@ export function useAssetImports(onComplete: () => void) {
         }
         return submit({ ids, commit, requestKey: crypto.randomUUID() }, true);
     };
+    const cancelRecovery = useCallback((): void => {
+        recoveryRequest.current?.finish();
+        recoveryRequest.current = undefined;
+    }, []);
+    /** A deep link reads an accepted import; it never replaces another saved request or replays admission. */
+    const recover = useCallback(
+        async (id: string): Promise<void> => {
+            if (!captureOwner()() || loadedScope.current !== scope) return;
+            cancelRecovery();
+            if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id)) {
+                setError('Некорректная ссылка на импорт. Сохранённый запрос не изменён.');
+                return;
+            }
+            const saved = currentIntent.current;
+            if (saved) {
+                if (saved.jobId === id) {
+                    await lookup(saved);
+                } else {
+                    setError('Сначала завершите или проверьте сохранённый импорт. Его запрос не заменён.');
+                }
+                return;
+            }
+            if (currentJob.current && currentJob.current.id !== id) {
+                setError('Сначала закройте текущий импорт. Его состояние не заменено.');
+                return;
+            }
+            const request = beginRequest();
+            if (!request) return;
+            recoveryRequest.current = request;
+            try {
+                const { data } = await baseApi.get<IAssetImport>('/api/asset-imports/' + id);
+                if (!request.owns()) return;
+                if (data.id !== id) throw new Error('Сервер вернул другой импорт. Повторите проверку.');
+                showJob(data);
+                if (!activeImport(data.state)) refresh.current();
+            } catch (cause) {
+                if (request.owns()) setError(errorMessage(cause, 'Не удалось открыть импорт. Повторите проверку.'));
+            } finally {
+                if (recoveryRequest.current === request) recoveryRequest.current = undefined;
+                request.finish();
+            }
+        },
+        [beginRequest, cancelRecovery, captureOwner, lookup, scope, showJob],
+    );
     const action = async (type: 'retry' | 'cancel' | 'resolve'): Promise<void> => {
         const target = currentJob.current;
         if (!target) {
@@ -260,6 +305,8 @@ export function useAssetImports(onComplete: () => void) {
         error: owned ? error : '',
         canReset,
         start,
+        recover,
+        cancelRecovery,
         repeat: () => (currentIntent.current ? submit(currentIntent.current) : Promise.resolve()),
         recheck: () => (currentIntent.current ? lookup(currentIntent.current) : Promise.resolve()),
         retry: () => action('retry'),

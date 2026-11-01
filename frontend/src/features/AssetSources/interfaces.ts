@@ -39,6 +39,7 @@ export interface ICatalogRebuildItem {
     state: 'ready' | 'pending' | 'attention' | 'archive-required';
     message: string;
     operationId?: string;
+    importId?: string;
     catalogId?: string;
 }
 

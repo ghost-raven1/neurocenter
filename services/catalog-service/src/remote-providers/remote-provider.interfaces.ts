@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import type { ISealedModelCredential } from '../models/remote-model-secret';
 export type TRemoteAuthMode = 'none' | 'optional' | 'required';
 export interface IRemoteProviderAccessView {
@@ -41,4 +42,10 @@ export interface IRemoteProviderActor {
     email: string;
     activeRole: string;
     projectId?: string | null;
+}
+
+/** Additional authority is held in the same transaction as the personal credential write. */
+export interface IRemoteProviderMutationContext {
+    transferJobId: string;
+    authorize: (db: PoolClient) => Promise<void>;
 }

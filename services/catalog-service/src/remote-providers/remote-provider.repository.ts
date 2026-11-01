@@ -16,6 +16,7 @@ import {
 } from './remote-provider.identity';
 import type {
     IRemoteProviderAccessView,
+    IRemoteProviderMutationContext,
     IRemoteProviderActor,
     IRemoteProviderMutation,
     IRemoteProviderReceipt,
@@ -75,16 +76,30 @@ export class RemoteProviderRepository {
             };
         });
     }
-    async receipt(modelId: string, actor: IRemoteProviderActor, key: string): Promise<IRemoteProviderReceipt | null> {
+    async receipt(
+        modelId: string,
+        actor: IRemoteProviderActor,
+        key: string,
+        context?: IRemoteProviderMutationContext,
+    ): Promise<IRemoteProviderReceipt | null> {
         return this.transaction(async (db) => {
+            await context?.authorize(db);
             await remoteProviderAuthority(db, actor, modelId);
             const row = (
-                await db.query<{ model_id: string; result: IRemoteProviderReceipt }>(
+                await db.query<{ model_id: string; result: IRemoteProviderReceipt & { transferJobId?: string } }>(
                     'SELECT model_id,result FROM remote_provider_user_requests WHERE owner_email=$1 AND request_key=$2',
                     [actor.email, key],
                 )
             ).rows[0];
-            return row?.model_id === modelId ? row.result : null;
+            if (
+                !row ||
+                row.model_id !== modelId ||
+                (!context && row.result.transferJobId) ||
+                (context && row.result.transferJobId !== context.transferJobId)
+            )
+                return null;
+            const { transferJobId: _source, ...result } = row.result;
+            return result;
         });
     }
     async mutate(
@@ -92,10 +107,12 @@ export class RemoteProviderRepository {
         actor: IRemoteProviderActor,
         input: IRemoteProviderMutation,
         action: 'save' | 'delete',
+        context?: IRemoteProviderMutationContext,
     ): Promise<IRemoteProviderReceipt> {
         if (!isRemoteModel(model)) throw new BadRequestException('Выберите удалённую модель.');
-        const hash = remoteMutationHash(model.id, actor.email, action, input, this.environment);
+        const hash = remoteMutationHash(model.id, actor.email, action, input, this.environment, context?.transferJobId);
         return this.transaction(async (db) => {
+            await context?.authorize(db);
             await remoteProviderAuthority(db, actor, model.id);
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
                 credentialFence(actor.email, input.providerId),
@@ -147,7 +164,13 @@ export class RemoteProviderRepository {
             };
             await db.query(
                 'INSERT INTO remote_provider_user_requests(owner_email,request_key,model_id,request_hash,result) VALUES($1,$2,$3,$4,$5::jsonb)',
-                [actor.email, input.requestKey, model.id, hash, JSON.stringify(result)],
+                [
+                    actor.email,
+                    input.requestKey,
+                    model.id,
+                    hash,
+                    JSON.stringify({ ...result, ...(context ? { transferJobId: context.transferJobId } : {}) }),
+                ],
             );
             await securityEvent(db, {
                 actor: actor.email,

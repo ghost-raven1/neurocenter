@@ -1,3 +1,4 @@
+import { contract as personalKeyContract } from '../features/opencode-personal-key/contract.js';
 import { MEMORY_SYNC_CAPABILITY } from '../features/project-learning-memory-sync/contract.js';
 import { SYSTEM_ROLE_MCP_CAPABILITY } from '../features/system-role-mcp/contract.js';
 import { roleMcpLifecycleSupported } from '../features/system-role-mcp/owned-process.js';
@@ -39,6 +40,8 @@ export const BRIDGE_CAPABILITIES = [
               OPENCODE_CLI_CAPABILITY,
               OPENCODE_CLI_INSTALL_CAPABILITY,
               globalProvidersContract.OPENCODE_GLOBAL_PROVIDERS_CAPABILITY,
+              globalProvidersContract.OPENCODE_V2_ACCOUNTS_CAPABILITY,
+              personalKeyContract.OPENCODE_PERSONAL_KEY_CAPABILITY,
           ]
         : []),
     DEVICE_CODEX_CAPABILITY,

@@ -1,3 +1,5 @@
+import { OpenCodePersonalKeyController } from '../opencode-personal-key/controller';
+import { OpenCodePersonalKeyService } from '../opencode-personal-key/service';
 import { RemoteProviderAccessController } from '../remote-providers/remote-provider.controller';
 import { RemoteProviderAccessService } from '../remote-providers/remote-provider.service';
 import { GgufRuntimeService } from '../models/gguf-runtime/gguf-runtime.service';
@@ -140,6 +142,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
 @Module({
     controllers: [
         RemoteProviderAccessController,
+        OpenCodePersonalKeyController,
         RuntimeLimitsController,
         InternalRuntimeLimitsController,
         GgufImportController,
@@ -209,6 +212,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
     providers: [
         { provide: ComputerSetupSupplyApproval, useClass: GatewayComputerSetupSupplyApproval },
         RemoteProviderAccessService,
+        OpenCodePersonalKeyService,
         GgufRuntimeService,
         RuntimeLimitsService,
         GgufImportService,

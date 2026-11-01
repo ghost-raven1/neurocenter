@@ -1,7 +1,7 @@
 import type { IBundledSourcePlan, ICatalogRebuildItem } from './interfaces';
 
 export interface ICatalogRebuildAction {
-    kind: 'operation' | 'prepare' | 'archive';
+    kind: 'operation' | 'import' | 'prepare' | 'archive';
     label: string;
     href: string;
 }
@@ -12,6 +12,14 @@ export function catalogRebuildAction(
     plans: readonly IBundledSourcePlan[] = [],
 ): ICatalogRebuildAction | undefined {
     if (item.state === 'ready') return;
+    const importId = item.importId ?? (item.id.startsWith('inline:') ? item.operationId : undefined);
+    if (importId && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(importId)) {
+        return {
+            kind: 'import',
+            label: 'Открыть импорт',
+            href: '/assets?' + new URLSearchParams({ recoverImport: importId }),
+        };
+    }
     if (item.operationId && !item.id.startsWith('inline:')) {
         // Earlier rebuild receipts stored the build UUID rather than its operations identifier.
         const operation = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(item.operationId)

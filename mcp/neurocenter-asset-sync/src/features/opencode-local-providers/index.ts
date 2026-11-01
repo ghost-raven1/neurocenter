@@ -7,8 +7,12 @@ import { assertOpenCodeAuthOwner, stopOpenCodeAuthOwnerChecks } from '../compute
 import { recoverComputerSetupJobs } from '../computer-setup/executor.js';
 import { CliCleanupError } from '../computer-setup/receipts.js';
 import { RoleMcpCleanupError } from '../system-role-mcp/owned-process.js';
-import { contract, type GlobalProvidersIssue } from './contract.js';
+import { contract, type TGlobalProvidersIssue } from './contract.js';
+import { localProviderKinds, normalizeLocalPayload, normalizeLocalResult } from './job-contract.js';
+import { contract as personalKey } from '../opencode-personal-key/contract.js';
+import { openPersonalKeySession } from '../opencode-personal-key/session.js';
 import { GlobalProviderEditor } from './editor.js';
+import { AccountsEditor } from './v2-accounts/editor.js';
 import { startGlobalProvidersSession, closeGlobalProvidersSessions, closeGlobalProvidersSession } from './server.js';
 import {
     beginGlobalReceipt,
@@ -24,7 +28,7 @@ const active = new Map<string, Promise<void>>();
 let stopping = false;
 const message =
     'Локальное состояние OpenCode сохранено в квитанции. Окно настройки и ответ модели проверяются отдельно.';
-function failed(receipt: IGlobalReceipt, issue: GlobalProvidersIssue = 'unknown') {
+function failed(receipt: IGlobalReceipt, issue: TGlobalProvidersIssue = 'unknown') {
     return {
         id: receipt.job.id,
         lease: receipt.job.lease,
@@ -32,12 +36,15 @@ function failed(receipt: IGlobalReceipt, issue: GlobalProvidersIssue = 'unknown'
         state: 'failed' as const,
         message: 'Исход локального действия не подтверждён. Проверьте сохранённое состояние перед новым действием.',
         result: {
-            ...contract.normalizeGlobalProvidersResult({
+            ...normalizeLocalResult({
                 schemaVersion: 1,
                 scope: 'global',
                 deviceId: receipt.job.deviceId,
                 jobId: receipt.job.id,
                 kind: receipt.job.kind,
+                ...(normalizeLocalPayload(receipt.job.payload, receipt.job.kind).adapter
+                    ? { adapter: normalizeLocalPayload(receipt.job.payload, receipt.job.kind).adapter }
+                    : {}),
                 checkedAt: new Date().toISOString(),
                 status: 'failed',
                 issue,
@@ -52,7 +59,7 @@ export async function recoverGlobalProvidersJobs() {
         if (receipt.phase === 'started') {
             if (!(await globalReceiptRecoverable(receipt)))
                 throw Error('Локальное действие ещё принадлежит работающему мосту.');
-            if (receipt.job.kind === contract.OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB)
+            if (receipt.job.kind !== contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB)
                 await closeGlobalProvidersSession(receipt.job.id);
             receipt = await completeGlobalReceipt(receipt, failed(receipt));
         }
@@ -72,12 +79,10 @@ export async function runGlobalProvidersJob(
     authorize: (signal?: AbortSignal) => Promise<unknown>,
 ) {
     if (stopping || active.size || job.project_id != null) throw Error('Локальная настройка занята или недоступна.');
-    const payload = contract.normalizeGlobalProvidersPayload(job.payload, job.kind);
+    const payload = normalizeLocalPayload(job.payload, job.kind);
     if (
         payload.deviceId !== deviceId ||
-        ![contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB, contract.OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB].includes(
-            job.kind as typeof contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
-        )
+        !localProviderKinds.includes(job.kind as typeof contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB)
     )
         throw Error('Другой компьютер или вид задания.');
     const run = (async () => {
@@ -107,9 +112,27 @@ export async function runGlobalProvidersJob(
             await authorize();
             await current();
             const checkedAt = new Date().toISOString();
+            const v2 = payload.adapter === contract.OPENCODE_V2_ACCOUNTS_ADAPTER;
+            const version = v2
+                ? contract.OPENCODE_V2_ACCOUNTS_VERSION
+                : contract.OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION;
             let result;
-            if (job.kind === contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB) {
-                const editor = new GlobalProviderEditor({
+            if (job.kind === personalKey.OPENCODE_PERSONAL_KEY_JOB) {
+                await openPersonalKeySession(job.id, payload);
+                result = {
+                    schemaVersion: 1,
+                    scope: 'global',
+                    deviceId,
+                    jobId: job.id,
+                    kind: job.kind,
+                    checkedAt,
+                    status: 'opened',
+                    expiresAt: payload.expiresAt,
+                };
+            } else if (job.kind === contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB) {
+                const Editor = v2 ? AccountsEditor : GlobalProviderEditor;
+                const editor = new Editor({
+                        assertCompatibleCli: () => assertOpenCodeAuthOwner(deviceId, authorize, undefined, version),
                         home: os.homedir(),
                         environment: { ...process.env },
                         limits,
@@ -127,7 +150,7 @@ export async function runGlobalProvidersJob(
                     kind: job.kind,
                     checkedAt,
                     status: inventory.issues.length ? 'partial' : 'checked',
-                    inventory,
+                    ...(v2 ? { accountInventory: inventory } : { inventory }),
                 };
             } else {
                 const permit = async (signal?: AbortSignal) => {
@@ -142,17 +165,18 @@ export async function runGlobalProvidersJob(
                         throw Error('Разрешение локальной формы изменилось.');
                     await current();
                 };
-                const cli = await assertOpenCodeAuthOwner(deviceId, authorize);
+                const cli = await assertOpenCodeAuthOwner(deviceId, authorize, undefined, version);
                 await cli.assertCurrent();
                 await startGlobalProvidersSession({
                     id: job.id,
+                    adapter: payload.adapter,
                     home: os.homedir(),
                     environment: { ...process.env },
                     expiresAt: payload.expiresAt!,
                     limits,
                     authorize: permit,
                     assertCurrent: current,
-                    assertCompatibleCli: (signal) => assertOpenCodeAuthOwner(deviceId, permit, signal),
+                    assertCompatibleCli: (signal) => assertOpenCodeAuthOwner(deviceId, permit, signal, version),
                     open: openVerificationPage,
                 });
                 result = {
@@ -166,12 +190,16 @@ export async function runGlobalProvidersJob(
                     expiresAt: payload.expiresAt,
                 };
             }
-            const normalized = contract.normalizeGlobalProvidersResult(result, {
-                deviceId,
-                jobId: job.id,
-                kind: job.kind,
-                expiresAt: payload.expiresAt,
-            });
+            const normalized = normalizeLocalResult(
+                { ...result, ...(payload.adapter ? { adapter: payload.adapter } : {}) },
+                {
+                    adapter: payload.adapter,
+                    deviceId,
+                    jobId: job.id,
+                    kind: job.kind,
+                    expiresAt: payload.expiresAt,
+                },
+            );
             receipt = await completeGlobalReceipt(receipt, {
                 id: job.id,
                 lease: job.lease,

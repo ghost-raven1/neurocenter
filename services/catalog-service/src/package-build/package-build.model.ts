@@ -1,3 +1,4 @@
+import { buildRecovery } from './build-recovery';
 import type { IBuildSourceInventory, IExecutableBuildPlan } from '../../../shared/package-build-plan.cjs';
 import type { IBuildDiagnostic } from '../../../shared/package-build-diagnostics.cjs';
 import {
@@ -97,21 +98,25 @@ export interface IBuildRow {
     execution_pid?: number | null;
     execution_started?: boolean;
 }
-export const buildView = (row: IBuildRow) => ({
-    id: row.id,
-    requestKey: row.request_key,
-    publicationStartedAt: row.publication_started_at ?? null,
-    name: row.config?.name,
-    operationId: 'tool-build-' + row.id,
-    state: row.state,
-    percent: row.percent,
-    buildDiagnostics: row.config?.buildDiagnostics ?? [],
-    message: row.message,
-    result: row.result,
-    error: row.error,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-});
+export const buildView = (row: IBuildRow) => {
+    const recovery = buildRecovery(row.config);
+    return {
+        id: row.id,
+        requestKey: row.request_key,
+        publicationStartedAt: row.publication_started_at ?? null,
+        name: row.config?.name,
+        ...(recovery ? { recovery } : {}),
+        operationId: 'tool-build-' + row.id,
+        state: row.state,
+        percent: row.percent,
+        buildDiagnostics: row.config?.buildDiagnostics ?? [],
+        message: row.message,
+        result: row.result,
+        error: row.error,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+    };
+};
 export const requestHash = (input: IBuildInput) => publicationHash({ ...input, requestKey: undefined });
 export const validId = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);

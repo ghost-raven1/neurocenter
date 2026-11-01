@@ -6,10 +6,22 @@ const unique = (keys) => [...new Set(keys)];
 /** Recovery/removal jobs remain usable when every business capability is disabled. */
 function requiredJobFeatures(kind, payload = {}, trustedPayload = false) {
     const input = record(payload);
+    if (kind === 'open-opencode-personal-key')
+        return [
+            'computer_setup',
+            'computer_connections',
+            'personal_remote_provider_credentials',
+            'opencode_personal_key_transfer',
+        ];
     if (kind === 'inspect-opencode-cli') return ['computer_setup'];
     if (kind === 'install-opencode-cli') return ['computer_setup'];
     if (kind === 'inspect-opencode-global-providers') return [];
-    if (kind === 'open-opencode-global-providers') return ['computer_setup', 'computer_connections'];
+    if (kind === 'open-opencode-global-providers')
+        return [
+            'computer_setup',
+            'computer_connections',
+            ...(input.adapter === 'opencode-v2-accounts' ? ['opencode_v2_accounts'] : []),
+        ];
     if (kind === 'runtime-cache-policy') {
         const policy = record(trustedPayload ? input : input.runtimeCachePolicy);
         if (policy.action === 'set-cleanup')
@@ -161,6 +173,7 @@ function requiredRouteFeatures(method, path, body) {
             'install-opencode-cli',
             'inspect-opencode-global-providers',
             'open-opencode-global-providers',
+            'open-opencode-personal-key',
         ].includes(input.kind)
     )
         return [];

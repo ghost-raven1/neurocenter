@@ -68,7 +68,7 @@ it('valid inventory above10KiB round-trips through the private outbox while malf
         };
     expect(Buffer.byteLength(JSON.stringify(completion.result))).toBeGreaterThan(10000);
     await saveCompletion(completion);
-    expect((await pendingCompletions())[0].result).toEqual(completion.result);
+    expect((await pendingCompletions())[0]?.result).toEqual(completion.result);
     for (const large of [false, true]) {
         const wrong = randomUUID();
         await expect(
@@ -109,7 +109,7 @@ it('outboxed receipts are archived; recovery reads no archived bodies while exac
     const open = vi.spyOn(fs, 'open');
     expect(await Array.fromAsync(globalReceipts())).toEqual([]);
     expect(open.mock.calls.filter(([name]) => String(name).endsWith('.json'))).toHaveLength(0);
-    const receipt = await readGlobalReceipt(ids[0]);
+    const receipt = await readGlobalReceipt(ids[0]!);
     expect(receipt?.phase).toBe('closed');
     expect(receipt?.outboxed).toBe(true);
     await queueGlobalReceipt(receipt!, save);
@@ -144,3 +144,51 @@ it('outbox failure preserves one closed receipt and retries delivery without ano
     expect(save).toHaveBeenCalledOnce();
     expect(await Array.fromAsync(globalReceipts())).toEqual([]);
 });
+
+it.each(['opencode-v2-accounts', 'personal-key'] as const)(
+    'a %s opening survives the real journal and outbox without reopening',
+    async (mode) => {
+        const id = randomUUID(),
+            expiresAt = '2099-01-01T00:00:00.000Z';
+        const personal = mode === 'personal-key';
+        const jobKind = personal ? 'open-opencode-personal-key' : 'open-opencode-global-providers';
+        const payload = {
+            schemaVersion: 1,
+            scope: 'global',
+            deviceId,
+            expiresAt,
+            ...(personal
+                ? {
+                      requestKey: randomUUID(),
+                      modelId: 'model',
+                      providerId: 'a'.repeat(64),
+                      expectedConnectionRevision: 1,
+                      expectedCredentialRevision: 0,
+                  }
+                : { adapter: mode }),
+        };
+        const job = { id, lease: randomUUID(), kind: jobKind, project_id: null, payload, deviceId };
+        const receipt = await beginGlobalReceipt(job);
+        const completion = {
+            id,
+            lease: job.lease,
+            deviceId,
+            state: 'succeeded' as const,
+            message: 'Окно открыто',
+            result: {
+                schemaVersion: 1,
+                scope: 'global',
+                deviceId,
+                jobId: id,
+                kind: jobKind,
+                checkedAt: '2026-11-01T00:00:00.000Z',
+                status: 'opened',
+                expiresAt,
+                ...(!personal ? { adapter: mode } : {}),
+            },
+        };
+        await queueGlobalReceipt(await completeGlobalReceipt(receipt, completion), saveCompletion);
+        expect(await pendingCompletions()).toEqual([expect.objectContaining({ id, result: completion.result })]);
+        expect((await readGlobalReceipt(id))?.outboxed).toBe(true);
+    },
+);

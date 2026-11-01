@@ -1,3 +1,4 @@
+import { OPENCODE_PERSONAL_KEY_JOB } from '../../../shared/opencode-personal-key.cjs';
 import { OPENCODE_CLI_INSTALL_JOB, normalizeOpenCodeInstallPayload } from '../../../shared/opencode-cli-install.cjs';
 import { ComputerSetupSupplyApproval } from './computer-setup-supply-approval';
 import {
@@ -11,7 +12,11 @@ import {
     assertGlobalProvidersAuthority,
     globalProvidersJobPayload,
 } from './global-provider-jobs';
-const globalProviderKinds: readonly string[] = [OPENCODE_GLOBAL_PROVIDERS_READ_JOB, OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB];
+const globalProviderKinds: readonly string[] = [
+    OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
+    OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB,
+    OPENCODE_PERSONAL_KEY_JOB,
+];
 import type { PoolClient } from 'pg';
 import { AGENT_METHOD_WORKFLOW_JOB } from '../../../shared/agent-method-workflow.cjs';
 import { agentMethodJobPayload, assertAgentMethodJob } from '../agent-method-workflows/jobs';
@@ -113,6 +118,7 @@ const view = `CASE WHEN kind='run-agent-method-workflow' AND payload ? 'agent' T
     'agentsRevision',payload->'agent'->'agentsRevision','agentsManifestSha256',payload->'agent'->'agentsManifestSha256',
     'compiledManifestSha256',payload->'agent'->'compiledManifestSha256','fileSha256',payload->'agent'->'fileSha256',
     'configurationJobId',payload->'agent'->'configurationJobId') END AS agent,
+    CASE WHEN kind IN ('inspect-opencode-global-providers','open-opencode-global-providers','open-opencode-personal-key') AND payload->>'adapter'='opencode-v2-accounts' THEN payload->>'adapter' END AS adapter,
     payload->>'method' AS method,payload->>'workflowId' AS "workflowId",id,device_id AS "deviceId",project_id AS "projectId",kind,state,percent,message,result,created_at AS "createdAt",started_at AS "startedAt",updated_at AS "updatedAt",payload->>'assetId' AS "assetId",payload->>'assetKind' AS "assetKind",payload->>'version' AS version,payload->>'bindingId' AS "bindingId",payload->'package'->'manifest'->>'sha256' AS "expectedManifest",payload->>'instanceId' AS "expectedInstanceId",
     payload->'descriptor'->>'providerKind' AS "providerKind",payload->'descriptor'->>'providerId' AS "providerId",payload->'descriptor'->>'schemaDigest' AS "providerSchemaDigest",
     payload->'descriptor'->'expectations'->>'catalogModelId' AS "catalogModelId",payload->'descriptor'->'expectations'->>'modelPin' AS "expectedModelPin"`;
@@ -530,7 +536,7 @@ export class DeviceJobs {
         const scope = await this.readScope(actor);
         await this.expire();
         const access =
-            "AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers')))";
+            "AND ($2::boolean OR project_id=ANY($3::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers','open-opencode-personal-key')))";
         return (
             await this.store.pool.query(
                 `SELECT ${view} FROM bridge_jobs WHERE email=$1 ${access} AND (state IN ('queued','running','reconciling')
@@ -1033,7 +1039,7 @@ export class DeviceJobs {
     async cancel(actor: IAccessActor, id: string) {
         const scope = await this.readScope(actor);
         const access =
-            "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers')))";
+            "AND ($3::boolean OR project_id=ANY($4::text[]) OR (project_id IS NULL AND kind IN ('choose-root','runtime-cache-policy','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers','open-opencode-personal-key')))";
         const params = [id, scope.email, scope.main, scope.projects];
         const codex = (
             await this.store.pool.query<{ kind: string; state: string }>(
@@ -1052,7 +1058,7 @@ export class DeviceJobs {
         // Learning jobs journal each boundary and can stop between steps; filesystem jobs keep their rollback contract.
         const { rowCount } = await transitionDeviceJobs(
             this.store.pool,
-            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks','run-agent-method-workflow','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers') AND state IN ('running','reconciling')) RETURNING *`,
+            `UPDATE bridge_jobs SET state='cancelled',message='Отменено пользователем',updated_at=now() WHERE id=$1 AND email=$2 ${access} AND (state='queued' OR kind IN ('sync-learning-memory','import-learning-quirks','run-agent-method-workflow','inspect-opencode-cli','install-opencode-cli','inspect-opencode-global-providers','open-opencode-global-providers','open-opencode-personal-key') AND state IN ('running','reconciling')) RETURNING *`,
             params,
             { state: 'CANCELLED', percent: 0, message: 'Отменено пользователем' },
         );

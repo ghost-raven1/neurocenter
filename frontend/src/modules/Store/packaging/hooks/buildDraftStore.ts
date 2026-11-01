@@ -143,15 +143,25 @@ function requestJSON(request: IToolBuildRequest): string {
         !request ||
         Object.keys(request).some(
             (key) =>
-                !['requestKey', 'kind', 'name', 'description', 'source', 'targets', 'publication', 'agent'].includes(
-                    key,
-                ),
+                ![
+                    'requestKey',
+                    'kind',
+                    'name',
+                    'description',
+                    'source',
+                    'targets',
+                    'publication',
+                    'agent',
+                    'tags',
+                ].includes(key),
         ) ||
         !uuid.test(request.requestKey) ||
         !['mcp', 'plugin', 'skill'].includes(request.kind) ||
         typeof request.name !== 'string' ||
         typeof request.description !== 'string' ||
         !validSource(request.source) ||
+        (request.tags !== undefined &&
+            (!Array.isArray(request.tags) || request.tags.some((tag) => typeof tag !== 'string'))) ||
         (request.publication !== undefined && !validPublication(request.publication)) ||
         (request.targets !== undefined && (request.kind === 'skill' || !validBuildTargets(request.targets))) ||
         (request.agent !== undefined && (request.kind === 'skill' || !validPackagingAgent(request.agent)))

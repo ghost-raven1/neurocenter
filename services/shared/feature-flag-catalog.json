@@ -1,586 +1,538 @@
 [
-  {
-    "key": "personal_remote_provider_credentials",
-    "name": "Личный доступ к провайдерам",
-    "description": "Личные ключи для удалённых моделей. Выключение запрещает новые изменения и запросы; сведения и квитанции доступны с действующими правами.",
-    "group": "models",
-    "dependsOn": [
-      "model_catalog"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "gguf_import",
-    "name": "Импорт GGUF",
-    "description": "Новые импорты выбранных GGUF-файлов в каталог. История, квитанции и отмена сохраняются при выключении.",
-    "group": "models",
-    "dependsOn": ["model_catalog", "model_hosting"],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_agent_tools",
-    "name": "Инструменты агентов проекта",
-    "description": "Явные ограниченные запросы к знаниям, публичным чатам и системной помощи с сохранёнными квитанциями.",
-    "group": "agents",
-    "dependsOn": ["projects", "model_hosting"],
-    "defaultEnabled": true
-  },
-  {
-    "key": "plugin_auto_updates",
-    "name": "Автообновление установленных плагинов",
-    "description": "Личные opt-in политики автоматически устанавливают только закреплённые и одобренные версии проекта.",
-    "group": "catalog",
-    "dependsOn": ["tool_installation"],
-    "defaultEnabled": true
-  },
-  {
-    "key": "notification_sounds",
-    "name": "Звук уведомлений",
-    "description": "Личный звуковой сигнал о новых результатах. Пользователь включает звук и выбирает громкость в своём браузере.",
-    "group": "agents",
-    "dependsOn": ["tab_notifications"],
-    "defaultEnabled": true
-  },
-  {
-    "key": "tab_notifications",
-    "name": "Уведомления на вкладке",
-    "description": "Метка вкладки при новых сообщениях и завершении известных фоновых задач. Выключение не отменяет задания.",
-    "group": "agents",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "model_hosting",
-    "name": "Хостинг моделей",
-    "description": "Новые запуски, проверки и обращения к моделям на сервере.",
-    "group": "models",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "tool_builds",
-    "name": "Упаковка инструментов",
-    "description": "Новые сборки из npm, GitHub, архивов и файлов.",
-    "group": "catalog",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "tool_build_agent",
-    "name": "Агент «Упаковщик»",
-    "description": "Создание и исправление рецепта выбранной моделью перед публикацией. История и отмена остаются доступны.",
-    "group": "catalog",
-    "dependsOn": [
-      "tool_builds",
-      "model_hosting"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "tool_build_agent_recipes",
-    "name": "Исполняемые рецепты Упаковщика",
-    "description": "Агент составляет проверяемый рецепт по закреплённым исходникам, зависимостям и ресурсам. История и отмена остаются доступны.",
-    "group": "catalog",
-    "dependsOn": [
-      "tool_build_agent",
-      "tool_build_validation"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "tool_build_validation",
-    "name": "Проверка runtime пакетов",
-    "description": "Проверка работоспособности MCP и плагинов перед публикацией новых комплектов.",
-    "group": "catalog",
-    "dependsOn": [
-      "tool_builds"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "rag_sync",
-    "name": "Обновление базы знаний",
-    "description": "Новая передача и переиндексация данных проекта.",
-    "group": "knowledge",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "projects",
-    "name": "Управление проектами",
-    "description": "Создание и изменение проектов; существующие данные и восстановление доступны.",
-    "group": "platform",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "computer_connections",
-    "name": "Подключение компьютеров",
-    "description": "Новые подключения компьютеров, папок и управляемые действия моста.",
-    "group": "platform",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "computer_setup",
-    "name": "Настройка программ компьютера",
-    "description": "Новые проверки OpenCode через подключённый мост; история, отмена и восстановление принятых действий доступны.",
-    "group": "platform",
-    "dependsOn": ["computer_connections"],
-    "defaultEnabled": true
-  },
-  {
-    "key": "bridge_storage_cleanup",
-    "name": "Очистка копий обновления моста",
-    "description": "Автоматическая очистка проверенных неиспользуемых копий обновления. Выключение очистки, история и восстановление доступны.",
-    "group": "platform",
-    "dependsOn": [
-      "computer_connections"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "tool_catalog",
-    "name": "Каталог инструментов",
-    "description": "Создание, изменение и назначение MCP, плагинов и скиллов.",
-    "group": "catalog",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "asset_sources",
-    "name": "Источники ассетов",
-    "description": "Новые источники, загрузка архивов и выборочный импорт карточек.",
-    "group": "catalog",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "tool_installation",
-    "name": "Установка инструментов",
-    "description": "Новые планы, одобрения и установки через мост. Удаление и восстановление доступны.",
-    "group": "catalog",
-    "dependsOn": [
-      "computer_connections"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "model_catalog",
-    "name": "Каталог моделей",
-    "description": "Добавление моделей, настройка удалённых API и назначение проектам.",
-    "group": "models",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "opencode_model_sync",
-    "name": "Модели из OpenCode",
-    "description": "Новый импорт конфигурации моделей и явно разрешённый перенос ключей.",
-    "group": "models",
-    "dependsOn": [
-      "model_catalog"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "opencode_providers",
-    "name": "Провайдеры OpenCode",
-    "description": "Управляемая локальная настройка провайдеров моделей через мост. Ключи остаются на компьютере.",
-    "group": "models",
-    "dependsOn": [
-      "computer_connections",
-      "model_catalog"
-    ],
-    "defaultEnabled": false
-  },
-  {
-    "key": "codex_connector",
-    "name": "Коннектор Codex",
-    "description": "Локальное подключение Codex и новые обращения через управляемый коннектор.",
-    "group": "models",
-    "dependsOn": [
-      "opencode_providers"
-    ],
-    "defaultEnabled": false
-  },
-  {
-    "key": "agents",
-    "name": "Управление агентами",
-    "description": "Новые шаблоны, изменения промптов и подключение агентов проекта.",
-    "group": "agents",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "model_chat",
-    "name": "Чат с моделью",
-    "description": "Новые диалоги, файлы и сообщения. История и отмена остаются доступны.",
-    "group": "agents",
-    "dependsOn": [
-      "model_hosting"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "chat_activity",
-    "name": "Статусы в чатах",
-    "description": "Онлайн, набор сообщения и отметки прочтения. Сохранённые отметки доступны после выключения.",
-    "group": "agents",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "group_chat",
-    "name": "Групповой чат",
-    "description": "Новые участники и раунды с выбранными агентами проекта.",
-    "group": "agents",
-    "dependsOn": [
-      "model_chat",
-      "agents"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "group_discussions",
-    "name": "Обсуждение агентов",
-    "description": "Координация, ответы, проверка возражений и итог по обычной задаче личной группы в ограниченном бюджете. История и отмена сохраняются; выключение возвращает независимые ответы.",
-    "group": "agents",
-    "dependsOn": ["group_chat", "model_chat"],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_learning",
-    "name": "Проектное обучение",
-    "description": "Запись опыта, построение и проверка гипотез, одобрение новых правил.",
-    "group": "agents",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_text_knowledge",
-    "name": "Текстовая база знаний",
-    "description": "Загрузка текстов, поиск цитат и явно выбранный контекст проекта без embedding-модели. История и квитанции сохраняются при выключении.",
-    "group": "knowledge",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "runtime_limit_configuration",
-    "name": "Настройка лимитов",
-    "description": "Редактор действующих лимитов текста и импорта моделей для главного администратора. Выключение сохраняет применённую политику, чтение и квитанции.",
-    "group": "platform",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_search",
-    "name": "Поиск по проекту",
-    "description": "Новый семантический поиск и подбор контекста проекта для ответов.",
-    "group": "knowledge",
-    "dependsOn": [
-      "model_hosting"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_snapshots",
-    "name": "Полные снимки проектов",
-    "description": "Создание и публикация новых полных снимков и профилей.",
-    "group": "operations",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_backups",
-    "name": "Резервные копии проектов",
-    "description": "Создание новых копий вручную и по расписанию. Скачивание и восстановление доступны.",
-    "group": "operations",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "catalog_requests",
-    "name": "Заявки по каталогу",
-    "description": "Создание, изменение и рассмотрение заявок команды.",
-    "group": "catalog",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "model_usage",
-    "name": "Отчёт об использовании моделей",
-    "description": "Показ dashboard и отчётов. Обязательный журнал фактических вызовов продолжает работать, как аудит.",
-    "group": "operations",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "local_changes",
-    "name": "Локальные изменения инструментов",
-    "description": "Новая инвентаризация и принятие изменённых файлов через мост. Восстановление доступно.",
-    "group": "operations",
-    "dependsOn": [
-      "computer_connections"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "research_tools",
-    "name": "Инструменты исследования",
-    "description": "Явный запуск инструментов исследования в чате. Чтение сохранённых результатов остаётся доступным.",
-    "group": "agents",
-    "dependsOn": [
-      "model_chat"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "help_center",
-    "name": "Помощь",
-    "description": "Создание и изменение статей Markdown. Чтение опубликованной помощи сохраняется.",
-    "group": "platform",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "catalog_reactions",
-    "name": "Сердечки каталога",
-    "description": "Отметки на карточках каталога. Счётчики и снятие своей отметки доступны после выключения.",
-    "group": "catalog",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "discussions",
-    "name": "Обсуждения",
-    "description": "Новые комментарии, ответы и редактирование в каталоге и Помощи. История и удаление доступны после выключения.",
-    "group": "platform",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "discussion_attachments",
-    "name": "Файлы в обсуждениях",
-    "description": "Новые вложения в комментариях. Доступ к ранее прикреплённым файлам сохраняется с проверкой прав.",
-    "group": "platform",
-    "dependsOn": [
-      "discussions"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_chat",
-    "name": "Командный чат проекта",
-    "description": "Общая переписка участников проекта и новые запросы выбранным агентам. История и остановка сохраняются при выключении.",
-    "group": "agents",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_chat_dialogs",
-    "name": "Диалоги команды проекта",
-    "description": "Новые публичные и приватные диалоги с выбранными участниками. История, отмена и сокращение доступа сохраняются при выключении.",
-    "group": "agents",
-    "dependsOn": [
-      "project_chat"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "model_rate_limits",
-    "name": "Лимиты запросов моделей",
-    "description": "Ограничение обращений к API отдельно для каждой модели. Настройки и история остаются доступными.",
-    "group": "models",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "user_model_token_quotas",
-    "name": "Персональные квоты токенов",
-    "description": "Допуск новых запросов по расходу и оценочному резерву пользователя для модели. Учёт принятых запросов и история сохраняются после выключения.",
-    "group": "models",
-    "dependsOn": [],
-    "defaultEnabled": false
-  },
-  {
-    "key": "card_depth_effect",
-    "name": "Подсветка карточек",
-    "description": "Мягкая тень при наведении без поворота или движения карточек.",
-    "group": "platform",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "system_coordinator",
-    "name": "Агент «Координатор»",
-    "description": "Делегирование выбранной задачи системным агентам и сбор независимых ответов. История и отмена доступны после выключения.",
-    "group": "agents",
-    "dependsOn": ["agents", "model_hosting"],
-    "defaultEnabled": true
-  },
-  {
-    "key": "system_ai_admin",
-    "name": "Агент «AI-админ»",
-    "description": "Диагностика системы и предложения по настройке адаптеров. История, отмена и восстановление доступны после выключения.",
-    "group": "agents",
-    "dependsOn": [
-      "agents",
-      "model_hosting"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "system_autoconfigurator",
-    "name": "Агент «Автоконфигуратор»",
-    "description": "Проверяемые предложения по промптам, скиллам, плагинам и ролям. Изменения применяются отдельным действием.",
-    "group": "agents",
-    "dependsOn": [
-      "agents",
-      "model_hosting"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "neural_background",
-    "name": "Нейронный фон",
-    "description": "Декоративная нейронная сеть с мягкими импульсами на страницах. Учитывает уменьшение анимации.",
-    "group": "platform",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "project_configuration",
-    "name": "Локальные настройки проекта",
-    "description": "Открытие мастера AGENTS.md, OpenCode и настроек установленного OpenCodeRAG. Закрытие, история и локальные резервные копии сохраняются после выключения.",
-    "group": "agents",
-    "dependsOn": [
-      "computer_connections"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "system_indexer",
-    "name": "Агент «Индексатор»",
-    "description": "Проверка снимков баз проектов и явный семантический поиск по публичным сообщениям. История и отмена сохраняются.",
-    "group": "agents",
-    "dependsOn": [
-      "agents",
-      "model_hosting"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "system_role_chat",
-    "name": "Чат системных агентов",
-    "description": "Приватные диалоги с системными ролями и явные запросы к выбранной модели. История, отмена и восстановление доступны после выключения.",
-    "group": "agents",
-    "dependsOn": [
-      "agents",
-      "model_hosting"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "system_role_guidance",
-    "name": "Справка и диагностика системных ролей",
-    "description": "Чтение справки и безопасного состояния проекта для подробного ответа. Изменения требуют отдельной проверки; история сохраняется после выключения.",
-    "group": "agents",
-    "dependsOn": [],
-    "defaultEnabled": true
-  },
-  {
-    "key": "system_role_mcp",
-    "name": "MCP системных агентов",
-    "description": "Явный доступ системных ролей к выбранным обнаруженным инструментам проекта. История и закрытие сессий доступны после выключения.",
-    "group": "agents",
-    "dependsOn": [
-      "tool_catalog"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "device_codex_inference",
-    "name": "Codex на компьютере",
-    "description": "Запросы чатов и агентов через личный мост. Авторизация остаётся на компьютере.",
-    "group": "models",
-    "dependsOn": [
-      "codex_connector",
-      "computer_connections",
-      "model_catalog"
-    ],
-    "defaultEnabled": false
-  },
-  {
-    "key": "project_learning_memory",
-    "name": "Принятые знания в MCP Memory",
-    "description": "Явная синхронизация одобренного контекста проекта в выбранную установленную память. История, отмена и очистка отозванных знаний доступны после выключения.",
-    "group": "knowledge",
-    "dependsOn": [
-      "project_learning",
-      "computer_connections"
-    ],
-    "defaultEnabled": false
-  },
-  {
-    "key": "project_learning_quirks",
-    "name": "Кварки RAG как опыт проекта",
-    "description": "Явный сбор полного источника кварков OpenCodeRAG в сообщённый опыт. Никакого автоматического одобрения.",
-    "group": "knowledge",
-    "dependsOn": [
-      "project_learning",
-      "computer_connections"
-    ],
-    "defaultEnabled": false
-  },
-  {
-    "key": "chat_system_roles",
-    "name": "Системные агенты в чатах",
-    "description": "Личные задачи системным агентам из существующего диалога. Подготовка, согласие и результаты остаются приватными.",
-    "group": "agents",
-    "dependsOn": [
-      "system_role_chat"
-    ],
-    "defaultEnabled": true
-  },
-  {
-    "key": "service_role_conversations",
-    "name": "Отдельные чаты сервисных ролей",
-    "description": "Приватный диалог с выбранной сервисной ролью. Прежняя история, отмена и восстановление доступны после выключения.",
-    "group": "agents",
-    "dependsOn": ["system_role_chat"],
-    "defaultEnabled": true
-  },
-  {
-    "key": "agent_method_workflows",
-    "name": "BMAD и OpenSpec через локальный мост",
-    "description": "Проектные задачи по выбранной методике с изменением кода и проверками на подключённом компьютере. История и отмена сохраняются после выключения.",
-    "group": "agents",
-    "dependsOn": ["agents", "computer_connections"],
-    "defaultEnabled": false
-  },
-  {
-    "key": "project_agent_workflows",
-    "name": "Полный цикл выбранного проектного агента",
-    "description": "Запуск выбранного агента с проверенной настройкой и моделью через локальный мост. История, отмена и восстановление доступны после выключения.",
-    "group": "agents",
-    "dependsOn": ["agent_method_workflows"],
-    "defaultEnabled": false
-  },
-  {
-    "key": "project_agent_chat_workflows",
-    "name": "Задачи агентов из проектного чата",
-    "description": "Явный запуск задачи опубликованного сообщения через выбранного агента и локальный мост. Квитанции в исходном диалоге, история и отмена доступны после выключения.",
-    "group": "agents",
-    "dependsOn": ["project_agent_workflows", "project_chat"],
-    "defaultEnabled": false
-  },
-  {
-    "key": "unified_project_setup",
-    "name": "Единая установка окружения проекта",
-    "description": "Одна точка входа на странице «Начало работы»: OpenCode, мост, папка, агенты и назначенные инструменты. История и прежние способы восстановления сохраняются.",
-    "group": "platform",
-    "dependsOn": ["computer_connections"],
-    "defaultEnabled": true
-  }
+    {
+        "key": "opencode_personal_key_transfer",
+        "name": "Перенос личного ключа OpenCode",
+        "description": "Явная передача выбранного локального API-ключа в личный доступ к подтверждённому серверному провайдеру. История и квитанции доступны при выключении.",
+        "group": "models",
+        "dependsOn": ["computer_setup", "computer_connections", "personal_remote_provider_credentials"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "opencode_v2_accounts",
+        "name": "Учётные записи OpenCode 2",
+        "description": "Явное добавление отдельной локальной учётной записи поддержанного OpenCode 2.2.2. Выключение запрещает открытие и сохранение; чтение, история и отмена остаются доступны.",
+        "group": "catalog",
+        "dependsOn": ["computer_setup", "computer_connections"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "personal_remote_provider_credentials",
+        "name": "Личный доступ к провайдерам",
+        "description": "Личные ключи для удалённых моделей. Выключение запрещает новые изменения и запросы; сведения и квитанции доступны с действующими правами.",
+        "group": "models",
+        "dependsOn": ["model_catalog"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "gguf_import",
+        "name": "Импорт GGUF",
+        "description": "Новые импорты выбранных GGUF-файлов в каталог. История, квитанции и отмена сохраняются при выключении.",
+        "group": "models",
+        "dependsOn": ["model_catalog", "model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_agent_tools",
+        "name": "Инструменты агентов проекта",
+        "description": "Явные ограниченные запросы к знаниям, публичным чатам и системной помощи с сохранёнными квитанциями.",
+        "group": "agents",
+        "dependsOn": ["projects", "model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "plugin_auto_updates",
+        "name": "Автообновление установленных плагинов",
+        "description": "Личные opt-in политики автоматически устанавливают только закреплённые и одобренные версии проекта.",
+        "group": "catalog",
+        "dependsOn": ["tool_installation"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "notification_sounds",
+        "name": "Звук уведомлений",
+        "description": "Личный звуковой сигнал о новых результатах. Пользователь включает звук и выбирает громкость в своём браузере.",
+        "group": "agents",
+        "dependsOn": ["tab_notifications"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "tab_notifications",
+        "name": "Уведомления на вкладке",
+        "description": "Метка вкладки при новых сообщениях и завершении известных фоновых задач. Выключение не отменяет задания.",
+        "group": "agents",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "model_hosting",
+        "name": "Хостинг моделей",
+        "description": "Новые запуски, проверки и обращения к моделям на сервере.",
+        "group": "models",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "tool_builds",
+        "name": "Упаковка инструментов",
+        "description": "Новые сборки из npm, GitHub, архивов и файлов.",
+        "group": "catalog",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "tool_build_agent",
+        "name": "Агент «Упаковщик»",
+        "description": "Создание и исправление рецепта выбранной моделью перед публикацией. История и отмена остаются доступны.",
+        "group": "catalog",
+        "dependsOn": ["tool_builds", "model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "tool_build_agent_recipes",
+        "name": "Исполняемые рецепты Упаковщика",
+        "description": "Агент составляет проверяемый рецепт по закреплённым исходникам, зависимостям и ресурсам. История и отмена остаются доступны.",
+        "group": "catalog",
+        "dependsOn": ["tool_build_agent", "tool_build_validation"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "tool_build_validation",
+        "name": "Проверка runtime пакетов",
+        "description": "Проверка работоспособности MCP и плагинов перед публикацией новых комплектов.",
+        "group": "catalog",
+        "dependsOn": ["tool_builds"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "rag_sync",
+        "name": "Обновление базы знаний",
+        "description": "Новая передача и переиндексация данных проекта.",
+        "group": "knowledge",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "projects",
+        "name": "Управление проектами",
+        "description": "Создание и изменение проектов; существующие данные и восстановление доступны.",
+        "group": "platform",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "computer_connections",
+        "name": "Подключение компьютеров",
+        "description": "Новые подключения компьютеров, папок и управляемые действия моста.",
+        "group": "platform",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "computer_setup",
+        "name": "Настройка программ компьютера",
+        "description": "Новые проверки OpenCode через подключённый мост; история, отмена и восстановление принятых действий доступны.",
+        "group": "platform",
+        "dependsOn": ["computer_connections"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "bridge_storage_cleanup",
+        "name": "Очистка копий обновления моста",
+        "description": "Автоматическая очистка проверенных неиспользуемых копий обновления. Выключение очистки, история и восстановление доступны.",
+        "group": "platform",
+        "dependsOn": ["computer_connections"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "tool_catalog",
+        "name": "Каталог инструментов",
+        "description": "Создание, изменение и назначение MCP, плагинов и скиллов.",
+        "group": "catalog",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "asset_sources",
+        "name": "Источники ассетов",
+        "description": "Новые источники, загрузка архивов и выборочный импорт карточек.",
+        "group": "catalog",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "tool_installation",
+        "name": "Установка инструментов",
+        "description": "Новые планы, одобрения и установки через мост. Удаление и восстановление доступны.",
+        "group": "catalog",
+        "dependsOn": ["computer_connections"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "model_catalog",
+        "name": "Каталог моделей",
+        "description": "Добавление моделей, настройка удалённых API и назначение проектам.",
+        "group": "models",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "opencode_model_sync",
+        "name": "Модели из OpenCode",
+        "description": "Новый импорт конфигурации моделей и явно разрешённый перенос ключей.",
+        "group": "models",
+        "dependsOn": ["model_catalog"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "opencode_providers",
+        "name": "Провайдеры OpenCode",
+        "description": "Управляемая локальная настройка провайдеров моделей через мост. Ключи остаются на компьютере.",
+        "group": "models",
+        "dependsOn": ["computer_connections", "model_catalog"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "codex_connector",
+        "name": "Коннектор Codex",
+        "description": "Локальное подключение Codex и новые обращения через управляемый коннектор.",
+        "group": "models",
+        "dependsOn": ["opencode_providers"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "agents",
+        "name": "Управление агентами",
+        "description": "Новые шаблоны, изменения промптов и подключение агентов проекта.",
+        "group": "agents",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "model_chat",
+        "name": "Чат с моделью",
+        "description": "Новые диалоги, файлы и сообщения. История и отмена остаются доступны.",
+        "group": "agents",
+        "dependsOn": ["model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "chat_activity",
+        "name": "Статусы в чатах",
+        "description": "Онлайн, набор сообщения и отметки прочтения. Сохранённые отметки доступны после выключения.",
+        "group": "agents",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "group_chat",
+        "name": "Групповой чат",
+        "description": "Новые участники и раунды с выбранными агентами проекта.",
+        "group": "agents",
+        "dependsOn": ["model_chat", "agents"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "group_discussions",
+        "name": "Обсуждение агентов",
+        "description": "Координация, ответы, проверка возражений и итог по обычной задаче личной группы в ограниченном бюджете. История и отмена сохраняются; выключение возвращает независимые ответы.",
+        "group": "agents",
+        "dependsOn": ["group_chat", "model_chat"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_learning",
+        "name": "Проектное обучение",
+        "description": "Запись опыта, построение и проверка гипотез, одобрение новых правил.",
+        "group": "agents",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_text_knowledge",
+        "name": "Текстовая база знаний",
+        "description": "Загрузка текстов, поиск цитат и явно выбранный контекст проекта без embedding-модели. История и квитанции сохраняются при выключении.",
+        "group": "knowledge",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "runtime_limit_configuration",
+        "name": "Настройка лимитов",
+        "description": "Редактор действующих лимитов текста и импорта моделей для главного администратора. Выключение сохраняет применённую политику, чтение и квитанции.",
+        "group": "platform",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_search",
+        "name": "Поиск по проекту",
+        "description": "Новый семантический поиск и подбор контекста проекта для ответов.",
+        "group": "knowledge",
+        "dependsOn": ["model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_snapshots",
+        "name": "Полные снимки проектов",
+        "description": "Создание и публикация новых полных снимков и профилей.",
+        "group": "operations",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_backups",
+        "name": "Резервные копии проектов",
+        "description": "Создание новых копий вручную и по расписанию. Скачивание и восстановление доступны.",
+        "group": "operations",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "catalog_requests",
+        "name": "Заявки по каталогу",
+        "description": "Создание, изменение и рассмотрение заявок команды.",
+        "group": "catalog",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "model_usage",
+        "name": "Отчёт об использовании моделей",
+        "description": "Показ dashboard и отчётов. Обязательный журнал фактических вызовов продолжает работать, как аудит.",
+        "group": "operations",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "local_changes",
+        "name": "Локальные изменения инструментов",
+        "description": "Новая инвентаризация и принятие изменённых файлов через мост. Восстановление доступно.",
+        "group": "operations",
+        "dependsOn": ["computer_connections"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "research_tools",
+        "name": "Инструменты исследования",
+        "description": "Явный запуск инструментов исследования в чате. Чтение сохранённых результатов остаётся доступным.",
+        "group": "agents",
+        "dependsOn": ["model_chat"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "help_center",
+        "name": "Помощь",
+        "description": "Создание и изменение статей Markdown. Чтение опубликованной помощи сохраняется.",
+        "group": "platform",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "catalog_reactions",
+        "name": "Сердечки каталога",
+        "description": "Отметки на карточках каталога. Счётчики и снятие своей отметки доступны после выключения.",
+        "group": "catalog",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "discussions",
+        "name": "Обсуждения",
+        "description": "Новые комментарии, ответы и редактирование в каталоге и Помощи. История и удаление доступны после выключения.",
+        "group": "platform",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "discussion_attachments",
+        "name": "Файлы в обсуждениях",
+        "description": "Новые вложения в комментариях. Доступ к ранее прикреплённым файлам сохраняется с проверкой прав.",
+        "group": "platform",
+        "dependsOn": ["discussions"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_chat",
+        "name": "Командный чат проекта",
+        "description": "Общая переписка участников проекта и новые запросы выбранным агентам. История и остановка сохраняются при выключении.",
+        "group": "agents",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_chat_dialogs",
+        "name": "Диалоги команды проекта",
+        "description": "Новые публичные и приватные диалоги с выбранными участниками. История, отмена и сокращение доступа сохраняются при выключении.",
+        "group": "agents",
+        "dependsOn": ["project_chat"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "model_rate_limits",
+        "name": "Лимиты запросов моделей",
+        "description": "Ограничение обращений к API отдельно для каждой модели. Настройки и история остаются доступными.",
+        "group": "models",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "user_model_token_quotas",
+        "name": "Персональные квоты токенов",
+        "description": "Допуск новых запросов по расходу и оценочному резерву пользователя для модели. Учёт принятых запросов и история сохраняются после выключения.",
+        "group": "models",
+        "dependsOn": [],
+        "defaultEnabled": false
+    },
+    {
+        "key": "card_depth_effect",
+        "name": "Подсветка карточек",
+        "description": "Мягкая тень при наведении без поворота или движения карточек.",
+        "group": "platform",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "system_coordinator",
+        "name": "Агент «Координатор»",
+        "description": "Делегирование выбранной задачи системным агентам и сбор независимых ответов. История и отмена доступны после выключения.",
+        "group": "agents",
+        "dependsOn": ["agents", "model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "system_ai_admin",
+        "name": "Агент «AI-админ»",
+        "description": "Диагностика системы и предложения по настройке адаптеров. История, отмена и восстановление доступны после выключения.",
+        "group": "agents",
+        "dependsOn": ["agents", "model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "system_autoconfigurator",
+        "name": "Агент «Автоконфигуратор»",
+        "description": "Проверяемые предложения по промптам, скиллам, плагинам и ролям. Изменения применяются отдельным действием.",
+        "group": "agents",
+        "dependsOn": ["agents", "model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "neural_background",
+        "name": "Нейронный фон",
+        "description": "Декоративная нейронная сеть с мягкими импульсами на страницах. Учитывает уменьшение анимации.",
+        "group": "platform",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "project_configuration",
+        "name": "Локальные настройки проекта",
+        "description": "Открытие мастера AGENTS.md, OpenCode и настроек установленного OpenCodeRAG. Закрытие, история и локальные резервные копии сохраняются после выключения.",
+        "group": "agents",
+        "dependsOn": ["computer_connections"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "system_indexer",
+        "name": "Агент «Индексатор»",
+        "description": "Проверка снимков баз проектов и явный семантический поиск по публичным сообщениям. История и отмена сохраняются.",
+        "group": "agents",
+        "dependsOn": ["agents", "model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "system_role_chat",
+        "name": "Чат системных агентов",
+        "description": "Приватные диалоги с системными ролями и явные запросы к выбранной модели. История, отмена и восстановление доступны после выключения.",
+        "group": "agents",
+        "dependsOn": ["agents", "model_hosting"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "system_role_guidance",
+        "name": "Справка и диагностика системных ролей",
+        "description": "Чтение справки и безопасного состояния проекта для подробного ответа. Изменения требуют отдельной проверки; история сохраняется после выключения.",
+        "group": "agents",
+        "dependsOn": [],
+        "defaultEnabled": true
+    },
+    {
+        "key": "system_role_mcp",
+        "name": "MCP системных агентов",
+        "description": "Явный доступ системных ролей к выбранным обнаруженным инструментам проекта. История и закрытие сессий доступны после выключения.",
+        "group": "agents",
+        "dependsOn": ["tool_catalog"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "device_codex_inference",
+        "name": "Codex на компьютере",
+        "description": "Запросы чатов и агентов через личный мост. Авторизация остаётся на компьютере.",
+        "group": "models",
+        "dependsOn": ["codex_connector", "computer_connections", "model_catalog"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "project_learning_memory",
+        "name": "Принятые знания в MCP Memory",
+        "description": "Явная синхронизация одобренного контекста проекта в выбранную установленную память. История, отмена и очистка отозванных знаний доступны после выключения.",
+        "group": "knowledge",
+        "dependsOn": ["project_learning", "computer_connections"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "project_learning_quirks",
+        "name": "Кварки RAG как опыт проекта",
+        "description": "Явный сбор полного источника кварков OpenCodeRAG в сообщённый опыт. Никакого автоматического одобрения.",
+        "group": "knowledge",
+        "dependsOn": ["project_learning", "computer_connections"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "chat_system_roles",
+        "name": "Системные агенты в чатах",
+        "description": "Личные задачи системным агентам из существующего диалога. Подготовка, согласие и результаты остаются приватными.",
+        "group": "agents",
+        "dependsOn": ["system_role_chat"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "service_role_conversations",
+        "name": "Отдельные чаты сервисных ролей",
+        "description": "Приватный диалог с выбранной сервисной ролью. Прежняя история, отмена и восстановление доступны после выключения.",
+        "group": "agents",
+        "dependsOn": ["system_role_chat"],
+        "defaultEnabled": true
+    },
+    {
+        "key": "agent_method_workflows",
+        "name": "BMAD и OpenSpec через локальный мост",
+        "description": "Проектные задачи по выбранной методике с изменением кода и проверками на подключённом компьютере. История и отмена сохраняются после выключения.",
+        "group": "agents",
+        "dependsOn": ["agents", "computer_connections"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "project_agent_workflows",
+        "name": "Полный цикл выбранного проектного агента",
+        "description": "Запуск выбранного агента с проверенной настройкой и моделью через локальный мост. История, отмена и восстановление доступны после выключения.",
+        "group": "agents",
+        "dependsOn": ["agent_method_workflows"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "project_agent_chat_workflows",
+        "name": "Задачи агентов из проектного чата",
+        "description": "Явный запуск задачи опубликованного сообщения через выбранного агента и локальный мост. Квитанции в исходном диалоге, история и отмена доступны после выключения.",
+        "group": "agents",
+        "dependsOn": ["project_agent_workflows", "project_chat"],
+        "defaultEnabled": false
+    },
+    {
+        "key": "unified_project_setup",
+        "name": "Единая установка окружения проекта",
+        "description": "Одна точка входа на странице «Начало работы»: OpenCode, мост, папка, агенты и назначенные инструменты. История и прежние способы восстановления сохраняются.",
+        "group": "platform",
+        "dependsOn": ["computer_connections"],
+        "defaultEnabled": true
+    }
 ]

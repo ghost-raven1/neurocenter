@@ -342,6 +342,7 @@ test('Общий check проверяет свежий dist, новые конт
     const files = nodeTestFiles(root),
         plan = checkPlan(root);
     for (const file of [
+        'services/shared/tests/opencode-local-providers.test.ts',
         'scripts/test/auth-security.mjs',
         'scripts/test/blitz-flow.test.mjs',
         'scripts/test/tool-runtime-source.test.mjs',

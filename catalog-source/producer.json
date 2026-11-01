@@ -508,8 +508,8 @@
     },
     {
       "path": "services/catalog-service/src/catalog/dto.ts",
-      "sha256": "1ffb98c55b6517fd1b6cba832726e7395dec0187d530b386b9beae1e811bad96",
-      "bytes": 10212
+      "sha256": "42e2ccc55f1627b5fb4766ee082be315151421f964a2056f0fe15e9cdfed4c80",
+      "bytes": 10268
     },
     {
       "path": "services/catalog-service/src/devices/mcp-config-schema.ts",

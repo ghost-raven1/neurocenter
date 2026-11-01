@@ -4,11 +4,14 @@ import {
     normalizeGlobalProvidersRequest,
     type TGlobalProvidersKind,
     type IOpenCodeGlobalProvidersInventory,
+    type IOpenCodeAccountInventory,
+    type TOpenCodeProvidersAdapter,
 } from '@neurocenter/opencode-local-providers';
 import { errorMessage } from '../../../common/utils/errorMessage';
 import { globalRequestFingerprint, readProviderJob, record, terminal, uuid, type IProviderJob } from '../model';
 import type { ILocalProvidersApi } from '../api';
 interface IOptions {
+    adapter?: TOpenCodeProvidersAdapter;
     owner: string;
     deviceId: string;
     role: string;
@@ -28,6 +31,7 @@ export interface ILocalProvidersState {
     denied: boolean;
     jobs: Partial<Record<TGlobalProvidersKind, IProviderJob>>;
     inventory?: IOpenCodeGlobalProvidersInventory;
+    accountInventory?: IOpenCodeAccountInventory;
     canReplay: boolean;
     replayKinds: TGlobalProvidersKind[];
 }
@@ -52,7 +56,8 @@ export function createLocalProvidersController(options: IOptions) {
         accepted: Partial<Record<TGlobalProvidersKind, string>> = {},
         confirmed: Partial<Record<TGlobalProvidersKind, boolean>> = {};
     const journalKey = (kind: TGlobalProvidersKind) =>
-        'neurocenter:global-providers:' + JSON.stringify([options.owner, options.deviceId, kind]);
+        'neurocenter:global-providers:' +
+        JSON.stringify([options.owner, options.deviceId, kind, ...(options.adapter ? [options.adapter] : [])]);
     const publish = (patch: Partial<ILocalProvidersState>) => {
         state = { ...state, ...patch };
         options.onChange(state);
@@ -65,7 +70,7 @@ export function createLocalProvidersController(options: IOptions) {
             (result.status === 'checked' || result.status === 'partial') &&
             (!pending[OPEN] || confirmed[OPEN]) &&
             (!open || Date.parse(result.checkedAt) > Date.parse(open.updatedAt))
-            ? result.inventory
+            ? result
             : undefined;
     }
     function load(kind: TGlobalProvidersKind) {
@@ -126,7 +131,11 @@ export function createLocalProvidersController(options: IOptions) {
     }
     function apply(job: IProviderJob) {
         publish({ jobs: { ...state.jobs, [job.kind]: job } });
-        publish({ inventory: inventory() });
+        const result = inventory();
+        publish({
+            inventory: result && 'inventory' in result ? result.inventory : undefined,
+            accountInventory: result && 'accountInventory' in result ? result.accountInventory : undefined,
+        });
     }
     async function run(work: (signal: AbortSignal, current: () => boolean) => Promise<void>) {
         const owner = options.captureOwner();
@@ -140,7 +149,8 @@ export function createLocalProvidersController(options: IOptions) {
             await work(controller.signal, current);
         } catch (error) {
             if (current()) {
-                if ([401, 403].includes(status(error) ?? 0)) publish({ jobs: {}, inventory: undefined, denied: true });
+                if ([401, 403].includes(status(error) ?? 0))
+                    publish({ jobs: {}, inventory: undefined, accountInventory: undefined, denied: true });
                 publish({ error: errorMessage(error, 'Локальное состояние не подтверждено. Повторите чтение.') });
             }
         } finally {
@@ -156,10 +166,16 @@ export function createLocalProvidersController(options: IOptions) {
         if (!current()) return;
         for (const kind of kinds) {
             const rows = raw
-                .filter((item) => record(item) && item.deviceId === options.deviceId && item.kind === kind)
-                .map((item) => readProviderJob(item, options.deviceId, kind))
+                .filter(
+                    (item) =>
+                        record(item) &&
+                        item.deviceId === options.deviceId &&
+                        item.kind === kind &&
+                        (item.adapter ?? undefined) === options.adapter,
+                )
+                .map((item) => readProviderJob(item, options.deviceId, kind, undefined, options.adapter))
                 .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-            if (rows[0]) apply(readProviderJob(rows[0], options.deviceId, kind, state.jobs[kind]));
+            if (rows[0]) apply(readProviderJob(rows[0], options.deviceId, kind, state.jobs[kind], options.adapter));
         }
         publish({ denied: false });
     }
@@ -170,6 +186,7 @@ export function createLocalProvidersController(options: IOptions) {
             deviceId: options.deviceId,
             kind,
             scope: 'global',
+            ...(options.adapter ? { adapter: options.adapter } : {}),
             requestKey,
         });
         try {
@@ -182,7 +199,7 @@ export function createLocalProvidersController(options: IOptions) {
             )
                 throw Error('Квитанция не подтверждает исходный запрос и роль.');
             if (!current()) return;
-            const job = readProviderJob(raw.job, options.deviceId, kind, state.jobs[kind]);
+            const job = readProviderJob(raw.job, options.deviceId, kind, state.jobs[kind], options.adapter);
             if (accepted[kind] && accepted[kind] !== job.id) throw Error('Квитанция изменила UUID принятого задания.');
             await rememberAccepted(kind, requestKey, job.id, current);
             if (!current()) return;
@@ -212,10 +229,17 @@ export function createLocalProvidersController(options: IOptions) {
             deviceId: options.deviceId,
             kind,
             scope: 'global',
+            ...(options.adapter ? { adapter: options.adapter } : {}),
             requestKey,
         });
         try {
-            const job = readProviderJob(await options.api.create(request, signal), options.deviceId, kind);
+            const job = readProviderJob(
+                await options.api.create(request, signal),
+                options.deviceId,
+                kind,
+                undefined,
+                options.adapter,
+            );
             if (current()) await rememberAccepted(kind, requestKey, job.id, current);
         } catch (error) {
             if ([401, 403].includes(status(error) ?? 0) || state.storageError) throw error;
@@ -286,7 +310,7 @@ export function createLocalProvidersController(options: IOptions) {
                     pending[kind] = key;
                     accepted[kind] = undefined;
                     confirmed[kind] = false;
-                    if (kind === OPEN) publish({ inventory: undefined });
+                    if (kind === OPEN) publish({ inventory: undefined, accountInventory: undefined });
                     return true;
                 });
                 if (current()) {
@@ -316,6 +340,7 @@ export function createLocalProvidersController(options: IOptions) {
             publish({
                 busy: false,
                 inventory: undefined,
+                accountInventory: undefined,
                 storageError: 'Отправка изменена другой вкладкой. Перечитайте состояние.',
             });
         },

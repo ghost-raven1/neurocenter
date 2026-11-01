@@ -55,6 +55,16 @@ Source-срез C 29.10: точные форматы auth/config закрепл�
 - [ ] 5.2 Пройти desktop сценарий с пустым компьютером и отдельный existing CLI/multiple providers путь; сохранить реальные результаты native/браузера отдельно от fixtures и не запускать платную модель.
 - [ ] 5.3 Независимо сверить реализацию с тремя specs, выполнить strict OpenSpec validation, обновить бэклог и подготовить отдельные проверенные feature-коммиты/PR без reset WIP и без изменения кандидата0.9.25.
 
+## 6. Версионный адаптер OpenCode 2
+
+Продолжение [catalog-actionable-workflows 2.3](../catalog-actionable-workflows/tasks.md). Версия схемы model scan не является версией CLI.
+
+- [x] 6.1 Проверить первичные контракты 2.2.2 (`098aa7fd6e02b03d6fc410f0b052038c7d4c5e81`): metadata inventory, credential create/idempotency, server identity и ограничения мутаций. Не переносить контракт 1.14.48 расширением semver guard.
+- [x] 6.2 Подтвердить контракт реальным pinned CLI в собственных HOME/XDG/DB/cwd с синтетическими ключами: identity, inventory projection, повтор одного ID, сохранение прежнего account и закрытие собственного server process. System/MDM discovery проверить до запуска без чтения пользовательских конфигов.
+- [x] 6.3 Реализовать отдельный V2 adapter за capability/флагом, переиспользовав private session/CSRF/permission lease/journal. Поддерживаемый первый срез — явное добавление отдельного API-key account для проверенных integrations; прежние accounts не удаляются. Не обещать отсутствующие key replacement/provider config API и межпроцессный CAS.
+- [x] 6.4 Связать проверку зарегистрированного локального сервера и version guard с UI; не выдавать stored accounts за effective location configuration; показать последствия первого account, который upstream активирует даже при `activate:false`. Проверить смену executable/server/версии и обнаруженное внешнее изменение между OPEN/SAVE; сохранить V1 отдельно.
+- [x] 6.5 Проверить lost ACK без нового ID, OFF/отзыв прав, небезопасные ответы, отмену/cleanup и отсутствие секретов/их производных в completion, UI receipt и логах. Независимое review и native evidence не заменять mock-тестами.
+
 ## Workflow follow-up
 
 Приёмка 30.10 для 2.4, 3.4 и 5.1: `docs/reports/bridge-first-acceptance-2026-10-30.md`. Восемь production-пакетов собраны; самостоятельный Native0.9.28 darwin-arm64 прошёл11архивных сценариев. Desktop прошёл шесть этапов, реальную установку CLI с потерянным ACK/reload без дубля, два локальных провайдера, чтение настоящим CLI, Unicode-привязку и запись QA-агента. Имеются адаптеры ОС/login/flags; нет платного model call, публикации/Primary update или серверной приёмки. Исторические абзацы выше описывают прежние source-срезы и не заменяют эту отдельную архивную/браузерную квитанцию. 5.2 остаётся открытой для полного наполненного набора инструментов и настоящих системных диалогов; 5.3 — для завершения PR. Изменение целиком не архивируется: раздел4 и остальные незавершённые пункты сохраняются.

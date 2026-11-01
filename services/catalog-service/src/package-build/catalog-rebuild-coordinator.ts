@@ -20,6 +20,7 @@ export interface IRebuildPlan {
 }
 interface IJob {
     id: string;
+    operationId?: string;
     state: string;
     items?: Array<{ state: string; action: string }>;
 }
@@ -85,7 +86,13 @@ export class CatalogRebuildCoordinator {
         if (!(await this.current(request))) throw Error('REBUILD_REQUEST_CHANGED');
         return create();
     }
-    private item(id: string, name: string, job: IJob, catalogId?: string): ICatalogRebuildItem {
+    private item(
+        kind: 'build' | 'inline',
+        id: string,
+        name: string,
+        job: IJob,
+        catalogId?: string,
+    ): ICatalogRebuildItem {
         return {
             id,
             name,
@@ -93,9 +100,13 @@ export class CatalogRebuildCoordinator {
             message: ready(job)
                 ? 'Пакет опубликован и проверен.'
                 : pending(job)
-                  ? 'Подготовка в очереди операций.'
-                  : 'Подготовка не завершена. Прежняя версия сохранена; откройте операцию.',
-            operationId: job.id,
+                  ? kind === 'inline'
+                      ? 'Импорт в очереди подготовки.'
+                      : 'Подготовка в очереди операций.'
+                  : kind === 'inline'
+                    ? 'Импорт не завершён. Прежняя версия сохранена; откройте журнал импорта.'
+                    : 'Подготовка не завершена. Прежняя версия сохранена; откройте операцию.',
+            ...(kind === 'inline' ? { importId: job.id } : { operationId: job.operationId ?? 'tool-build-' + job.id }),
             ...(catalogId ? { catalogId } : {}),
         };
     }
@@ -127,7 +138,7 @@ export class CatalogRebuildCoordinator {
                             return d.inline.create(actor, { requestKey: key, commit: bundle.commit, ids });
                         },
                     );
-                    items.push(this.item('inline:' + index, 'Встроенные агенты и скиллы', job));
+                    items.push(this.item('inline', 'inline:' + index, 'Встроенные агенты и скиллы', job));
                 } catch {
                     retry = true;
                     items.push({
@@ -188,7 +199,7 @@ export class CatalogRebuildCoordinator {
                             });
                         },
                     );
-                    const item = this.item(plan.id, plan.name, job, plan.imported?.id);
+                    const item = this.item('build', plan.id, plan.name, job, plan.imported?.id);
                     if (ready(job)) {
                         const current = (await d.plans()).find((value) => value.id === plan.id);
                         if (!current?.catalogReady) {

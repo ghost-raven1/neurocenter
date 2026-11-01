@@ -66,6 +66,7 @@ export interface IToolBuildAgentStep {
 }
 export interface IToolBuildRequest {
     requestKey: string;
+    tags?: string[];
     kind: TPackagingKind;
     name: string;
     description: string;
@@ -74,7 +75,17 @@ export interface IToolBuildRequest {
     publication?: IToolBuildPublication;
     agent?: IToolBuildAgent;
 }
+export interface IBundledBuildRecovery {
+    source: { type: 'bundled'; id: string; revision: string };
+    targets: string[];
+    kind: TPackagingKind;
+    name: string;
+    description: string;
+    tags: string[];
+    publication?: { mode: 'replace'; catalogId: string };
+}
 export interface IToolBuild {
+    recovery?: IBundledBuildRecovery;
     id: string;
     operationId: string;
     requestKey: string;

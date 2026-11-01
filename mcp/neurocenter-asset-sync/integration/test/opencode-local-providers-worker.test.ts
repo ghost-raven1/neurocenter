@@ -1,3 +1,4 @@
+import { contract } from '../../src/features/opencode-local-providers/contract.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,6 +25,7 @@ vi.mock('../../src/features/opencode-local-providers/server.js', () => ({
     closeGlobalProvidersSessions: vi.fn(async () => {}),
     closeGlobalProvidersSession: vi.fn(async () => {}),
 }));
+vi.mock('../../src/features/opencode-personal-key/transport.js', () => ({ personalKeyWire: vi.fn() }));
 vi.mock('../../src/bridge/open-browser.js', () => ({ openVerificationPage: vi.fn(async () => true) }));
 import {
     runGlobalProvidersJob,
@@ -35,6 +37,7 @@ import { saveCompletion } from '../../src/bridge/completions.js';
 import { writeState } from '../../src/bridge/state.js';
 import { assertOpenCodeAuthOwner } from '../../src/features/computer-setup/auth-owner.js';
 import { recoverComputerSetupJobs } from '../../src/features/computer-setup/executor.js';
+import { personalKeyWire } from '../../src/features/opencode-personal-key/transport.js';
 import { CliCleanupError } from '../../src/features/computer-setup/receipts.js';
 let home: string;
 const deviceId = '11111111-1111-4111-8111-111111111111',
@@ -89,7 +92,7 @@ it('an interrupted accepted opening is classified unknown rather than blindly re
     await beginGlobalReceipt({ ...input, deviceId });
     await recoverGlobalProvidersJobs();
     expect(startGlobalProvidersSession).not.toHaveBeenCalled();
-    expect(vi.mocked(saveCompletion).mock.calls[0][0].result).toMatchObject({ status: 'failed', issue: 'unknown' });
+    expect(vi.mocked(saveCompletion).mock.calls[0]?.[0].result).toMatchObject({ status: 'failed', issue: 'unknown' });
 });
 it('an unsupported ordinary CLI prevents window opening and returns only a safe readonly explanation', async () => {
     const input = job();
@@ -98,7 +101,7 @@ it('an unsupported ordinary CLI prevents window opening and returns only a safe 
     );
     await runGlobalProvidersJob(input, deviceId, async () => {});
     expect(startGlobalProvidersSession).not.toHaveBeenCalled();
-    expect(vi.mocked(saveCompletion).mock.calls[0][0].result).toMatchObject({
+    expect(vi.mocked(saveCompletion).mock.calls[0]?.[0].result).toMatchObject({
         status: 'failed',
         issue: 'unsupported-version',
     });
@@ -117,4 +120,79 @@ it('unknown CLI process cleanup keeps the global receipt started until the share
     await recoverGlobalProvidersJobs();
     expect((await readGlobalReceipt(input.id))?.phase).toBe('closed');
     expect(startGlobalProvidersSession).not.toHaveBeenCalled();
+});
+
+it('V2 OPEN preserves adapter identity through the private session and durable receipt', async () => {
+    const original = job(),
+        input = { ...original, payload: { ...original.payload, adapter: contract.OPENCODE_V2_ACCOUNTS_ADAPTER } };
+    await runGlobalProvidersJob(input, deviceId, async () => {});
+    expect(startGlobalProvidersSession).toHaveBeenCalledWith(
+        expect.objectContaining({ adapter: contract.OPENCODE_V2_ACCOUNTS_ADAPTER }),
+    );
+    expect(vi.mocked(saveCompletion).mock.calls[0]?.[0].result).toMatchObject({
+        adapter: contract.OPENCODE_V2_ACCOUNTS_ADAPTER,
+        status: 'opened',
+    });
+    expect((await readGlobalReceipt(input.id))?.outboxed).toBe(true);
+});
+
+it('V2 READ without a registered server records account-only partial metadata and never opens a window', async () => {
+    const input = {
+        ...job(),
+        kind: contract.OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
+        payload: { schemaVersion: 1, scope: 'global', deviceId, adapter: contract.OPENCODE_V2_ACCOUNTS_ADAPTER },
+    };
+    await runGlobalProvidersJob(input, deviceId, async () => {});
+    const result = vi.mocked(saveCompletion).mock.calls[0]?.[0].result;
+    expect(result).toMatchObject({
+        adapter: contract.OPENCODE_V2_ACCOUNTS_ADAPTER,
+        status: 'partial',
+        accountInventory: { accounts: [], issues: ['session-unavailable'] },
+    });
+    expect(result).not.toHaveProperty('inventory');
+    expect(JSON.stringify(result)).not.toContain(token);
+    expect(startGlobalProvidersSession).not.toHaveBeenCalled();
+    expect((await readGlobalReceipt(input.id))?.outboxed).toBe(true);
+});
+
+it('personal-key opening preserves one job receipt without putting a key in completion or reopening', async () => {
+    const input = {
+        ...job(),
+        kind: 'open-opencode-personal-key',
+        payload: {
+            ...job().payload,
+            requestKey: randomUUID(),
+            modelId: 'model',
+            providerId: 'a'.repeat(64),
+            expectedConnectionRevision: 1,
+            expectedCredentialRevision: 0,
+        },
+    };
+    vi.mocked(personalKeyWire).mockImplementation(async (_origin, _token, route) =>
+        route === 'receipt'
+            ? { receipt: null }
+            : {
+                  ok: true,
+                  expiresAt: input.payload.expiresAt,
+                  requestKey: input.payload.requestKey,
+                  recipient: {
+                      ownerEmail: 'fixture@example.test',
+                      modelId: 'model',
+                      modelName: 'OpenAI',
+                      providerId: input.payload.providerId,
+                      providerUrl: 'https://api.openai.com/v1',
+                      connectionRevision: 1,
+                      credentialRevision: 0,
+                      authMode: 'required',
+                      canStoreKey: true,
+                  },
+              },
+    );
+    await runGlobalProvidersJob(input, deviceId, async () => {});
+    await runGlobalProvidersJob(input, deviceId, async () => {});
+    expect(startGlobalProvidersSession).toHaveBeenCalledOnce();
+    expect(saveCompletion).toHaveBeenCalledOnce();
+    expect(vi.mocked(saveCompletion).mock.calls[0]?.[0].result).toMatchObject({ kind: input.kind, status: 'opened' });
+    expect(JSON.stringify(vi.mocked(saveCompletion).mock.calls)).not.toContain(token);
+    expect(vi.mocked(personalKeyWire).mock.calls.some(([, , route]) => route === 'save')).toBe(false);
 });

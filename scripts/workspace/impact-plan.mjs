@@ -16,6 +16,7 @@ const discovery = [
     'scripts/catalog-plugins/recipes/tests',
     'scripts/catalog-plugins/integration/test',
     'scripts/agent-kit/test',
+    'services/shared/tests',
 ];
 // Direct consumers are evidenced by source imports/fixture reads, not a complete runtime API graph.
 const consumers = {

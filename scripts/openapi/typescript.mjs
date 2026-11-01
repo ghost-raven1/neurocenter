@@ -13,12 +13,13 @@ export function loadTypeScript(root) {
     throw new Error('OpenAPI generation requires installed TypeScript in api-gateway or the workspace.');
 }
 
-/** All services use the build dependency versions installed beside Gateway, including in source-only Docker builds. */
+/** Framework declarations come from Gateway; the asset contract comes from this checkout's retained pin. */
 export function createProgram(ts, root, files) {
     const gatewayModules = path.join(root, 'services/api-gateway/node_modules');
     const modules = fs.existsSync(gatewayModules) ? gatewayModules : path.join(root, 'node_modules');
     const realModules = fs.realpathSync(modules),
         anchor = path.join(path.dirname(modules), 'src/__openapi__.ts');
+    const assetDeclaration = path.join(fs.realpathSync(root), 'vendor/asset-contract/index.d.ts');
     const options = {
         target: ts.ScriptTarget.ES2022,
         module: ts.ModuleKind.CommonJS,
@@ -36,6 +37,20 @@ export function createProgram(ts, root, files) {
         cache = ts.createModuleResolutionCache(root, (item) => item, options);
     host.resolveModuleNames = (names, filename) =>
         names.map((name) => {
+            // Prefer the retained checkout's pin over a dependency symlink to another checkout.
+            if (name === '@neurocenter/asset-contract') {
+                if (
+                    fs.existsSync(assetDeclaration) &&
+                    fs.lstatSync(assetDeclaration).isFile() &&
+                    fs.realpathSync(assetDeclaration) === assetDeclaration
+                )
+                    return {
+                        resolvedFileName: assetDeclaration,
+                        extension: ts.Extension.Dts,
+                        isExternalLibraryImport: true,
+                    };
+                return undefined;
+            }
             const relative = name.startsWith('.') || path.isAbsolute(name);
             const resolved = ts.resolveModuleName(
                 name,

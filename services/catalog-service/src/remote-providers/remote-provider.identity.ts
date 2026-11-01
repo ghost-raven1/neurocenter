@@ -50,8 +50,11 @@ export function remoteMutationHash(
     action: 'save' | 'delete',
     input: IRemoteProviderMutation,
     environment: NodeJS.ProcessEnv = process.env,
+    transferJobId?: string,
 ): string {
-    const bytes = JSON.stringify([modelId, email, action, input]);
+    const bytes = JSON.stringify(
+        transferJobId ? [modelId, email, action, input, { transferJobId }] : [modelId, email, action, input],
+    );
     if (action === 'delete') return createHash('sha256').update(bytes).digest('hex');
     if (!canStoreModelCredential(environment))
         throw new BadRequestException('Хранилище личных ключей не настроено. Обратитесь к администратору.');

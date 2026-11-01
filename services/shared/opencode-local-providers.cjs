@@ -2,6 +2,9 @@ const OPENCODE_GLOBAL_PROVIDERS_READ_JOB = 'inspect-opencode-global-providers';
 const OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB = 'open-opencode-global-providers';
 const OPENCODE_GLOBAL_PROVIDERS_CAPABILITY = 'opencode-global-providers-v1';
 const OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION = '1.14.48';
+const OPENCODE_V2_ACCOUNTS_ADAPTER = 'opencode-v2-accounts';
+const OPENCODE_V2_ACCOUNTS_CAPABILITY = 'opencode-v2-accounts-2.2.2';
+const OPENCODE_V2_ACCOUNTS_VERSION = '2.2.2';
 const kinds = [OPENCODE_GLOBAL_PROVIDERS_READ_JOB, OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB];
 const issues = [
     'invalid-json',
@@ -31,7 +34,8 @@ function exact(value, names) {
     if (!object(value) || Object.keys(value).some((key) => !names.includes(key))) fail();
 }
 function normalizeGlobalProvidersRequest(value) {
-    exact(value, ['deviceId', 'kind', 'scope', 'requestKey']);
+    exact(value, ['deviceId', 'kind', 'scope', 'requestKey', 'adapter']);
+    if (value.adapter !== undefined && value.adapter !== OPENCODE_V2_ACCOUNTS_ADAPTER) fail();
     if (!uuid(value.deviceId) || !uuid(value.requestKey) || !kinds.includes(value.kind) || value.scope !== 'global')
         fail();
     return { ...value };
@@ -42,7 +46,8 @@ const timestamp = (value) =>
     Number.isFinite(Date.parse(value)) &&
     new Date(value).toISOString() === value;
 function normalizeGlobalProvidersPayload(value, kind) {
-    exact(value, ['schemaVersion', 'scope', 'deviceId', 'expiresAt']);
+    exact(value, ['schemaVersion', 'scope', 'deviceId', 'expiresAt', 'adapter']);
+    if (value.adapter !== undefined && value.adapter !== OPENCODE_V2_ACCOUNTS_ADAPTER) fail();
     if (
         value.schemaVersion !== 1 ||
         value.scope !== 'global' ||
@@ -140,6 +145,31 @@ function normalizeGlobalProvidersInventory(value) {
     }
     return structuredClone(value);
 }
+/** Stored account metadata deliberately makes no claim about effective models, endpoints or readiness. */
+function normalizeOpenCodeAccountInventory(value) {
+    exact(value, ['accounts', 'issues']);
+    if (
+        !Array.isArray(value.accounts) ||
+        value.accounts.length > ceilings.providers ||
+        !Array.isArray(value.issues) ||
+        value.issues.length > issues.length ||
+        new Set(value.issues).size !== value.issues.length ||
+        value.issues.some((issue) => !issues.includes(issue))
+    )
+        fail();
+    const ids = new Set();
+    for (const row of value.accounts) {
+        exact(row, ['integrationId', 'hasApiKey', 'hasOAuth', 'hasExternal']);
+        if (
+            !providerId(row.integrationId) ||
+            ids.has(row.integrationId) ||
+            ['hasApiKey', 'hasOAuth', 'hasExternal'].some((key) => typeof row[key] !== 'boolean')
+        )
+            fail();
+        ids.add(row.integrationId);
+    }
+    return structuredClone(value);
+}
 function normalizeGlobalProvidersResult(value, expected) {
     exact(value, [
         'schemaVersion',
@@ -152,20 +182,28 @@ function normalizeGlobalProvidersResult(value, expected) {
         'inventory',
         'issue',
         'expiresAt',
+        'adapter',
+        'accountInventory',
     ]);
     normalizeGlobalProvidersPayload({
         schemaVersion: value.schemaVersion,
         scope: value.scope,
         deviceId: value.deviceId,
+        ...(value.adapter !== undefined ? { adapter: value.adapter } : {}),
     });
     if (!uuid(value.jobId) || !kinds.includes(value.kind) || !timestamp(value.checkedAt)) fail();
     if (expected && ['deviceId', 'jobId', 'kind'].some((key) => value[key] !== expected[key])) fail();
+    if (expected && value.adapter !== expected.adapter) fail();
+    const v2 = value.adapter === OPENCODE_V2_ACCOUNTS_ADAPTER;
+    if (v2 ? value.inventory !== undefined : value.accountInventory !== undefined) fail();
     if (value.status === 'failed') {
-        if (!issues.includes(value.issue) || value.inventory !== undefined) fail();
+        if (!issues.includes(value.issue) || value.inventory !== undefined || value.accountInventory !== undefined)
+            fail();
     } else if (value.kind === OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB) {
         if (
             value.status !== 'opened' ||
             value.inventory !== undefined ||
+            value.accountInventory !== undefined ||
             value.issue !== undefined ||
             !timestamp(value.expiresAt) ||
             (expected?.expiresAt !== undefined && value.expiresAt !== expected.expiresAt)
@@ -173,8 +211,10 @@ function normalizeGlobalProvidersResult(value, expected) {
             fail();
     } else {
         if (!['checked', 'partial'].includes(value.status) || value.issue !== undefined) fail();
-        normalizeGlobalProvidersInventory(value.inventory);
-        if (value.inventory.issues.length > 0 !== (value.status === 'partial')) fail();
+        const inventory = v2
+            ? normalizeOpenCodeAccountInventory(value.accountInventory)
+            : normalizeGlobalProvidersInventory(value.inventory);
+        if (inventory.issues.length > 0 !== (value.status === 'partial')) fail();
     }
     if (value.status !== 'opened' && value.expiresAt !== undefined) fail();
     const raw = JSON.stringify(value);
@@ -222,16 +262,38 @@ const inventorySchema = schema({
     issues: { type: 'array', uniqueItems: true, maxItems: issues.length, items: { enum: issues } },
 });
 const identityProperties = { ...baseProperties, jobId: uuidSchema, kind: { enum: kinds }, checkedAt: dateSchema };
+const adapterSchema = literal(OPENCODE_V2_ACCOUNTS_ADAPTER);
+const accountInventorySchema = schema({
+    accounts: {
+        type: 'array',
+        maxItems: ceilings.providers,
+        items: schema({
+            integrationId: { ...string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$' },
+            hasApiKey: boolean,
+            hasOAuth: boolean,
+            hasExternal: boolean,
+        }),
+    },
+    issues: { type: 'array', uniqueItems: true, maxItems: issues.length, items: { enum: issues } },
+});
 const OPENCODE_GLOBAL_PROVIDERS_SCHEMAS = Object.freeze({
-    request: schema({
-        deviceId: uuidSchema,
-        kind: { type: 'string', enum: kinds },
-        scope: literal('global'),
-        requestKey: uuidSchema,
-    }),
-    payloadRead: schema(baseProperties),
-    payloadOpen: schema({ ...baseProperties, expiresAt: dateSchema }),
+    request: schema(
+        {
+            deviceId: uuidSchema,
+            kind: { type: 'string', enum: kinds },
+            scope: literal('global'),
+            requestKey: uuidSchema,
+            adapter: adapterSchema,
+        },
+        ['deviceId', 'kind', 'scope', 'requestKey'],
+    ),
+    payloadRead: schema({ ...baseProperties, adapter: adapterSchema }, Object.keys(baseProperties)),
+    payloadOpen: schema({ ...baseProperties, expiresAt: dateSchema, adapter: adapterSchema }, [
+        ...Object.keys(baseProperties),
+        'expiresAt',
+    ]),
     inventory: inventorySchema,
+    accountInventory: accountInventorySchema,
     results: {
         oneOf: [
             schema({
@@ -247,6 +309,26 @@ const OPENCODE_GLOBAL_PROVIDERS_SCHEMAS = Object.freeze({
                 expiresAt: dateSchema,
             }),
             schema({ ...identityProperties, status: literal('failed'), issue: { type: 'string', enum: issues } }),
+            schema({
+                ...identityProperties,
+                adapter: adapterSchema,
+                kind: literal(OPENCODE_GLOBAL_PROVIDERS_READ_JOB),
+                status: { type: 'string', enum: ['checked', 'partial'] },
+                accountInventory: accountInventorySchema,
+            }),
+            schema({
+                ...identityProperties,
+                adapter: adapterSchema,
+                kind: literal(OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB),
+                status: literal('opened'),
+                expiresAt: dateSchema,
+            }),
+            schema({
+                ...identityProperties,
+                adapter: adapterSchema,
+                status: literal('failed'),
+                issue: { type: 'string', enum: issues },
+            }),
         ],
     },
 });
@@ -255,12 +337,16 @@ module.exports = {
     OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB,
     OPENCODE_GLOBAL_PROVIDERS_CAPABILITY,
     OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION,
+    OPENCODE_V2_ACCOUNTS_ADAPTER,
+    OPENCODE_V2_ACCOUNTS_CAPABILITY,
+    OPENCODE_V2_ACCOUNTS_VERSION,
     DEFAULT_GLOBAL_PROVIDERS_LIMITS,
     OPENCODE_GLOBAL_PROVIDERS_SCHEMAS,
     globalProvidersLimits,
     normalizeGlobalProvidersRequest,
     normalizeGlobalProvidersPayload,
     normalizeGlobalProvidersInventory,
+    normalizeOpenCodeAccountInventory,
     normalizeGlobalProvidersResult,
     globalProviderId: providerId,
     globalProviderModelId: modelId,

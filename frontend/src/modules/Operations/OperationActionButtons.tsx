@@ -37,7 +37,7 @@ const OperationActionButtons: FC<IOperationActionButtonsProps> = ({ operation, u
             )}
             {packaging && (
                 <Button size="small" href={packaging}>
-                    Открыть упаковщик
+                    {operation.toolBuildSource ? 'Открыть рецепт и журнал' : 'Открыть упаковщик'}
                 </Button>
             )}
             {recovery && !onDetails && <Typography.Text type="secondary">{recovery.reason}</Typography.Text>}

@@ -171,3 +171,15 @@ it('uncertain private journal retirement stays a cleanup error until recovery su
     await helper.stopOpenCodeAuthOwnerChecks();
     await empty();
 }, 20000);
+
+it('V2 exact pin accepts 2.2.2 without widening the legacy auth.json guard', async () => {
+    await writeCli('opencode v2.2.2');
+    const { assertOpenCodeAuthOwner } = await import('../../src/features/computer-setup/auth-owner.js');
+    await expect(assertOpenCodeAuthOwner(deviceId, async () => {})).rejects.toHaveProperty(
+        'code',
+        'OPENCODE_GLOBAL_PROVIDER_CLI_UNSUPPORTED',
+    );
+    const proof = await assertOpenCodeAuthOwner(deviceId, async () => {}, undefined, '2.2.2');
+    await proof.assertCurrent();
+    await empty();
+});

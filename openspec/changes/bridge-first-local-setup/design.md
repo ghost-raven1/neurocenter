@@ -27,6 +27,20 @@ Device jobs уже имеют device-global примеры choose-root/model sca
 
 ## Risks / Trade-offs
 
+### Предлагаемый V2 срез
+
+Контракт закреплён на OpenCode 2.2.2, commit `098aa7fd6e02b03d6fc410f0b052038c7d4c5e81`. V1 1.14.48 сохраняется отдельным адаптером. V2 credentials принадлежат server SQLite; безопасный inventory строится по ограниченной проекции integration connections. `GET /api/credential` возвращает секреты и не является публичным inventory.
+
+Первый поддерживаемый write — добавление отдельного account через `POST /api/credential` с заранее сохранённым ID. Повтор и неизвестный ACK разрешаются тем же ID; `connect/key` без idempotency key для этого не подходит. Прежние accounts сохраняются. При `activate:false` существующий активный account не меняется, но первый account upstream активирует автоматически; пользователь видит это до подтверждения. Это не замена ключа: PATCH credential меняет только label, а API конфигурации не предоставляет provider writer.
+
+Обнаруженное изменение между OPEN/SAVE требует перечитывания, но API без expected revision/ETag не обеспечивает атомарный CAS произвольных внешних writers. Сервер и location должны быть выбраны явно; точная версия CLI и server `/api/info` проверяются независимо, поскольку upstream может продолжать работу после mismatch. Способ привязки к действующему пользовательскому серверу должен быть подтверждён до production реализации.
+
+Native-проверка использует отдельный pinned binary, собственные HOME/XDG/DB/cwd, очищенное окружение и синтетические ключи. Перед стартом проверяется отсутствие подмешиваемой system/MDM конфигурации. `serve --stdio` удерживается собственным stdin lease; cleanup закрывает только принадлежащий проверке process group. Этот fixture не обновляет установленный пользовательский CLI.
+
+Первичные источники: [credential routes](https://github.com/anomalyco/opencode/blob/098aa7fd6e02b03d6fc410f0b052038c7d4c5e81/packages/protocol/src/groups/credential.ts), [integration routes](https://github.com/anomalyco/opencode/blob/098aa7fd6e02b03d6fc410f0b052038c7d4c5e81/packages/protocol/src/groups/integration.ts), [Credential.create](https://github.com/anomalyco/opencode/blob/098aa7fd6e02b03d6fc410f0b052038c7d4c5e81/packages/core/src/credential.ts), [ServerConnection](https://github.com/anomalyco/opencode/blob/098aa7fd6e02b03d6fc410f0b052038c7d4c5e81/packages/cli/src/services/server-connection.ts).
+
+### Общие риски
+
 - Самообновление может остановить свой исполнитель → внешний supervisor, fenced handoff, новый heartbeat как критерий успеха; никаких force kill неизвестных процессов.
 - Старый мост не умеет новый job → capability gate и один поддержанный первичный upgrade/reconnect через помощь.
 - Локальный auth может редактировать другой процесс → контрактный fixture реального owner, проверка наблюдаемого изменения и отказ с сохранением; не обещать атомарность произвольных внешних писателей.

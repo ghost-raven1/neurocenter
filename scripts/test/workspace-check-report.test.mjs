@@ -47,6 +47,7 @@ async function fixture(
         'scripts/catalog-plugins/recipes/tests',
         'scripts/catalog-plugins/integration/test',
         'scripts/agent-kit/test',
+        'services/shared/tests',
     ]) {
         await fs.mkdir(path.join(checkout, name), { recursive: true });
     }
