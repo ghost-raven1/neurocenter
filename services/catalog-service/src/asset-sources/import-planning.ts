@@ -70,7 +70,7 @@ export function validateImportPlan(items: IImportItem[]): void {
             id = item.native!.id,
             previous = names.get(name);
         if (previous && previous !== id) {
-            throw new ConflictException('Несколько выбранных ассетов занимают одно название в native-каталоге.');
+            throw new ConflictException('Несколько выбранных поставок занимают одно название в native-каталоге.');
         }
         names.set(name, id);
     }

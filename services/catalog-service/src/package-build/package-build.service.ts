@@ -556,7 +556,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             );
             if (checked.dependencies?.length)
                 throw new BadRequestException(
-                    'Ассет с зависимостями импортируется через общий каталог с точными связанными версиями.',
+                    'Поставка с зависимостями импортируется через общий каталог с точными связанными версиями.',
                 );
             if (checked.kind === 'skill')
                 return this.importSkillAsset(actor, checked as SkillAsset, input.requestKey, signal);
@@ -1073,7 +1073,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 undefined,
                 sourcePath ? { archivePath: sourcePath, stagingRoot: path.dirname(sourcePath) } : undefined,
             );
-            await this.progress(row.id, 95, 'Публикация карточки и связанной версии ассета');
+            await this.progress(row.id, 95, 'Публикация карточки и связанной версии поставки');
             const lease = this.lease;
             if (!lease || this.stopping) {
                 throw new Error('Сборщик остановлен до публикации.');
@@ -1188,7 +1188,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     /** Native skill write is journaled before Catalog atomically commits its source receipt and build result. */
     private async executeSkill(row: IBuildRow, stage: string): Promise<void> {
         const built = await buildSkillAsset(row.config, stage);
-        await this.progress(row.id, 60, 'Проверка SKILL.md, ресурсов и связанной версии ассета');
+        await this.progress(row.id, 60, 'Проверка SKILL.md, ресурсов и связанной версии поставки');
         const prepared = await this.sources.prepareLocalSkill(built.asset, row.request_key, built.sourceFile, {
                 createOnly: true,
             }),

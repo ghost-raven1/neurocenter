@@ -172,7 +172,7 @@ export class ModelsRepository {
             const technical =
                 body.model !== undefined || body.modelVersion !== undefined || body.dimension !== undefined;
             if (technical && current.runtime === 'ollama')
-                throw new ConflictException('Для другой версии управляемой модели импортируйте новый ассет.');
+                throw new ConflictException('Для другой версии управляемой модели импортируйте новую поставку.');
             const next = technical
                 ? validateModelCreate({
                       name,
@@ -275,7 +275,7 @@ export class ModelsRepository {
             }
             if (current.manifestSha256 === null && !current.fileImport) {
                 throw new ConflictException(
-                    'Модель не имеет SHA импортированной поставки. Сначала импортируйте проверенный ассет.',
+                    'Модель не имеет SHA импортированной поставки. Сначала импортируйте проверенную поставку.',
                 );
             }
             if (current.fileImport) {

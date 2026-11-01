@@ -49,12 +49,12 @@ function isPublicRuntimeAddress(value) {
 }
 function assetUrl(value) {
     if (typeof value !== 'string' || value.length > 4096 || /[\x00-\x20\x7f\\]/.test(value))
-        throw new Error('Asset требует публичный HTTPS URL.');
+        throw new Error('Файл поставки требует публичный HTTPS URL.');
     let url;
     try {
         url = new URL(value);
     } catch {
-        throw new Error('Некорректный URL asset.');
+        throw new Error('Некорректный URL файла поставки.');
     }
     const hostname = url.hostname.toLowerCase(),
         address = hostname.replace(/^\[|\]$/g, '');
@@ -69,7 +69,9 @@ function assetUrl(value) {
         /(?:^|\.)(?:localhost|local|internal|lan|home|test|invalid)$/.test(hostname) ||
         (isIP(address) && !isPublicRuntimeAddress(address))
     )
-        throw new Error('Asset требует публичный HTTPS URL без пароля, локального адреса и нестандартного порта.');
+        throw new Error(
+            'Файл поставки требует публичный HTTPS URL без пароля, локального адреса и нестандартного порта.',
+        );
     return url.href;
 }
 function relative(value, label) {
@@ -92,8 +94,8 @@ function asset(value, { local = false } = {}) {
         ) ||
         (directory && !local)
     )
-        throw new Error('Asset содержит неподдерживаемые поля.');
-    const entrypoint = relative(value.entrypoint, 'Точка входа asset');
+        throw new Error('Файл поставки содержит неподдерживаемые поля.');
+    const entrypoint = relative(value.entrypoint, 'Точка входа файла поставки');
     if (/\.(?:sh|bash|zsh|bat|cmd|ps1)$/i.test(entrypoint))
         throw new Error('Shell-скрипт не является автономной точкой входа.');
     const executables = value.executables;
@@ -110,7 +112,7 @@ function asset(value, { local = false } = {}) {
         ...(executables ? { executables: executables.map((item) => relative(item, 'Исполняемый файл')) } : {}),
     };
     if (!directory && (!/^[a-f0-9]{64}$/.test(value.sha256 ?? '') || !['tar.gz', 'zip', 'file'].includes(value.format)))
-        throw new Error('Remote asset требует SHA-256 и формат tar.gz, zip или file.');
+        throw new Error('Удалённый файл поставки требует SHA-256 и формат tar.gz, zip или file.');
     return result;
 }
 /** Декларация готового приложения и runtime не содержит команд установки или компиляции. */
@@ -122,7 +124,7 @@ function validateRuntimeSource(value) {
         !exact(value.assets, TARGETS) ||
         !Object.keys(value.assets).length
     )
-        throw new Error('runtime требует известный adapter и платформенные assets.');
+        throw new Error('runtime требует известный adapter и файлы поставки для выбранных платформ.');
     if (value.python !== undefined && value.adapter !== 'python')
         throw new Error('План Python разрешён только для adapter python.');
     const python = value.python === undefined ? undefined : validatePythonPlan(value.python);

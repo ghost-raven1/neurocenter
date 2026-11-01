@@ -91,7 +91,7 @@ export async function validateSourceArchive(
         : pins.find((candidate) => files.has('.asset-source-metadata/' + candidate.index.sha256 + '.json'));
     if (!pin)
         throw new ConflictException(
-            'Опись архива не совпадает с закреплённым или ранее проверенным источником. Нужен архив соответствующего релиза приложения либо ранее проверенной версии ассетов.',
+            'Опись архива не совпадает с закреплённым или ранее проверенным источником. Нужен архив соответствующего релиза приложения либо ранее проверенной версии поставок.',
         );
     const metadata = new Map<string, IArchiveFile>();
     let total = 0;
@@ -117,7 +117,7 @@ export async function validateSourceArchive(
         { offline: true, cache },
     );
     const index = await source.index();
-    if (index.assets.length > 300) throw new ConflictException('В архиве более 300 описей ассетов.');
+    if (index.assets.length > 300) throw new ConflictException('В архиве более 300 описей поставок.');
     const records: ResolvedAsset[] = [];
     for (const entry of index.assets) {
         signal.throwIfAborted();

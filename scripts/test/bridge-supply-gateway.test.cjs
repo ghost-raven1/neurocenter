@@ -265,10 +265,14 @@ test('Пустой новый источник не подменяется ло�
     f.state.status = 404;
     f.state.supply = { message: 'not imported' };
     const res = new Response();
-    await assert.rejects(
-        new BridgeController(f.service).installScript(request(), res),
-        (error) => error.getStatus?.() === 404 && error.getResponse().code === 'BRIDGE_NOT_IMPORTED',
-    );
+    await assert.rejects(new BridgeController(f.service).installScript(request(), res), (error) => {
+        assert.equal(error.getStatus?.(), 404);
+        assert.deepEqual(error.getResponse(), {
+            code: 'BRIDGE_NOT_IMPORTED',
+            message: 'Мост ещё не добавлен из репозитория поставок. Обратитесь к главному администратору.',
+        });
+        return true;
+    });
     assert.equal(res.body.length, 0);
     assert.equal(f.calls.length, 1);
 });

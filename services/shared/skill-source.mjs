@@ -164,7 +164,7 @@ export function parseSkillSource(files, overrides = {}, parseYaml) {
         throw new Error('Для скилла нужно описание до 1024 символов.');
     for (const key of ['mcp', 'plugins', 'dependencies'])
         if (meta[key] !== undefined && (!Array.isArray(meta[key]) || meta[key].length))
-            throw new Error('Скилл с зависимостями добавляется через каталог ассетов с точными связанными версиями.');
+            throw new Error('Скилл с зависимостями добавляется через каталог поставок с точными связанными версиями.');
     if (
         meta.tags !== undefined &&
         (!Array.isArray(meta.tags) ||

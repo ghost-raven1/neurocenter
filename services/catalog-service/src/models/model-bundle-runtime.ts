@@ -22,7 +22,7 @@ export class ModelBundleRuntime {
         signal: AbortSignal,
     ): Promise<void> {
         if (model.runtime !== 'ollama' || !model.manifestSha256)
-            throw new ConflictException('Сначала импортируйте проверенный ассет модели с закреплённым SHA.');
+            throw new ConflictException('Сначала импортируйте проверенную поставку модели с закреплённым SHA.');
         signal.throwIfAborted();
         const supply = await this.assets.modelSupply(model.id, model.manifestSha256);
         if (supply.lock.model !== model.model || supply.lock.manifestSha256 !== model.manifestSha256)

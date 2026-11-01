@@ -34,7 +34,7 @@ export interface IToolSupplyPlan {
     inputBytes: number;
 }
 const missing = () =>
-    new ConflictException('Точная поставка этой сборки недоступна. Восстановите исходные проверенные файлы ассета.');
+    new ConflictException('Точная поставка этой сборки недоступна. Восстановите исходные проверенные файлы поставки.');
 
 /** Transport is a tar container around the existing envelope, never another asset schema. */
 export function toolSupplyPlan(receipt: ISourceReceipt): IToolSupplyPlan {
@@ -119,7 +119,7 @@ function readme(plan: IToolSupplyPlan): string {
         plan.files.map((file) => `${file.sha256}  ${file.bytes}  ${file.name} (${file.roles.join(', ')})`).join('\n') +
         '\n\n' +
         'Source snapshot — точные исходные байты, расширение .source не задаёт формат: это может быть бинарный файл, ZIP, TAR.GZ или JSON. Не преобразуйте и не перекодируйте его.\n\n' +
-        'Для переноса на другой сервер разместите файлы в его проверяемом SHA-хранилище и импортируйте этот asset.json штатным импортом ассетов.\n\n' +
+        'Для переноса на другой сервер разместите файлы в его проверяемом SHA-хранилище и импортируйте этот asset.json штатным импортом поставок.\n\n' +
         'Для публичной публикации загрузите файлы в immutable GitHub Release. Только перед первой публикацией версии можно добавить реальные URL доставки в копию asset.json; затем пересчитайте SHA дескриптора в index.json. Уже опубликованные версии не переписывайте: изменение опубликованного дескриптора требует новой версии. SHA и размеры исходников/runtime менять нельзя.\n'
     );
 }

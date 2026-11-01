@@ -143,8 +143,8 @@
     },
     {
       "path": "package.json",
-      "sha256": "f00d0e0edf28e91773f1538ee019d036ab2cc7461673360c00f286e8ae5b5d89",
-      "bytes": 3466
+      "sha256": "41c6573fa994656fc68484fafd74fc286c16dbd3d4bd19bc3a778bc8d825fb6a",
+      "bytes": 4315
     },
     {
       "path": "scripts/catalog-plugins/archive-source.mjs",
@@ -543,8 +543,8 @@
     },
     {
       "path": "services/shared/asset-source-client.cjs",
-      "sha256": "f883aaaa83c3405888c8d89f444647b33dc8beb5ced6edb1128d8856f1cd6a8f",
-      "bytes": 12216
+      "sha256": "92be121089bc82827f36f1e4508e70be280b7eae85348f126e99ad322be94152",
+      "bytes": 12295
     },
     {
       "path": "services/shared/asset-source-client.d.cts",
@@ -588,8 +588,8 @@
     },
     {
       "path": "services/shared/github-release-source.cjs",
-      "sha256": "ef1f466df853865ef719aa9db4d45e0da931ebae3de874a73a160cadbfb286d0",
-      "bytes": 8624
+      "sha256": "5c7e7fa7e22cdeb878fa0fb8c12a8a2df71ec755ec68e08c813992a6af7b16a1",
+      "bytes": 8642
     },
     {
       "path": "services/shared/opencode-rag-source.cjs",
@@ -708,8 +708,8 @@
     },
     {
       "path": "services/shared/skill-source.mjs",
-      "sha256": "304c2c48dbf961107c3ccb138c6e1004a1173426cc078cfa56b9fc17d17cc954",
-      "bytes": 11229
+      "sha256": "352cca862d1aa42acad26ed09aad56159842bf6b3cd5a6dd290993594a39a115",
+      "bytes": 11231
     },
     {
       "path": "services/shared/source-candidates.cjs",
@@ -733,13 +733,13 @@
     },
     {
       "path": "services/shared/tool-runtime-source.cjs",
-      "sha256": "b6bcee7a4a49d251f8b2608d87063efc7f3cb7d2d2007af017eae323bcba39cd",
-      "bytes": 7177
+      "sha256": "941fd5dd8d1e5437ecd91e52abf642beced1fa84c520ab67b36e05886058b8e8",
+      "bytes": 7373
     },
     {
       "path": "services/shared/tool-supply-paths.cjs",
-      "sha256": "75a9e84251804fac58b3522e3eac9f4b3787e38318c9e5b0e969212d1f4770d8",
-      "bytes": 1896
+      "sha256": "69ecc05bdc4edecf4b435085ae7061fb58b6820917f14487817225842f4d8711",
+      "bytes": 1900
     },
     {
       "path": "services/shared/tool-supply-paths.d.cts",

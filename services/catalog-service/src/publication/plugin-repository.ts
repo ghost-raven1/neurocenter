@@ -349,7 +349,7 @@ export class PluginRepository {
                     lease,
                     snapshot,
                     actor,
-                    'Историческая зависимость ассета; действующий head сохранён',
+                    'Историческая зависимость поставки; действующий head сохранён',
                 );
                 await securityEvent(lease, {
                     actor,

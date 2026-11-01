@@ -142,3 +142,9 @@ Final full bridge rerun completed successfully:161 test files passed,6 skipped;1
 - Actual existing AssetSources is reused with an extracted heading and explicit global scope. Navigation does not submit imports or overwrite saved recovery. Independent review caught a hook below the auth early return; the hook is now unconditional and a real Core/Redux login/logout regression passes.
 - 37 behavioral tests across8 files passed; inclusive TypeScript828 files,0 diagnostics; scoped ESLint0 errors,2 pre-existing warnings in unchanged effects; formatting passed. Shared feature-policy119 tests passed. Retained logs/source hashes: `.run/refactor-20261101/p1-32-*`.
 - Isolated frontend build `e3e41aca-3d3d-4856-9df4-cc7a42718cfa` passed. Independent review has no remaining actionable findings. No desktop browser, deployment or CI acceptance is claimed; tasks1.3/6.2 remain open.
+
+### 2026-11-01 — P1 3.6: server-facing supply terminology
+
+- User-facing errors, progress and new history notes now use supplies; GitHub release assets remain release files. No machine identifiers, routes, error codes, stored history or policy bounds changed. The source-management flag keeps its key and only changes its display name.
+- Independent review of26 production files and3 existing tests found no actionable issues. AST comparison confirmed string-literal-only production changes. Gateway38, skill import11, runtime3 and producer/bundled source33 tests passed; Catalog/Skills TypeScript and scoped lint/format passed. Evidence: `.run/refactor-20261101/p1-supply-*`.
+- The retained producer closure was repinned and verified after these reviewed public input changes. No service deployment, live database mutation or browser acceptance is claimed.

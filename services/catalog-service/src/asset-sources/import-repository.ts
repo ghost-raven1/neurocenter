@@ -47,7 +47,7 @@ export class AssetImportRepository {
             );
             if (previous.rows[0]) {
                 if (previous.rows[0].request_hash !== fingerprint(previous.rows[0].cache_only === true)) {
-                    throw new ConflictException('Этот запрос уже относится к другому выбору ассетов или источнику.');
+                    throw new ConflictException('Этот запрос уже относится к другому выбору поставок или источнику.');
                 }
                 await client.query('COMMIT');
                 return previous.rows[0];
@@ -84,7 +84,7 @@ export class AssetImportRepository {
             await admission?.beforeInsert(client);
             const { rows } = await client.query<IImportJob>(
                 `INSERT INTO asset_source_jobs(id,actor,request_key,request_hash,source,selected_ids,state,message,bridge_source_revision,cache_only)
-                VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'QUEUED','Проверяем выбранные ассеты и точные зависимости',$7,$8) RETURNING *`,
+                VALUES($1,$2,$3,$4,$5::jsonb,$6::jsonb,'QUEUED','Проверяем выбранные поставки и точные зависимости',$7,$8) RETURNING *`,
                 [
                     randomUUID(),
                     actor,

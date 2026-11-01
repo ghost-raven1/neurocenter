@@ -34,7 +34,7 @@ export class ModelsController {
         const { requestKey, ...input } = body;
         if (!('runtime' in input) || !['remote-openai', 'remote-ollama'].includes(String(input.runtime)))
             throw new BadRequestException(
-                'Локальная модель добавляется импортом проверенного ассета. Здесь можно создать подключение удалённого API.',
+                'Локальная модель добавляется импортом проверенной поставки. Здесь можно создать подключение удалённого API.',
             );
         return this.models.create(input, actor, requestKey);
     }

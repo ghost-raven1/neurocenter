@@ -42,6 +42,7 @@ describe('Импорт и архив общей карточки скилла', 
             const next = await new SkillsService(reopened).importAssetSkill(input, key, actor);
             expect(importedSkillSnapshot(next)).toEqual(importedSkillSnapshot(first));
             expect(next.meta.history).toHaveLength(1);
+            expect(next.meta.history?.[0]?.note).toBe('Импорт поставки');
         } finally {
             await reopened.onModuleDestroy();
         }

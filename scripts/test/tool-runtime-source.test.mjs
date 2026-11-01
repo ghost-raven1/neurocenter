@@ -62,7 +62,9 @@ test('Asset URL и DNS исключают локальные, private и зар�
         'https://github.com:444/a',
         'https://github.com/a#fragment',
     ]) {
-        assert.throws(() => source.validateRuntimeSource(runtime('native', { ...asset, url })));
+        assert.throws(() => source.validateRuntimeSource(runtime('native', { ...asset, url })), {
+            message: 'Файл поставки требует публичный HTTPS URL без пароля, локального адреса и нестандартного порта.',
+        });
     }
     for (const address of [
         '127.0.0.1',

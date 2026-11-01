@@ -25,7 +25,7 @@ function assertToolSupplyLayout(asset) {
         paths.set(key, { name, sha });
     };
     const artifacts = asset.kind === 'skill' && asset.delivery.type === 'inline' ? [] : asset.delivery.artifacts;
-    if (!Array.isArray(artifacts)) throw new Error('Неподдерживаемая доставка ассета.');
+    if (!Array.isArray(artifacts)) throw new Error('Неподдерживаемая доставка поставки.');
     for (const { descriptor } of artifacts) add(toolRuntimePath(descriptor.sha256), descriptor.sha256);
     if (asset.source.type === 'archive') add(toolSourcePath(asset.source.sha256), asset.source.sha256);
     if (asset.recipe) add(asset.recipe.path, asset.recipe.sha256);

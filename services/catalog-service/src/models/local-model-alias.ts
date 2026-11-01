@@ -10,6 +10,6 @@ export function localModelAlias(model: Pick<IModel, 'runtime' | 'manifestSha256'
     )
         return `neurocenter/gguf-${model.fileImport.uploadId}:v1`;
     if (model.runtime !== 'ollama' || !/^[a-f0-9]{64}$/.test(model.manifestSha256 ?? ''))
-        throw new Error('Импортируйте проверенный ассет модели с закреплённым SHA.');
+        throw new Error('Импортируйте проверенную поставку модели с закреплённым SHA.');
     return `neurocenter/${model.manifestSha256}:v1`;
 }

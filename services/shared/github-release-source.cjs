@@ -25,7 +25,7 @@ function validateReleaseInput(value) {
     if (value.sha256 !== undefined && !/^[a-f0-9]{64}$/.test(value.sha256))
         throw new Error('Некорректный SHA-256 файла релиза.');
     if ((value.assetId !== undefined || value.sha256 !== undefined) && !value.asset)
-        throw new Error('Закреплённому файлу нужно имя asset.');
+        throw new Error('Закреплённому файлу нужно имя файла релиза.');
     return {
         tag: value.tag,
         ...(value.asset ? { asset: value.asset } : {}),

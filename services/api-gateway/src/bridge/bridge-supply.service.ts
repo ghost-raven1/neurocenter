@@ -76,7 +76,7 @@ export class BridgeSupplyService {
         if (result.status === 404) {
             throw new NotFoundException({
                 code: 'BRIDGE_NOT_IMPORTED',
-                message: 'Мост ещё не добавлен из репозитория ассетов. Обратитесь к главному администратору.',
+                message: 'Мост ещё не добавлен из репозитория поставок. Обратитесь к главному администратору.',
             });
         }
         if (result.status !== 200 || !validSupply(result.data, version)) {

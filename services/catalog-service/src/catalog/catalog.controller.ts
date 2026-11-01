@@ -735,7 +735,7 @@ export class CatalogController {
     public importLocalAiPlugins(@Req() req: IHttpRequest): never {
         this.assertMainAdmin(req);
         throw new GoneException(
-            'Импорт серверной папки отключён. Используйте «Каталог → Упаковать инструмент» или импорт связанных карточек в разделе «Ассеты».',
+            'Импорт серверной папки отключён. Используйте «Каталог → Упаковать инструмент» или импорт связанных карточек в разделе «Поставки».',
         );
     }
 

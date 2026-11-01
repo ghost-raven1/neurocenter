@@ -40,7 +40,7 @@ function validateSourcePin(pin) {
         !safePath(pin.index.path) ||
         !SHA(pin.index.sha256)
     )
-        throw fail('INVALID_PIN', 'Источник ассетов не закреплён корректным commit и SHA-256 описи.');
+        throw fail('INVALID_PIN', 'Источник поставок не закреплён корректным commit и SHA-256 описи.');
     return structuredClone(pin);
 }
 
@@ -77,7 +77,7 @@ class AssetSourceClient {
             }
             throw fail(
                 'ASSET_METADATA_MISSING',
-                'Точные байты описи отсутствуют в поставке приложения. Импортируйте сохранённый архив; внешний репозиторий ассетов больше не используется.',
+                'Точные байты описи отсутствуют в поставке приложения. Импортируйте сохранённый архив; внешний репозиторий поставок больше не используется.',
             );
         }
         if (this.offline)
@@ -95,12 +95,12 @@ class AssetSourceClient {
             this.signal?.throwIfAborted();
             throw fail(
                 'UNAVAILABLE',
-                'Не удалось прочитать источник ассетов. Повторите после восстановления соединения.',
+                'Не удалось прочитать источник поставок. Повторите после восстановления соединения.',
             );
         }
         if (!response.ok || !response.body) {
             await response.body?.cancel();
-            throw fail('UNAVAILABLE', 'Источник ассетов не вернул закреплённый файл. Повторите позже.');
+            throw fail('UNAVAILABLE', 'Источник поставок не вернул закреплённый файл. Повторите позже.');
         }
         const size = response.headers.get('content-length');
         if (size !== null && (!/^\d+$/.test(size) || Number(size) > maximum)) {
@@ -155,7 +155,7 @@ class AssetSourceClient {
             return this.contract.validateIndex(this.json(bytes));
         } catch (error) {
             if (error.code === 'INVALID_SOURCE') throw error;
-            throw fail('INVALID_SOURCE', 'Формат закреплённой описи ассетов не поддерживается.');
+            throw fail('INVALID_SOURCE', 'Формат закреплённой описи поставок не поддерживается.');
         }
     }
     async descriptor(entry) {
@@ -166,7 +166,7 @@ class AssetSourceClient {
             if (asset.id !== entry.id || asset.kind !== entry.kind || asset.version !== entry.version)
                 throw new Error('Header mismatch');
         } catch {
-            throw fail('INVALID_SOURCE', 'Ассет не соответствует закреплённой записи описи.');
+            throw fail('INVALID_SOURCE', 'Поставка не соответствует закреплённой записи описи.');
         }
         if (asset.recipe) await this.bytes(asset.recipe.path, asset.recipe.sha256, 1024 * 1024);
         return { asset, sha256: entry.sha256, path: entry.path, current: entry.current };
@@ -180,7 +180,7 @@ class AssetSourceClient {
             ids.some((id) => typeof id !== 'string') ||
             new Set(ids).size !== ids.length
         )
-            throw fail('BAD_SELECTION', 'Выберите от 1 до 50 разных ассетов.');
+            throw fail('BAD_SELECTION', 'Выберите от 1 до 50 разных поставок.');
         const index = await this.index(),
             tuple = (id, version) => id + '@' + version,
             entries = new Map(index.assets.map((entry) => [tuple(entry.id, entry.version), entry]));
@@ -188,7 +188,7 @@ class AssetSourceClient {
             index.assets.filter((entry) => entry.current).map((entry) => [entry.id, tuple(entry.id, entry.version)]),
         );
         if (ids.some((id) => !heads.has(id)))
-            throw fail('BAD_SELECTION', 'Выбранный ассет отсутствует в закреплённой описи.');
+            throw fail('BAD_SELECTION', 'Выбранная поставка отсутствует в закреплённой описи.');
         const loaded = new Map(),
             queue = ids.map((id) => heads.get(id));
         let descriptorBytes = 0;
@@ -197,9 +197,9 @@ class AssetSourceClient {
             const id = queue.shift();
             if (loaded.has(id)) continue;
             const entry = entries.get(id);
-            if (!entry) throw fail('INVALID_SOURCE', 'В описи отсутствует точная зависимость выбранного ассета.');
+            if (!entry) throw fail('INVALID_SOURCE', 'В описи отсутствует точная зависимость выбранной поставки.');
             if (loaded.size >= 100)
-                throw fail('BAD_SELECTION', 'Граф ассетов превышает 100 записей. Разделите импорт.');
+                throw fail('BAD_SELECTION', 'Граф поставок превышает 100 записей. Разделите импорт.');
             const resolved = await this.descriptor(entry);
             descriptorBytes += Buffer.byteLength(JSON.stringify(resolved.asset));
             if (descriptorBytes > 32 * 1024 * 1024)
@@ -209,14 +209,17 @@ class AssetSourceClient {
                 const key = tuple(dependency.id, dependency.version),
                     target = entries.get(key);
                 if (!target || target.sha256 !== dependency.sha256)
-                    throw fail('INVALID_SOURCE', 'В описи отсутствует точная зависимость выбранного ассета.');
+                    throw fail('INVALID_SOURCE', 'В описи отсутствует точная зависимость выбранной поставки.');
                 queue.push(key);
             }
         }
         try {
             return { index, assets: this.contract.selectAssets([...loaded.values()], ids) };
         } catch {
-            throw fail('INVALID_SOURCE', 'Зависимости ассетов не образуют согласованный граф точных версий и SHA-256.');
+            throw fail(
+                'INVALID_SOURCE',
+                'Зависимости поставок не образуют согласованный граф точных версий и SHA-256.',
+            );
         }
     }
 }

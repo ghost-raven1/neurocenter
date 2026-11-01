@@ -302,7 +302,7 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
             !/^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64})$/.test(input.commit) ||
             Object.keys(input).some((key) => !['requestKey', 'ids', 'commit'].includes(key))
         ) {
-            throw new BadRequestException('Передайте сохранённый ключ, commit и от 1 до 50 выбранных ассетов.');
+            throw new BadRequestException('Передайте сохранённый ключ, commit и от 1 до 50 выбранных поставок.');
         }
         await requireFeaturesEnabled(['asset_sources']);
         const snapshot = await this.sources.get(input.commit);
@@ -392,7 +392,7 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
         ).rows[0];
         if (!row) {
             throw new NotFoundException(
-                'Файлы этой версии модели ещё не импортированы. Добавьте её на странице «Ассеты».',
+                'Файлы этой версии модели ещё не импортированы. Добавьте её на странице «Поставки».',
             );
         }
         const asset = row.descriptor as ModelAsset;
@@ -453,7 +453,7 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
                 ).rows;
         if (!rows.length) {
             throw new NotFoundException(
-                'Мост ещё не импортирован. Главный администратор должен добавить его на странице «Ассеты».',
+                'Мост ещё не импортирован. Главный администратор должен добавить его на странице «Поставки».',
             );
         }
         if (version && new Set(rows.map((row) => bridgeSupplyIdentity(row.descriptor as BridgeAsset))).size !== 1)

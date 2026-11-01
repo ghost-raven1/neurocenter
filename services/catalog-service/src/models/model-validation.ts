@@ -140,7 +140,7 @@ export function validateModelDescriptor(value: unknown): TModelDescriptor {
     }
     if (validated.runtime !== 'ollama' && (manifest !== null || body.verificationSha256 !== null)) {
         throw new BadRequestException(
-            'Удалённый ассет не содержит SHA весов или проверки подключения другой площадки.',
+            'Удалённая поставка не содержит SHA весов или проверки подключения другой площадки.',
         );
     }
     if (validated.runtime === 'ollama' && body.verificationSha256 !== undefined && body.verificationSha256 !== null) {

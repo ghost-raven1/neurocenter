@@ -69,7 +69,7 @@ export class LocalSkillIngest {
         ).rows;
         if (receipts.some((row) => row.repository !== 'local-archive' || row.external_id !== asset.id))
             throw new ConflictException(
-                'Скилл связан с другим источником. Измените идентификатор или управляйте им в разделе ассетов.',
+                'Скилл связан с другим источником. Измените идентификатор или управляйте им в разделе поставок.',
             );
         const receipt = receipts.find((row) => row.repository === 'local-archive' && row.external_id === asset.id);
         const version = (
@@ -134,7 +134,7 @@ export class LocalSkillIngest {
                 ? await this.adapter.client.inspect('common/' + prepared.asset.card.slug)
                 : await this.adapter.publish(prepared.item, actor);
         if (prepared.item.action === 'unchanged' && native.hash !== prepared.item.native?.hash)
-            throw new ConflictException('Скилл изменился перед сохранением связи с ассетом.');
+            throw new ConflictException('Скилл изменился перед сохранением связи с поставкой.');
         return native;
     }
     async record(

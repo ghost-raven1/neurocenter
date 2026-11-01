@@ -33,7 +33,7 @@ function fingerprint(value: unknown): string {
 export function importedSkillInput(raw: unknown): ISkillCreateRequest {
     const input = validateSkillCreate(raw as ISkillCreateRequest);
     if (input.path !== 'common') {
-        throw new BadRequestException('Импорт ассетов добавляет скиллы только в общий каталог.');
+        throw new BadRequestException('Импорт поставок добавляет скиллы только в общий каталог.');
     }
     return input;
 }
@@ -199,7 +199,7 @@ export async function publishImportedSkill(
                 version,
                 at: now,
                 author: actor,
-                note: 'Импорт ассета',
+                note: 'Импорт поставки',
             },
         ],
 

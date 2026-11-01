@@ -128,7 +128,7 @@ export class AssetImportWorker {
         const source = await this.sources.get(job.source.commit, job.source.repository),
             records = selectAssets(source.assets, job.selected_ids);
         if (records.length > 100) {
-            throw new ConflictException('Замыкание импорта превышает 100 ассетов. Разделите выбор.');
+            throw new ConflictException('Замыкание импорта превышает 100 поставок. Разделите выбор.');
         }
         const [receipts, versions] = await Promise.all([
                 this.jobs.receipts(job.source.repository),
@@ -214,7 +214,7 @@ export class AssetImportWorker {
                     ...item,
                     action: 'conflict',
                     replaceable: false,
-                    reason: 'Эта native-карточка уже связана с другим ассетом источника. Нельзя присвоить ей вторую идентичность.',
+                    reason: 'Эта native-карточка уже связана с другой поставкой источника. Нельзя присвоить ей вторую идентичность.',
                 };
             }
             if (nativeId && !item.preserveHead) {
@@ -392,7 +392,7 @@ export class AssetImportWorker {
                     throw error;
                 }
             }
-            await this.jobs.save(client, job, 'SUCCEEDED', 'Выбранные ассеты и точные зависимости добавлены.');
+            await this.jobs.save(client, job, 'SUCCEEDED', 'Выбранные поставки и точные зависимости добавлены.');
         } catch (error) {
             if (signal.aborted) {
                 return;
