@@ -8,7 +8,7 @@ import { connectionBlocker } from './readiness';
 import { BridgeDevicesManager } from './BridgeDevicesManager';
 import { BridgeDeviceDetails } from './BridgeDeviceDetails';
 import { bridgeDeviceStatus } from './bridgeDevicePresentation';
-import { projectBindingUrl } from '../../modules/Projects/projectNavigation';
+import { projectComputerSetupUrl } from '../../modules/Projects/projectNavigation';
 import './BridgeConnection.less';
 
 /** Однократное подтверждение подключения и явный выбор компьютера для дальнейших установок. */
@@ -28,7 +28,7 @@ export const BridgeConnection: FC<{
     const connection = bridgeConnectionState(devices.length, devicesReady, errors.devices);
     const readErrors = Object.values(errors).filter(Boolean);
     const history = useHistory();
-    const setupUrl = projectId ? projectBindingUrl(projectId) : '/start?setup=1';
+    const setupUrl = projectComputerSetupUrl(projectId);
     const blocker = connectionBlocker(device);
     const statusUnverified = !devicesReady || !!errors.devices;
     return (
@@ -103,7 +103,7 @@ export const BridgeConnection: FC<{
                 onReload={bridge.reload}
                 onConnect={() => {
                     setManagementOpen(false);
-                    history.push(setupUrl + '&addComputer=1');
+                    history.push(projectComputerSetupUrl(projectId, true));
                 }}
                 onRevoked={async (id) => {
                     const current = latestBridge.current;

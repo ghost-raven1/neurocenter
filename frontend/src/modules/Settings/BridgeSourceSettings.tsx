@@ -2,7 +2,7 @@ import { Alert, Button, Card, Input, Space, Tag, Typography } from 'antd';
 import { Link } from 'react-router-dom';
 import { FeatureAvailabilityNotice, FeatureButton } from '../../features/FeatureFlags/FeatureAvailability';
 import { useBridgeSourceDraft } from './hooks/useBridgeSourceDraft';
-import { startQueryUrl } from '../Start/startQuery';
+import { projectComputerSetupUrl } from '../Projects/projectNavigation';
 
 /** Configure the existing source without importing files or changing already prepared installers. */
 export function BridgeSourceSettings(): JSX.Element {
@@ -116,7 +116,7 @@ export function BridgeSourceSettings(): JSX.Element {
                 <Typography.Paragraph type="secondary">
                     Выбор компонентов поставки, импорт архива и результаты подготовки доступны на странице{' '}
                     <Link to="/assets">«Поставка»</Link>. Установить мост на компьютер можно в разделе{' '}
-                    <Link to={startQueryUrl('', { setup: true, step: 1 })}>«Начало работы»</Link>.
+                    <Link to={projectComputerSetupUrl()}>«Начало работы»</Link>.
                 </Typography.Paragraph>
             </Space>
         </Card>

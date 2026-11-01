@@ -1,5 +1,5 @@
 import type { IBridgeDevice } from '../../../../features/McpBridge/api';
-import { projectBindingUrl } from '../../projectNavigation';
+import { projectBindingUrl, projectComputerSetupUrl } from '../../projectNavigation';
 
 const MAX_AGE_MS = 60000;
 const MAX_CLOCK_SKEW_MS = 5000;
@@ -70,7 +70,7 @@ export function projectDataSize({
             source: 'local',
             label: 'Выберите компьютер',
             description: 'Выберите подключённый компьютер, чтобы измерить данные локальной папки.',
-            action: { label: 'Выбрать компьютер', href: projectBindingUrl(projectId) },
+            action: { label: 'Выбрать компьютер', href: projectComputerSetupUrl(projectId) },
         };
     }
     const local = (
@@ -87,7 +87,7 @@ export function projectDataSize({
     });
     if (!device.online || device.requiresReconnect)
         return local('Компьютер недоступен', 'Подключите выбранный компьютер и обновите данные.', {
-            action: { label: 'Проверить компьютер', href: projectBindingUrl(projectId) },
+            action: { label: 'Проверить компьютер', href: projectComputerSetupUrl(projectId) },
         });
     if (!bindings.length && knownBytes(serverBytes)) return { ...server, sourceLabel: 'На сервере' };
     if (!bindings.length)
@@ -116,7 +116,7 @@ export function projectDataSize({
         return local(
             'Обновите мост',
             'Обновите мост на выбранном компьютере: установленная версия не передаёт размер данных проекта.',
-            { action: { label: 'Подключение компьютера', href: projectBindingUrl(projectId) } },
+            { action: { label: 'Подключение компьютера', href: projectComputerSetupUrl(projectId) } },
         );
     const size = binding.dataSize;
     if (size === undefined)
