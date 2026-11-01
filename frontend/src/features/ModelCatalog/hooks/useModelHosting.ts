@@ -6,13 +6,16 @@ import { modelHostingBusy } from '../modelCatalogState';
 import type { ICatalogModel, IModelHosting, TModelHostingAction } from '../interfaces';
 
 /** Свежий объект каталога перечитывает серверный статус; закрытие карточки не прерывает операцию. */
-export function useModelHosting(model: ICatalogModel) {
+export function useModelHosting(model: ICatalogModel, onSettled?: () => Promise<void>) {
     const { captureOwner } = useAuthRequestOwner();
     const [hosting, setHosting] = useState<IModelHosting | null>(null);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const request = useRef(0);
+    const notified = useRef('');
+    const settledCallback = useRef(onSettled);
+    settledCallback.current = onSettled;
     const lock = useRef(false);
     const reading = useRef(false);
     const mounted = useRef(false);
@@ -39,6 +42,19 @@ export function useModelHosting(model: ICatalogModel) {
                 loadedScope.current = scope;
                 setHosting(value);
                 setError('');
+                // Hosting status cannot authorize chat: refresh the catalog's verified identity once per result.
+                const settled = value.operation?.state === 'completed' || value.operation?.state === 'failed';
+                const missingPin = model.runtime === 'ollama' ? !model.manifestSha256 : !model.verificationSha256;
+                const resultKey = JSON.stringify([model.id, value.operation?.id, value.state, value.checkedAt]);
+                if (
+                    !modelHostingBusy(value) &&
+                    (settled || (value.state === 'ready' && missingPin)) &&
+                    settledCallback.current &&
+                    notified.current !== resultKey
+                ) {
+                    notified.current = resultKey;
+                    await settledCallback.current();
+                }
             }
         } catch (cause) {
             if (current()) setError(errorMessage(cause, 'Не удалось проверить состояние хостинга.'));

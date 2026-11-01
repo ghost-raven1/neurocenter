@@ -463,6 +463,7 @@ export function ModelCatalog({
                                     onSetupProvider={
                                         providerModelEligible(model) ? () => openProvider(model.id) : undefined
                                     }
+                                    onHostingSettled={refresh}
                                     onChat={() => setChatId(model.id)}
                                     chatUnavailableReason={modelChatUnavailableReason(
                                         model,

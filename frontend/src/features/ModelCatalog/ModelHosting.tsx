@@ -17,11 +17,12 @@ interface IProps {
     canManage: boolean;
     compact?: boolean;
     onManage?: () => void;
+    onSettled?: () => Promise<void>;
 }
 
 /** Прогресс и содержательная проверка отделены от назначения модели проекту. */
-export function ModelHosting({ model, canManage, compact, onManage }: IProps): JSX.Element {
-    const { hosting, loading, busy, error, refresh, operate } = useModelHosting(model);
+export function ModelHosting({ model, canManage, compact, onManage, onSettled }: IProps): JSX.Element {
+    const { hosting, loading, busy, error, refresh, operate } = useModelHosting(model, onSettled);
     const operation = hosting?.operation;
     const remote = modelUsesApiConnection(model),
         deviceCodex = model.runtime === 'device-codex';

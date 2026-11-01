@@ -27,6 +27,7 @@ interface IProps {
     connectionStatus?: 'checking' | 'unknown' | 'connected';
     embeddingSetupHref?: string;
     onChat?: () => void;
+    onHostingSettled?: () => Promise<void>;
     chatUnavailableReason?: string;
     onSetupProvider?: () => void;
     feedback?: ReactNode;
@@ -52,6 +53,7 @@ export function ModelCard({
     connectionStatus,
     embeddingSetupHref,
     onChat,
+    onHostingSettled,
     chatUnavailableReason,
     onSetupProvider,
     feedback,
@@ -217,6 +219,7 @@ export function ModelCard({
                 model={model}
                 canManage={canHost && !disabled && !model.archivedAt}
                 compact
+                onSettled={onHostingSettled}
                 onManage={onConfigure ?? onView}
             />
             {feedback}
