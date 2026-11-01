@@ -25,8 +25,8 @@
 | Q13 | GGUF/hosting | Не проверено | Файл/pin → daemon start/check/stop, ресурсы и restart |
 | Q14 | Чаты | Пустое состояние командного чата; сообщений не отправляли | Send/stream/stop/retry/reload/private access; изображения/OCR не поддерживаются |
 | Q15 | Агенты и методики | Не проверено | Реальное выполнение/receipt/cancel; Windows methods и MCP обычных агентов ограничены |
-| Q16 | RAG roundtrip/restore | Только UI отказа зависимости: pgvector отсутствует | Рабочие embeddings/index, sync/search/restore, generation/hash/count, прерывание; empty restore ограничен |
-| Q17 | Текстовые знания и контекст | Только состояние недоступной зависимости; успешного пути нет | Подтверждённый candidate → upload/search/citation/context с project isolation |
+| Q16 | RAG roundtrip/restore | Отдельно приняты fixed-vector LanceDB/HTTP/PG/restore7фаз и current2.12.2 real-model smoke; KnowledgeSync lost ACK после remount без второго POST. [Границы](rag-acceptance-2026-11-01.md) | Полный модельный roundtrip одной генерации, restart/cancel, реальные ACL/профиль; empty restore только безопасно отказывает |
+| Q17 | Текстовые знания и контекст | UI upload/search, источники, isolation, OFF/history, lost ACK; выбранный текстовый контекст дал два реальных ответа с цитатами без embeddings. [Свидетельства](rag-acceptance-2026-11-01.md) | Отзыв прав, отмена и полная матрица конкуренции |
 | Q18 | Операции/аудит | Результаты конкретной установки/repair доступны в локальных receipts | Полная UI/history/ACL/reconnect/OFF матрица всех job kinds |
 | Q19 | Квоты и usage | Пустой usage; RAG-квоты недоступны на этом стенде | Реальное admission/usage, конкуренция, private scope, token reserve coverage |
 | Q20 | Настройки/maintenance/flags | Переключение maintenance flags в UI работает | Конфликт CAS/unknown ACK, capacity failures, очереди и runtime consumers |
