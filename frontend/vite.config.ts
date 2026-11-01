@@ -13,7 +13,9 @@ import { fileURLToPath } from 'node:url';
 const DEFAULT_AUTH_PROXY_TARGET = 'http://localhost:22222';
 const DEFAULT_API_PROXY_TARGET = 'http://localhost:4000';
 const computerSetup = fileURLToPath(new URL('../services/shared/computer-setup.cjs', import.meta.url));
-const opencodeLocalProviders = fileURLToPath(new URL('../services/shared/opencode-local-providers.cjs', import.meta.url));
+const opencodeLocalProviders = fileURLToPath(
+    new URL('../services/shared/opencode-local-providers.cjs', import.meta.url),
+);
 const opencodeCliInstall = fileURLToPath(new URL('../services/shared/opencode-cli-install.cjs', import.meta.url));
 const projectTextKnowledge = fileURLToPath(new URL('../services/shared/project-text-knowledge.cjs', import.meta.url));
 const runtimeLimits = fileURLToPath(new URL('../services/shared/runtime-limits.cjs', import.meta.url));
@@ -48,11 +50,23 @@ export default defineConfig((configEnv) => {
     return {
         plugins: [react()],
         resolve: {
-            alias: { '@neurocenter/computer-setup': computerSetup, '@neurocenter/opencode-cli-install': opencodeCliInstall, '@neurocenter/opencode-local-providers': opencodeLocalProviders, '@neurocenter/project-text-knowledge': projectTextKnowledge, '@neurocenter/runtime-limits': runtimeLimits },
+            alias: {
+                '@neurocenter/computer-setup': computerSetup,
+                '@neurocenter/opencode-cli-install': opencodeCliInstall,
+                '@neurocenter/opencode-local-providers': opencodeLocalProviders,
+                '@neurocenter/project-text-knowledge': projectTextKnowledge,
+                '@neurocenter/runtime-limits': runtimeLimits,
+            },
         },
         // Linked CommonJS needs pre-bundling for named imports in the dev browser.
         optimizeDeps: {
-            include: ['@neurocenter/computer-setup', '@neurocenter/opencode-cli-install', '@neurocenter/opencode-local-providers', '@neurocenter/project-text-knowledge', '@neurocenter/runtime-limits'],
+            include: [
+                '@neurocenter/computer-setup',
+                '@neurocenter/opencode-cli-install',
+                '@neurocenter/opencode-local-providers',
+                '@neurocenter/project-text-knowledge',
+                '@neurocenter/runtime-limits',
+            ],
         },
         css: {
             preprocessorOptions: {
@@ -91,10 +105,11 @@ export default defineConfig((configEnv) => {
             strictPort: true,
             // React Refresh использует inline-пролог, а переподключение Vite — blob-worker; production CSP задаётся в nginx.conf.
             headers: {
-                'X-Content-Type-Options':'nosniff',
-                'X-Frame-Options':'DENY',
-                'Referrer-Policy':'no-referrer',
-                'Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+                'X-Content-Type-Options': 'nosniff',
+                'X-Frame-Options': 'DENY',
+                'Referrer-Policy': 'no-referrer',
+                'Content-Security-Policy':
+                    "default-src 'self'; script-src 'self' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
             },
             proxy: {
                 '/auth': { ...shared, target: authTarget },
@@ -105,7 +120,9 @@ export default defineConfig((configEnv) => {
         build: {
             outDir: 'dist',
             sourcemap: false,
-            commonjsOptions: { include: [/node_modules/, computerSetup, projectTextKnowledge, runtimeLimits, ggufImportPolicy] },
+            commonjsOptions: {
+                include: [/node_modules/, computerSetup, projectTextKnowledge, runtimeLimits, ggufImportPolicy],
+            },
         },
     };
 });
