@@ -566,5 +566,15 @@
         "group": "platform",
         "dependsOn": [],
         "defaultEnabled": true
+    },
+    {
+        "key": "start_auto_checks",
+        "name": "Автопроверки в начале работы",
+        "description": "Мастер «Начало работы» сам отправляет свежую проверку OpenCode, когда состояние выбранного компьютера неизвестно или устарело, и сам обновляет состояние при входе в шаг проверки. При выключении проверки остаются ручными кнопками «Проверить».",
+        "group": "platform",
+        "dependsOn": [
+            "unified_project_setup"
+          ],
+        "defaultEnabled": true
     }
 ]

@@ -21,6 +21,7 @@ import { OpenCodeSetupStep } from './OpenCodeSetupStep';
 import { LocalOpenCodeProvidersStep } from '../../features/LocalOpenCodeProviders/LocalOpenCodeProvidersStep';
 import { OPENCODE_GLOBAL_PROVIDERS_AUTH_VERSION } from '@neurocenter/opencode-local-providers';
 import { startQueryUrl, startSetupRequested } from './startQuery';
+import { useStartAutoInspect } from './startAutoChecks';
 import { setupBinding, unifiedSetupStep } from './projectSetupModel';
 import { StartProjectAssets } from './StartProjectAssets';
 import './Start.less';
@@ -38,7 +39,8 @@ async function copyCommand(value: string) {
 export default function UnifiedProjectSetup() {
     const history = useHistory(),
         location = useLocation(),
-        availability = useFeatureAvailability('unified_project_setup');
+        availability = useFeatureAvailability('unified_project_setup'),
+        autoCheckFlag = useFeatureAvailability('start_auto_checks');
     const { scope } = useAuthRequestOwner(),
         user = useSelector((state: TRootState) => state.userBlock.user),
         projects = useAvailableProjects();
@@ -76,6 +78,23 @@ export default function UnifiedProjectSetup() {
     };
     const sourceScope = JSON.stringify([scope, project?.id, bridge.device?.id]);
     const projectCatalog = useProjectCatalog(project?.id, scope);
+    /** Свежая проверка OpenCode одного выбранным компьютером, если состояние неизвестно или устарело. */
+    useStartAutoInspect({
+        enabled,
+        flag: autoCheckFlag.enabled,
+        deviceId: bridge.device?.id,
+        canStart: cli.canStart,
+        state: cli.state,
+        start: cli.controller.start,
+    });
+    const refreshState = useRef({ reload: bridge.reload, refresh: projectCatalog.refresh });
+    refreshState.current = { reload: bridge.reload, refresh: projectCatalog.refresh };
+    /** Вход в шаг проверки обновляет состояние без нажатия «Проверить актуальное состояние». */
+    useEffect(() => {
+        if (!enabled || !autoCheckFlag.enabled || !opened || step !== 5) return;
+        if (!bridge.devicesReady) void refreshState.current.reload();
+        void refreshState.current.refresh();
+    }, [enabled, autoCheckFlag.enabled, opened, step, sourceScope, bridge.devicesReady]);
     const assets = projectCatalog.ready && !projectCatalog.error ? projectCatalog.assets : [];
     const cliView = cliObservationPresentation(cli.state),
         checking = cli.state.busy || cli.state.reading || cliView.running || cliView.unknown;

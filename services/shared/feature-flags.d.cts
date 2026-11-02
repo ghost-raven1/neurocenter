@@ -3,6 +3,7 @@ export type TFeatureFlagKey =
     | 'project_update_apply'
     | 'installation_auto_inspect'
     | 'project_binding_inline'
+    | 'start_auto_checks'
     | 'opencode_v2_accounts'
     | 'opencode_personal_key_transfer'
     | 'personal_remote_provider_credentials'
