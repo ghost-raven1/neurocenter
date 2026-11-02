@@ -17,6 +17,7 @@ import {
     type IBuildNameConflict,
 } from '../../modules/Store/packaging/nameConflictRecovery';
 import type { IBundledSourcePlan } from './interfaces';
+import { isBatchReadyPlan } from './batchUpdate';
 import { useBundledNameCheck } from './hooks/useBundledNameCheck';
 
 /** Recipe selection reuses the existing durable build journal, cancellation and native publication CAS. */
@@ -27,6 +28,7 @@ export function BundledCatalogSources({
     onPublished,
     onImportArchive,
     prepareId,
+    batchUpdate = false,
     recoverBuildId,
     plansReady = true,
 }: {
@@ -36,6 +38,7 @@ export function BundledCatalogSources({
     onPublished: () => void;
     onImportArchive: () => void;
     prepareId?: string;
+    batchUpdate?: boolean;
     recoverBuildId?: string;
     plansReady?: boolean;
 }): JSX.Element {
@@ -43,6 +46,17 @@ export function BundledCatalogSources({
         journalScope = scope + ':bundled-catalog';
     const publication = usePackagingPublication(journalScope, captureOwner),
         [conflictMessage, setConflictMessage] = useState('');
+    /** Серия «Обновить готовые»: оставшиеся позиции и позиция, сборку которой отслеживаем. */
+    const batchQueue = useRef<string[]>([]),
+        batchCurrent = useRef<string>(),
+        batchAdvanced = useRef<string>(),
+        [batchHint, setBatchHint] = useState('');
+    const stopBatch = (): void => {
+        batchQueue.current = [];
+        batchCurrent.current = undefined;
+        batchAdvanced.current = undefined;
+        setBatchHint('');
+    };
     /** 409 занятости названия превращаем в предложение новой версии, а не в тупик. */
     const recoverNameConflict = async (conflict: IBuildNameConflict): Promise<boolean> => {
         const resolved = conflict.target
@@ -107,6 +121,7 @@ export function BundledCatalogSources({
         setTargets(undefined);
         setConflictMessage('');
         observed.current = undefined;
+        stopBatch();
     }, [scope, recoverBuildId]);
     useEffect(() => {
         if (!build.draft) return;
@@ -140,8 +155,11 @@ export function BundledCatalogSources({
     );
     const locked =
         preparingRetry || build.active || build.recovering || build.recoveryBlocked || retained || nameCheck.loading;
-    const choose = (value: IBundledSourcePlan): void => {
-        if (blocked || locked || !captureOwner()()) return;
+    /** fromBatch: открываем следующую позицию серии после reset — блокировка «занято» уже снята. */
+    const choose = (value: IBundledSourcePlan, fromBatch = false): void => {
+        if (blocked || (!fromBatch && locked) || !captureOwner()()) return;
+        // Ручной выбор другой позиции прерывает серию «Обновить готовые».
+        if (batchCurrent.current && value.id !== batchCurrent.current) stopBatch();
         retry.clear();
         setPlan(value);
         setName(value.imported?.name || value.name);
@@ -152,6 +170,41 @@ export function BundledCatalogSources({
             void publication.select({ catalogId: value.imported.id, kind: value.kind });
         else publication.clear();
     };
+    /** Серия: сборка текущей позиции завершена успешно — снимаем журнал и автоматически открываем следующую. */
+    useEffect(() => {
+        const job = build.job;
+        if (
+            !batchCurrent.current ||
+            !job ||
+            job.state !== 'SUCCEEDED' ||
+            job.id === batchAdvanced.current ||
+            job.recovery?.source.id !== batchCurrent.current
+        )
+            return;
+        batchAdvanced.current = job.id;
+        if (!batchQueue.current.length) {
+            stopBatch();
+            return;
+        }
+        const [nextId, ...rest] = batchQueue.current;
+        void (async () => {
+            // Журнал завершённой сборки отсоединяем, чтобы следующая позиция открылась без блокировки «занято».
+            if (!(await build.reset())) return;
+            // Если во время ожидания серию прервали (отмена, detach, смена каталога) — не продолжаем.
+            if (batchCurrent.current !== job.recovery?.source.id) return;
+            batchQueue.current = rest;
+            batchCurrent.current = nextId;
+            setBatchHint(
+                rest.length
+                    ? 'Серия «Обновить готовые»: после этой позиции автоматически откроется следующая. Осталось: ' +
+                      rest.length
+                    : 'Серия «Обновить готовые»: это последняя позиция — после неё серия завершится.',
+            );
+            const next = plans.find((entry) => entry.id === nextId);
+            if (next) choose(next, true);
+            else stopBatch();
+        })();
+    }, [build.job?.id, build.job?.state, plans]);
     useEffect(() => {
         if (recoverBuildId) return;
         const key = scope + ':' + prepareId;
@@ -175,23 +228,27 @@ export function BundledCatalogSources({
             setLinkError('Подготовка сейчас недоступна. Проверьте доступность функции и права.');
             return;
         }
-        if (
-            !value ||
-            value.catalogReady ||
-            value.imported?.archived ||
-            value.imported?.unavailable ||
-            !['mcp', 'plugin'].includes(value.kind) ||
-            !['prepared', 'local-project'].includes(value.delivery)
-        ) {
+        if (!value || !isBatchReadyPlan(value)) {
             setLinkError(
                 'Этот исходник сейчас нельзя подготовить. Проверьте его карточку в каталоге или выберите другой исходник.',
             );
             return;
         }
+        if (batchUpdate) {
+            batchQueue.current = plans.filter(isBatchReadyPlan).map((entry) => entry.id).filter((entry) => entry !== value.id);
+            batchCurrent.current = value.id;
+            setBatchHint(
+                batchQueue.current.length
+                    ? 'Серия «Обновить готовые»: после этой позиции автоматически откроется следующая. Осталось: ' +
+                      batchQueue.current.length
+                    : '',
+            );
+        }
         choose(value);
     }, [
         scope,
         prepareId,
+        batchUpdate,
         recoverBuildId,
         plansReady,
         build.recovering,
@@ -220,6 +277,7 @@ export function BundledCatalogSources({
             targets?.length === 0
         )
             return;
+        batchCurrent.current = plan.id;
         const send = async () => {
             if (!(await retry.validateRetry())) return;
             await build.submit({
@@ -248,6 +306,7 @@ export function BundledCatalogSources({
     };
     const finish = async (): Promise<void> => {
         if (await build.reset()) {
+            stopBatch();
             retry.clear();
             setPlan(undefined);
             setName('');
@@ -303,7 +362,13 @@ export function BundledCatalogSources({
                             </Button>
                         )}
                         {build.canDetach && (
-                            <Button loading={build.archiving} onClick={() => void build.detach()}>
+                            <Button
+                                loading={build.archiving}
+                                onClick={() => {
+                                    stopBatch();
+                                    void build.detach();
+                                }}
+                            >
                                 К другой подготовке
                             </Button>
                         )}
@@ -399,6 +464,7 @@ export function BundledCatalogSources({
                 {build.error && <Alert type="error" showIcon message={build.error} />}
                 {nameCheck.error && <Alert type="warning" showIcon message={nameCheck.error} />}
                 {conflictMessage && <Alert type="warning" showIcon message={conflictMessage} />}
+                {batchHint && <Alert type="info" showIcon message={batchHint} />}
                 {nameCheck.loading && <Typography.Text>Проверяем название в каталоге…</Typography.Text>}
                 {build.recoveryBlocked && (
                     <Button onClick={build.retryRecovery}>Повторить восстановление запроса</Button>

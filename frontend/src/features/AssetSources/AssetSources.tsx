@@ -56,6 +56,7 @@ export default function AssetSources({ embedded }: IAssetSourcesProps = {}): JSX
     const location = useLocation(),
         history = useHistory(),
         prepareId = new URLSearchParams(location.search).get('prepare') ?? undefined,
+        batchUpdate = new URLSearchParams(location.search).get('batch') === '1',
         recoverImportId = new URLSearchParams(location.search).get('recoverImport') ?? undefined;
     const isMain = useSelector(canReadCatalogSources);
     const { scope, captureOwner } = useAuthRequestOwner(),
@@ -359,6 +360,7 @@ export default function AssetSources({ embedded }: IAssetSourcesProps = {}): JSX
                     plans={data?.sourcePlans ?? []}
                     plansReady={!!data}
                     prepareId={prepareId}
+                    batchUpdate={batchUpdate}
                     recoverBuildId={new URLSearchParams(location.search).get('recoverBuild') ?? undefined}
                     scope={scope}
                     blocked={archiveBlocked || archive.busy}

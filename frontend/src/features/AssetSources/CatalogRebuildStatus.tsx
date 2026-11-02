@@ -51,7 +51,8 @@ export function CatalogRebuildStatus({
                 <FeatureButton
                     features={['asset_sources']}
                     type="primary"
-                    href={readyUpdates[0].href}
+                    // batch=1: серия «Обновить готовые» — после готовности позиции в «Исходниках» автоматически откроется следующая.
+                    href={readyUpdates[0].href + '&batch=1'}
                 >
                     Обновить готовые ({readyUpdates.length})
                 </FeatureButton>
