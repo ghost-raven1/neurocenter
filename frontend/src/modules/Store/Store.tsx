@@ -1,4 +1,4 @@
-import { FeatureButton } from '../../features/FeatureFlags/FeatureAvailability';
+import { FeatureButton, useFeatureAvailability } from '../../features/FeatureFlags/FeatureAvailability';
 import { CatalogFeedback } from '../../features/Discussions';
 import {
     Alert,
@@ -50,8 +50,14 @@ import { bridgeApi } from '../../features/McpBridge/api';
 import { useSectionUpdates } from '../../core/socket/hooks/useSectionUpdates';
 import { ProjectKnowledgeLink } from './ProjectKnowledgeLink';
 import { LocalInstallations } from '../../features/McpBridge/LocalInstallations';
-import { currentInstallation, isPending, latestAssetJob } from '../../features/McpBridge/installationHelpers';
-import { installationBlocker } from '../../features/McpBridge/readiness';
+import {
+    currentInstallation,
+    installationRequest,
+    isPending,
+    latestAssetJob,
+} from '../../features/McpBridge/installationHelpers';
+import { installationBlocker, inspectionBlocker } from '../../features/McpBridge/readiness';
+import { autoInspectCandidates, projectUpdateApplyTarget } from './projectUpdateApply';
 import { useInstallPlan } from './installPlans/hooks/useInstallPlan';
 import { InstallPlanModal } from './installPlans/InstallPlanModal';
 import { InstallPlanFailureModal } from './installPlans/InstallPlanFailureModal';
@@ -320,6 +326,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     });
     const localBusy = localPlans.busy;
     const localInstall = localPlans.install;
+
     useEffect(() => {
         projectsInitialized.current = false;
         setViewApp(null);
@@ -387,6 +394,103 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         (app: IStoreApp): boolean => isToolInProject(app, targetProject?.id, assets, catalog),
         [assets, targetProject, catalog],
     );
+
+    const updateApplyFlag = useFeatureAvailability('project_update_apply'),
+        autoInspectFlag = useFeatureAvailability('installation_auto_inspect'),
+        [applying, setApplying] = useState<string>();
+    /** «Применить обновление»: закрепление точной редакции и установка через мост одним действием. */
+    const applyUpdate = useCallback(
+        (app: IStoreApp): void => {
+            const owns = captureOwner();
+            void (async () => {
+                const apply = projectUpdateApplyTarget(app, {
+                    applyEnabled: updateApplyFlag.enabled,
+                    selected: isInProject(app),
+                    canManage,
+                    targetProjectId: targetProject?.id,
+                    catalogReady:
+                        projectCatalogUsable &&
+                        !projectLoading &&
+                        catalogSources[toolCatalogSource(app.kind)].ready &&
+                        !catalogSources[toolCatalogSource(app.kind)].loading &&
+                        !catalogSources[toolCatalogSource(app.kind)].error,
+                    common: commonCatalog,
+                    assets,
+                });
+                if (!owns() || !apply || !targetProject) return;
+                setApplying(app.id);
+                try {
+                    await bffApi.pinProjectAsset(targetProject.id, {
+                        assetId: apply.ref.assetId,
+                        assetKind: apply.ref.assetKind,
+                        version: apply.head.version,
+                        expectedVersion: apply.ref.version ?? null,
+                        expectedManifest: apply.ref.manifest ?? null,
+                    });
+                    if (!owns()) return;
+                    await loadProject();
+                    if (!owns()) return;
+                    localInstall({ ...app, version: apply.head.version });
+                } catch (cause) {
+                    if (owns()) {
+                        message.error(errorMessage(cause, 'Не удалось закрепить редакцию проекта. Данные перечитаны.'));
+                        void loadProject();
+                    }
+                } finally {
+                    if (owns()) setApplying(undefined);
+                }
+            })();
+        },
+        [
+            captureOwner,
+            updateApplyFlag.enabled,
+            canManage,
+            isInProject,
+            targetProject,
+            projectCatalogUsable,
+            projectLoading,
+            catalogSources,
+            commonCatalog,
+            assets,
+            localInstall,
+            loadProject,
+        ],
+    );
+    /** Авто-сверка: успешная установка текущей папки сама ставит проверку файлов в очередь моста. */
+    const autoInspectedJobs = useRef(new Set<string>());
+    useEffect(() => {
+        if (!autoInspectFlag.enabled || !autoInspectFlag.known || projectLevel < 1) return;
+        if (inspectionBlocker(bridge.device)) return;
+        const reload = bridge.reload;
+        for (const { job, row } of autoInspectCandidates(bridge.jobs, bridge.installations, {
+            projectId: targetProject?.id,
+            bindingId: binding?.bindingId ?? null,
+            deviceReady: bridge.devicesReady && bridge.jobsReady && bridge.installationsReady,
+            already: autoInspectedJobs.current,
+        })) {
+            autoInspectedJobs.current.add(job.id);
+            void bridgeApi
+                .create(installationRequest('inspect-installation', row, crypto.randomUUID()))
+                .then(() => reload())
+                .catch((cause) => {
+                    autoInspectedJobs.current.delete(job.id);
+                    console.warn('Авто-сверка после установки не отправлена, повтор при следующем обновлении моста.', cause);
+                });
+        }
+    }, [
+        bridge.jobs,
+        bridge.installations,
+        bridge.device,
+        bridge.devicesReady,
+        bridge.jobsReady,
+        bridge.installationsReady,
+        bridge.reload,
+        targetProject?.id,
+        binding?.bindingId,
+        autoInspectFlag.enabled,
+        autoInspectFlag.known,
+        projectLevel,
+    ]);
 
     const shown = useMemo(
         () =>
@@ -538,6 +642,21 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             commonCatalog.some(
                 (item) => item.id === app.id && item.kind === app.kind && (app.pinError || item.version > app.version),
             );
+        /** Единое действие: закрепление новой редакции и установка одним подтверждением точной версии. */
+        const applyUpdateTarget = projectUpdateApplyTarget(app, {
+            applyEnabled: updateApplyFlag.enabled,
+            selected,
+            canManage,
+            targetProjectId: targetProject?.id,
+            catalogReady:
+                projectCatalogUsable &&
+                !projectLoading &&
+                catalogSources[toolCatalogSource(app.kind)].ready &&
+                !catalogSources[toolCatalogSource(app.kind)].loading &&
+                !catalogSources[toolCatalogSource(app.kind)].error,
+            common: commonCatalog,
+            assets,
+        });
         const installLabel =
             pendingAction && !['install', 'uninstall'].includes(pendingAction.kind)
                 ? 'Дождитесь локального действия'
@@ -557,7 +676,33 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         return (
             <Space direction="vertical" style={{ width: '100%' }}>
                 {app.pinError && <Text type="warning">{app.pinError}</Text>}
-                {pinCta && targetProject && (
+                {applyUpdateTarget && targetProject && (
+                    <FeatureButton
+                        features={['tool_catalog', 'tool_installation']}
+                        size="small"
+                        block
+                        type="primary"
+                        disabled={
+                            projectLoading ||
+                            !projectCatalogUsable ||
+                            !!localBusy ||
+                            pending ||
+                            !!bridgeInstallError ||
+                            !binding ||
+                            !bridge.device ||
+                            !bridge.jobsReady ||
+                            !bridge.installationsReady
+                        }
+                        loading={applying === app.id}
+                        title={`Закрепит редакцию ${applyUpdateTarget.head.version} в проекте и установит её через мост. Новая установка потребует одобрения этой версии.`}
+                        onClick={() => {
+                            applyUpdate(app);
+                        }}
+                    >
+                        Применить обновление · редакция {applyUpdateTarget.head.version}
+                    </FeatureButton>
+                )}
+                {pinCta && targetProject && !applyUpdateTarget && (
                     <FeatureButton
                         features={['tool_catalog']}
                         size="small"
@@ -600,7 +745,10 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                         {app.pinError ? 'Подтвердить версию проекта' : 'Закрепить новую версию'}
                     </FeatureButton>
                 )}
-                {target && canInstall && (selected || (canManage && !referenceBlocker)) && (
+                {target &&
+                    canInstall &&
+                    (selected || (canManage && !referenceBlocker)) &&
+                    !applyUpdateTarget && (
                     <FeatureButton
                         features={['tool_installation']}
                         size="small"
