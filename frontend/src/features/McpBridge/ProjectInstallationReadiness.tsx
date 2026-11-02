@@ -9,10 +9,13 @@ export function ProjectInstallationReadiness({
     bridge,
     projectId,
     canInstall,
+    onChooseFolder,
 }: {
     bridge: ReturnType<typeof useBridge>;
     projectId: string;
     canInstall: boolean;
+    /** Если передано — выбор папки выполняется на месте, без перехода к мастеру. */
+    onChooseFolder?: () => void;
 }) {
     const history = useHistory();
     if (!bridge.device || !bridge.devicesReady) {
@@ -63,7 +66,7 @@ export function ProjectInstallationReadiness({
             message={state.message}
             action={
                 state.route ? (
-                    <Button onClick={() => history.push(state.route)}>Выбрать папку проекта</Button>
+                    <Button onClick={onChooseFolder ?? (() => history.push(state.route))}>Выбрать папку проекта</Button>
                 ) : undefined
             }
         />

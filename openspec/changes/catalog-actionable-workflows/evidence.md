@@ -164,6 +164,14 @@ Final full bridge rerun completed successfully:161 test files passed,6 skipped;1
 - `BundledCatalogSources` publication hint now points to the card action instead of «выполняются отдельно».
 - Verification: targeted frontend 113 tests green across 15 files (Store, AssetSources, McpBridge), `services/feature-flags-service` 8/8 with the extended catalog, inclusive `tsc --noEmit` 0 diagnostics, scoped eslint 0 problems on touched files. No live bridge, real database, CI or deployment acceptance is claimed.
 
+### 2026-11-02 — P1 3.7: inline project folder binding in the catalog
+
+- The «Выбрать папку проекта» action in the catalog (readiness block + card details) now opens the existing `WorkspaceBindingWizard` as a modal on the current screen instead of navigating to the /start master folder step (flag `project_binding_inline`, platform group, default on). The wizard reuses the exact project and the connected computer already in Store; on a successful bind it closes itself via `onClose`. When the flag is off, the former `history.push(projectBindingUrl(...))` navigation is preserved byte-for-byte.
+- `ProjectInstallationReadiness` gained an optional `onChooseFolder` callback; without it the button still navigates to the master step (unchanged for all other callers). Store passes the callback only when the flag is enabled.
+- The two «…на странице „Проекты"» hints (install button title + install blocker) now point at the on-screen action when the flag is on and keep the old wording when off.
+- Independent review found and the fix is included: the wizard previously received `canManage={canManage && !!binding}`, which blocked the primary `!binding` scenario with a false developer-role blocker — now `canManage={canInstall}` (level ≥ 2, parity with /start and /projects); a hook-level regression test (`useWorkspaceBinding`) asserts the role blocker appears only without the role. Also fixed: location-spy assertion in the readiness test, hint wording («в блоке выбора компьютера»), `bridge.reload()` on close, and `bindingOpen` reset when the device disappears.
+- Verification: targeted frontend 62 tests green across 9 files (Store, McpBridge, incl. new readiness callback + hook role tests), `services/feature-flags-service` 8/8 with the extended catalog, inclusive `tsc --noEmit` 0 diagnostics, scoped eslint 0 problems on touched files. No live bridge, real database, CI or deployment acceptance is claimed.
+
 ### 2026-11-01 — P1 3.5: retain the source draft on archive failure
 
 - The actual ToolPackagingModal regression first failed on the former code: replacing good source files with a rejected archive erased the prior selection. The extracted feature read hook now commits files, archive name and automatic kind/entrypoint reset only after a complete successful read. A failed replacement retains the previous files, manual command, name and kind.

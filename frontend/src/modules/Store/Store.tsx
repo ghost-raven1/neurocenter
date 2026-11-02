@@ -63,6 +63,7 @@ import { InstallPlanModal } from './installPlans/InstallPlanModal';
 import { InstallPlanFailureModal } from './installPlans/InstallPlanFailureModal';
 import { runtimeArtifactBlocker } from '../../features/McpBridge/runtimeArtifacts';
 import { ProjectInstallationReadiness } from '../../features/McpBridge/ProjectInstallationReadiness';
+import { WorkspaceBindingWizard } from '../../features/McpBridge/WorkspaceBindingWizard';
 import { pendingLocalJob } from '../../features/McpBridge/operationHelpers';
 import { useAvailableProjects } from '../Projects/hooks/useAvailableProjects';
 import { projectBindingUrl } from '../Projects/projectNavigation';
@@ -397,7 +398,13 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
 
     const updateApplyFlag = useFeatureAvailability('project_update_apply'),
         autoInspectFlag = useFeatureAvailability('installation_auto_inspect'),
-        [applying, setApplying] = useState<string>();
+        bindingInlineFlag = useFeatureAvailability('project_binding_inline'),
+        [applying, setApplying] = useState<string>(),
+        [bindingOpen, setBindingOpen] = useState(false);
+    /** Смена или потеря компьютера не должна сама повторно открыть окно привязки. */
+    useEffect(() => {
+        if (!bridge.device) setBindingOpen(false);
+    }, [bridge.device]);
     /** «Применить обновление»: закрепление точной редакции и установка через мост одним действием. */
     const applyUpdate = useCallback(
         (app: IStoreApp): void => {
@@ -769,7 +776,12 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                         }
                         loading={localBusy === app.id || job?.state === 'running'}
                         title={
-                            bridgeInstallError || (!binding ? 'Свяжите папку проекта на странице «Проекты»' : undefined)
+                            bridgeInstallError ||
+                            (!binding
+                                ? bindingInlineFlag.enabled
+                                    ? 'Сначала свяжите папку проекта: «Выбрать папку проекта» на этой странице, в блоке выбора компьютера'
+                                    : 'Свяжите папку проекта на странице «Проекты»'
+                                : undefined)
                         }
                         onClick={() => {
                             void localInstall(app);
@@ -882,7 +894,9 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             return bridgeInstallError;
         }
         if (!binding) {
-            return 'Свяжите папку выбранного проекта на странице «Проекты».';
+            return bindingInlineFlag.enabled
+                ? 'Свяжите папку выбранного проекта: «Выбрать папку проекта» на этой странице, в блоке выбора компьютера.'
+                : 'Свяжите папку выбранного проекта на странице «Проекты».';
         }
         if (!bridge.jobsReady || !bridge.installationsReady) {
             return 'Дождитесь загрузки заданий и установок. При ошибке обновите данные подключения.';
@@ -1020,6 +1034,9 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                                     bridge={bridge}
                                     projectId={targetProject.id}
                                     canInstall={canInstall}
+                                    onChooseFolder={
+                                        bindingInlineFlag.enabled ? () => setBindingOpen(true) : undefined
+                                    }
                                 />
                             )}
                         </div>
@@ -1343,7 +1360,11 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                     !binding
                         ? () => {
                               setViewApp(null);
-                              history.push(projectBindingUrl(targetProject.id));
+                              if (bindingInlineFlag.enabled) {
+                                  setBindingOpen(true);
+                              } else {
+                                  history.push(projectBindingUrl(targetProject.id));
+                              }
                           }
                         : undefined
                 }
@@ -1389,6 +1410,18 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                     void localPlans.revoke();
                 }}
             />
+            {bindingOpen && targetProject && bridge.device && (
+                <WorkspaceBindingWizard
+                    key={targetProject.id + ':' + bridge.device.id}
+                    bridge={bridge}
+                    project={{ id: targetProject.id, name: targetProject.name }}
+                    canManage={canInstall}
+                    onClose={() => {
+                        setBindingOpen(false);
+                        void bridge.reload();
+                    }}
+                />
+            )}
             <InstallPlanFailureModal
                 failure={localPlans.failure}
                 busy={!!localBusy}

@@ -49,3 +49,44 @@ it('folder action opens the folder stage for the exact project, not bridge onboa
         vi.unstubAllGlobals();
     }
 });
+
+it('opens the binding on the spot through onChooseFolder without leaving the page', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const chooseFolder = vi.fn();
+    let destination = '';
+    function Location() {
+        const location = useLocation();
+        destination = location.pathname + location.search;
+        return null;
+    }
+    const bridge = {
+        devicesReady: true,
+        jobsReady: true,
+        installationsReady: true,
+        device: { id: 'qa-computer', online: true, report: { bindings: [] } },
+    } as unknown as ReturnType<typeof useBridge>;
+    try {
+        await act(async () =>
+            root.render(
+                <MemoryRouter initialEntries={['/store?p=prj-owned']}>
+                    <Location />
+                    <ProjectInstallationReadiness bridge={bridge} projectId="prj-owned" canInstall onChooseFolder={chooseFolder} />
+                </MemoryRouter>,
+            ),
+        );
+        const action = Array.from(container.querySelectorAll('button')).find(
+            (button) => button.textContent === 'Выбрать папку проекта',
+        )!;
+        await act(async () => action.click());
+        expect(chooseFolder).toHaveBeenCalledTimes(1);
+        // Перехода на /start не было: остаёмся на странице каталога.
+        expect(destination).toBe('/store?p=prj-owned');
+    } finally {
+        await act(async () => root.unmount());
+        container.remove();
+        vi.unstubAllGlobals();
+    }
+});
