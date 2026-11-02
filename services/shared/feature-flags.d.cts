@@ -4,6 +4,7 @@ export type TFeatureFlagKey =
     | 'installation_auto_inspect'
     | 'project_binding_inline'
     | 'start_auto_checks'
+    | 'chat_model_setup'
     | 'opencode_v2_accounts'
     | 'opencode_personal_key_transfer'
     | 'personal_remote_provider_credentials'

@@ -6,15 +6,18 @@ import { errorMessage } from '../../common/utils/errorMessage';
 import { useAvailableProjects } from '../../modules/Projects/hooks/useAvailableProjects';
 import type { IProjectSummary } from '../../core/api/interfaces';
 import type { TRootState } from '../../store';
+import { useFeatureAvailability } from '../FeatureFlags/hooks/useFeatureAvailability';
 import { modelCatalogApi } from '../ModelCatalog/api';
 import { useModelCatalog } from '../ModelCatalog/hooks/useModelCatalog';
 import type { ICatalogModel } from '../ModelCatalog/interfaces';
 import { RoleChatNavigation, serviceRoleIds } from '../SystemRoleChat/RoleChatNavigation';
 import { roleName } from '../SystemRoles/utils';
 import { type TSystemRoleId } from '../SystemRoles/interfaces';
-import { projectRoleLevel } from '../UserBlock/roles';
+import { isMainAdminRole, projectRoleLevel } from '../UserBlock/roles';
 import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
 import { modelChatApi } from './api';
+import { ChatModelSetup } from './ChatModelSetup';
+import { chatModelSetupVisible } from './chatModelSetup';
 import { ChatWorkspace } from './ChatWorkspace';
 import { ConversationList } from './ConversationList';
 import { modelChatUnavailableReason } from './model';
@@ -70,7 +73,8 @@ function ChatScope({
         { captureOwner } = useAuthRequestOwner();
     const canUse = !!user && (projectId ? projectRoleLevel(user, projectId) >= 2 : user.activeRole === 'Главный админ');
     const models = useModelCatalog(projectId),
-        index = useChatIndex(projectId, canUse);
+        index = useChatIndex(projectId, canUse),
+        setupFlag = useFeatureAvailability('chat_model_setup');
     const [selection, setSelection] = useState<{
         model: ICatalogModel;
         detail?: IModelChatDetail;
@@ -95,6 +99,21 @@ function ChatScope({
         models.catalog?.items.filter(
             (model) => !modelChatUnavailableReason(model, canUse, !!projectId, assigned.has(model.id)),
         ) ?? [];
+    /** In-chat model setup: no ready model in this context, project selected, flag on.
+     *  The loading gate covers the first read only: a refresh keeps the catalog,
+     *  so the panel survives the reads triggered by its own actions. */
+    const setupItems = (models.catalog?.items ?? []).filter(
+        (model) => model.capability !== 'embedding' && !model.archivedAt,
+    ),
+        showSetup =
+            !!projectId &&
+            chatModelSetupVisible({
+                flagEnabled: setupFlag.enabled,
+                canUse,
+                loading: models.loading && !models.catalog,
+                error: !!models.error,
+                readyCount: available.length,
+            });
     const selectModel = (id: string | undefined): void => {
         modelChosen.current = true;
         if (!id) {
@@ -304,17 +323,29 @@ function ChatScope({
                     {index.error && <Alert type="error" showIcon message={index.error} />}
                 </aside>
                 <main className="model-chat__main model-chat__welcome">
-                    <Empty
-                        description={
-                            !canUse
-                                ? 'Выберите проект с доступом разработчика или администратора.'
-                                : models.loading
-                                  ? 'Загружаем модели…'
-                                  : !available.length
-                                    ? 'В этом контексте нет готовой модели для чата. Подключите модель или проверьте её API в каталоге.'
-                                    : 'Выберите модель или откройте сохранённый диалог. Участников можно добавить в настройках разговора.'
-                        }
-                    />
+                    {showSetup && projectId ? (
+                        <ChatModelSetup
+                            projectId={projectId}
+                            items={setupItems}
+                            assigned={assigned}
+                            canAssign={projectRoleLevel(user, projectId) >= 3}
+                            canCheck={!!user && isMainAdminRole(user.activeRole)}
+                            canConfigure={!!user && isMainAdminRole(user.activeRole)}
+                            onRefresh={() => models.refresh()}
+                        />
+                    ) : (
+                        <Empty
+                            description={
+                                !canUse
+                                    ? 'Выберите проект с доступом разработчика или администратора.'
+                                    : models.loading
+                                      ? 'Загружаем модели…'
+                                      : !available.length
+                                        ? 'В этом контексте нет готовой модели для чата. Подключите модель или проверьте её API в каталоге.'
+                                        : 'Выберите модель или откройте сохранённый диалог. Участников можно добавить в настройках разговора.'
+                            }
+                        />
+                    )}
                 </main>
             </div>
         </Modal>
