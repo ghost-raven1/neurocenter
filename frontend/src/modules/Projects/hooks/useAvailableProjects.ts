@@ -10,7 +10,8 @@ import { createAvailableProjectsController, initialAvailableProjectsState } from
 
 function currentScope(state: TRootState): string {
     const { user, policies } = state.userBlock;
-    return user?.email ? authDataScope({ user, policies }) : '';
+    // Тестовые стор-обёртки могут не держать policies: без подтверждённых прав данные не запрашиваем.
+    return user?.email && policies ? authDataScope({ user, policies }) : '';
 }
 
 /** Начальная загрузка, повтор и live-обновление проходят через одного владельца списка. */

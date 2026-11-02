@@ -59,6 +59,8 @@ interface IAppCardProps {
     feedback?: ReactNode;
     update?: IProjectCatalogUpdate;
     pendingSource?: IBundledSourcePlan;
+    /** Переход к вкладке «Поставки» (видна, когда пакет по исходнику ещё не опубликован). */
+    onOpenSupplies?: () => void;
 }
 
 /**
@@ -69,7 +71,7 @@ interface IAppCardProps {
  * @param {IAppCardProps} props
  * @returns JSX-элемент карточки
  */
-const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback, update, pendingSource }) => {
+const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback, update, pendingSource, onOpenSupplies }) => {
     const source = storeCardSource(app.origin),
         revision = storeCardRevision(app.revision),
         platforms = storeCardPlatforms(app.config);
@@ -139,7 +141,16 @@ const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, fee
                 </Text>
             </div>
             {update && <ProjectToolVersions app={app} update={update} />}
-            {pendingSource && <CatalogSourceUpdateHint plan={pendingSource} />}
+            {pendingSource && (
+                <div className="store-card__source-update" style={{ display: 'grid', gap: 6, marginTop: 10 }}>
+                    <CatalogSourceUpdateHint plan={pendingSource} />
+                    {onOpenSupplies && (
+                        <Button type="primary" size="small" block onClick={onOpenSupplies}>
+                            Открыть в «Поставках»
+                        </Button>
+                    )}
+                </div>
+            )}
             {feedback}
             <div className="store-card__actions">{action}</div>
         </Card>

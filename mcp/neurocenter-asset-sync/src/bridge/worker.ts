@@ -106,6 +106,14 @@ import {
     recoverGlobalProvidersJobs,
 } from '../features/opencode-local-providers/index.js';
 import { localProviderKinds as globalProviderJobs } from '../features/opencode-local-providers/job-contract.js';
+/** Список read-видов; зеркало на сервере: services/catalog-service/src/devices/device-jobs.ts (BRIDGE_READ_LANE_KINDS). Держать в синхроне. */
+const READ_LANE_KINDS = [
+    'scan-opencode-models',
+    'scan-project-inventory',
+    'sync-rag',
+    'import-learning-quirks',
+    'inspect-installation',
+];
 
 interface IJob {
     id: string;
@@ -183,6 +191,11 @@ export async function runWorker(): Promise<void> {
     await recoverGlobalProvidersJobs();
     let running = false;
     let stopped = false;
+    const lanesOn = (() => {
+        const raw = (process.env.BRIDGE_JOB_LANES ?? '').trim().toLowerCase();
+        return raw === '1' || raw === 'true' || raw === 'on';
+    })();
+    const readLane = new Map<string, Promise<void>>();
     const socket = io(apiHub(), {
         transports: ['websocket', 'polling'],
         auth: { token: credentials.token },
@@ -284,6 +297,724 @@ export async function runWorker(): Promise<void> {
         });
         return heartbeatPending;
     };
+    const runClaimedJob = async (current: IJob, deviceId: string): Promise<void> => {
+        let lastPercent: number | undefined;
+        let lastMessage = 'MCP выполняет задание';
+        const update = (percent: number, message: string) => {
+            lastPercent = percent;
+            lastMessage = message;
+            return api(`jobs/${current.id}/progress`, {
+                lease: current.lease,
+                percent,
+                message,
+                state: 'running',
+            });
+        };
+        const authorize = async (signal?: AbortSignal) => {
+            const result = await api(
+                `jobs/${current.id}/authorize`,
+                {
+                    lease: current.lease,
+                },
+                undefined,
+                signal,
+            );
+            if (
+                !(
+                    current.kind === 'scan-opencode-models' &&
+                    current.payload.scope === 'global' &&
+                    !current.project_id
+                ) &&
+                [
+                    PROJECT_CONFIGURATION_JOB,
+                    PROJECT_AGENTS_JOB,
+                    ...CONFIGURATION_KINDS,
+                    ...PROJECT_LOCAL_KINDS,
+                    'install',
+                    'uninstall',
+                    'inspect-installation',
+                    'prepare-local-change',
+                    'apply-local-change',
+                    'open-local-change-report',
+                    'open-local-recovery-folder',
+                    'probe-runtime',
+                    'sync-rag',
+                    'restore-rag',
+                    'open-rag-ui',
+                    'connect-rag-model',
+                    'publish-project-snapshot',
+                ].includes(current.kind) &&
+                current.payload.bindingId !== (await projectBindingId(current.project_id || ''))
+            ) {
+                throw new Error(
+                    'Папка проекта изменилась после отправки запроса. Установка остановлена; проверьте привязку и повторите действие.',
+                );
+            }
+            return result;
+        };
+        const renew = setInterval(() => {
+            void api(`jobs/${current.id}/progress`, {
+                lease: current.lease,
+                percent: lastPercent,
+                message: lastMessage,
+                state: 'running',
+            }).catch(() => undefined);
+        }, 30000);
+        try {
+            if (current.kind === OPENCODE_CLI_INSPECT_JOB || current.kind === OPENCODE_CLI_INSTALL_JOB) {
+                await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runComputerSetupJob(current, deviceId, authorize),
+                );
+                clearInterval(renew);
+                await deliverCompletions();
+                await heartbeat();
+                return;
+            }
+            if (globalProviderJobs.includes(current.kind)) {
+                await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runGlobalProvidersJob(current, deviceId, authorize),
+                );
+                clearInterval(renew);
+                await deliverCompletions();
+                await heartbeat();
+                return;
+            }
+            if (current.kind === AGENT_METHOD_WORKFLOW_JOB) {
+                const completed = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runAgentMethodWorkflow(current, deviceId, authorize, update),
+                );
+                clearInterval(renew);
+                await saveCompletion({ id: current.id, lease: current.lease, deviceId, ...completed });
+                await deliverCompletions();
+                await heartbeat();
+                return;
+            }
+            if (current.kind === RUNTIME_CACHE_POLICY_JOB) {
+                const completed = await runRuntimeCachePolicyJob(
+                    { id: current.id, lease: current.lease, payload: current.payload },
+                    deviceId,
+                    authorize,
+                );
+                clearInterval(renew);
+                await saveCompletion({ id: current.id, lease: current.lease, deviceId, ...completed });
+                await deliverCompletions();
+                await heartbeat().catch(() =>
+                    process.stderr.write(
+                        'neurocenter bridge: присутствие компьютера после подтверждения настройки кэша не обновлено.\n',
+                    ),
+                );
+                return;
+            }
+            if (current.kind === DEVICE_CODEX_JOB) {
+                const completed = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runDeviceCodexJob(current, deviceId, authorize),
+                );
+                clearInterval(renew);
+                await saveCompletion({ id: current.id, lease: current.lease, deviceId, ...completed });
+                await deliverCompletions();
+                await heartbeat();
+                return;
+            }
+            if (current.kind === 'import-learning-quirks') {
+                const result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runProjectLearningQuirksJob(
+                        {
+                            id: current.id,
+                            projectId: current.project_id!,
+                            lease: current.lease,
+                            payload: { ...current.payload },
+                        },
+                        deviceId,
+                        async () => {
+                            await authorize();
+                        },
+                        update,
+                    ),
+                );
+                clearInterval(renew);
+                await saveCompletion({
+                    id: current.id,
+                    lease: current.lease,
+                    deviceId,
+                    state: result.status === 'complete' ? 'succeeded' : 'failed',
+                    message:
+                        result.status === 'complete'
+                            ? 'Кварки сохранены как сообщённый опыт.'
+                            : 'Сохранена часть сообщённого опыта. Повтор безопасен.',
+                    result: { ...result },
+                });
+                await deliverCompletions();
+                await heartbeat();
+                return;
+            }
+            if (current.kind === MEMORY_SYNC_JOB) {
+                const completed = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runLearningMemoryJob(current, deviceId, authorize),
+                );
+                clearInterval(renew);
+                await saveCompletion({ id: current.id, lease: current.lease, deviceId, ...completed });
+                await deliverCompletions();
+                await heartbeat();
+                return;
+            }
+            await authorize();
+            let result: unknown;
+            if (current.kind === PROJECT_CONFIGURATION_JOB) {
+                result = await openProjectConfiguration(current.payload.descriptor, authorize, () =>
+                    api('project-configuration/authorize', { jobId: current.id }),
+                );
+            } else if ((OPENCODE_PROVIDER_JOBS as readonly string[]).includes(current.kind)) {
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runProviderJob(current, authorize, () =>
+                        api('opencode-provider/authorize', { jobId: current.id }),
+                    ),
+                );
+            } else if (current.kind === PROJECT_AGENTS_JOB) {
+                if (current.payload.projectId !== current.project_id)
+                    throw new Error('Задание настройки агентов не соответствует проекту.');
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    configureProjectAgents(current.payload, authorize, update, (mappings) =>
+                        api('agents/compile', {
+                            jobId: current.id,
+                            lease: current.lease,
+                            payloadManifest: current.payload.manifestSha256,
+                            mappings,
+                        }),
+                    ),
+                );
+            } else if (current.kind === 'publish-project-snapshot') {
+                if (
+                    current.payload.snapshotProtocol !== 'project-snapshots-v1' ||
+                    !current.payload.snapshotId ||
+                    !current.project_id ||
+                    !current.payload.bindingId
+                )
+                    throw new Error(
+                        'Задание полного снимка не поддерживается. Обновите мост и создайте новую публикацию.',
+                    );
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    publishProjectSnapshot(
+                        {
+                            projectId: current.project_id!,
+                            bindingId: current.payload.bindingId!,
+                            snapshotId: current.payload.snapshotId!,
+                            snapshotProtocol: 'project-snapshots-v1',
+                        },
+                        authorize,
+                        update,
+                    ),
+                );
+            } else if (CONFIGURATION_KINDS.includes(current.kind)) {
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runMcpConfigurationJob(current, authorize, () =>
+                        api('configuration-authorize', { jobId: current.id }),
+                    ),
+                );
+            } else if (PROJECT_LOCAL_KINDS.includes(current.kind)) {
+                if (current.kind === 'apply-adopt-installation' && current.payload.package)
+                    await prepareJobMcpLaunchers(
+                        current.project_id ?? '',
+                        current.payload.package,
+                        current.payload.installSet,
+                        authorize,
+                    );
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runProjectLocalJob(current, authorize, update),
+                );
+            } else if (current.kind === 'choose-root') {
+                const selected = await chooseRoot();
+                result = { root: selected.root };
+            } else if (['bind-project', 'prepare-bind-project'].includes(current.kind)) {
+                const prepared =
+                    current.payload.preparation ??
+                    (await prepareProjectBinding({
+                        projectId: current.project_id || '',
+                        folderName: current.payload.folderName || '',
+                        mode: current.payload.mode ?? 'new',
+                        expectedBindingId: current.payload.expectedBindingId,
+                        expectedInstanceId: current.payload.expectedInstanceId,
+                    }));
+                if (current.kind === 'prepare-bind-project') {
+                    result = prepared;
+                } else {
+                    result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                        commitProjectBinding(prepared, async (context) => {
+                            await authorize();
+                            return verifyWorkspaceInstallations(
+                                context,
+                                current.payload.installations ?? [],
+                                authorize,
+                            );
+                        }),
+                    );
+                }
+            } else if (current.kind === 'prepare-local-change' && current.payload.package) {
+                result = await prepareLocalChange(
+                    current.project_id || '',
+                    current.payload.package,
+                    current.payload.installSet,
+                    authorize,
+                );
+            } else if (current.kind === 'open-rag-ui' && current.payload.package) {
+                result = await openRagUi(
+                    {
+                        projectId: current.project_id || '',
+                        bindingId: current.payload.bindingId || '',
+                        instanceId: current.payload.instanceId || '',
+                        pkg: current.payload.package,
+                    },
+                    async () => {
+                        await authorize();
+                    },
+                );
+            } else if (
+                current.kind === 'connect-rag-model' &&
+                current.payload.package &&
+                current.payload.embedding
+            ) {
+                await update(20, 'Проверяем выбранную модель и доступ через мост.');
+                if (
+                    current.payload.reindex !== true ||
+                    current.payload.ragReindexProtocol !== 'hosted-rag-reindex-v1'
+                )
+                    throw new Error('Обновите задание переиндексации до поддерживаемого формата.');
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, async () => {
+                    const connected = await connectHostedRag(
+                        current.project_id || '',
+                        current.payload.bindingId || '',
+                        current.payload.instanceId || '',
+                        current.payload.package!,
+                        current.payload.embedding!,
+                        async () => {
+                            await authorize();
+                        },
+                        (publication) =>
+                            reindexHostedRag(
+                                {
+                                    projectId: current.project_id || '',
+                                    bindingId: current.payload.bindingId || '',
+                                    instanceId: current.payload.instanceId || '',
+                                    pkg: current.payload.package!,
+                                },
+                                publication,
+                                async () => {
+                                    await authorize();
+                                },
+                                update,
+                            ),
+                    );
+                    const synced = await runRagBridgeJob(
+                        {
+                            kind: 'sync-rag',
+                            projectId: current.project_id || '',
+                            bindingId: current.payload.bindingId || '',
+                            allowEmpty: true,
+                        },
+                        async () => {
+                            await authorize();
+                        },
+                        update,
+                    );
+                    if (!connected.reindex || synced.snapshotHash !== connected.reindex.snapshotHash)
+                        throw new Error(
+                            'Серверная копия нового индекса не подтверждена. Повторите подключение.',
+                        );
+                    return { ...connected, reindex: { ...connected.reindex, serverSynced: true } };
+                });
+            } else if (current.kind === 'open-local-recovery-folder') {
+                await authorize();
+                await openLocalRecoveryFolder(current.project_id || '');
+                result = { projectId: current.project_id, bindingId: current.payload.bindingId, opened: true };
+            } else if (current.kind === 'open-local-change-report') {
+                await authorize();
+                await openLocalChangeReport({
+                    projectId: current.project_id || '',
+                    bindingId: current.payload.bindingId || '',
+                    instanceId: current.payload.instanceId || '',
+                    planId: current.payload.changePlanId || '',
+                    digest: current.payload.expectedChangeDigest || '',
+                });
+                result = {
+                    projectId: current.project_id,
+                    bindingId: current.payload.bindingId,
+                    changePlanId: current.payload.changePlanId,
+                    digest: current.payload.expectedChangeDigest,
+                    opened: true,
+                };
+            } else if (current.kind === 'apply-local-change' && current.payload.package) {
+                await prepareJobMcpLaunchers(
+                    current.project_id ?? '',
+                    current.payload.package,
+                    current.payload.installSet,
+                    authorize,
+                );
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    applyLocalChange(
+                        current.project_id || '',
+                        current.payload.package!,
+                        {
+                            planId: current.payload.changePlanId || '',
+                            revision: current.payload.changePlanRevision ?? 1,
+                            digest: current.payload.expectedChangeDigest || '',
+                            expectedBindingId: current.payload.bindingId || '',
+                            installSet: current.payload.installSet,
+                        },
+                        authorize,
+                        update,
+                        (packages) =>
+                            prepareJobRuntimeArtifacts(
+                                packages,
+                                authorize,
+                                (_percent, message) => update(45, message),
+                                {
+                                    repairCorrupt: true,
+                                    intent: runtimePreparationCompletion(current, deviceId),
+                                },
+                            ),
+                    ),
+                );
+            } else if (current.kind === 'probe-runtime' && current.payload.package) {
+                const pkg = current.payload.package;
+                result = await runRuntimeProbe({
+                    projectId: current.project_id || '',
+                    bindingId: current.payload.bindingId || '',
+                    target: packageRef(pkg),
+                    frozenSet: current.payload.installSet ?? {
+                        schemaVersion: 1,
+                        root: packageRef(pkg),
+                        packages: [pkg],
+                        manifest: pkg.manifest.sha256,
+                    },
+                    consentManifest: current.payload.consentManifest || '',
+                    ...(current.payload.configurationRevisions
+                        ? { configurationRevisions: current.payload.configurationRevisions }
+                        : {}),
+                    openCode: await runtimeProbeEngine(),
+                    authorize: async () => {
+                        await authorize();
+                    },
+                });
+            } else if (current.kind === 'inspect-installation' && current.payload.package) {
+                const inspected = await inspectInstallation(current.project_id || '', current.payload.package);
+                assertInspectionIdentity(
+                    inspected,
+                    current.project_id || '',
+                    current.payload.bindingId,
+                    current.payload.package,
+                );
+                result = inspected;
+            } else if (['install', 'uninstall'].includes(current.kind) && current.payload.package) {
+                if (current.payload.installSet && current.kind === 'install') {
+                    const root = current.payload.installSet.root;
+                    const pkg = current.payload.package;
+                    if (
+                        root.kind !== pkg.plugin.kind ||
+                        root.id !== pkg.plugin.id ||
+                        root.version !== pkg.plugin.version ||
+                        root.manifest !== pkg.manifest.sha256
+                    ) {
+                        throw new Error('Корневой пакет не совпадает с набором установки.');
+                    }
+                }
+                if (current.kind === 'install')
+                    await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                        prepareJobRuntimeArtifacts(
+                            current.payload.installSet?.packages ?? [current.payload.package!],
+                            authorize,
+                            update,
+                            { intent: runtimePreparationCompletion(current, deviceId) },
+                        ),
+                    );
+                if (current.kind === 'install')
+                    await prepareJobMcpLaunchers(
+                        current.project_id ?? '',
+                        current.payload.package,
+                        current.payload.installSet,
+                        authorize,
+                    );
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    current.kind === 'install' && current.payload.installSet
+                        ? installSet(current.project_id || '', current.payload.installSet, authorize, update)
+                        : (current.kind === 'install' ? install : uninstall)(
+                              current.project_id || '',
+                              current.payload.package!,
+                              authorize,
+                              update,
+                          ),
+                );
+            } else if (['restore-rag', 'sync-rag'].includes(current.kind)) {
+                if (current.payload.ragProtocol !== 'project-rag-generations-v1')
+                    throw new Error(
+                        'Задание создано до обновления формата RAG. Запустите новую синхронизацию знаний в Нейроцентре.',
+                    );
+                if (current.kind === 'restore-rag') {
+                    await authorize();
+                    await closeOwnRagUi(current.project_id || '');
+                    await authorize();
+                }
+                result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
+                    runRagBridgeJob(
+                        {
+                            kind: current.kind as 'restore-rag' | 'sync-rag',
+                            projectId: current.project_id || '',
+                            bindingId: current.payload.bindingId || '',
+                        },
+                        async () => {
+                            await authorize();
+                        },
+                        update,
+                    ),
+                );
+            } else {
+                throw new Error('Неизвестное задание MCP.');
+            }
+            if (current.kind === 'install') {
+                for (const member of current.payload.installSet?.packages ??
+                    (current.payload.package ? [current.payload.package] : [])) {
+                    if (member.plugin.kind !== 'mcp') continue;
+                    try {
+                        if (!localRagCore(member)) continue;
+                        await update(95, 'Проверяем запуск opencode-rag mcp.');
+                        await probeInstalledRagMcp(
+                            current.project_id || '',
+                            current.payload.bindingId || '',
+                            member,
+                            async () => {
+                                await authorize();
+                            },
+                        );
+                        process.stderr.write(
+                            'neurocenter bridge: подключение OpenCodeRAG MCP проверено; модель и индекс не проверялись.\n',
+                        );
+                    } catch {
+                        process.stderr.write(
+                            'neurocenter bridge: файлы установлены; проверка запуска OpenCodeRAG MCP не завершена. Проверьте подключение отдельно.\n',
+                        );
+                    }
+                }
+            }
+            clearInterval(renew);
+            const requirements = current.payload.package?.config?.extra?.requirements;
+            const hasRequirements = !!(requirements?.mcp?.length || requirements?.plugins?.length);
+            await saveCompletion({
+                id: current.id,
+                deviceId,
+                lease: current.lease,
+                state: 'succeeded',
+                message:
+                    current.kind === PROJECT_CONFIGURATION_JOB
+                        ? 'Локальный мастер открыт. Проверьте изменения и примените их на компьютере.'
+                        : current.kind === PROJECT_AGENTS_JOB
+                          ? 'Агенты настроены; OpenCode перечитает их при следующем запуске.'
+                          : CONFIGURATION_KINDS.includes(current.kind)
+                            ? 'Действие настройки MCP завершено. Значения остались на компьютере.'
+                            : PROJECT_LOCAL_KINDS.includes(current.kind)
+                              ? 'Локальное действие завершено.'
+                              : current.kind === 'install'
+                                ? current.payload.installSet
+                                    ? 'Набор инструментов установлен; запуск в OpenCode ещё не проверен.'
+                                    : hasRequirements
+                                      ? 'Файлы установлены; проверьте настройку внешних подключений.'
+                                      : 'Файлы установлены'
+                                : current.kind === 'inspect-installation'
+                                  ? 'Проверка файлов завершена; запуск инструмента не проверялся.'
+                                  : current.kind === 'prepare-local-change'
+                                    ? 'Сравнение подготовлено. Проверьте изменения перед восстановлением.'
+                                    : current.kind === 'open-local-change-report'
+                                      ? 'Полное сравнение открыто на подключённом компьютере.'
+                                      : current.kind === 'open-rag-ui'
+                                        ? 'Локальный интерфейс готов; отдельное окно запрошено на компьютере.'
+                                        : current.kind === 'publish-project-snapshot'
+                                          ? 'Полный образ передан. Сервер проверяет снимок.'
+                                          : current.kind === 'connect-rag-model'
+                                            ? 'Подключение модели и локальный индекс проверены.'
+                                            : current.kind === 'open-local-recovery-folder'
+                                              ? 'Резервные копии открыты на подключённом компьютере.'
+                                              : ['apply-local-change', ...PROJECT_LOCAL_APPLIES].includes(
+                                                      current.kind,
+                                                  )
+                                                ? 'Одобренные файлы восстановлены; локальный вариант сохранён.'
+                                                : current.kind === 'probe-runtime'
+                                                  ? 'Проверка запуска OpenCode завершена.'
+                                                  : current.kind === 'prepare-bind-project'
+                                                    ? 'Папка проверена. Подтвердите действие в мастере.'
+                                                    : current.kind === 'uninstall'
+                                                      ? 'Файлы и подключение удалены'
+                                                      : current.kind === 'bind-project'
+                                                        ? 'Папка связана с проектом'
+                                                        : current.kind === 'choose-root'
+                                                          ? 'Папка проектов выбрана'
+                                                          : 'Синхронизация базы знаний завершена',
+                result: result as Record<string, unknown>,
+            });
+            if (current.kind === 'connect-rag-model' && current.payload.reindex)
+                await finalizeRagReindex(await projectFolder(current.project_id || ''), current.id);
+            await deliverCompletions();
+        } catch (error) {
+            clearInterval(renew);
+            if (current.kind === RUNTIME_CACHE_POLICY_JOB) {
+                await recoverRuntimeCachePolicyCompletions(saveCompletion);
+                if ((await pendingCompletions()).some((item) => item.id === current.id)) {
+                    await deliverCompletions();
+                    await heartbeat().catch(() =>
+                        process.stderr.write(
+                            'neurocenter bridge: присутствие компьютера после доставки настройки кэша не обновлено.\n',
+                        ),
+                    );
+                    return;
+                }
+            }
+            if (current.kind === DEVICE_CODEX_JOB)
+                throw new Error(
+                    'Результат Codex сохранён локально или требует восстановления; повторная отправка модели заблокирована.',
+                );
+            if (current.kind === OPENCODE_CLI_INSPECT_JOB || current.kind === OPENCODE_CLI_INSTALL_JOB) {
+                await stopRoleMcpPoller();
+                throw new Error(
+                    'Проверка OpenCode сохранена для восстановления; новые задания ждут подтверждённой очистки.',
+                );
+            }
+            if (globalProviderJobs.includes(current.kind)) {
+                await stopRoleMcpPoller();
+                throw new Error(
+                    'Настройка OpenCode сохранена для восстановления; новый локальный сеанс автоматически не открывается.',
+                );
+            }
+            if (current.kind === AGENT_METHOD_WORKFLOW_JOB)
+                throw new Error(
+                    'Результат разработки сохранён локально или требует восстановления; повторный запуск автоматически не выполняется.',
+                );
+            if (current.kind === MEMORY_SYNC_JOB)
+                throw new Error(
+                    'План Memory сохранён для восстановления. Новые изменения автоматически не запускаются.',
+                );
+            if (current.kind === 'connect-rag-model' && current.payload.reindex) {
+                const root = await projectFolder(current.project_id || '');
+                releaseRagReindex(root);
+                await recoverRagRestore(root);
+            }
+            // Фиксация файлов и доставка отчёта независимы: сеть не отменяет установленный пакет.
+            if (current.kind !== 'inspect-installation') {
+                await recoverFileJobs();
+            }
+            if (current.kind === 'bind-project') {
+                await recoverPendingWorkspaceIdentity();
+            }
+            if (!(await pendingCompletions()).some((item) => item.id === current.id)) {
+                if ((error as { localChangesCommitted?: boolean }).localChangesCommitted) {
+                    throw error;
+                }
+                const pkg = current.payload.package;
+                // После восстановления отсутствие квитанции означает отказ до файловой транзакции.
+                const result =
+                    current.kind === 'probe-runtime' && pkg
+                        ? {
+                              schemaVersion: 1,
+                              projectId: current.project_id,
+                              bindingId: current.payload.bindingId,
+                              assetId: pkg.plugin.id,
+                              assetKind: pkg.plugin.kind,
+                              version: pkg.plugin.version,
+                              manifest: pkg.manifest.sha256,
+                              approvalManifest: current.payload.consentManifest,
+                              checkedAt: new Date().toISOString(),
+                              engineVersion: '1.14.48',
+                              engineSha256: '',
+                              status: 'not_checked',
+                              code: 'authorization-denied',
+                              counts: {
+                                  packages: 0,
+                                  files: 0,
+                                  skills: 0,
+                                  mcp: 0,
+                                  tools: 0,
+                                  resources: 0,
+                                  prompts: 0,
+                                  pluginsInitialized: 0,
+                              },
+                              ...(current.payload.configurationRevisions
+                                  ? { configurationRevisions: current.payload.configurationRevisions }
+                                  : {}),
+                          }
+                        : current.kind === 'inspect-installation' && pkg
+                          ? {
+                                schemaVersion: 1,
+                                projectId: current.project_id,
+                                bindingId: current.payload.bindingId,
+                                assetId: pkg.plugin.id,
+                                assetKind: pkg.plugin.kind,
+                                version: pkg.plugin.version,
+                                manifest: pkg.manifest.sha256,
+                                checkedAt: new Date().toISOString(),
+                                readiness: 'unverified',
+                                state: 'checked',
+                                status: 'unknown',
+                                issues: ['inspection-failed'],
+                            }
+                          : ['install', 'uninstall', 'apply-local-change', ...PROJECT_LOCAL_APPLIES].includes(
+                                  current.kind,
+                              ) && pkg
+                            ? {
+                                  projectId: current.project_id,
+                                  assetId: pkg.plugin.id,
+                                  version: pkg.plugin.version,
+                                  manifest: current.payload.installSet?.manifest ?? pkg.manifest.sha256,
+                                  ...(current.payload.installSet
+                                      ? { packages: sortedRefs(current.payload.installSet.packages) }
+                                      : {}),
+                                  bindingId: current.payload.bindingId,
+                                  unchanged: true,
+                                  ...(['apply-local-change', ...PROJECT_LOCAL_APPLIES].includes(current.kind)
+                                      ? {
+                                            changePlanId: current.payload.changePlanId,
+                                            digest: current.payload.expectedChangeDigest,
+                                        }
+                                      : {}),
+                              }
+                            : current.kind === PROJECT_AGENTS_JOB
+                              ? projectAgentsFailureResult(error)
+                              : workspaceBindingFailureResult(
+                                    current.kind,
+                                    current.payload.workspaceFailureVersion,
+                                    error,
+                                );
+                await saveCompletion({
+                    id: current.id,
+                    lease: current.lease,
+                    deviceId,
+                    state: 'failed',
+                    result,
+                    message:
+                        current.kind === OPENCODE_CLI_INSPECT_JOB
+                            ? 'Проверка OpenCode не завершена. Проверьте компьютер и повторите действие.'
+                            : current.kind === PROJECT_AGENTS_JOB
+                              ? projectAgentsFailureMessage(error)
+                              : current.kind === 'publish-project-snapshot'
+                                ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.'
+                                : [
+                                        PROJECT_CONFIGURATION_JOB,
+                                        ...OPENCODE_PROVIDER_JOBS,
+                                        ...CONFIGURATION_KINDS,
+                                        ...PROJECT_LOCAL_KINDS,
+                                        'inspect-installation',
+                                        'prepare-bind-project',
+                                        'bind-project',
+                                        'prepare-local-change',
+                                        'apply-local-change',
+                                        'open-local-change-report',
+                                        'open-local-recovery-folder',
+                                        'probe-runtime',
+                                        'open-rag-ui',
+                                        'connect-rag-model',
+                                    ].includes(current.kind)
+                                  ? 'Действие не выполнено. Проверьте актуальную папку и доступ.'
+                                  : (error as Error).message.slice(0, 1500),
+                });
+            }
+            await deliverCompletions();
+        }
+        await heartbeat();
+    };
     const drain = async (): Promise<void> => {
         if (running || stopped) {
             return;
@@ -317,724 +1048,25 @@ export async function runWorker(): Promise<void> {
                 const deviceId = claimant.deviceId;
                 const current = await api<IJob | null>('jobs/claim', undefined, claimant.token);
                 if (!current) {
+                    // Read-lane задания не блокируют цикл; дожидаемся влёта, чтобы recovery не перезапустил их.
+                    if (lanesOn && readLane.size) {
+                        await Promise.allSettled([...readLane.values()]);
+                    }
                     break;
                 }
-                let lastPercent: number | undefined;
-                let lastMessage = 'MCP выполняет задание';
-                const update = (percent: number, message: string) => {
-                    lastPercent = percent;
-                    lastMessage = message;
-                    return api(`jobs/${current.id}/progress`, {
-                        lease: current.lease,
-                        percent,
-                        message,
-                        state: 'running',
-                    });
-                };
-                const authorize = async (signal?: AbortSignal) => {
-                    const result = await api(
-                        `jobs/${current.id}/authorize`,
-                        {
-                            lease: current.lease,
+                if (lanesOn && READ_LANE_KINDS.includes(current.kind)) {
+                    const handle = runClaimedJob(current, deviceId).then(
+                        () => undefined,
+                        (error) => {
+                            process.stderr.write('neurocenter bridge: ' + (error as Error).message + '\n');
                         },
-                        undefined,
-                        signal,
-                    );
-                    if (
-                        !(
-                            current.kind === 'scan-opencode-models' &&
-                            current.payload.scope === 'global' &&
-                            !current.project_id
-                        ) &&
-                        [
-                            PROJECT_CONFIGURATION_JOB,
-                            PROJECT_AGENTS_JOB,
-                            ...CONFIGURATION_KINDS,
-                            ...PROJECT_LOCAL_KINDS,
-                            'install',
-                            'uninstall',
-                            'inspect-installation',
-                            'prepare-local-change',
-                            'apply-local-change',
-                            'open-local-change-report',
-                            'open-local-recovery-folder',
-                            'probe-runtime',
-                            'sync-rag',
-                            'restore-rag',
-                            'open-rag-ui',
-                            'connect-rag-model',
-                            'publish-project-snapshot',
-                        ].includes(current.kind) &&
-                        current.payload.bindingId !== (await projectBindingId(current.project_id || ''))
-                    ) {
-                        throw new Error(
-                            'Папка проекта изменилась после отправки запроса. Установка остановлена; проверьте привязку и повторите действие.',
-                        );
-                    }
-                    return result;
-                };
-                const renew = setInterval(() => {
-                    void api(`jobs/${current.id}/progress`, {
-                        lease: current.lease,
-                        percent: lastPercent,
-                        message: lastMessage,
-                        state: 'running',
-                    }).catch(() => undefined);
-                }, 30000);
-                try {
-                    if (current.kind === OPENCODE_CLI_INSPECT_JOB || current.kind === OPENCODE_CLI_INSTALL_JOB) {
-                        await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runComputerSetupJob(current, deviceId, authorize),
-                        );
-                        clearInterval(renew);
-                        await deliverCompletions();
-                        await heartbeat();
-                        continue;
-                    }
-                    if (globalProviderJobs.includes(current.kind)) {
-                        await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runGlobalProvidersJob(current, deviceId, authorize),
-                        );
-                        clearInterval(renew);
-                        await deliverCompletions();
-                        await heartbeat();
-                        continue;
-                    }
-                    if (current.kind === AGENT_METHOD_WORKFLOW_JOB) {
-                        const completed = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runAgentMethodWorkflow(current, deviceId, authorize, update),
-                        );
-                        clearInterval(renew);
-                        await saveCompletion({ id: current.id, lease: current.lease, deviceId, ...completed });
-                        await deliverCompletions();
-                        await heartbeat();
-                        continue;
-                    }
-                    if (current.kind === RUNTIME_CACHE_POLICY_JOB) {
-                        const completed = await runRuntimeCachePolicyJob(
-                            { id: current.id, lease: current.lease, payload: current.payload },
-                            deviceId,
-                            authorize,
-                        );
-                        clearInterval(renew);
-                        await saveCompletion({ id: current.id, lease: current.lease, deviceId, ...completed });
-                        await deliverCompletions();
-                        await heartbeat().catch(() =>
-                            process.stderr.write(
-                                'neurocenter bridge: присутствие компьютера после подтверждения настройки кэша не обновлено.\n',
-                            ),
-                        );
-                        continue;
-                    }
-                    if (current.kind === DEVICE_CODEX_JOB) {
-                        const completed = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runDeviceCodexJob(current, deviceId, authorize),
-                        );
-                        clearInterval(renew);
-                        await saveCompletion({ id: current.id, lease: current.lease, deviceId, ...completed });
-                        await deliverCompletions();
-                        await heartbeat();
-                        continue;
-                    }
-                    if (current.kind === 'import-learning-quirks') {
-                        const result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runProjectLearningQuirksJob(
-                                {
-                                    id: current.id,
-                                    projectId: current.project_id!,
-                                    lease: current.lease,
-                                    payload: { ...current.payload },
-                                },
-                                deviceId,
-                                async () => {
-                                    await authorize();
-                                },
-                                update,
-                            ),
-                        );
-                        clearInterval(renew);
-                        await saveCompletion({
-                            id: current.id,
-                            lease: current.lease,
-                            deviceId,
-                            state: result.status === 'complete' ? 'succeeded' : 'failed',
-                            message:
-                                result.status === 'complete'
-                                    ? 'Кварки сохранены как сообщённый опыт.'
-                                    : 'Сохранена часть сообщённого опыта. Повтор безопасен.',
-                            result: { ...result },
-                        });
-                        await deliverCompletions();
-                        await heartbeat();
-                        continue;
-                    }
-                    if (current.kind === MEMORY_SYNC_JOB) {
-                        const completed = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runLearningMemoryJob(current, deviceId, authorize),
-                        );
-                        clearInterval(renew);
-                        await saveCompletion({ id: current.id, lease: current.lease, deviceId, ...completed });
-                        await deliverCompletions();
-                        await heartbeat();
-                        continue;
-                    }
-                    await authorize();
-                    let result: unknown;
-                    if (current.kind === PROJECT_CONFIGURATION_JOB) {
-                        result = await openProjectConfiguration(current.payload.descriptor, authorize, () =>
-                            api('project-configuration/authorize', { jobId: current.id }),
-                        );
-                    } else if ((OPENCODE_PROVIDER_JOBS as readonly string[]).includes(current.kind)) {
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runProviderJob(current, authorize, () =>
-                                api('opencode-provider/authorize', { jobId: current.id }),
-                            ),
-                        );
-                    } else if (current.kind === PROJECT_AGENTS_JOB) {
-                        if (current.payload.projectId !== current.project_id)
-                            throw new Error('Задание настройки агентов не соответствует проекту.');
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            configureProjectAgents(current.payload, authorize, update, (mappings) =>
-                                api('agents/compile', {
-                                    jobId: current.id,
-                                    lease: current.lease,
-                                    payloadManifest: current.payload.manifestSha256,
-                                    mappings,
-                                }),
-                            ),
-                        );
-                    } else if (current.kind === 'publish-project-snapshot') {
-                        if (
-                            current.payload.snapshotProtocol !== 'project-snapshots-v1' ||
-                            !current.payload.snapshotId ||
-                            !current.project_id ||
-                            !current.payload.bindingId
-                        )
-                            throw new Error(
-                                'Задание полного снимка не поддерживается. Обновите мост и создайте новую публикацию.',
-                            );
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            publishProjectSnapshot(
-                                {
-                                    projectId: current.project_id!,
-                                    bindingId: current.payload.bindingId!,
-                                    snapshotId: current.payload.snapshotId!,
-                                    snapshotProtocol: 'project-snapshots-v1',
-                                },
-                                authorize,
-                                update,
-                            ),
-                        );
-                    } else if (CONFIGURATION_KINDS.includes(current.kind)) {
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runMcpConfigurationJob(current, authorize, () =>
-                                api('configuration-authorize', { jobId: current.id }),
-                            ),
-                        );
-                    } else if (PROJECT_LOCAL_KINDS.includes(current.kind)) {
-                        if (current.kind === 'apply-adopt-installation' && current.payload.package)
-                            await prepareJobMcpLaunchers(
-                                current.project_id ?? '',
-                                current.payload.package,
-                                current.payload.installSet,
-                                authorize,
-                            );
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runProjectLocalJob(current, authorize, update),
-                        );
-                    } else if (current.kind === 'choose-root') {
-                        const selected = await chooseRoot();
-                        result = { root: selected.root };
-                    } else if (['bind-project', 'prepare-bind-project'].includes(current.kind)) {
-                        const prepared =
-                            current.payload.preparation ??
-                            (await prepareProjectBinding({
-                                projectId: current.project_id || '',
-                                folderName: current.payload.folderName || '',
-                                mode: current.payload.mode ?? 'new',
-                                expectedBindingId: current.payload.expectedBindingId,
-                                expectedInstanceId: current.payload.expectedInstanceId,
-                            }));
-                        if (current.kind === 'prepare-bind-project') {
-                            result = prepared;
-                        } else {
-                            result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                                commitProjectBinding(prepared, async (context) => {
-                                    await authorize();
-                                    return verifyWorkspaceInstallations(
-                                        context,
-                                        current.payload.installations ?? [],
-                                        authorize,
-                                    );
-                                }),
-                            );
-                        }
-                    } else if (current.kind === 'prepare-local-change' && current.payload.package) {
-                        result = await prepareLocalChange(
-                            current.project_id || '',
-                            current.payload.package,
-                            current.payload.installSet,
-                            authorize,
-                        );
-                    } else if (current.kind === 'open-rag-ui' && current.payload.package) {
-                        result = await openRagUi(
-                            {
-                                projectId: current.project_id || '',
-                                bindingId: current.payload.bindingId || '',
-                                instanceId: current.payload.instanceId || '',
-                                pkg: current.payload.package,
-                            },
-                            async () => {
-                                await authorize();
-                            },
-                        );
-                    } else if (
-                        current.kind === 'connect-rag-model' &&
-                        current.payload.package &&
-                        current.payload.embedding
-                    ) {
-                        await update(20, 'Проверяем выбранную модель и доступ через мост.');
-                        if (
-                            current.payload.reindex !== true ||
-                            current.payload.ragReindexProtocol !== 'hosted-rag-reindex-v1'
-                        )
-                            throw new Error('Обновите задание переиндексации до поддерживаемого формата.');
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, async () => {
-                            const connected = await connectHostedRag(
-                                current.project_id || '',
-                                current.payload.bindingId || '',
-                                current.payload.instanceId || '',
-                                current.payload.package!,
-                                current.payload.embedding!,
-                                async () => {
-                                    await authorize();
-                                },
-                                (publication) =>
-                                    reindexHostedRag(
-                                        {
-                                            projectId: current.project_id || '',
-                                            bindingId: current.payload.bindingId || '',
-                                            instanceId: current.payload.instanceId || '',
-                                            pkg: current.payload.package!,
-                                        },
-                                        publication,
-                                        async () => {
-                                            await authorize();
-                                        },
-                                        update,
-                                    ),
-                            );
-                            const synced = await runRagBridgeJob(
-                                {
-                                    kind: 'sync-rag',
-                                    projectId: current.project_id || '',
-                                    bindingId: current.payload.bindingId || '',
-                                    allowEmpty: true,
-                                },
-                                async () => {
-                                    await authorize();
-                                },
-                                update,
-                            );
-                            if (!connected.reindex || synced.snapshotHash !== connected.reindex.snapshotHash)
-                                throw new Error(
-                                    'Серверная копия нового индекса не подтверждена. Повторите подключение.',
-                                );
-                            return { ...connected, reindex: { ...connected.reindex, serverSynced: true } };
-                        });
-                    } else if (current.kind === 'open-local-recovery-folder') {
-                        await authorize();
-                        await openLocalRecoveryFolder(current.project_id || '');
-                        result = { projectId: current.project_id, bindingId: current.payload.bindingId, opened: true };
-                    } else if (current.kind === 'open-local-change-report') {
-                        await authorize();
-                        await openLocalChangeReport({
-                            projectId: current.project_id || '',
-                            bindingId: current.payload.bindingId || '',
-                            instanceId: current.payload.instanceId || '',
-                            planId: current.payload.changePlanId || '',
-                            digest: current.payload.expectedChangeDigest || '',
-                        });
-                        result = {
-                            projectId: current.project_id,
-                            bindingId: current.payload.bindingId,
-                            changePlanId: current.payload.changePlanId,
-                            digest: current.payload.expectedChangeDigest,
-                            opened: true,
-                        };
-                    } else if (current.kind === 'apply-local-change' && current.payload.package) {
-                        await prepareJobMcpLaunchers(
-                            current.project_id ?? '',
-                            current.payload.package,
-                            current.payload.installSet,
-                            authorize,
-                        );
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            applyLocalChange(
-                                current.project_id || '',
-                                current.payload.package!,
-                                {
-                                    planId: current.payload.changePlanId || '',
-                                    revision: current.payload.changePlanRevision ?? 1,
-                                    digest: current.payload.expectedChangeDigest || '',
-                                    expectedBindingId: current.payload.bindingId || '',
-                                    installSet: current.payload.installSet,
-                                },
-                                authorize,
-                                update,
-                                (packages) =>
-                                    prepareJobRuntimeArtifacts(
-                                        packages,
-                                        authorize,
-                                        (_percent, message) => update(45, message),
-                                        {
-                                            repairCorrupt: true,
-                                            intent: runtimePreparationCompletion(current, deviceId),
-                                        },
-                                    ),
-                            ),
-                        );
-                    } else if (current.kind === 'probe-runtime' && current.payload.package) {
-                        const pkg = current.payload.package;
-                        result = await runRuntimeProbe({
-                            projectId: current.project_id || '',
-                            bindingId: current.payload.bindingId || '',
-                            target: packageRef(pkg),
-                            frozenSet: current.payload.installSet ?? {
-                                schemaVersion: 1,
-                                root: packageRef(pkg),
-                                packages: [pkg],
-                                manifest: pkg.manifest.sha256,
-                            },
-                            consentManifest: current.payload.consentManifest || '',
-                            ...(current.payload.configurationRevisions
-                                ? { configurationRevisions: current.payload.configurationRevisions }
-                                : {}),
-                            openCode: await runtimeProbeEngine(),
-                            authorize: async () => {
-                                await authorize();
-                            },
-                        });
-                    } else if (current.kind === 'inspect-installation' && current.payload.package) {
-                        const inspected = await inspectInstallation(current.project_id || '', current.payload.package);
-                        assertInspectionIdentity(
-                            inspected,
-                            current.project_id || '',
-                            current.payload.bindingId,
-                            current.payload.package,
-                        );
-                        result = inspected;
-                    } else if (['install', 'uninstall'].includes(current.kind) && current.payload.package) {
-                        if (current.payload.installSet && current.kind === 'install') {
-                            const root = current.payload.installSet.root;
-                            const pkg = current.payload.package;
-                            if (
-                                root.kind !== pkg.plugin.kind ||
-                                root.id !== pkg.plugin.id ||
-                                root.version !== pkg.plugin.version ||
-                                root.manifest !== pkg.manifest.sha256
-                            ) {
-                                throw new Error('Корневой пакет не совпадает с набором установки.');
-                            }
-                        }
-                        if (current.kind === 'install')
-                            await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                                prepareJobRuntimeArtifacts(
-                                    current.payload.installSet?.packages ?? [current.payload.package!],
-                                    authorize,
-                                    update,
-                                    { intent: runtimePreparationCompletion(current, deviceId) },
-                                ),
-                            );
-                        if (current.kind === 'install')
-                            await prepareJobMcpLaunchers(
-                                current.project_id ?? '',
-                                current.payload.package,
-                                current.payload.installSet,
-                                authorize,
-                            );
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            current.kind === 'install' && current.payload.installSet
-                                ? installSet(current.project_id || '', current.payload.installSet, authorize, update)
-                                : (current.kind === 'install' ? install : uninstall)(
-                                      current.project_id || '',
-                                      current.payload.package!,
-                                      authorize,
-                                      update,
-                                  ),
-                        );
-                    } else if (['restore-rag', 'sync-rag'].includes(current.kind)) {
-                        if (current.payload.ragProtocol !== 'project-rag-generations-v1')
-                            throw new Error(
-                                'Задание создано до обновления формата RAG. Запустите новую синхронизацию знаний в Нейроцентре.',
-                            );
-                        if (current.kind === 'restore-rag') {
-                            await authorize();
-                            await closeOwnRagUi(current.project_id || '');
-                            await authorize();
-                        }
-                        result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                            runRagBridgeJob(
-                                {
-                                    kind: current.kind as 'restore-rag' | 'sync-rag',
-                                    projectId: current.project_id || '',
-                                    bindingId: current.payload.bindingId || '',
-                                },
-                                async () => {
-                                    await authorize();
-                                },
-                                update,
-                            ),
-                        );
-                    } else {
-                        throw new Error('Неизвестное задание MCP.');
-                    }
-                    if (current.kind === 'install') {
-                        for (const member of current.payload.installSet?.packages ??
-                            (current.payload.package ? [current.payload.package] : [])) {
-                            if (member.plugin.kind !== 'mcp') continue;
-                            try {
-                                if (!localRagCore(member)) continue;
-                                await update(95, 'Проверяем запуск opencode-rag mcp.');
-                                await probeInstalledRagMcp(
-                                    current.project_id || '',
-                                    current.payload.bindingId || '',
-                                    member,
-                                    async () => {
-                                        await authorize();
-                                    },
-                                );
-                                process.stderr.write(
-                                    'neurocenter bridge: подключение OpenCodeRAG MCP проверено; модель и индекс не проверялись.\n',
-                                );
-                            } catch {
-                                process.stderr.write(
-                                    'neurocenter bridge: файлы установлены; проверка запуска OpenCodeRAG MCP не завершена. Проверьте подключение отдельно.\n',
-                                );
-                            }
-                        }
-                    }
-                    clearInterval(renew);
-                    const requirements = current.payload.package?.config?.extra?.requirements;
-                    const hasRequirements = !!(requirements?.mcp?.length || requirements?.plugins?.length);
-                    await saveCompletion({
-                        id: current.id,
-                        deviceId,
-                        lease: current.lease,
-                        state: 'succeeded',
-                        message:
-                            current.kind === PROJECT_CONFIGURATION_JOB
-                                ? 'Локальный мастер открыт. Проверьте изменения и примените их на компьютере.'
-                                : current.kind === PROJECT_AGENTS_JOB
-                                  ? 'Агенты настроены; OpenCode перечитает их при следующем запуске.'
-                                  : CONFIGURATION_KINDS.includes(current.kind)
-                                    ? 'Действие настройки MCP завершено. Значения остались на компьютере.'
-                                    : PROJECT_LOCAL_KINDS.includes(current.kind)
-                                      ? 'Локальное действие завершено.'
-                                      : current.kind === 'install'
-                                        ? current.payload.installSet
-                                            ? 'Набор инструментов установлен; запуск в OpenCode ещё не проверен.'
-                                            : hasRequirements
-                                              ? 'Файлы установлены; проверьте настройку внешних подключений.'
-                                              : 'Файлы установлены'
-                                        : current.kind === 'inspect-installation'
-                                          ? 'Проверка файлов завершена; запуск инструмента не проверялся.'
-                                          : current.kind === 'prepare-local-change'
-                                            ? 'Сравнение подготовлено. Проверьте изменения перед восстановлением.'
-                                            : current.kind === 'open-local-change-report'
-                                              ? 'Полное сравнение открыто на подключённом компьютере.'
-                                              : current.kind === 'open-rag-ui'
-                                                ? 'Локальный интерфейс готов; отдельное окно запрошено на компьютере.'
-                                                : current.kind === 'publish-project-snapshot'
-                                                  ? 'Полный образ передан. Сервер проверяет снимок.'
-                                                  : current.kind === 'connect-rag-model'
-                                                    ? 'Подключение модели и локальный индекс проверены.'
-                                                    : current.kind === 'open-local-recovery-folder'
-                                                      ? 'Резервные копии открыты на подключённом компьютере.'
-                                                      : ['apply-local-change', ...PROJECT_LOCAL_APPLIES].includes(
-                                                              current.kind,
-                                                          )
-                                                        ? 'Одобренные файлы восстановлены; локальный вариант сохранён.'
-                                                        : current.kind === 'probe-runtime'
-                                                          ? 'Проверка запуска OpenCode завершена.'
-                                                          : current.kind === 'prepare-bind-project'
-                                                            ? 'Папка проверена. Подтвердите действие в мастере.'
-                                                            : current.kind === 'uninstall'
-                                                              ? 'Файлы и подключение удалены'
-                                                              : current.kind === 'bind-project'
-                                                                ? 'Папка связана с проектом'
-                                                                : current.kind === 'choose-root'
-                                                                  ? 'Папка проектов выбрана'
-                                                                  : 'Синхронизация базы знаний завершена',
-                        result: result as Record<string, unknown>,
+                    ).finally(() => {
+                        readLane.delete(current.id);
                     });
-                    if (current.kind === 'connect-rag-model' && current.payload.reindex)
-                        await finalizeRagReindex(await projectFolder(current.project_id || ''), current.id);
-                    await deliverCompletions();
-                } catch (error) {
-                    clearInterval(renew);
-                    if (current.kind === RUNTIME_CACHE_POLICY_JOB) {
-                        await recoverRuntimeCachePolicyCompletions(saveCompletion);
-                        if ((await pendingCompletions()).some((item) => item.id === current.id)) {
-                            await deliverCompletions();
-                            await heartbeat().catch(() =>
-                                process.stderr.write(
-                                    'neurocenter bridge: присутствие компьютера после доставки настройки кэша не обновлено.\n',
-                                ),
-                            );
-                            continue;
-                        }
-                    }
-                    if (current.kind === DEVICE_CODEX_JOB)
-                        throw new Error(
-                            'Результат Codex сохранён локально или требует восстановления; повторная отправка модели заблокирована.',
-                        );
-                    if (current.kind === OPENCODE_CLI_INSPECT_JOB || current.kind === OPENCODE_CLI_INSTALL_JOB) {
-                        await stopRoleMcpPoller();
-                        throw new Error(
-                            'Проверка OpenCode сохранена для восстановления; новые задания ждут подтверждённой очистки.',
-                        );
-                    }
-                    if (globalProviderJobs.includes(current.kind)) {
-                        await stopRoleMcpPoller();
-                        throw new Error(
-                            'Настройка OpenCode сохранена для восстановления; новый локальный сеанс автоматически не открывается.',
-                        );
-                    }
-                    if (current.kind === AGENT_METHOD_WORKFLOW_JOB)
-                        throw new Error(
-                            'Результат разработки сохранён локально или требует восстановления; повторный запуск автоматически не выполняется.',
-                        );
-                    if (current.kind === MEMORY_SYNC_JOB)
-                        throw new Error(
-                            'План Memory сохранён для восстановления. Новые изменения автоматически не запускаются.',
-                        );
-                    if (current.kind === 'connect-rag-model' && current.payload.reindex) {
-                        const root = await projectFolder(current.project_id || '');
-                        releaseRagReindex(root);
-                        await recoverRagRestore(root);
-                    }
-                    // Фиксация файлов и доставка отчёта независимы: сеть не отменяет установленный пакет.
-                    if (current.kind !== 'inspect-installation') {
-                        await recoverFileJobs();
-                    }
-                    if (current.kind === 'bind-project') {
-                        await recoverPendingWorkspaceIdentity();
-                    }
-                    if (!(await pendingCompletions()).some((item) => item.id === current.id)) {
-                        if ((error as { localChangesCommitted?: boolean }).localChangesCommitted) {
-                            throw error;
-                        }
-                        const pkg = current.payload.package;
-                        // После восстановления отсутствие квитанции означает отказ до файловой транзакции.
-                        const result =
-                            current.kind === 'probe-runtime' && pkg
-                                ? {
-                                      schemaVersion: 1,
-                                      projectId: current.project_id,
-                                      bindingId: current.payload.bindingId,
-                                      assetId: pkg.plugin.id,
-                                      assetKind: pkg.plugin.kind,
-                                      version: pkg.plugin.version,
-                                      manifest: pkg.manifest.sha256,
-                                      approvalManifest: current.payload.consentManifest,
-                                      checkedAt: new Date().toISOString(),
-                                      engineVersion: '1.14.48',
-                                      engineSha256: '',
-                                      status: 'not_checked',
-                                      code: 'authorization-denied',
-                                      counts: {
-                                          packages: 0,
-                                          files: 0,
-                                          skills: 0,
-                                          mcp: 0,
-                                          tools: 0,
-                                          resources: 0,
-                                          prompts: 0,
-                                          pluginsInitialized: 0,
-                                      },
-                                      ...(current.payload.configurationRevisions
-                                          ? { configurationRevisions: current.payload.configurationRevisions }
-                                          : {}),
-                                  }
-                                : current.kind === 'inspect-installation' && pkg
-                                  ? {
-                                        schemaVersion: 1,
-                                        projectId: current.project_id,
-                                        bindingId: current.payload.bindingId,
-                                        assetId: pkg.plugin.id,
-                                        assetKind: pkg.plugin.kind,
-                                        version: pkg.plugin.version,
-                                        manifest: pkg.manifest.sha256,
-                                        checkedAt: new Date().toISOString(),
-                                        readiness: 'unverified',
-                                        state: 'checked',
-                                        status: 'unknown',
-                                        issues: ['inspection-failed'],
-                                    }
-                                  : ['install', 'uninstall', 'apply-local-change', ...PROJECT_LOCAL_APPLIES].includes(
-                                          current.kind,
-                                      ) && pkg
-                                    ? {
-                                          projectId: current.project_id,
-                                          assetId: pkg.plugin.id,
-                                          version: pkg.plugin.version,
-                                          manifest: current.payload.installSet?.manifest ?? pkg.manifest.sha256,
-                                          ...(current.payload.installSet
-                                              ? { packages: sortedRefs(current.payload.installSet.packages) }
-                                              : {}),
-                                          bindingId: current.payload.bindingId,
-                                          unchanged: true,
-                                          ...(['apply-local-change', ...PROJECT_LOCAL_APPLIES].includes(current.kind)
-                                              ? {
-                                                    changePlanId: current.payload.changePlanId,
-                                                    digest: current.payload.expectedChangeDigest,
-                                                }
-                                              : {}),
-                                      }
-                                    : current.kind === PROJECT_AGENTS_JOB
-                                      ? projectAgentsFailureResult(error)
-                                      : workspaceBindingFailureResult(
-                                            current.kind,
-                                            current.payload.workspaceFailureVersion,
-                                            error,
-                                        );
-                        await saveCompletion({
-                            id: current.id,
-                            lease: current.lease,
-                            deviceId,
-                            state: 'failed',
-                            result,
-                            message:
-                                current.kind === OPENCODE_CLI_INSPECT_JOB
-                                    ? 'Проверка OpenCode не завершена. Проверьте компьютер и повторите действие.'
-                                    : current.kind === PROJECT_AGENTS_JOB
-                                      ? projectAgentsFailureMessage(error)
-                                      : current.kind === 'publish-project-snapshot'
-                                        ? 'Передача полного снимка не завершена. Проверьте доступ, состояние индекса и соединение; сервер покажет подтверждённое состояние публикации.'
-                                        : [
-                                                PROJECT_CONFIGURATION_JOB,
-                                                ...OPENCODE_PROVIDER_JOBS,
-                                                ...CONFIGURATION_KINDS,
-                                                ...PROJECT_LOCAL_KINDS,
-                                                'inspect-installation',
-                                                'prepare-bind-project',
-                                                'bind-project',
-                                                'prepare-local-change',
-                                                'apply-local-change',
-                                                'open-local-change-report',
-                                                'open-local-recovery-folder',
-                                                'probe-runtime',
-                                                'open-rag-ui',
-                                                'connect-rag-model',
-                                            ].includes(current.kind)
-                                          ? 'Действие не выполнено. Проверьте актуальную папку и доступ.'
-                                          : (error as Error).message.slice(0, 1500),
-                        });
-                    }
-                    await deliverCompletions();
+                    readLane.set(current.id, handle);
+                    continue;
                 }
-                await heartbeat();
+                await runClaimedJob(current, deviceId);
             }
         } catch (error) {
             process.stderr.write('neurocenter bridge: ' + (error as Error).message + '\n');

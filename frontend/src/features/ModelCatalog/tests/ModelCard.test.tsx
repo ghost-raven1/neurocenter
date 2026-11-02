@@ -53,7 +53,7 @@ it.each([false, true])('opens provider details directly from the card when canHo
         ),
     );
     const action = [...container.querySelectorAll('button')].find(
-        (button) => button.textContent?.trim() === 'Провайдер и API-ключ',
+        (button) => button.textContent?.trim() === 'Настроить провайдера и ключ',
     );
     expect(action).toBeDefined();
     expect(action!.closest('details')).toBeNull();
@@ -61,6 +61,35 @@ it.each([false, true])('opens provider details directly from the card when canHo
     expect(onView).toHaveBeenCalledOnce();
     expect(onAssign).not.toHaveBeenCalled();
     expect(onConfigure).not.toHaveBeenCalled();
+});
+it('opens provider access setup from the card when onProviderAccess is provided', async () => {
+    const onView = vi.fn(),
+        onAssign = vi.fn(),
+        onProviderAccess = vi.fn();
+    await act(async () =>
+        root.render(
+            <ModelCard
+                model={model}
+                assigned={false}
+                projectSelected={false}
+                canAssign={false}
+                canHost={false}
+                busy={false}
+                onView={onView}
+                onAssign={onAssign}
+                onProviderAccess={onProviderAccess}
+            />,
+        ),
+    );
+    const action = [...container.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === 'Настроить провайдера и ключ',
+    );
+    expect(action).toBeDefined();
+    expect(action!.closest('details')).toBeNull();
+    await act(async () => action!.click());
+    expect(onProviderAccess).toHaveBeenCalledOnce();
+    expect(onView).not.toHaveBeenCalled();
+    expect(onAssign).not.toHaveBeenCalled();
 });
 it('does not show remote provider setup on a local model', async () => {
     await act(async () =>
@@ -79,7 +108,7 @@ it('does not show remote provider setup on a local model', async () => {
     );
     expect(
         [...container.querySelectorAll('button')].some(
-            (button) => button.textContent?.trim() === 'Провайдер и API-ключ',
+            (button) => button.textContent?.trim() === 'Настроить провайдера и ключ',
         ),
     ).toBe(false);
 });

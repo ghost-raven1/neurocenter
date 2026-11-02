@@ -17,6 +17,27 @@ const globalProviderKinds: readonly string[] = [
     OPENCODE_GLOBAL_PROVIDERS_OPEN_JOB,
     OPENCODE_PERSONAL_KEY_JOB,
 ];
+/**
+ * Read-виды мостовых заданий (BRIDGE_JOB_LANES): не блокируют запись, могут идти параллельно.
+ * Зеркало в worker: mcp/neurocenter-asset-sync/src/bridge/worker.ts (READ_LANE_KINDS). Держать в синхроне.
+ */
+export const BRIDGE_READ_LANE_KINDS = [
+    'scan-opencode-models',
+    'scan-project-inventory',
+    'sync-rag',
+    'import-learning-quirks',
+    'inspect-installation',
+];
+const BRIDGE_READ_LANES_CAP = 8;
+const bridgeLanesEnabled = (): boolean => {
+    const raw = (process.env.BRIDGE_JOB_LANES ?? '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'on';
+};
+const bridgeReadLanes = (): number => {
+    const raw = Number.parseInt(process.env.BRIDGE_JOB_READ_LANES ?? '', 10);
+    const value = Number.isInteger(raw) && raw > 0 ? raw : 2;
+    return Math.min(value, BRIDGE_READ_LANES_CAP);
+};
 import type { PoolClient } from 'pg';
 import { AGENT_METHOD_WORKFLOW_JOB } from '../../../shared/agent-method-workflow.cjs';
 import { agentMethodJobPayload, assertAgentMethodJob } from '../agent-method-workflows/jobs';
@@ -576,19 +597,43 @@ export class DeviceJobs {
                 await client.query('COMMIT');
                 return null;
             }
-            const active = await client.query(
-                "SELECT 1 FROM bridge_jobs WHERE device_id=$1 AND state='running' AND lease_until>now() LIMIT 1",
-                [device.id],
-            );
-            if (active.rows.length) {
-                await client.query('COMMIT');
-                return null;
+            if (!bridgeLanesEnabled()) {
+                const active = await client.query(
+                    "SELECT 1 FROM bridge_jobs WHERE device_id=$1 AND state='running' AND lease_until>now() LIMIT 1",
+                    [device.id],
+                );
+                if (active.rows.length) {
+                    await client.query('COMMIT');
+                    return null;
+                }
+                const { rows } = await client.query(
+                    "SELECT * FROM bridge_jobs WHERE device_id=$1 AND state='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1",
+                    [device.id],
+                );
+                job = rows[0] as IJob | undefined;
+            } else {
+                const { rows } = await client.query(
+                    "SELECT * FROM bridge_jobs WHERE device_id=$1 AND state='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 20",
+                    [device.id],
+                );
+                if (rows.length) {
+                    const lanes = await client.query<{ readRunning: number; writeRunning: number }>(
+                        `SELECT count(*) FILTER (WHERE kind=ANY($2::text[])) AS "readRunning",
+                        count(*) FILTER (WHERE kind<>ALL($2::text[])) AS "writeRunning"
+                        FROM bridge_jobs WHERE device_id=$1 AND state='running' AND lease_until>now()`,
+                        [device.id, BRIDGE_READ_LANE_KINDS],
+                    );
+                    const readRunning = lanes.rows[0]?.readRunning ?? 0;
+                    const writeRunning = lanes.rows[0]?.writeRunning ?? 0;
+                    const candidates = rows as IJob[];
+                    if (readRunning < bridgeReadLanes()) {
+                        job = candidates.find((item) => BRIDGE_READ_LANE_KINDS.includes(item.kind));
+                    }
+                    if (!job && writeRunning === 0) {
+                        job = candidates.find((item) => !BRIDGE_READ_LANE_KINDS.includes(item.kind));
+                    }
+                }
             }
-            const { rows } = await client.query(
-                "SELECT * FROM bridge_jobs WHERE device_id=$1 AND state='queued' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1",
-                [device.id],
-            );
-            job = rows[0] as IJob | undefined;
             if (job) {
                 job.lease = randomUUID();
                 await client.query(

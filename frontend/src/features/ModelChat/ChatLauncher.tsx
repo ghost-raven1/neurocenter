@@ -1,8 +1,9 @@
 import { CommentOutlined } from '@ant-design/icons';
-import { Button, Modal, Spin, Tooltip } from 'antd';
+import { Button, Modal, Spin, Tooltip, Typography } from 'antd';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useHistory } from 'react-router-dom';
+import { baseRoutes } from '../../core/baseRoutes';
 import type { TRootState } from '../../store';
 import { roleLevel } from '../UserBlock/roles';
 import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
@@ -15,8 +16,12 @@ const ChatOverlay = lazy(() => import('./ChatOverlay'));
 export function ChatLauncher(): JSX.Element {
     const user = useSelector((state: TRootState) => state.userBlock.user),
         location = useLocation(),
+        history = useHistory(),
         { scope } = useAuthRequestOwner();
     const canUse = !!user && user.userRoles.includes(user.activeRole) && roleLevel(user.activeRole) >= 1;
+    const connectProject = (): void => {
+        history.push(baseRoutes.start);
+    };
     const [opened, setOpened] = useState<{ scope: string; launch: IChatLaunch }>();
     const trigger = useRef<HTMLElement | null>(null);
     const launch = (value: IChatLaunch): void => {
@@ -52,9 +57,25 @@ export function ChatLauncher(): JSX.Element {
     const visible = canUse && opened?.scope === scope;
     return (
         <>
-            <Tooltip title={canUse ? 'Команда проекта и личные диалоги' : 'Для чата нужен доступ к проекту'}>
-                <span>
+            <Tooltip
+                title={
+                    canUse ? (
+                        'Команда проекта и личные диалоги'
+                    ) : (
+                        <>
+                            Для чата нужен доступ к проекту.{' '}
+                            <Typography.Link onClick={connectProject}>Подключить проект</Typography.Link>
+                        </>
+                    )
+                }
+            >
+                <span
+                    className={canUse ? undefined : 'chat-launcher-unavailable'}
+                    aria-label={canUse ? undefined : 'Чат недоступен: подключить проект'}
+                    onClick={canUse ? undefined : connectProject}
+                >
                     <Button
+                        className="chat-launcher"
                         icon={<CommentOutlined />}
                         aria-label="Открыть чат"
                         aria-haspopup="dialog"
@@ -65,7 +86,7 @@ export function ChatLauncher(): JSX.Element {
                             launch({ projectId, team: !!projectId || roleLevel(user?.activeRole ?? '') === 1 });
                         }}
                     >
-                        Чат
+                        <span className="app__chat-label">Чат</span>
                     </Button>
                 </span>
             </Tooltip>

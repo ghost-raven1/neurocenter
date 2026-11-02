@@ -5,7 +5,7 @@
         "description": "Раздел общих поставок в каталоге с сохранением ссылок и прав. При выключении доступна прежняя страница поставок.",
         "group": "catalog",
         "dependsOn": [],
-        "defaultEnabled": false
+        "defaultEnabled": true
     },
     {
         "key": "opencode_personal_key_transfer",

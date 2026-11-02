@@ -30,6 +30,7 @@ interface IProps {
     onHostingSettled?: () => Promise<void>;
     chatUnavailableReason?: string;
     onSetupProvider?: () => void;
+    onProviderAccess?: () => void;
     feedback?: ReactNode;
 }
 
@@ -56,6 +57,7 @@ export function ModelCard({
     onHostingSettled,
     chatUnavailableReason,
     onSetupProvider,
+    onProviderAccess,
     feedback,
 }: IProps): JSX.Element {
     const remote = modelUsesApiConnection(model),
@@ -152,16 +154,6 @@ export function ModelCard({
                 Компьютер и вход
             </Button>
         ),
-        (model.runtime === 'remote-openai' || model.runtime === 'remote-ollama') &&
-            model.capability !== 'embedding' &&
-            assignable &&
-            assigned &&
-            onSetupProvider &&
-            !model.archivedAt && (
-                <Button key="provider" disabled={busy || disabled} onClick={onSetupProvider}>
-                    Настроить в OpenCode
-                </Button>
-            ),
         canHost && onEdit && (
             <FeatureButton
                 key="edit"
@@ -227,13 +219,28 @@ export function ModelCard({
                 {primary && actions[primary]}
                 {remote && !model.archivedAt && (
                     <Button
+                        type="primary"
                         disabled={busy || disabled}
-                        aria-label={`Провайдер и API-ключ модели ${model.name}`}
-                        onClick={onView}
+                        aria-label={`Настройка провайдера и ключа модели ${model.name}`}
+                        onClick={onProviderAccess ?? onView}
                     >
-                        Провайдер и API-ключ
+                        Настроить провайдера и ключ
                     </Button>
                 )}
+                {remote &&
+                    model.capability !== 'embedding' &&
+                    assignable &&
+                    assigned &&
+                    onSetupProvider &&
+                    !model.archivedAt && (
+                        <Button
+                            disabled={busy || disabled}
+                            aria-label={`Настройка провайдера в OpenCode для модели ${model.name}`}
+                            onClick={onSetupProvider}
+                        >
+                            Настроить в OpenCode
+                        </Button>
+                    )}
                 {!assignable && (
                     <Typography.Text type="secondary">
                         {projectSelected

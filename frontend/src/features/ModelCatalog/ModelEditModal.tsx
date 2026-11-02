@@ -133,8 +133,8 @@ export function ModelEditModal({ model, connectApi = false, onClose, onSaved }: 
                     <Alert
                         type="info"
                         showIcon
-                        message="Шаг 1 из 2 — карточка модели"
-                        description="Создайте карточку, затем укажите адрес и ключ API. Подключение доступно команде; добавление в проект — отдельно."
+                        message="Шаг 1 — карточка модели"
+                        description="Создайте карточку, затем укажите адрес API. После сохранения провайдера введите свой личный ключ. Подключение доступно команде; добавление в проект — отдельно."
                         className="model-catalog__notice"
                     />
                 )}

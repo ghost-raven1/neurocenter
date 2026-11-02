@@ -79,6 +79,7 @@ import { selectStoreTarget, storeProjectAssetRequest, visibleStoreApps } from '.
 import { projectCatalogUpdate, showProjectCatalogUpdate } from './projectCatalogUpdates';
 import { CatalogUpdateSummary } from './CatalogUpdateSummary';
 import { useCatalogSourceStatus } from '../../features/AssetSources/hooks/useCatalogSourceStatus';
+import { useCatalogSuppliesAccess } from '../../features/AssetSources/hooks/useCatalogSuppliesAccess';
 import { pendingCatalogSources } from '../../features/AssetSources/catalogSourceStatus';
 import { CatalogRebuildStatus } from '../../features/AssetSources/CatalogRebuildStatus';
 
@@ -119,6 +120,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     const level = roleLevel(user?.activeRole);
     const canBrowseCommon = level >= 3;
     const isMain = isMainAdminRole(user?.activeRole);
+    const { integrated: suppliesIntegrated } = useCatalogSuppliesAccess();
     const {
         projects,
         ready: projectsReady,
@@ -198,6 +200,10 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
             history.replace(storeQueryUrl(current.search, { query: value }, current.hash));
         }
     };
+    /** Переход к вкладке «Поставки» в текущем каталоге (общая витрина или вкладка проекта). */
+    const openSuppliesTab = useCallback((): void => {
+        history.replace(catalogSectionUrl(location.pathname, location.search, 'supplies', !!embedded, location.hash));
+    }, [history, location.pathname, location.search, location.hash, embedded]);
     const bridge = useBridge();
     const binding = bridge.device?.report.bindings?.find(
         (item) => item.projectId === targetProject?.id && item.valid !== false,
@@ -412,22 +418,6 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         ],
     );
 
-    const switchTarget = useCallback(
-        (projectId: string | null): void => {
-            try {
-                if (projectId) {
-                    localStorage.setItem('neurocenter.install-project', projectId);
-                } else {
-                    localStorage.removeItem('neurocenter.install-project');
-                }
-            } catch {
-                /* Хранилище браузера может быть недоступно. */
-            }
-            history.replace(storeQueryUrl(location.search, { project: projectId, query: search }, location.hash));
-        },
-        [history, location.search, location.hash, search],
-    );
-
     const doInstall = useCallback(
         async (app: IStoreApp, action: 'install' | 'uninstall' = 'install'): Promise<void> => {
             if (!target || !targetProject || !canManage || !projectCatalogUsable || projectLoading) {
@@ -540,6 +530,14 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         const pendingAction = localActionFor(app);
         const pending = isPending(job) || !!pendingAction;
         const installation = currentInstallation(bridge.installations, installTarget(app));
+        /** Новый каталог — главное действие карточки: первичная кнопка «Закрепить новую версию». */
+        const pinCta =
+            selected &&
+            canManage &&
+            !!targetProject &&
+            commonCatalog.some(
+                (item) => item.id === app.id && item.kind === app.kind && (app.pinError || item.version > app.version),
+            );
         const installLabel =
             pendingAction && !['install', 'uninstall'].includes(pendingAction.kind)
                 ? 'Дождитесь локального действия'
@@ -559,66 +557,55 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
         return (
             <Space direction="vertical" style={{ width: '100%' }}>
                 {app.pinError && <Text type="warning">{app.pinError}</Text>}
-                {selected &&
-                    canManage &&
-                    targetProject &&
-                    commonCatalog.some(
-                        (item) =>
-                            item.id === app.id &&
-                            item.kind === app.kind &&
-                            (app.pinError || item.version > app.version),
-                    ) && (
-                        <FeatureButton
-                            features={['tool_catalog']}
-                            size="small"
-                            block
-                            disabled={
-                                projectLoading ||
-                                !projectCatalogUsable ||
-                                !!localBusy ||
-                                pending ||
-                                !catalogSources[toolCatalogSource(app.kind)].ready ||
-                                catalogSources[toolCatalogSource(app.kind)].loading ||
-                                !!catalogSources[toolCatalogSource(app.kind)].error
-                            }
-                            onClick={() => {
-                                const owns = captureOwner(),
-                                    current = () => owns() && currentPinScope.current === pinScope;
-                                const head = commonCatalog.find(
-                                        (item) => item.id === app.id && item.kind === app.kind,
-                                    )!,
-                                    ref = assets.find(
-                                        (item) => item.assetId === app.id && item.assetKind === app.kind,
-                                    )!;
-                                Modal.confirm({
-                                    title: `Закрепить версию ${head.version} в проекте «${target}»?`,
-                                    content:
-                                        'Новая установка потребует одобрения этой версии. Файлы на компьютерах остаются на своих версиях.',
-                                    okText: 'Закрепить версию',
-                                    cancelText: 'Отмена',
-                                    onOk: async () => {
-                                        if (!current()) return;
-                                        await bffApi.pinProjectAsset(targetProject.id, {
-                                            assetId: ref.assetId,
-                                            assetKind: ref.assetKind,
-                                            version: head.version,
-                                            expectedVersion: ref.version ?? null,
-                                            expectedManifest: ref.manifest ?? null,
-                                        });
-                                        if (current()) await loadProject();
-                                    },
-                                });
-                            }}
-                        >
-                            {app.pinError ? 'Подтвердить версию проекта' : 'Закрепить новую версию'}
-                        </FeatureButton>
-                    )}
+                {pinCta && targetProject && (
+                    <FeatureButton
+                        features={['tool_catalog']}
+                        size="small"
+                        block
+                        type="primary"
+                        disabled={
+                            projectLoading ||
+                            !projectCatalogUsable ||
+                            !!localBusy ||
+                            pending ||
+                            !catalogSources[toolCatalogSource(app.kind)].ready ||
+                            catalogSources[toolCatalogSource(app.kind)].loading ||
+                            !!catalogSources[toolCatalogSource(app.kind)].error
+                        }
+                        onClick={() => {
+                            const owns = captureOwner(),
+                                current = () => owns() && currentPinScope.current === pinScope;
+                            const head = commonCatalog.find((item) => item.id === app.id && item.kind === app.kind)!,
+                                ref = assets.find((item) => item.assetId === app.id && item.assetKind === app.kind)!;
+                            Modal.confirm({
+                                title: `Закрепить версию ${head.version} в проекте «${target}»?`,
+                                content:
+                                    'Новая установка потребует одобрения этой версии. Файлы на компьютерах остаются на своих версиях.',
+                                okText: 'Закрепить версию',
+                                cancelText: 'Отмена',
+                                onOk: async () => {
+                                    if (!current()) return;
+                                    await bffApi.pinProjectAsset(targetProject.id, {
+                                        assetId: ref.assetId,
+                                        assetKind: ref.assetKind,
+                                        version: head.version,
+                                        expectedVersion: ref.version ?? null,
+                                        expectedManifest: ref.manifest ?? null,
+                                    });
+                                    if (current()) await loadProject();
+                                },
+                            });
+                        }}
+                    >
+                        {app.pinError ? 'Подтвердить версию проекта' : 'Закрепить новую версию'}
+                    </FeatureButton>
+                )}
                 {target && canInstall && (selected || (canManage && !referenceBlocker)) && (
                     <FeatureButton
                         features={['tool_installation']}
                         size="small"
                         block
-                        type="primary"
+                        type={pinCta ? 'default' : 'primary'}
                         disabled={
                             !!app.pinError ||
                             !projectCatalogUsable ||
@@ -799,25 +786,10 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                                         ? 'Загружаем доступные проекты…'
                                         : 'Загрузите список проектов, чтобы продолжить.'
                                     : target
-                                      ? `Выбран проект «${target}».`
-                                      : 'Выберите проект, чтобы добавить в его каталог инструменты, модели и агентов.'}
+                                      ? `Выбран проект «${target}». Другой проект выбирается в шапке рабочего пространства.`
+                                      : 'Выберите проект в шапке рабочего пространства, чтобы добавить в его каталог инструменты, модели и агентов.'}
                             </Paragraph>
                         </div>
-                    )}
-                    {!embedded && (
-                        <Select
-                            aria-label="Каталог проекта"
-                            placeholder="Выберите проект"
-                            value={projectsReady ? targetProject?.id : undefined}
-                            loading={projectsLoading}
-                            disabled={!projectsReady}
-                            allowClear
-                            showSearch
-                            optionFilterProp="label"
-                            onChange={(projectId?: string) => switchTarget(projectId ?? null)}
-                            options={projects.map((project) => ({ value: project.id, label: project.name }))}
-                            style={{ width: 260, maxWidth: '100%' }}
-                        />
                     )}
                     {canAddFromCommon && targetProject && (
                         <Button
@@ -1033,6 +1005,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                                             update={updates.get(a.kind + ':' + a.id)}
                                             action={renderAction(a)}
                                             onView={() => setViewApp(a)}
+                                            onOpenSupplies={isMain && suppliesIntegrated ? openSuppliesTab : undefined}
                                             feedback={
                                                 <CatalogFeedback catalogId={a.kind + ':' + a.id} title={a.name} />
                                             }

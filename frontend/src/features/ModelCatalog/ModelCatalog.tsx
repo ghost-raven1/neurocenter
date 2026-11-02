@@ -24,6 +24,7 @@ import { ModelDetails } from './ModelDetails';
 import { ModelEditModal } from './ModelEditModal';
 import { RemoteConnectionModal } from './RemoteConnectionModal';
 import { OpenCodeImportModal } from './OpenCodeImportModal';
+import { ProviderAccessModal } from './ProviderAccessModal';
 import { DeviceCodexConnectionModal } from './DeviceCodexConnectionModal';
 import { GgufImportModal } from '../GgufImport/GgufImportModal';
 import { ModelChatModal } from '../ModelChat/ModelChatModal';
@@ -67,6 +68,8 @@ export function ModelCatalog({
     const [connection, setConnection] = useState<ICatalogModel | null>(null);
     const [importing, setImporting] = useState(false);
     const [ggufImport, setGgufImport] = useState(false);
+    const [providerAccess, setProviderAccess] = useState<{ model: ICatalogModel; notice?: string } | null>(null);
+    const [keyStepAfter, setKeyStepAfter] = useState<ICatalogModel | null>(null);
     const [providerSetup, setProviderSetup] = useState<{
         scope: string;
         modelId?: string;
@@ -105,6 +108,8 @@ export function ModelCatalog({
         setConnection(null);
         setImporting(false);
         setGgufImport(false);
+        setProviderAccess(null);
+        setKeyStepAfter(null);
         setChatId(null);
         setConnectionHint(undefined);
         setError('');
@@ -318,6 +323,11 @@ export function ModelCatalog({
                                 >
                                     Добавить модель
                                 </FeatureButton>
+                                <Tooltip title="Общая конфигурация компьютера или настройки проекта">
+                                    <FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>
+                                        Из OpenCode
+                                    </FeatureButton>
+                                </Tooltip>
                                 <details className="model-catalog__more">
                                     <summary aria-label="Другие действия с каталогом моделей">Другие действия</summary>
                                     <Space direction="vertical" className="model-catalog__more-content">
@@ -325,14 +335,6 @@ export function ModelCatalog({
                                             Подключить API
                                         </FeatureButton>
                                         <Button onClick={() => setGgufImport(true)}>Из файла GGUF</Button>
-                                        <Tooltip title="Общая конфигурация компьютера или настройки проекта">
-                                            <FeatureButton
-                                                features={['opencode_model_sync']}
-                                                onClick={() => setImporting(true)}
-                                            >
-                                                Из OpenCode
-                                            </FeatureButton>
-                                        </Tooltip>
                                         {projectId && canManage && (
                                             <Button onClick={() => openProvider()}>Настроить в OpenCode</Button>
                                         )}
@@ -463,6 +465,7 @@ export function ModelCatalog({
                                     onSetupProvider={
                                         providerModelEligible(model) ? () => openProvider(model.id) : undefined
                                     }
+                                    onProviderAccess={() => setProviderAccess({ model })}
                                     onHostingSettled={refresh}
                                     onChat={() => setChatId(model.id)}
                                     chatUnavailableReason={modelChatUnavailableReason(
@@ -539,8 +542,10 @@ export function ModelCatalog({
                             saved.runtime !== 'ollama' &&
                             saved.runtime !== 'device-codex' &&
                             !saved.verificationSha256
-                        )
+                        ) {
+                            if (typeof editing === 'string') setKeyStepAfter(saved);
                             setConnection(saved);
+                        }
                     }}
                 />
             )}
@@ -574,10 +579,37 @@ export function ModelCatalog({
                         onClose={() => {
                             setConnection(null);
                             setConnectionHint(undefined);
+                            setKeyStepAfter(null);
                         }}
-                        onSaved={refresh}
+                        onSaved={async () => {
+                            await refresh();
+                            const next = keyStepAfter;
+                            setKeyStepAfter(null);
+                            if (next && next.id === connection.id)
+                                setProviderAccess({
+                                    model: next,
+                                    notice: 'Провайдер сохранён. Теперь введите ваш личный ключ.',
+                                });
+                        }}
                     />
                 ))}
+            {providerAccess && (
+                <ProviderAccessModal
+                    model={providerAccess.model}
+                    canConfigure={isMain && !loadError && !loading && !providerAccess.model.archivedAt}
+                    busy={!!busy}
+                    notice={providerAccess.notice}
+                    onConfigure={
+                        isMain
+                            ? () => {
+                                setConnection(providerAccess.model);
+                                setProviderAccess(null);
+                            }
+                            : undefined
+                    }
+                    onClose={() => setProviderAccess(null)}
+                />
+            )}
             {chatting && canChat && (!projectId || assigned.has(chatting.id)) && (
                 <ModelChatModal
                     key={JSON.stringify([scope, projectId, chatting.id])}

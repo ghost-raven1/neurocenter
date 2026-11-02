@@ -21,6 +21,12 @@ import { RepositoryMetadataDetails } from './RepositoryMetadataDetails';
 import { NpmMetadataDetails } from './NpmMetadataDetails';
 import { PackagingBuildStatus } from './PackagingBuildStatus';
 import { usePackagingPublication } from './hooks/usePackagingPublication';
+import {
+    classifyNameConflict,
+    lookupNameConflict,
+    nameConflictMessages,
+    type IBuildNameConflict,
+} from './nameConflictRecovery';
 import { PackagingPublicationPanel } from './PackagingPublicationPanel';
 import { PackagingSummary } from './PackagingSummary';
 import { SourceEntrypointChoice } from './SourceEntrypointChoice';
@@ -86,8 +92,33 @@ export const ToolPackagingModal: FC<IProps> = ({ open, start, scope, projectId, 
         entrypoint: repositoryEntrypoint,
         release,
     });
-    const build = useToolBuild(scope);
     const publication = usePackagingPublication(scope, captureOwner);
+    /** 409 занятости названия восстанавливаем формой: предлагаем новую версию или другое название. */
+    const recoverNameConflict = async (conflict: IBuildNameConflict): Promise<boolean> => {
+        const resolved = conflict.target
+            ? {
+                  catalogId: conflict.target.catalogId,
+                  kind: conflict.target.kind,
+                  name: '',
+                  archived: conflict.target.archived,
+              }
+            : await lookupNameConflict(conflict.name);
+        const outcome = classifyNameConflict(resolved, conflict.kind);
+        if (outcome.state === 'unknown' || outcome.state === 'available') return false;
+        if (!alive.current) return true;
+        if (outcome.state === 'archived') {
+            setError(nameConflictMessages.archived);
+            return true;
+        }
+        if (outcome.state === 'other-kind') {
+            setError(nameConflictMessages['other-kind']);
+            return true;
+        }
+        setError(nameConflictMessages.match);
+        void publication.select({ catalogId: outcome.catalogId, kind: outcome.kind });
+        return true;
+    };
+    const build = useToolBuild(scope, recoverNameConflict);
     const upload = useSourceUpload(scope, captureOwner);
     const appliedStart = useRef<typeof start>();
     const view = useMemo(() => ({}), [open, scope, projectId, captureOwner]);
@@ -508,6 +539,25 @@ export const ToolPackagingModal: FC<IProps> = ({ open, start, scope, projectId, 
             const agentRequest = currentAgent.current;
             if (requestedKind !== 'skill' && agentRequest.checked && agentRequest.blocker)
                 throw new Error(agentRequest.blocker);
+            // Проверка названия до отправки избегает 409: совпадение сразу предлагает новую версию.
+            if (!publication.selection && requestedKind !== 'skill') {
+                const conflict = await lookupNameConflict(title);
+                if (!current()) return;
+                const outcome = classifyNameConflict(conflict, requestedKind);
+                if (outcome.state === 'archived') {
+                    setError(nameConflictMessages.archived);
+                    return;
+                }
+                if (outcome.state === 'other-kind') {
+                    setError(nameConflictMessages['other-kind']);
+                    return;
+                }
+                if (outcome.state === 'match') {
+                    setError(nameConflictMessages.match);
+                    void publication.select({ catalogId: outcome.catalogId, kind: outcome.kind });
+                    return;
+                }
+            }
             // POST принадлежит хуку; поздний ответ не удерживает подготовку следующей формы.
             void build.submit({
                 name: title,

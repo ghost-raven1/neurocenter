@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { errorMessage } from '../../../../common/utils/errorMessage';
 import { packagingApi } from '../api';
 import type { IToolBuild, IToolBuildRequest } from '../interfaces';
+import { readBuildNameConflict, type IBuildNameConflict } from '../nameConflictRecovery';
 import { acceptBuildProgress, readPendingBuild, resumePendingBuild, savePendingBuild } from './pendingBuild';
 import { readBuildCheckpoint, saveBuildCheckpoint } from '../buildRecovery';
 import {
@@ -24,8 +25,13 @@ import {
 const finished = (job: IToolBuild): boolean => ['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(job.state);
 
 /** Exact request durable до POST; поздние ответы и очистка привязаны к владельцу и UUID. */
-export function useToolBuild(scope: string) {
+export function useToolBuild(
+    scope: string,
+    onNameConflict?: (conflict: IBuildNameConflict) => boolean | Promise<boolean>,
+) {
     const location = useLocation();
+    const nameConflictHandler = useRef(onNameConflict);
+    nameConflictHandler.current = onNameConflict;
     const [loadedScope, setLoadedScope] = useState(scope),
         [job, setJob] = useState<IToolBuild>(),
         [jobId, setJobId] = useState<string>();
@@ -365,9 +371,23 @@ export function useToolBuild(scope: string) {
                 if (owns() && !cancelWanted.current) apply(next);
             } catch (cause) {
                 if (!owns() || jobKnown.current || cancelWanted.current) return;
-                if (isAxiosError(cause) && [400, 401, 403, 404, 409, 413, 422].includes(cause.response?.status ?? 0)) {
+                const status = isAxiosError(cause) ? (cause.response?.status ?? 0) : 0;
+                // 409 занятости названия форма превращает в предложение новой версии, а не в тупик.
+                let recovered = false;
+                const conflict =
+                    status === 409 && nameConflictHandler.current ? readBuildNameConflict(cause, record.request) : null;
+                if (conflict && nameConflictHandler.current) {
+                    try {
+                        recovered = (await nameConflictHandler.current(conflict)) === true;
+                    } catch {
+                        recovered = false;
+                    }
+                    if (!owns()) return;
+                }
+                if (isAxiosError(cause) && [400, 401, 403, 404, 409, 413, 422].includes(status)) {
                     setPendingKey(undefined);
-                    if (retained) setUnresolvedKey(record.request.requestKey);
+                    // Отменённый сервером запрос не остаётся «неизвестным»: форму разблокировали сообщением.
+                    if (retained && !recovered) setUnresolvedKey(record.request.requestKey);
                     else {
                         try {
                             const cleared = await clearStoredBuildDraft(scope, record.request.requestKey);
@@ -385,7 +405,7 @@ export function useToolBuild(scope: string) {
                         }
                     }
                 }
-                setError(errorMessage(cause, 'Ответ не получен. Проверяем сохранённый запрос сборки.'));
+                if (!recovered) setError(errorMessage(cause, 'Ответ не получен. Проверяем сохранённый запрос сборки.'));
             }
         } catch (cause) {
             if (owns() && !cancelWanted.current) {

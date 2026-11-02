@@ -70,7 +70,7 @@ import {
 } from './build-process';
 import { resolveNpmSource } from './npm-source';
 import { readSourceArchive } from './source-archive';
-import { PackageBuildRepository } from './package-build.repository';
+import { PackageBuildRepository, TOOL_BUILD_MAX_RUN_SLOTS } from './package-build.repository';
 import {
     buildView,
     requestHash,
@@ -102,7 +102,7 @@ interface IPreparedTool {
     sourceSnapshotPath?: string;
 }
 
-/** Один владелец исполняет очередь последовательно; после рестарта продолжаются ещё не начатые задания. */
+/** Один владелец исполняет очередь по слотам (TOOL_BUILD_MAX_CONCURRENT, по умолчанию 1); после рестарта продолжаются ещё не начатые задания. */
 @Injectable()
 export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private readonly pool = createPool(
@@ -119,8 +119,9 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private leaseUse: Promise<void> = Promise.resolve();
     private worker?: Promise<void>;
     private queueRequested = false;
-    private child?: ChildProcess;
-    private activeBuild?: { id: string; cancellation: BuildCancellation };
+    /** По одному child-процессу и отмене на каждую параллельную сборку (ранее — single-flight поле). */
+    private readonly children = new Map<string, ChildProcess>();
+    private readonly activeBuilds = new Map<string, BuildCancellation>();
     private readonly stoppedWorkers = new Set<string>();
     private stopping = false;
     private rebuild?: CatalogRebuildCoordinator;
@@ -274,10 +275,11 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 this.releaseLease = undefined;
             }
             release(true);
-            if (current && this.child) {
-                stopBuildProcess(this.child);
+            if (current) {
+                for (const child of this.children.values()) stopBuildProcess(child);
+                for (const cancellation of this.activeBuilds.values())
+                    cancellation.stop(new Error('Сборщик потерял подключение к очереди.'));
             }
-            if (current) this.activeBuild?.cancellation.stop(new Error('Сборщик потерял подключение к очереди.'));
             this.retryDelay = 1000;
             this.scheduleOwnershipRetry();
         };
@@ -316,13 +318,14 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     async onModuleDestroy(): Promise<void> {
         this.stopping = true;
         if (this.rebuildTimer) clearInterval(this.rebuildTimer);
-        this.activeBuild?.cancellation.stop(new Error('Сборщик останавливается. Повторите сборку новым запросом.'));
+        for (const cancellation of this.activeBuilds.values())
+            cancellation.stop(new Error('Сборщик останавливается. Повторите сборку новым запросом.'));
         if (this.retryTimer) {
             clearTimeout(this.retryTimer);
             this.retryTimer = undefined;
         }
-        if (this.child) {
-            stopBuildProcess(this.child);
+        for (const child of this.children.values()) {
+            stopBuildProcess(child);
         }
         await this.rebuild?.stop();
         await this.recovering?.catch(() => undefined);
@@ -354,8 +357,9 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         this.lease = undefined;
         this.releaseLease = undefined;
         release?.(true);
-        this.activeBuild?.cancellation.stop(new Error('Сборщик потерял владельца очереди.'));
-        if (this.child) stopBuildProcess(this.child);
+        for (const cancellation of this.activeBuilds.values())
+            cancellation.stop(new Error('Сборщик потерял владельца очереди.'));
+        for (const child of this.children.values()) stopBuildProcess(child);
         this.scheduleOwnershipRetry();
     }
 
@@ -483,7 +487,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             this.repository.cancel(actor.email, id, () => this.requireMain(actor)),
         );
         traceToolBuild('cancel-requested', { requestKey: row.request_key, buildId: row.id });
-        if (row.state === 'CANCELLING' && this.activeBuild?.id === row.id) this.activeBuild.cancellation.cancel();
+        if (row.state === 'CANCELLING') this.activeBuilds.get(row.id)?.cancel();
         void notifyDeviceOperations();
         return this.view(actor, row);
     }
@@ -494,7 +498,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             this.repository.cancelRequest(actor.email, key, () => this.requireMain(actor)),
         );
         traceToolBuild('cancel-requested', { requestKey: key, ...(row ? { buildId: row.id } : {}) });
-        if (row?.state === 'CANCELLING' && this.activeBuild?.id === row.id) this.activeBuild.cancellation.cancel();
+        if (row?.state === 'CANCELLING') this.activeBuilds.get(row.id)?.cancel();
         void notifyDeviceOperations();
         return {
             requestKey: key,
@@ -849,18 +853,65 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         this.worker = worker;
     }
 
+    /**
+     * TOOL_BUILD_MAX_CONCURRENT: положительное целое, по умолчанию 1; твёрдый предел — TOOL_BUILD_MAX_RUN_SLOTS.
+     * Предел дублируется в package-build.repository.ts#takeQueued (Math.min с TOOL_BUILD_MAX_RUN_SLOTS) —
+     * при изменении cap правьте оба места, иначе слот-индекс и пул рассинхронизируются.
+     */
+    private maxRunSlots(): number {
+        const raw = Number.parseInt(process.env.TOOL_BUILD_MAX_CONCURRENT ?? '', 10);
+        const value = Number.isInteger(raw) && raw > 0 ? raw : 1;
+        return Math.min(value, TOOL_BUILD_MAX_RUN_SLOTS);
+    }
+
+    /**
+     * Пул до N параллельных сборок: каждый освобождённый слот забирает самую старую ожидающую.
+     * Ошибка отдельной сборки фиксируется в execute; только worker-level ошибка останавливает очередь.
+     */
     private async drainQueue(root: string): Promise<void> {
-        while (this.lease && !this.stopping) {
-            const lease = this.currentLease();
-            const row = await this.withLease(lease, () => this.repository.takeQueued(lease));
-            if (!row) {
-                if (await this.cleanupStages()) {
-                    await new Promise((resolve) => setTimeout(resolve, 500));
-                    continue;
+        const slots = this.maxRunSlots();
+        const running = new Map<string, Promise<void>>();
+        let firstError: unknown;
+        const track = (id: string, handle: Promise<void>): void => {
+            void handle
+                .then(
+                    () => undefined,
+                    (error) => {
+                        firstError ??= error;
+                    },
+                )
+                .finally(() => {
+                    running.delete(id);
+                });
+        };
+        const pump = async (): Promise<void> => {
+            while (this.lease && !this.stopping && !firstError) {
+                const lease = this.currentLease();
+                for (let taken = 0; taken < slots - running.size; taken++) {
+                    const row = await this.withLease(lease, () => this.repository.takeQueued(lease, slots));
+                    if (!row) {
+                        break;
+                    }
+                    const handle = this.execute(row, root);
+                    running.set(row.id, handle);
+                    track(row.id, handle);
                 }
-                return;
+                if (running.size === 0) {
+                    if (await this.cleanupStages()) {
+                        await new Promise((resolve) => setTimeout(resolve, 500));
+                        continue;
+                    }
+                    return;
+                }
+                await Promise.race([...running.values()]);
             }
-            await this.execute(row, root);
+        };
+        await pump();
+        if (running.size) {
+            await Promise.allSettled([...running.values()]);
+        }
+        if (firstError) {
+            throw firstError;
         }
     }
 
@@ -886,7 +937,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
     private async execute(row: IBuildRow, root: string): Promise<void> {
         const stage = path.join(root, row.id);
         const cancellation = new BuildCancellation(() => this.repository.get(row.id));
-        this.activeBuild = { id: row.id, cancellation };
+        this.activeBuilds.set(row.id, cancellation);
         let cancelled = false,
             unreaped = false,
             started = false,
@@ -968,7 +1019,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                     );
                     started = false;
                     reaped = false;
-                    this.child = undefined;
+                    this.children.delete(row.id);
                     await fs.mkdir(stage, { mode: 0o700 });
                 },
                 build: (config, attempt) =>
@@ -976,7 +1027,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                         config,
                         stage,
                         (child) => {
-                            this.child = child;
+                            if (child) this.children.set(row.id, child);
                             cancellation.observe(child);
                             if (child && (this.stopping || !this.lease)) stopBuildProcess(child);
                         },
@@ -1045,7 +1096,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
             await assertBundledPublication(row.config.source, tools[0]);
             await authorize();
             // The verified producer is reaped; statfs now includes its retained staging bytes.
-            if (started && reaped && !this.child) {
+            if (started && reaped && !this.children.has(row.id)) {
                 releaseDisk();
                 releaseDisk = () => undefined;
             }
@@ -1144,9 +1195,9 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                 }
             if (cancelled && started && !reaped) unreaped = true;
         } finally {
-            this.child = undefined;
+            this.children.delete(row.id);
             cancellation.dispose();
-            if (this.activeBuild?.id === row.id) this.activeBuild = undefined;
+            this.activeBuilds.delete(row.id);
             try {
                 if (unreaped) {
                     if (cancelled) await this.repository.cancellationAwaitingOwner(row.id);

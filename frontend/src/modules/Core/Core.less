@@ -105,6 +105,28 @@
     &__header-actions {
         flex-shrink: 0;
     }
+    .chat-launcher.ant-btn {
+        height: 48px;
+        padding: 6px 14px;
+        border: 1px solid #e5ebf0;
+        border-radius: 10px;
+        background: #f8fafc;
+        font-size: 13px;
+        font-weight: 600;
+        color: #294459;
+        > .anticon {
+            color: #557087;
+        }
+        &:hover,
+        &:focus {
+            border-color: @brand-border-hover;
+            background: #f8fafc;
+            color: #294459;
+        }
+    }
+    .chat-launcher-unavailable {
+        cursor: pointer;
+    }
     &__location-separator {
         color: #b5c1cb;
     }
@@ -179,6 +201,9 @@
             padding: 16px 12px;
         }
         &__operations-label {
+            display: none;
+        }
+        &__chat-label {
             display: none;
         }
         &__header .ant-space {

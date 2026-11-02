@@ -13,9 +13,29 @@
 .operations-button.ant-btn {
     position: relative;
     overflow: hidden;
+    height: 48px;
+    padding: 6px 14px;
+    border: 1px solid #e5ebf0;
+    border-radius: 10px;
+    background: #f8fafc;
+    font-size: 13px;
+    font-weight: 600;
+    color: #294459;
     transition:
         border-color 0.2s,
         background 0.2s;
+    > .anticon {
+        color: #557087;
+    }
+    &:hover,
+    &:focus {
+        border-color: @brand-border-hover;
+        background: #f8fafc;
+        color: #294459;
+        > .anticon {
+            color: #557087;
+        }
+    }
     &.operations-button--active {
         border-color: @brand-border-hover;
         background: @brand-tint;

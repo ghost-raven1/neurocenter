@@ -86,10 +86,16 @@ export async function assertBuildCreateName(
     input: { kind: string; name: string; publication?: IBuildPublicationTarget },
 ): Promise<void> {
     if (input.publication || input.kind === 'skill') return;
-    if ((await pool.query('SELECT id FROM ai_plugins WHERE lower(name)=lower($1)', [input.name])).rows.length)
-        throw new ConflictException(
-            'Инструмент с таким названием уже существует. Откройте «Новая версия» в его карточке или выберите другое имя; исходники сохранены.',
-        );
+    const conflict = await publicationNameConflict(pool, input.name);
+    if (conflict)
+        throw new ConflictException({
+            code: 'name-conflict',
+            catalogId: conflict.catalogId,
+            kind: conflict.kind,
+            archived: conflict.archived,
+            message:
+                'Инструмент с таким названием уже существует. Откройте «Новая версия» в его карточке или выберите другое имя; исходники сохранены.',
+        });
 }
 
 async function origins(

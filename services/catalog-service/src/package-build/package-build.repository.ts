@@ -9,6 +9,8 @@ import { configureBuildPublicationTransaction } from './publication-deadline';
 import type { IBuildRuntimeReport } from './build-runtime';
 
 /** Очередь сборки и её проекция в «Операциях» фиксируются одной транзакцией. */
+/** Твёрдый предел слотов: каждая сборка резервирует до 4 GiB staging (stagingLimit). */
+export const TOOL_BUILD_MAX_RUN_SLOTS = 4;
 export class PackageBuildRepository {
     constructor(
         private readonly pool: Pool,
@@ -160,9 +162,25 @@ export class PackageBuildRepository {
             return rows[0];
         }, lease);
     }
-    /** Единственный владелец запускает задания по порядку, сохраняя ожидающие при перезапуске. */
-    async takeQueued(lease: PoolClient): Promise<IBuildRow | undefined> {
+    /**
+     * Единственный владелец запускает задания, сохраняя ожидающие при перезапуске.
+     * Свободный слот берётся минимальным в диапазоне [0, slotCount); уникальный индекс
+     * tool_build_run_slot_running страхует от двух RUNNING-реплик в одном слоте.
+     * Верхний предел TOOL_BUILD_MAX_RUN_SLOTS дублируется здесь и в
+     * package-build.service.ts#maxRunSlots — при изменении cap правьте оба места.
+     */
+    async takeQueued(lease: PoolClient, slotCount = 1): Promise<IBuildRow | undefined> {
         return this.transaction(async (client) => {
+            const slots = Math.max(1, Math.min(Math.trunc(slotCount) || 1, TOOL_BUILD_MAX_RUN_SLOTS));
+            const free = await client.query<{ run_slot: number }>(
+                `SELECT g AS run_slot FROM generate_series(0,$1-1) g
+                WHERE NOT EXISTS (SELECT 1 FROM tool_build_jobs t WHERE t.state='RUNNING' AND t.run_slot=g)
+                ORDER BY g LIMIT 1`,
+                [slots],
+            );
+            if (!free.rows[0]) {
+                return undefined;
+            }
             const { rows } = await client.query<IBuildRow>(
                 "SELECT * FROM tool_build_jobs WHERE state='QUEUED' ORDER BY created_at,id LIMIT 1 FOR UPDATE",
             );
@@ -172,8 +190,8 @@ export class PackageBuildRepository {
             await this.saveProgress(client, rows[0].id, 'RUNNING', 0, 'Подготовка сборки');
             return (
                 await client.query<IBuildRow>(
-                    'UPDATE tool_build_jobs SET execution_nonce=$2,execution_host=$3,execution_pid=$4,execution_started=false WHERE id=$1 RETURNING *',
-                    [rows[0].id, randomUUID(), hostname(), process.pid],
+                    'UPDATE tool_build_jobs SET execution_nonce=$2,execution_host=$3,execution_pid=$4,execution_started=false,run_slot=$5 WHERE id=$1 RETURNING *',
+                    [rows[0].id, randomUUID(), hostname(), process.pid, free.rows[0].run_slot],
                 )
             ).rows[0];
         }, lease);

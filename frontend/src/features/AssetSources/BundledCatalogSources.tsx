@@ -10,6 +10,12 @@ import { PackagingPublicationPanel } from '../../modules/Store/packaging/Packagi
 import { PackagingBuildStatus } from '../../modules/Store/packaging/PackagingBuildStatus';
 import { BuildTargetChoice } from '../../modules/Store/packaging/BuildTargetChoice';
 import { packagingPlatformLabels } from '../../modules/Store/packaging/platformLabels';
+import {
+    classifyNameConflict,
+    lookupNameConflict,
+    nameConflictMessages,
+    type IBuildNameConflict,
+} from '../../modules/Store/packaging/nameConflictRecovery';
 import type { IBundledSourcePlan } from './interfaces';
 import { useBundledNameCheck } from './hooks/useBundledNameCheck';
 
@@ -35,8 +41,33 @@ export function BundledCatalogSources({
 }): JSX.Element {
     const { captureOwner } = useAuthRequestOwner(),
         journalScope = scope + ':bundled-catalog';
-    const build = useToolBuild(journalScope),
-        publication = usePackagingPublication(journalScope, captureOwner);
+    const publication = usePackagingPublication(journalScope, captureOwner),
+        [conflictMessage, setConflictMessage] = useState('');
+    /** 409 занятости названия превращаем в предложение новой версии, а не в тупик. */
+    const recoverNameConflict = async (conflict: IBuildNameConflict): Promise<boolean> => {
+        const resolved = conflict.target
+            ? {
+                  catalogId: conflict.target.catalogId,
+                  kind: conflict.target.kind,
+                  name: '',
+                  archived: conflict.target.archived,
+              }
+            : await lookupNameConflict(conflict.name);
+        const outcome = classifyNameConflict(resolved, conflict.kind);
+        if (outcome.state === 'unknown' || outcome.state === 'available') return false;
+        if (outcome.state === 'archived') {
+            setConflictMessage(nameConflictMessages.archived);
+            return true;
+        }
+        if (outcome.state === 'other-kind') {
+            setConflictMessage(nameConflictMessages['other-kind']);
+            return true;
+        }
+        setConflictMessage(nameConflictMessages.match);
+        void publication.select({ catalogId: outcome.catalogId, kind: outcome.kind });
+        return true;
+    };
+    const build = useToolBuild(journalScope, recoverNameConflict);
     const [open, setOpen] = useState(false),
         [plan, setPlan] = useState<IBundledSourcePlan>(),
         [name, setName] = useState(''),
@@ -74,6 +105,7 @@ export function BundledCatalogSources({
         setPlan(undefined);
         setName('');
         setTargets(undefined);
+        setConflictMessage('');
         observed.current = undefined;
     }, [scope, recoverBuildId]);
     useEffect(() => {
@@ -114,6 +146,7 @@ export function BundledCatalogSources({
         setPlan(value);
         setName(value.imported?.name || value.name);
         setTargets(undefined);
+        setConflictMessage('');
         setOpen(true);
         if (value.imported && (value.kind === 'mcp' || value.kind === 'plugin'))
             void publication.select({ catalogId: value.imported.id, kind: value.kind });
@@ -219,6 +252,7 @@ export function BundledCatalogSources({
             setPlan(undefined);
             setName('');
             setTargets(undefined);
+            setConflictMessage('');
             publication.clear();
             setOpen(false);
         }
@@ -364,6 +398,7 @@ export function BundledCatalogSources({
                 {retry.error && <Alert type="warning" showIcon message={retry.error} />}
                 {build.error && <Alert type="error" showIcon message={build.error} />}
                 {nameCheck.error && <Alert type="warning" showIcon message={nameCheck.error} />}
+                {conflictMessage && <Alert type="warning" showIcon message={conflictMessage} />}
                 {nameCheck.loading && <Typography.Text>Проверяем название в каталоге…</Typography.Text>}
                 {build.recoveryBlocked && (
                     <Button onClick={build.retryRecovery}>Повторить восстановление запроса</Button>
@@ -386,7 +421,10 @@ export function BundledCatalogSources({
                             disabled={locked || blocked}
                             onConfirm={() => {
                                 const target = publication.confirm();
-                                if (target) setName(target.name);
+                                if (target) {
+                                    setName(target.name);
+                                    setConflictMessage('');
+                                }
                             }}
                         />
                         <Form layout="vertical">
@@ -394,7 +432,10 @@ export function BundledCatalogSources({
                                 <Input
                                     value={name}
                                     disabled={locked || !!publication.target}
-                                    onChange={(event) => setName(event.target.value)}
+                                    onChange={(event) => {
+                                        setName(event.target.value);
+                                        setConflictMessage('');
+                                    }}
                                 />
                             </Form.Item>
                             <BuildTargetChoice

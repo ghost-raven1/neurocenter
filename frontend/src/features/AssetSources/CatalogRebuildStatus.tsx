@@ -1,6 +1,6 @@
 import { Button, Space, Tag, Typography } from 'antd';
 import type { IBundledSourcePlan, ICatalogRebuild, ICatalogRebuildItem } from './interfaces';
-import { catalogRebuildAction } from './catalogRebuildActions';
+import { catalogRebuildAction, type ICatalogRebuildAction } from './catalogRebuildActions';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import './CatalogRebuildStatus.less';
 
@@ -26,6 +26,10 @@ export function CatalogRebuildStatus({
     archiveBlocked?: boolean;
 }): JSX.Element | null {
     if (!rebuild && !error) return null;
+    // Готовые к обновлению: позиция «Подготовить обновление» из общих правил действий по позициям.
+    const readyUpdates = (rebuild?.items ?? [])
+        .map((item) => catalogRebuildAction(item, plans))
+        .filter((action): action is ICatalogRebuildAction => !!action && action.kind === 'prepare');
     const waiting = rebuild?.state === 'preparing' && rebuild.items.length === 0;
     const title = waiting
         ? 'Ожидаем проверки запроса'
@@ -43,6 +47,15 @@ export function CatalogRebuildStatus({
                 <Typography.Link href="/operations">Операции</Typography.Link>
             </Space>
             {error && <Typography.Text type="warning">{error}</Typography.Text>}
+            {rebuild && rebuild.state === 'attention' && readyUpdates.length > 0 && (
+                <FeatureButton
+                    features={['asset_sources']}
+                    type="primary"
+                    href={readyUpdates[0].href}
+                >
+                    Обновить готовые ({readyUpdates.length})
+                </FeatureButton>
+            )}
             {rebuild && (
                 <details open={rebuild.state === 'attention'}>
                     <summary>

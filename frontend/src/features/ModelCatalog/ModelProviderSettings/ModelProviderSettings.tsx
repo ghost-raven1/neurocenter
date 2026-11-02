@@ -1,6 +1,9 @@
 import { Space, Typography } from 'antd';
+import { useSelector } from 'react-redux';
 import { FeatureButton } from '../../FeatureFlags/FeatureAvailability';
 import { RemoteProviderAccess } from '../../RemoteProviderAccess/RemoteProviderAccess';
+import { roleLevel } from '../../UserBlock/roles';
+import type { TRootState } from '../../../store';
 import type { IModelProviderSettingsProps } from './interfaces';
 import './ModelProviderSettings.less';
 
@@ -11,6 +14,9 @@ export function ModelProviderSettings({
     busy,
     onConfigure,
 }: IModelProviderSettingsProps): JSX.Element {
+    const user = useSelector((state: TRootState) => state.userBlock.user);
+    // Same gate as RemoteProviderAccess: only users who see «Мой доступ» get a hint about it.
+    const personalAccess = !!user && user.userRoles.includes(user.activeRole) && roleLevel(user.activeRole) >= 2;
     return (
         <section className="model-provider-settings" aria-label="Провайдер и API-ключ">
             <Space direction="vertical" className="model-provider-settings__content">
@@ -25,7 +31,9 @@ export function ModelProviderSettings({
                     </FeatureButton>
                 ) : (
                     <Typography.Text type="secondary">
-                        Общий адрес провайдера настраивает главный администратор.
+                        {personalAccess
+                            ? 'Общий адрес провайдера настраивает главный администратор. Ваш личный ключ — в блоке «Мой доступ» ниже.'
+                            : 'Общий адрес провайдера настраивает главный администратор.'}
                     </Typography.Text>
                 )}
                 <RemoteProviderAccess modelId={model.id} />

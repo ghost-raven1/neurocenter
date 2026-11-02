@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { errorMessage } from '../../../common/utils/errorMessage';
 import { packagingApi } from '../../../modules/Store/packaging/api';
+import { classifyNameConflict, nameConflictMessages } from '../../../modules/Store/packaging/nameConflictRecovery';
 
 /** Проверка имени не отправляет сборку и не превращает совпадение в согласие на обновление. */
 export function useBundledNameCheck(
@@ -33,18 +34,13 @@ export function useBundledNameCheck(
         try {
             const match = await packagingApi.publicationConflict(name.trim(), controller.signal);
             if (!active()) return;
-            if (!match) onAvailable();
-            else if (match.archived)
-                setState({
-                    loading: false,
-                    error: 'Инструмент с этим названием находится в архиве. Верните карточку из архива или укажите другое название; исходники сохранены.',
-                });
-            else if (match.kind !== kind)
-                setState({
-                    loading: false,
-                    error: 'Это название занято инструментом другого типа. Укажите другое название; исходники сохранены.',
-                });
-            else onMatch({ catalogId: match.catalogId, kind: match.kind });
+            const outcome = classifyNameConflict(match ?? null, kind);
+            if (outcome.state === 'archived')
+                setState({ loading: false, error: nameConflictMessages.archived });
+            else if (outcome.state === 'other-kind')
+                setState({ loading: false, error: nameConflictMessages['other-kind'] });
+            else if (outcome.state === 'match') onMatch({ catalogId: outcome.catalogId, kind: outcome.kind });
+            else onAvailable();
         } catch (cause) {
             if (active())
                 setState({

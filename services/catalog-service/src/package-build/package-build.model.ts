@@ -97,6 +97,8 @@ export interface IBuildRow {
     execution_host?: string | null;
     execution_pid?: number | null;
     execution_started?: boolean;
+    /** Слот параллельной сборки (миграция 52): установлен только у RUNNING/последних попыток. */
+    run_slot?: number | null;
 }
 export const buildView = (row: IBuildRow) => {
     const recovery = buildRecovery(row.config);

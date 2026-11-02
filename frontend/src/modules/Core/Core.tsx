@@ -30,6 +30,7 @@ import { AppNavigation } from '../../features/AppNavigation/AppNavigation';
 import { navigationEntries, selectedNavigationEntry } from '../../features/AppNavigation/model';
 import { ComputerEnvironmentProvider } from '../../features/ComputerSetup/ComputerEnvironment';
 import { ComputerHeader } from '../../features/ComputerSetup/ComputerHeader';
+import { ProjectTargetSelect } from '../Store/ProjectTargetSelect';
 import { startQueryUrl } from '../Start/startQuery';
 
 interface ICoreProps {
@@ -201,6 +202,7 @@ const Core: FC<ICoreProps> = ({ modulesStructure, children }) => {
                         </div>
                         <Space size={16} className="app__header-actions">
                             <ComputerHeader onSetup={openComputerSetup} />
+                            <ProjectTargetSelect />
                             <OperationsButton
                                 triggerRef={operationsTrigger}
                                 open={operationsVisible}
