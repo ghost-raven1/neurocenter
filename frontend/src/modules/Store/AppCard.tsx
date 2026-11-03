@@ -71,7 +71,17 @@ interface IAppCardProps {
  * @param {IAppCardProps} props
  * @returns JSX-элемент карточки
  */
-const AppCard: FC<IAppCardProps> = ({ app, installed, stats, onView, action, feedback, update, pendingSource, onOpenSupplies }) => {
+const AppCard: FC<IAppCardProps> = ({
+    app,
+    installed,
+    stats,
+    onView,
+    action,
+    feedback,
+    update,
+    pendingSource,
+    onOpenSupplies,
+}) => {
     const source = storeCardSource(app.origin),
         revision = storeCardRevision(app.revision),
         platforms = storeCardPlatforms(app.config);

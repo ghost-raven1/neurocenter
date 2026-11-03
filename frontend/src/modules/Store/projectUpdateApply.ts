@@ -1,10 +1,6 @@
 import type { IStoreApp } from '../../features/Catalog/interfaces';
 import type { IProjectAsset } from '../../core/api/interfaces';
-import {
-    currentInstallation,
-    isPending,
-    type IInstallationTarget,
-} from '../../features/McpBridge/installationHelpers';
+import { currentInstallation, isPending, type IInstallationTarget } from '../../features/McpBridge/installationHelpers';
 import type { IBridgeInstallation, IBridgeJob } from '../../features/McpBridge/api';
 
 export interface IApplyUpdateTarget {

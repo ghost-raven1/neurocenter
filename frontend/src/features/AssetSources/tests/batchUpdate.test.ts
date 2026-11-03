@@ -33,14 +33,22 @@ describe('batch update eligibility', () => {
         expect(
             isBatchReadyPlan(
                 plan({
-                    imported: { id: 'catalog', version: 1, originVersion: 'old', updateAvailable: true, [reason]: true },
+                    imported: {
+                        id: 'catalog',
+                        version: 1,
+                        originVersion: 'old',
+                        updateAvailable: true,
+                        [reason]: true,
+                    },
                 }),
             ),
         ).toBe(false);
     });
     it('includes a publication with an available update', () => {
         expect(
-            isBatchReadyPlan(plan({ imported: { id: 'catalog', version: 1, originVersion: 'old', updateAvailable: true } })),
+            isBatchReadyPlan(
+                plan({ imported: { id: 'catalog', version: 1, originVersion: 'old', updateAvailable: true } }),
+            ),
         ).toBe(true);
     });
 });

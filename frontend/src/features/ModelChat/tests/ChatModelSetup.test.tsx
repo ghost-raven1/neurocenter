@@ -20,7 +20,12 @@ vi.mock('../../RemoteProviderAccess/RemoteProviderAccess', () => ({
 vi.mock('../../FeatureFlags/FeatureAvailability', async () => {
     const { Button } = await import('antd');
     return {
-        FeatureButton: ({ features: _features, disabled, onClick, ...props }: { features: unknown } & Record<string, unknown>) => (
+        FeatureButton: ({
+            features: _features,
+            disabled,
+            onClick,
+            ...props
+        }: { features: unknown } & Record<string, unknown>) => (
             <Button {...(props as object)} disabled={disabled} onClick={onClick as () => void} />
         ),
     };
@@ -43,22 +48,22 @@ vi.mock('../../ModelCatalog/RemoteConnectionModal', async () => {
         }) => {
             const [failed, setFailed] = useState(false);
             return (
-            <div data-testid="connection-modal">
-                {failed && <div data-testid="connection-error">Ошибка сохранения</div>}
-                <button
-                    type="button"
-                    data-testid="connection-save"
-                    onClick={() => {
-                        void onSaved()
-                            .then(onClose)
-                            .catch(() => setFailed(true));
-                    }}
-                >
-                    Сохранить подключение
-                </button>
-                <button type="button" onClick={onClose}>
-                    Закрыть
-                </button>
+                <div data-testid="connection-modal">
+                    {failed && <div data-testid="connection-error">Ошибка сохранения</div>}
+                    <button
+                        type="button"
+                        data-testid="connection-save"
+                        onClick={() => {
+                            void onSaved()
+                                .then(onClose)
+                                .catch(() => setFailed(true));
+                        }}
+                    >
+                        Сохранить подключение
+                    </button>
+                    <button type="button" onClick={onClose}>
+                        Закрыть
+                    </button>
                 </div>
             );
         },
@@ -149,7 +154,13 @@ describe('ChatModelSetup', () => {
     });
 
     it('offers the provider and the connection check to the main admin of an unverified remote model', async () => {
-        await render({ items: [model()], assigned: new Set(['m1']), canAssign: true, canCheck: true, canConfigure: true });
+        await render({
+            items: [model()],
+            assigned: new Set(['m1']),
+            canAssign: true,
+            canCheck: true,
+            canConfigure: true,
+        });
         expect(button('Настроить провайдера и ключ')).toBeDefined();
         expect(button('Проверить подключение')).toBeDefined();
     });
@@ -174,7 +185,14 @@ describe('ChatModelSetup', () => {
 
     it('runs the provider → connection → key chain for the main admin and refreshes after the save', async () => {
         const onRefresh = vi.fn();
-        await render({ items: [model()], assigned: new Set(['m1']), canAssign: true, canCheck: true, canConfigure: true, onRefresh });
+        await render({
+            items: [model()],
+            assigned: new Set(['m1']),
+            canAssign: true,
+            canCheck: true,
+            canConfigure: true,
+            onRefresh,
+        });
         await click(button('Настроить провайдера и ключ')!);
         expect(button('Изменить адрес и настройки провайдера')).toBeDefined();
         await click(button('Изменить адрес и настройки провайдера')!);
@@ -223,7 +241,12 @@ describe('ChatModelSetup', () => {
     });
 
     it('explains the ollama gap to a role that cannot check', async () => {
-        await render({ items: [model({ runtime: 'ollama' })], assigned: new Set(['m1']), canAssign: true, canCheck: false });
+        await render({
+            items: [model({ runtime: 'ollama' })],
+            assigned: new Set(['m1']),
+            canAssign: true,
+            canCheck: false,
+        });
         expect(button('Проверить подключение')).toBeUndefined();
         expect(bodyText()).toContain('Проверить модель на сервере может главный администратор.');
     });

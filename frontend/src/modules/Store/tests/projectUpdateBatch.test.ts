@@ -43,20 +43,24 @@ describe('projectUpdateBatchRows', () => {
             }),
         ]);
     });
-    it.each(['not behind', 'equal versions', 'catalog not ready', 'without manage rights', 'pinError', 'unknown pin version'])(
-        '%s keeps the row out of the batch',
-        (which) => {
-            const overrides: Record<string, Partial<typeof baseOptions>> = {
-                'not behind': { common: [{ ...head, version: 1 }] },
-                'equal versions': { common: [{ ...head, version: 2 }] },
-                'catalog not ready': { catalogReady: false },
-                'without manage rights': { projects: [{ ...projects[0], canManage: false }] },
-                pinError: { byProject: { p1: [{ ...ref, pinError: 'конфликт' }] } },
-                'unknown pin version': { byProject: { p1: [{ ...ref, version: null }] } },
-            };
-            expect(projectUpdateBatchRows({ ...baseOptions, ...overrides[which] })).toEqual([]);
-        },
-    );
+    it.each([
+        'not behind',
+        'equal versions',
+        'catalog not ready',
+        'without manage rights',
+        'pinError',
+        'unknown pin version',
+    ])('%s keeps the row out of the batch', (which) => {
+        const overrides: Record<string, Partial<typeof baseOptions>> = {
+            'not behind': { common: [{ ...head, version: 1 }] },
+            'equal versions': { common: [{ ...head, version: 2 }] },
+            'catalog not ready': { catalogReady: false },
+            'without manage rights': { projects: [{ ...projects[0], canManage: false }] },
+            pinError: { byProject: { p1: [{ ...ref, pinError: 'конфликт' }] } },
+            'unknown pin version': { byProject: { p1: [{ ...ref, version: null }] } },
+        };
+        expect(projectUpdateBatchRows({ ...baseOptions, ...overrides[which] })).toEqual([]);
+    });
     it('keeps an asset that disappeared from the common catalog out of the batch', () => {
         expect(projectUpdateBatchRows({ ...baseOptions, common: [] })).toEqual([]);
     });
@@ -163,9 +167,12 @@ describe('summarizePinOutcomes', () => {
     });
     it('separates ok, conflict, and error outcomes', () => {
         const [row] = rows;
-        expect(
-            summarizePinOutcomes(rows, new Map([[row.key, { key: row.key, state: 'conflict' as const }]])),
-        ).toEqual({ total: 1, ok: 0, conflict: 1, error: 0 });
+        expect(summarizePinOutcomes(rows, new Map([[row.key, { key: row.key, state: 'conflict' as const }]]))).toEqual({
+            total: 1,
+            ok: 0,
+            conflict: 1,
+            error: 0,
+        });
         expect(summarizePinOutcomes(rows, new Map([[row.key, { key: row.key, state: 'ok' as const }]]))).toEqual({
             total: 1,
             ok: 1,

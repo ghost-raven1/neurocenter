@@ -29,8 +29,7 @@ export function startAutoInspectNeeded(state: ICliObservationState, now = Date.n
     if (!job) return true;
     if (!cliTerminal(job)) return false;
     if (job.state === 'cancelled') return false;
-    const confirmed =
-        job.observation?.status === 'installed' || job.observation?.status === 'missing';
+    const confirmed = job.observation?.status === 'installed' || job.observation?.status === 'missing';
     const age = now - Date.parse(job.updatedAt);
     return !confirmed || !Number.isFinite(age) || age > START_AUTO_CHECK_STALE_MS;
 }

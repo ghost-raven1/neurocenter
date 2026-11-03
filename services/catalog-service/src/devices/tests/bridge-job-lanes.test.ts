@@ -14,29 +14,34 @@ const device = {
         protocolVersion: 2,
         // workspace-instance-v1 обязателен для scan-opencode-models: post-claim
         // assertProjectLocalJob → assertLocalFeature → assertWorkspaceCapability.
-        capabilities: ['durable-completions', 'managed-installations', 'opencode-model-scan-v2', 'workspace-instance-v1'],
+        capabilities: [
+            'durable-completions',
+            'managed-installations',
+            'opencode-model-scan-v2',
+            'workspace-instance-v1',
+        ],
         bindings: [],
     },
 } as unknown as IDevice;
 
-const job = (id: string, kind: string, payload: Record<string, unknown>) =>
-    ({
-        id,
-        device_id: deviceId,
-        email,
-        role: 'Главный админ',
-        project_id: null,
-        kind,
-        payload,
-        state: 'queued',
-        percent: 0,
-        message: '',
-        result: null,
-        created_at: '2026-11-01T00:00:00.000Z',
-        updated_at: '2026-11-01T00:00:00.000Z',
-    });
+const job = (id: string, kind: string, payload: Record<string, unknown>) => ({
+    id,
+    device_id: deviceId,
+    email,
+    role: 'Главный админ',
+    project_id: null,
+    kind,
+    payload,
+    state: 'queued',
+    percent: 0,
+    message: '',
+    result: null,
+    created_at: '2026-11-01T00:00:00.000Z',
+    updated_at: '2026-11-01T00:00:00.000Z',
+});
 
-const readJob = () => job('33333333-3333-4333-8333-333333333333', 'scan-opencode-models', { scope: 'global', deviceId });
+const readJob = () =>
+    job('33333333-3333-4333-8333-333333333333', 'scan-opencode-models', { scope: 'global', deviceId });
 const writeJob = () => job('44444444-4444-4444-8444-444444444444', 'choose-root', {});
 
 interface IEnv {
@@ -95,19 +100,18 @@ function jobs(pool: Pool) {
 
 /** Все флаги включены: post-commit проверка requireFeaturesEnabled проходит. */
 function stubFeatureFlags() {
-    vi.stubGlobal(
-        'fetch',
-        async (url: unknown) => {
-            if (String(url).includes('/internal/feature-flags/evaluated'))
-                return {
-                    ok: true,
-                    body: (async function* () {
-                        yield Buffer.from(JSON.stringify({ flags: Object.fromEntries(FEATURE_FLAG_KEYS.map((k) => [k, true])) }));
-                    })(),
-                };
-            return { ok: true };
-        },
-    );
+    vi.stubGlobal('fetch', async (url: unknown) => {
+        if (String(url).includes('/internal/feature-flags/evaluated'))
+            return {
+                ok: true,
+                body: (async function* () {
+                    yield Buffer.from(
+                        JSON.stringify({ flags: Object.fromEntries(FEATURE_FLAG_KEYS.map((k) => [k, true])) }),
+                    );
+                })(),
+            };
+        return { ok: true };
+    });
 }
 
 afterEach(() => {

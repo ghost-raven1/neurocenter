@@ -167,7 +167,9 @@ describe('ProjectUpdateBatch', () => {
 
     it('opens the project catalog for the guided install approval', async () => {
         await render();
-        const buttons = [...container.querySelectorAll('button')].filter((node) => node.textContent?.trim() === 'Открыть проект');
+        const buttons = [...container.querySelectorAll('button')].filter(
+            (node) => node.textContent?.trim() === 'Открыть проект',
+        );
         expect(buttons).toHaveLength(2);
         await click(buttons[0]);
         expect(openProjectMock).toHaveBeenCalledOnce();

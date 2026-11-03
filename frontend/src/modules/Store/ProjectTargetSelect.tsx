@@ -15,10 +15,7 @@ export const ProjectTargetSelect: FC = () => {
     const { projects, ready, loading } = useAvailableProjects();
     const requested = new URLSearchParams(location.search).get('p');
     const selected = requested && projects.some((project) => project.id === requested) ? requested : undefined;
-    const options = useMemo(
-        () => projects.map((project) => ({ value: project.id, label: project.name })),
-        [projects],
-    );
+    const options = useMemo(() => projects.map((project) => ({ value: project.id, label: project.name })), [projects]);
 
     if (!ready || projects.length === 0) {
         return null;

@@ -12,6 +12,5 @@ IF missing IS NOT NULL THEN RAISE EXCEPTION 'Build run-slot schema is incomplete
 /** The slot column and index exist before the queue may claim a run slot. */
 export async function assertPackageBuildSlotsSchema(db: Pick<Pool, 'query'>): Promise<void> {
     const { rows } = await db.query<{ issue: string }>(issues);
-    if (rows.length)
-        throw new Error('Схема слотов сборки не готова: ' + rows.map((row) => row.issue).join(', '));
+    if (rows.length) throw new Error('Схема слотов сборки не готова: ' + rows.map((row) => row.issue).join(', '));
 }

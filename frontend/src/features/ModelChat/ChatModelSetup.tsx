@@ -43,7 +43,10 @@ export function ChatModelSetup({
         [access, setAccess] = useState<{ model: ICatalogModel; notice?: string } | null>(null),
         [connection, setConnection] = useState<ICatalogModel | null>(null);
     const lock = useRef(false);
-    const rows = items.map((model) => ({ model, ...chatModelSetupActions(model, assigned.has(model.id), canAssign, canCheck) }));
+    const rows = items.map((model) => ({
+        model,
+        ...chatModelSetupActions(model, assigned.has(model.id), canAssign, canCheck),
+    }));
     const assign = async (model: ICatalogModel): Promise<void> => {
         if (!canAssign || busy || lock.current) return;
         const owns = captureOwner();

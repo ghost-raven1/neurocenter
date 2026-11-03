@@ -41,7 +41,9 @@ export function CatalogTabs({ tools, updates, projects, scope, bridge, ...models
             }
             items={[
                 { key: 'tools', label: 'Инструменты', children: tools },
-                ...(updates && !models.embedded ? [{ key: 'updates', label: 'Обновления проектов', children: updates }] : []),
+                ...(updates && !models.embedded
+                    ? [{ key: 'updates', label: 'Обновления проектов', children: updates }]
+                    : []),
                 ...(integrated || section === 'supplies'
                     ? [{ key: 'supplies', label: 'Поставки', children: <CatalogSupplies /> }]
                     : []),

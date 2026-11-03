@@ -103,8 +103,8 @@ function ChatScope({
      *  The loading gate covers the first read only: a refresh keeps the catalog,
      *  so the panel survives the reads triggered by its own actions. */
     const setupItems = (models.catalog?.items ?? []).filter(
-        (model) => model.capability !== 'embedding' && !model.archivedAt,
-    ),
+            (model) => model.capability !== 'embedding' && !model.archivedAt,
+        ),
         showSetup =
             !!projectId &&
             chatModelSetupVisible({

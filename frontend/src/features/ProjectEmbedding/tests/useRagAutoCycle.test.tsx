@@ -35,9 +35,10 @@ const plan = (patch: Partial<IProjectReindexPlan> = {}): IProjectReindexPlan => 
 });
 const local = (state: string) => ({ jobId: 'job-1', state, message: 'msg', percent: null });
 
-const makeReindex = (
-    value: { plan?: IProjectReindexPlan; retryLocal?: () => void },
-): ReturnType<typeof useProjectReindex> =>
+const makeReindex = (value: {
+    plan?: IProjectReindexPlan;
+    retryLocal?: () => void;
+}): ReturnType<typeof useProjectReindex> =>
     ({
         plan: value.plan,
         busy: false,

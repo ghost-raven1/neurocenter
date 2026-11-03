@@ -138,7 +138,11 @@ export function ProjectUpdateBatch({
                 } catch (cause) {
                     if (!owns()) break;
                     if (isAxiosError(cause) && cause.response?.status === 409) {
-                        next.set(row.key, { key: row.key, state: 'conflict', message: 'Закрепление изменили параллельно.' });
+                        next.set(row.key, {
+                            key: row.key,
+                            state: 'conflict',
+                            message: 'Закрепление изменили параллельно.',
+                        });
                     } else {
                         next.set(row.key, {
                             key: row.key,
@@ -168,9 +172,7 @@ export function ProjectUpdateBatch({
             <div className="store-updates-head">
                 <div className="store-updates-title">
                     {rows.length > 0 ? (
-                        <>
-                            Новее закрепления: {rows.length}. Закрепите точные редакции одним подтверждением.
-                        </>
+                        <>Новее закрепления: {rows.length}. Закрепите точные редакции одним подтверждением.</>
                     ) : (
                         'Обновлений, новее закреплённых редакций, сейчас нет.'
                     )}
@@ -223,7 +225,8 @@ export function ProjectUpdateBatch({
             )}
             {rows.length > 0 && (
                 <div className="store-updates-note">
-                    Установка новой редакции по-прежнему одобряется в каталоге проекта: откройте проект и подтвердите план.
+                    Установка новой редакции по-прежнему одобряется в каталоге проекта: откройте проект и подтвердите
+                    план.
                 </div>
             )}
             <Modal
@@ -296,17 +299,26 @@ function UpdateBatchRow({
         >
             <div className="store-updates-row-main">
                 <div className="store-updates-row-name">
-                    {row.name} <span className="store-updates-row-kind">{kindLabel(row.assetKind as 'mcp' | 'plugin' | 'skill')}</span>
+                    {row.name}{' '}
+                    <span className="store-updates-row-kind">
+                        {kindLabel(row.assetKind as 'mcp' | 'plugin' | 'skill')}
+                    </span>
                 </div>
                 <div className="store-updates-row-project">{row.projectName}</div>
             </div>
             <div className="store-updates-row-version">
                 {row.from} → {row.to}
             </div>
-            {status && <div className={`store-updates-row-status store-updates-status-${status}`}>{STATUS_LABEL[status]}</div>}
+            {status && (
+                <div className={`store-updates-row-status store-updates-status-${status}`}>{STATUS_LABEL[status]}</div>
+            )}
             {outcome && (
                 <div className="store-updates-row-outcome">
-                    {outcome.state === 'ok' ? 'Закреплено' : outcome.state === 'conflict' ? 'Закрепление изменили параллельно' : outcome.message}
+                    {outcome.state === 'ok'
+                        ? 'Закреплено'
+                        : outcome.state === 'conflict'
+                          ? 'Закрепление изменили параллельно'
+                          : outcome.message}
                 </div>
             )}
             <Button size="small" disabled={pinning} loading={busy} onClick={onOpen}>

@@ -37,19 +37,22 @@ describe('projectUpdateApplyTarget', () => {
     it('offers the exact newer catalog revision for a managed project card', () => {
         expect(projectUpdateApplyTarget(app, baseOptions)).toEqual({ head, ref });
     });
-    it.each(['flag disabled', 'card not selected', 'without manage rights', 'without project target', 'catalog not ready'])(
-        '%s keeps the separate actions',
-        (which) => {
-            const overrides: Record<string, Partial<typeof baseOptions>> = {
-                'flag disabled': { applyEnabled: false },
-                'card not selected': { selected: false },
-                'without manage rights': { canManage: false },
-                'without project target': { targetProjectId: undefined },
-                'catalog not ready': { catalogReady: false },
-            };
-            expect(projectUpdateApplyTarget(app, { ...baseOptions, ...overrides[which] })).toBeUndefined();
-        },
-    );
+    it.each([
+        'flag disabled',
+        'card not selected',
+        'without manage rights',
+        'without project target',
+        'catalog not ready',
+    ])('%s keeps the separate actions', (which) => {
+        const overrides: Record<string, Partial<typeof baseOptions>> = {
+            'flag disabled': { applyEnabled: false },
+            'card not selected': { selected: false },
+            'without manage rights': { canManage: false },
+            'without project target': { targetProjectId: undefined },
+            'catalog not ready': { catalogReady: false },
+        };
+        expect(projectUpdateApplyTarget(app, { ...baseOptions, ...overrides[which] })).toBeUndefined();
+    });
     it('keeps pinError and unknown states on the recovery actions', () => {
         expect(projectUpdateApplyTarget({ ...app, pinError: 'конфликт' }, baseOptions)).toBeUndefined();
         expect(projectUpdateApplyTarget(app, { ...baseOptions, common: [] })).toBeUndefined();
@@ -168,7 +171,12 @@ describe('autoInspectCandidates', () => {
         expect(
             autoInspectCandidates(
                 [
-                    inspectJob({ id: 'old', createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-01T00:01:00Z', expectedManifest: 'm2' }),
+                    inspectJob({
+                        id: 'old',
+                        createdAt: '2026-11-01T00:00:00Z',
+                        updatedAt: '2026-11-01T00:01:00Z',
+                        expectedManifest: 'm2',
+                    }),
                     installJob(),
                 ],
                 [installation],

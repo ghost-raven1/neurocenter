@@ -5,13 +5,7 @@ export const RAG_AUTO_CYCLE_COOLDOWN_MS = 10000;
 
 export type TRagAutoCycleAction = 'retryLocal' | 'none';
 export type TRagAutoCycleReason =
-    | 'flag-off'
-    | 'no-plan'
-    | 'not-applied'
-    | 'no-local-step'
-    | 'local-not-failed'
-    | 'at-cap'
-    | 'local-failed';
+    'flag-off' | 'no-plan' | 'not-applied' | 'no-local-step' | 'local-not-failed' | 'at-cap' | 'local-failed';
 
 /**
  * Автоцикл базы знаний: после явного подтверждения пересборки локальный шаг
@@ -31,6 +25,7 @@ export function ragAutoCycleDecision(input: {
     if (plan.state !== 'applied') return { action: 'none', reason: 'not-applied' };
     if (!plan.local) return { action: 'none', reason: 'no-local-step' };
     if (!['failed', 'cancelled'].includes(plan.local.state)) return { action: 'none', reason: 'local-not-failed' };
-    if (input.attempts >= (input.maxAttempts ?? RAG_AUTO_CYCLE_MAX_ATTEMPTS)) return { action: 'none', reason: 'at-cap' };
+    if (input.attempts >= (input.maxAttempts ?? RAG_AUTO_CYCLE_MAX_ATTEMPTS))
+        return { action: 'none', reason: 'at-cap' };
     return { action: 'retryLocal', reason: 'local-failed' };
 }

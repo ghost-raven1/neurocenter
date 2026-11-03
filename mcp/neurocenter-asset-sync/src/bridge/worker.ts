@@ -465,9 +465,7 @@ export async function runWorker(): Promise<void> {
                 );
             } else if ((OPENCODE_PROVIDER_JOBS as readonly string[]).includes(current.kind)) {
                 result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, () =>
-                    runProviderJob(current, authorize, () =>
-                        api('opencode-provider/authorize', { jobId: current.id }),
-                    ),
+                    runProviderJob(current, authorize, () => api('opencode-provider/authorize', { jobId: current.id })),
                 );
             } else if (current.kind === PROJECT_AGENTS_JOB) {
                 if (current.payload.projectId !== current.project_id)
@@ -567,16 +565,9 @@ export async function runWorker(): Promise<void> {
                         await authorize();
                     },
                 );
-            } else if (
-                current.kind === 'connect-rag-model' &&
-                current.payload.package &&
-                current.payload.embedding
-            ) {
+            } else if (current.kind === 'connect-rag-model' && current.payload.package && current.payload.embedding) {
                 await update(20, 'Проверяем выбранную модель и доступ через мост.');
-                if (
-                    current.payload.reindex !== true ||
-                    current.payload.ragReindexProtocol !== 'hosted-rag-reindex-v1'
-                )
+                if (current.payload.reindex !== true || current.payload.ragReindexProtocol !== 'hosted-rag-reindex-v1')
                     throw new Error('Обновите задание переиндексации до поддерживаемого формата.');
                 result = await jobContext.run({ id: current.id, lease: current.lease, deviceId }, async () => {
                     const connected = await connectHostedRag(
@@ -616,9 +607,7 @@ export async function runWorker(): Promise<void> {
                         update,
                     );
                     if (!connected.reindex || synced.snapshotHash !== connected.reindex.snapshotHash)
-                        throw new Error(
-                            'Серверная копия нового индекса не подтверждена. Повторите подключение.',
-                        );
+                        throw new Error('Серверная копия нового индекса не подтверждена. Повторите подключение.');
                     return { ...connected, reindex: { ...connected.reindex, serverSynced: true } };
                 });
             } else if (current.kind === 'open-local-recovery-folder') {
@@ -830,9 +819,7 @@ export async function runWorker(): Promise<void> {
                                             ? 'Подключение модели и локальный индекс проверены.'
                                             : current.kind === 'open-local-recovery-folder'
                                               ? 'Резервные копии открыты на подключённом компьютере.'
-                                              : ['apply-local-change', ...PROJECT_LOCAL_APPLIES].includes(
-                                                      current.kind,
-                                                  )
+                                              : ['apply-local-change', ...PROJECT_LOCAL_APPLIES].includes(current.kind)
                                                 ? 'Одобренные файлы восстановлены; локальный вариант сохранён.'
                                                 : current.kind === 'probe-runtime'
                                                   ? 'Проверка запуска OpenCode завершена.'
@@ -1055,14 +1042,16 @@ export async function runWorker(): Promise<void> {
                     break;
                 }
                 if (lanesOn && READ_LANE_KINDS.includes(current.kind)) {
-                    const handle = runClaimedJob(current, deviceId).then(
-                        () => undefined,
-                        (error) => {
-                            process.stderr.write('neurocenter bridge: ' + (error as Error).message + '\n');
-                        },
-                    ).finally(() => {
-                        readLane.delete(current.id);
-                    });
+                    const handle = runClaimedJob(current, deviceId)
+                        .then(
+                            () => undefined,
+                            (error) => {
+                                process.stderr.write('neurocenter bridge: ' + (error as Error).message + '\n');
+                            },
+                        )
+                        .finally(() => {
+                            readLane.delete(current.id);
+                        });
                     readLane.set(current.id, handle);
                     continue;
                 }

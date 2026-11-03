@@ -35,8 +35,7 @@ export function useBundledNameCheck(
             const match = await packagingApi.publicationConflict(name.trim(), controller.signal);
             if (!active()) return;
             const outcome = classifyNameConflict(match ?? null, kind);
-            if (outcome.state === 'archived')
-                setState({ loading: false, error: nameConflictMessages.archived });
+            if (outcome.state === 'archived') setState({ loading: false, error: nameConflictMessages.archived });
             else if (outcome.state === 'other-kind')
                 setState({ loading: false, error: nameConflictMessages['other-kind'] });
             else if (outcome.state === 'match') onMatch({ catalogId: outcome.catalogId, kind: outcome.kind });

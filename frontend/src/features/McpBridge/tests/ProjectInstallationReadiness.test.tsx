@@ -73,7 +73,12 @@ it('opens the binding on the spot through onChooseFolder without leaving the pag
             root.render(
                 <MemoryRouter initialEntries={['/store?p=prj-owned']}>
                     <Location />
-                    <ProjectInstallationReadiness bridge={bridge} projectId="prj-owned" canInstall onChooseFolder={chooseFolder} />
+                    <ProjectInstallationReadiness
+                        bridge={bridge}
+                        projectId="prj-owned"
+                        canInstall
+                        onChooseFolder={chooseFolder}
+                    />
                 </MemoryRouter>,
             ),
         );

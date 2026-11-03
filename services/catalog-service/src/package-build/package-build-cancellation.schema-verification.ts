@@ -4,10 +4,7 @@ import { CATALOG_SCHEMA_FACTS_SQL } from '../database/schema-catalog';
 import { PACKAGE_BUILD_CANCELLATION_SCHEMA_CONTRACT } from './package-build-cancellation.schema-contract';
 import { PACKAGE_BUILD_SLOTS_SCHEMA_CONTRACT } from './package-build-slots.schema-contract';
 
-const overridden = new Set([
-    'constraint:tool_build_jobs.tool_build_jobs_state_check',
-    'index:tool_build_one_running',
-]);
+const overridden = new Set(['constraint:tool_build_jobs.tool_build_jobs_state_check', 'index:tool_build_one_running']);
 export const CURRENT_BUILD_CATALOG_SCHEMA_CONTRACT = [
     ...CATALOG_SCHEMA_CONTRACT.filter((item) => !overridden.has(item.kind + ':' + item.id)),
     ...PACKAGE_BUILD_CANCELLATION_SCHEMA_CONTRACT,

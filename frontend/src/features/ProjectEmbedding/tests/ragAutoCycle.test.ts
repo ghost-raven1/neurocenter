@@ -39,20 +39,14 @@ describe('ragAutoCycleDecision', () => {
             reason: 'no-plan',
         });
     });
-    it.each([
-        'preparing',
-        'needs_input',
-        'building',
-        'ready',
-        'failed',
-        'cancelling',
-        'cancelled',
-        'stale',
-    ])('does not retry a plan in the %s state', (state) => {
-        expect(ragAutoCycleDecision({ flagEnabled: true, plan: plan({ state, local: local('failed') }), attempts: 0 })).toEqual(
-            { action: 'none', reason: 'not-applied' },
-        );
-    });
+    it.each(['preparing', 'needs_input', 'building', 'ready', 'failed', 'cancelling', 'cancelled', 'stale'])(
+        'does not retry a plan in the %s state',
+        (state) => {
+            expect(
+                ragAutoCycleDecision({ flagEnabled: true, plan: plan({ state, local: local('failed') }), attempts: 0 }),
+            ).toEqual({ action: 'none', reason: 'not-applied' });
+        },
+    );
     it('does not retry an applied plan without a local step', () => {
         expect(ragAutoCycleDecision({ flagEnabled: true, plan: plan({}), attempts: 0 })).toEqual({
             action: 'none',
@@ -62,7 +56,9 @@ describe('ragAutoCycleDecision', () => {
     it.each(['waiting', 'pending', 'queued', 'running', 'reconciling', 'succeeded'])(
         'does not retry a local step in the %s state',
         (state) => {
-            expect(ragAutoCycleDecision({ flagEnabled: true, plan: plan({ local: local(state) }), attempts: 0 })).toEqual({
+            expect(
+                ragAutoCycleDecision({ flagEnabled: true, plan: plan({ local: local(state) }), attempts: 0 }),
+            ).toEqual({
                 action: 'none',
                 reason: 'local-not-failed',
             });
@@ -76,11 +72,11 @@ describe('ragAutoCycleDecision', () => {
     });
     it('retries up to the cap and stops at it', () => {
         for (let attempts = 0; attempts < RAG_AUTO_CYCLE_MAX_ATTEMPTS; attempts += 1) {
-            expect(
-                ragAutoCycleDecision({ flagEnabled: true, plan: failedLocal, attempts }).action,
-            ).toBe('retryLocal');
+            expect(ragAutoCycleDecision({ flagEnabled: true, plan: failedLocal, attempts }).action).toBe('retryLocal');
         }
-        expect(ragAutoCycleDecision({ flagEnabled: true, plan: failedLocal, attempts: RAG_AUTO_CYCLE_MAX_ATTEMPTS })).toEqual({
+        expect(
+            ragAutoCycleDecision({ flagEnabled: true, plan: failedLocal, attempts: RAG_AUTO_CYCLE_MAX_ATTEMPTS }),
+        ).toEqual({
             action: 'none',
             reason: 'at-cap',
         });

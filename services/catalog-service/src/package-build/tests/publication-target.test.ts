@@ -25,10 +25,10 @@ describe('assertBuildCreateName name conflict', () => {
         });
     });
     it('marks the archived flag when the conflicting card is archived', async () => {
-        const error = (await assertBuildCreateName(
-            makePool([{ ...card, archived_at: new Date() }]).pool,
-            { kind: 'plugin', name: 'example' },
-        ).catch((error): unknown => error)) as ConflictException;
+        const error = (await assertBuildCreateName(makePool([{ ...card, archived_at: new Date() }]).pool, {
+            kind: 'plugin',
+            name: 'example',
+        }).catch((error): unknown => error)) as ConflictException;
         expect(error.getResponse()).toMatchObject({ code: 'name-conflict', archived: true });
     });
     it('stays silent for the update path and skills without touching the database', async () => {

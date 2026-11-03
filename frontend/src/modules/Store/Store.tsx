@@ -511,7 +511,10 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 .then(() => reload())
                 .catch((cause) => {
                     autoInspectedJobs.current.delete(job.id);
-                    console.warn('Авто-сверка после установки не отправлена, повтор при следующем обновлении моста.', cause);
+                    console.warn(
+                        'Авто-сверка после установки не отправлена, повтор при следующем обновлении моста.',
+                        cause,
+                    );
                 });
         }
     }, [
@@ -782,10 +785,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                         {app.pinError ? 'Подтвердить версию проекта' : 'Закрепить новую версию'}
                     </FeatureButton>
                 )}
-                {target &&
-                    canInstall &&
-                    (selected || (canManage && !referenceBlocker)) &&
-                    !applyUpdateTarget && (
+                {target && canInstall && (selected || (canManage && !referenceBlocker)) && !applyUpdateTarget && (
                     <FeatureButton
                         features={['tool_installation']}
                         size="small"
@@ -1085,9 +1085,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                                     bridge={bridge}
                                     projectId={targetProject.id}
                                     canInstall={canInstall}
-                                    onChooseFolder={
-                                        bindingInlineFlag.enabled ? () => setBindingOpen(true) : undefined
-                                    }
+                                    onChooseFolder={bindingInlineFlag.enabled ? () => setBindingOpen(true) : undefined}
                                 />
                             )}
                         </div>

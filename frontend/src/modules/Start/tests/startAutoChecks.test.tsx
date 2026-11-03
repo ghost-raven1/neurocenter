@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { OPENCODE_CLI_INSPECT_JOB } from '@neurocenter/computer-setup';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import type { ICliJob, ICliObservationState } from '../../features/ComputerSetup/model';
 import { START_AUTO_CHECK_STALE_MS, startAutoInspectNeeded, useStartAutoInspect } from '../startAutoChecks';
 
@@ -43,19 +43,27 @@ describe('startAutoInspectNeeded', () => {
         const pending = { request: { requestKey: 'k' }, role: 'Разработчик' } as ICliObservationState['intent'];
         expect(startAutoInspectNeeded(state({ intent: pending }), NOW)).toBe(false);
         expect(
-            startAutoInspectNeeded(state({ intent: { ...pending, jobId: 'job-1' }, job: job({ state: 'running' }) }), NOW),
+            startAutoInspectNeeded(
+                state({ intent: { ...pending, jobId: 'job-1' }, job: job({ state: 'running' }) }),
+                NOW,
+            ),
         ).toBe(false);
-        expect(
-            startAutoInspectNeeded(state({ intent: { ...pending, jobId: 'job-9' }, job: job() }), NOW),
-        ).toBe(false);
+        expect(startAutoInspectNeeded(state({ intent: { ...pending, jobId: 'job-9' }, job: job() }), NOW)).toBe(false);
     });
     it('re-checks a stale confirmed observation even with a confirmed (resolved) saved intent', () => {
         // Регрессия: журнал хранит отправку навсегда; подтверждённая отправка
         // не должна блокировать повторную проверку устаревшего состояния.
-        const resolved = { request: { requestKey: 'k' }, role: 'Разработчик', jobId: 'job-1' } as ICliObservationState['intent'];
+        const resolved = {
+            request: { requestKey: 'k' },
+            role: 'Разработчик',
+            jobId: 'job-1',
+        } as ICliObservationState['intent'];
         expect(
             startAutoInspectNeeded(
-                state({ intent: resolved, job: job({ observation: { status: 'installed', version: '1' }, updatedAt: iso(-16 * 60_000) }) }),
+                state({
+                    intent: resolved,
+                    job: job({ observation: { status: 'installed', version: '1' }, updatedAt: iso(-16 * 60_000) }),
+                }),
                 NOW,
             ),
         ).toBe(true);
@@ -71,16 +79,34 @@ describe('startAutoInspectNeeded', () => {
             expect(startAutoInspectNeeded(state({ job: job({ state: value }) }), NOW)).toBe(false);
     });
     it('keeps a fresh confirmed observation', () => {
-        expect(startAutoInspectNeeded(state({ job: job({ observation: { status: 'installed', version: '1' } }) }), NOW)).toBe(false);
+        expect(
+            startAutoInspectNeeded(state({ job: job({ observation: { status: 'installed', version: '1' } }) }), NOW),
+        ).toBe(false);
         expect(startAutoInspectNeeded(state({ job: job({ observation: { status: 'missing' } }) }), NOW)).toBe(false);
         // Граничный возраст считается ещё актуальным.
         expect(
-            startAutoInspectNeeded(state({ job: job({ observation: { status: 'installed', version: '1' }, updatedAt: iso(-START_AUTO_CHECK_STALE_MS) }) }), NOW),
+            startAutoInspectNeeded(
+                state({
+                    job: job({
+                        observation: { status: 'installed', version: '1' },
+                        updatedAt: iso(-START_AUTO_CHECK_STALE_MS),
+                    }),
+                }),
+                NOW,
+            ),
         ).toBe(false);
     });
     it('re-checks a confirmed observation after the staleness window', () => {
         expect(
-            startAutoInspectNeeded(state({ job: job({ observation: { status: 'installed', version: '1' }, updatedAt: iso(-START_AUTO_CHECK_STALE_MS - 1) }) }), NOW),
+            startAutoInspectNeeded(
+                state({
+                    job: job({
+                        observation: { status: 'installed', version: '1' },
+                        updatedAt: iso(-START_AUTO_CHECK_STALE_MS - 1),
+                    }),
+                }),
+                NOW,
+            ),
         ).toBe(true);
     });
     it('re-checks unconfirmed terminal results: failure, timeout, missing receipt, invalid time', () => {
@@ -129,9 +155,24 @@ async function renderProbe(props: IProbeProps) {
 }
 
 describe('useStartAutoInspect', () => {
+    // Хук читает реальные часы; привязываем их к фиксированному NOW фикстур,
+    // чтобы «свежесть» не зависела от момента запуска тестов.
+    beforeEach(() => {
+        vi.spyOn(Date, 'now').mockReturnValue(NOW);
+    });
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
     const stale = () => state({ job: job({ state: 'failed' }) });
     const fresh = () => state({ job: job({ observation: { status: 'installed', version: '1' } }) });
-    const base: IProbeProps = { enabled: true, flag: true, deviceId: 'dev-1', canStart: true, state: stale(), start: vi.fn() };
+    const base: IProbeProps = {
+        enabled: true,
+        flag: true,
+        deviceId: 'dev-1',
+        canStart: true,
+        state: stale(),
+        start: vi.fn(),
+    };
 
     it('does nothing when the flag is off, even with a stale state', async () => {
         const start = vi.fn();

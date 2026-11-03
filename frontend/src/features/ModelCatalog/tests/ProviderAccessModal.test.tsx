@@ -15,7 +15,12 @@ vi.mock('../../RemoteProviderAccess/RemoteProviderAccess', () => ({
 vi.mock('../../FeatureFlags/FeatureAvailability', async () => {
     const { Button } = await import('antd');
     return {
-        FeatureButton: ({ features: _features, disabled, onClick, ...props }: { features: unknown } & Record<string, unknown>) => (
+        FeatureButton: ({
+            features: _features,
+            disabled,
+            onClick,
+            ...props
+        }: { features: unknown } & Record<string, unknown>) => (
             <Button {...(props as object)} disabled={disabled} onClick={onClick as () => void} />
         ),
     };
@@ -51,9 +56,7 @@ afterEach(async () => {
 });
 const bodyText = (): string => document.body.textContent ?? '';
 const button = (label: string): HTMLButtonElement | undefined =>
-    [...document.body.querySelectorAll('button')].find(
-        (node) => node.textContent?.trim() === label,
-    );
+    [...document.body.querySelectorAll('button')].find((node) => node.textContent?.trim() === label);
 // non-main: canConfigure=false, onConfigure=undefined — адрес настраивает главный админ,
 // но личный ключ доступен; модалка не должна быть dead-end (P1-1).
 it('non-main: hides the shared-address editor but keeps the personal key', async () => {
@@ -70,7 +73,13 @@ it('main: shows the shared-address editor and wires it to onConfigure', async ()
         onClose = vi.fn();
     await act(async () =>
         root.render(
-            <ProviderAccessModal model={model} canConfigure={true} busy={false} onConfigure={onConfigure} onClose={onClose} />,
+            <ProviderAccessModal
+                model={model}
+                canConfigure={true}
+                busy={false}
+                onConfigure={onConfigure}
+                onClose={onClose}
+            />,
         ),
     );
     const action = button('Изменить адрес и настройки провайдера');

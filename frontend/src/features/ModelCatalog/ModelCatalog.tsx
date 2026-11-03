@@ -324,7 +324,10 @@ export function ModelCatalog({
                                     Добавить модель
                                 </FeatureButton>
                                 <Tooltip title="Общая конфигурация компьютера или настройки проекта">
-                                    <FeatureButton features={['opencode_model_sync']} onClick={() => setImporting(true)}>
+                                    <FeatureButton
+                                        features={['opencode_model_sync']}
+                                        onClick={() => setImporting(true)}
+                                    >
                                         Из OpenCode
                                     </FeatureButton>
                                 </Tooltip>
@@ -602,9 +605,9 @@ export function ModelCatalog({
                     onConfigure={
                         isMain
                             ? () => {
-                                setConnection(providerAccess.model);
-                                setProviderAccess(null);
-                            }
+                                  setConnection(providerAccess.model);
+                                  setProviderAccess(null);
+                              }
                             : undefined
                     }
                     onClose={() => setProviderAccess(null)}

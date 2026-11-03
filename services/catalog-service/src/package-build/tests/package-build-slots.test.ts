@@ -3,21 +3,20 @@ import type { Pool, PoolClient } from 'pg';
 import { PackageBuildRepository, TOOL_BUILD_MAX_RUN_SLOTS } from '../package-build.repository';
 import type { IBuildConfiguration, IBuildRow } from '../package-build.model';
 
-const build = (id: string): IBuildRow =>
-    ({
-        id,
-        actor: 'admin@local',
-        request_key: 'key-' + id,
-        request_hash: 'hash-' + id,
-        config: { name: 'tool-' + id } as unknown as IBuildConfiguration,
-        state: 'QUEUED',
-        percent: 0,
-        message: 'В очереди',
-        result: null,
-        error: null,
-        created_at: '2026-11-02T00:00:00.000Z',
-        updated_at: '2026-11-02T00:00:00.000Z',
-    });
+const build = (id: string): IBuildRow => ({
+    id,
+    actor: 'admin@local',
+    request_key: 'key-' + id,
+    request_hash: 'hash-' + id,
+    config: { name: 'tool-' + id } as unknown as IBuildConfiguration,
+    state: 'QUEUED',
+    percent: 0,
+    message: 'В очереди',
+    result: null,
+    error: null,
+    created_at: '2026-11-02T00:00:00.000Z',
+    updated_at: '2026-11-02T00:00:00.000Z',
+});
 
 interface IEnv {
     /** Занятые слоты RUNNING-сборок; сценарии всегда занимают самые младшие. */
@@ -51,15 +50,15 @@ function fakeLease(env: IEnv): PoolClient {
             if (sql.includes("WHERE state='QUEUED'")) return { rows: env.queued.slice(0, 1) };
             if (sql.startsWith('UPDATE tool_build_jobs SET state=$2'))
                 return {
-                    rows: [
-                        { ...env.queued[0], state: 'RUNNING' as const, percent: 0, message: 'Подготовка сборки' },
-                    ],
+                    rows: [{ ...env.queued[0], state: 'RUNNING' as const, percent: 0, message: 'Подготовка сборки' }],
                 };
             if (sql.includes('execution_nonce=$2')) {
                 const runSlot = params[4] as number;
                 env.claimed.push({ id: params[0] as string, runSlot });
                 return {
-                    rows: [{ ...env.queued[0], state: 'RUNNING' as const, run_slot: runSlot, execution_nonce: params[1] }],
+                    rows: [
+                        { ...env.queued[0], state: 'RUNNING' as const, run_slot: runSlot, execution_nonce: params[1] },
+                    ],
                 };
             }
             if (sql.startsWith('INSERT INTO operations')) return { rows: [] };

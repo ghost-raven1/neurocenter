@@ -197,7 +197,7 @@ export function BundledCatalogSources({
             setBatchHint(
                 rest.length
                     ? 'Серия «Обновить готовые»: после этой позиции автоматически откроется следующая. Осталось: ' +
-                      rest.length
+                          rest.length
                     : 'Серия «Обновить готовые»: это последняя позиция — после неё серия завершится.',
             );
             const next = plans.find((entry) => entry.id === nextId);
@@ -235,12 +235,15 @@ export function BundledCatalogSources({
             return;
         }
         if (batchUpdate) {
-            batchQueue.current = plans.filter(isBatchReadyPlan).map((entry) => entry.id).filter((entry) => entry !== value.id);
+            batchQueue.current = plans
+                .filter(isBatchReadyPlan)
+                .map((entry) => entry.id)
+                .filter((entry) => entry !== value.id);
             batchCurrent.current = value.id;
             setBatchHint(
                 batchQueue.current.length
                     ? 'Серия «Обновить готовые»: после этой позиции автоматически откроется следующая. Осталось: ' +
-                      batchQueue.current.length
+                          batchQueue.current.length
                     : '',
             );
         }
@@ -514,8 +517,8 @@ export function BundledCatalogSources({
                     </>
                 )}
                 <Typography.Paragraph type="secondary">
-                    Публикация создаёт новую редакцию каталога. Применение к проекту — действие «Применить
-                    обновление» на карточке инструмента в каталоге проекта.
+                    Публикация создаёт новую редакцию каталога. Применение к проекту — действие «Применить обновление»
+                    на карточке инструмента в каталоге проекта.
                 </Typography.Paragraph>
                 {build.archived.map((record) => (
                     <Button
