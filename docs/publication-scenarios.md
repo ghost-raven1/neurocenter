@@ -88,7 +88,7 @@
 | E5 | [Владельцы форм и восстановление](deep-ui-playtest-2026-10-18.md): frontend 833 этого прохода; виртуальные роли/аккаунты, RUNNING job и задержанные мутации явно отделены от реальных GET |
 | E6 | [Исторический этап 0.9.0](reliable-installation-0.9-2026-10-18.md) и [0.8](project-inventory-2026-10-18.md): локальные worker, параметры, журнал; не приёмка нового архива или настоящего Blitz |
 | E7 | [Внешняя приёмка](p0-external-acceptance.md), [обслуживание](maintenance-schedule.md), [S3](external-backups.md), [DR](production-recovery.md), [update](production-update.md), [ресурсы](capacity-admission.md): runbooks различают локальные проверки, реальные репетиции и ещё не выполненную внешнюю приёмку |
-| E8 | [Точный архив 0.9.3 darwin-arm64](../output/playwright/neurocenter-add-methods/bridge-0.9.3/release.md): build ID, SHA, 5 installer и 5 stdio; не полная матрица восьми целей |
+| E8 | Точный архив 0.9.3 darwin-arm64 (`output/playwright/neurocenter-add-methods/bridge-0.9.3/release.md`): build ID, SHA, 5 installer и 5 stdio; не полная матрица восьми целей |
 | E9 | [Удаление MCP/плагинов и живой аудит](catalog-audit-delete-2026-10-18.md): frontend 834, catalog 760, отдельная PostgreSQL-БД и настоящий API/UI; чужие данные сохранены |
 | E10 | [Аудит состава проекта и целостность зависимостей](project-catalog-audit-2026-10-18.md): frontend 835, catalog 780; 20 publication и 11 project-assets сценариев PostgreSQL в двух изолированных БД |
 | E11 | [Зависимости файловых скиллов](skill-dependency-guard-2026-10-18.md): catalog 813, skills 129, межсервисные HTTP/SQL/FS и конкурентные отказы в собственной БД; прежние SQL-сценарии повторены |

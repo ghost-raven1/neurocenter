@@ -117,7 +117,11 @@ for (const mode of ['normal', 'transient', 'permanent'])
                             NEUROCENTER_NPM_STRICT_SSL: 'true',
                             NEUROCENTER_NPM_DIAGNOSTICS: mode === 'normal' ? '0' : '1',
                             NC_TEST_NODE: process.execPath,
-                            NC_TEST_NPM: npmCli(),
+                            // Pair npm with the current runtime: PATH may expose an older, incompatible npm.
+                            NC_TEST_NPM: npmCli({
+                                ...process.env,
+                                PATH: path.dirname(process.execPath) + path.delimiter + (process.env.PATH ?? ''),
+                            }),
                             NPM_CONFIG_CACHE: path.join(folder, 'fresh-cache'),
                         },
                     }),

@@ -32,6 +32,11 @@ test('all shipped public entrypoints register before main code and retain their 
             new URL('../../services/shared/bridge-update-cleanup.cjs', import.meta.url),
             path.join(dist, 'shared/bridge-update-cleanup.cjs'),
         );
+        // Cleanup требует lock-модуль из того же каталога; реальная сборка копирует оба.
+        await fs.copyFile(
+            new URL('../../services/shared/bridge-update-lock.cjs', import.meta.url),
+            path.join(dist, 'shared/bridge-update-lock.cjs'),
+        );
         const control = await cleanup.controlRootForInstallRoot(installRoot);
         await fs.mkdir(path.join(control, 'leases'), { recursive: true, mode: 0o700 });
         await fs.mkdir(path.join(control, 'locks'), { mode: 0o700 });
@@ -78,6 +83,11 @@ test('a malformed managed owner stops the real bootstrap before any main side ef
         await fs.copyFile(
             new URL('../../services/shared/bridge-update-cleanup.cjs', import.meta.url),
             path.join(dist, 'shared/bridge-update-cleanup.cjs'),
+        );
+        // Cleanup требует lock-модуль из того же каталога; реальная сборка копирует оба.
+        await fs.copyFile(
+            new URL('../../services/shared/bridge-update-lock.cjs', import.meta.url),
+            path.join(dist, 'shared/bridge-update-lock.cjs'),
         );
         const effect = path.join(temporary, 'executed');
         for (const entry of cleanup.RUNTIME_USE_ENTRYPOINTS) {

@@ -196,7 +196,7 @@ export function devServiceHealth(
                 const service = { ...devServices.find((item) => item.name === input.name), ...input };
                 const frontend = service.name === 'frontend',
                     started = Date.now();
-                const inspectionDeadline = Math.min(deadline, started + 3000);
+                const inspectionDeadline = Math.min(deadline, started + 5000);
                 const base = probeLocalEndpoint(service, {
                     signal,
                     deadline,

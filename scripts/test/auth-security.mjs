@@ -12,6 +12,36 @@ const {
 } = require('../../services/oauth2-bridge/dist/security/browser-security.js');
 const { ProxyService } = require('../../services/api-gateway/dist/proxy/proxy.service.js');
 const { filterResponse } = require('../../services/api-gateway/dist/proxy/access-response.js');
+const memorySessionStore = () => {
+    const rows = new Map();
+    return {
+        async create({ tokenHash, identity, selectedRole, ttlSeconds }) {
+            rows.set(tokenHash, {
+                identity,
+                selectedRole,
+                expiresAt: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+            });
+        },
+        async find(hash) {
+            const row = rows.get(hash);
+            if (row && Date.parse(row.expiresAt) > Date.now())
+                return { identity: row.identity, selectedRole: row.selectedRole, expiresAt: row.expiresAt };
+            rows.delete(hash);
+            return null;
+        },
+        async selectRole(hash, role) {
+            const row = rows.get(hash);
+            if (row && Date.parse(row.expiresAt) > Date.now()) {
+                row.selectedRole = role;
+                return true;
+            }
+            return false;
+        },
+        async revoke(hash) {
+            rows.delete(hash);
+        },
+    };
+};
 const saved = process.env.SESSION_TTL_SECONDS;
 afterEach(() => {
     if (saved === undefined) {
@@ -50,25 +80,44 @@ const response = () => ({
         this.headers[name] = value;
     },
 });
-const user = { email: 'qa@example.test', activeRole: 'Разработчик', userRoles: ['Разработчик'] };
-test('Серверная сессия истекает даже при сохранённом клиентском cookie', (t) => {
+const user = {
+    id: 'blitz-qa',
+    principalName: 'qa@example.test',
+    email: 'qa@example.test',
+    projectRoles: [],
+    displayName: 'QA',
+    userRoles: ['Разработчик'],
+    activeRole: 'Разработчик',
+    routePermissions: [],
+};
+const storedUser = {
+    id: 'blitz-qa',
+    principalName: 'qa@example.test',
+    email: 'qa@example.test',
+    displayName: 'QA',
+    activeRole: 'Разработчик',
+    userRoles: [],
+    projectRoles: [],
+    routePermissions: [],
+};
+test('Серверная сессия истекает даже при сохранённом клиентском cookie', async (t) => {
     process.env.SESSION_TTL_SECONDS = '60';
-    const sessions = new SessionService();
+    const sessions = new SessionService(memorySessionStore());
     const original = Date.now;
     let now = 100000;
     t.mock.method(Date, 'now', () => now);
-    const token = sessions.create(user);
-    assert.equal(sessions.get(token), user);
+    const token = await sessions.create(user);
+    assert.deepEqual(await sessions.get(token), storedUser);
     now += 60000;
-    assert.equal(sessions.get(token), null);
-    assert.equal(sessions.get(token), null);
+    assert.equal(await sessions.get(token), null);
+    assert.equal(await sessions.get(token), null);
     assert.ok(original() > 0);
 });
-test('Отзыв сессии немедленно закрывает последующие запросы', () => {
-    const sessions = new SessionService();
-    const token = sessions.create(user);
-    sessions.remove(token);
-    assert.equal(sessions.get(token), null);
+test('Отзыв сессии немедленно закрывает последующие запросы', async () => {
+    const sessions = new SessionService(memorySessionStore());
+    const token = await sessions.create(user);
+    await sessions.remove(token);
+    assert.equal(await sessions.get(token), null);
 });
 for (const value of ['0', 'NaN', '-1', '9999999']) {
     test('Небезопасный срок сессии отклонён: ' + value, () => {
@@ -95,7 +144,7 @@ test('Ссылка подключения сохраняется после вх
 test('Mock-вход возвращает на подтверждение и ограничивает cookie', async () => {
     const controller = new AuthController(
         { ssoDisabled: true, panelUrl: 'http://localhost:5173', mockUser: async () => user },
-        new SessionService(),
+        new SessionService(memorySessionStore()),
     );
     const res = response();
     await controller.login({ query: { returnTo: '/projects?connect=0123456789ABCDEF' } }, res);
@@ -112,7 +161,7 @@ test('OAuth state переживает внешний SSO-переход и ис
             panelUrl: 'https://panel.example',
             authorizeUrl: (state) => 'https://sso.example/login?state=' + state,
         },
-        new SessionService(),
+        new SessionService(memorySessionStore()),
         transactions,
     );
     const res = response();
@@ -134,7 +183,7 @@ test('Неверный state не обменивает код и не созда
                 exchanged = true;
             },
         },
-        new SessionService(),
+        new SessionService(memorySessionStore()),
         new OAuthTransactions(),
     );
     const res = response();
@@ -151,7 +200,7 @@ test('Успешный callback возвращает к подключению �
     const { state } = transactions.create('/start?step=1&connect=0123456789ABCDEF');
     const controller = new AuthController(
         { ssoDisabled: false, panelUrl: 'https://panel.example', exchangeCode: async () => user },
-        new SessionService(),
+        new SessionService(memorySessionStore()),
         transactions,
     );
     const res = response();
@@ -217,15 +266,15 @@ test('Лишний Authorization не обходит защиту cookie-сес�
     );
     assert.equal(res.statusCode, 403);
 });
-test('POST-выход отзывает серверный ключ и возвращает 200 вместо Nest default 201', () => {
-    const sessions = new SessionService();
-    const token = sessions.create(user);
+test('POST-выход отзывает серверный ключ и возвращает 200 вместо Nest default 201', async () => {
+    const sessions = new SessionService(memorySessionStore());
+    const token = await sessions.create(user);
     const controller = new AuthController({ ssoDisabled: true }, sessions);
     const res = response();
     res.statusCode = 201;
-    controller.logoutJson({ cookies: { bridge_session: token } }, res);
+    await controller.logoutJson({ cookies: { bridge_session: token } }, res);
     assert.equal(res.statusCode, 200);
-    assert.equal(sessions.get(token), null);
+    assert.equal(await sessions.get(token), null);
     assert.deepEqual(res.body, {});
     assert.ok(res.cleared.includes('bridge_session'));
 });

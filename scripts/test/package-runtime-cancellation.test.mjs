@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { test } from 'node:test';
-import { verifyBuiltRuntime } from '../catalog-plugins/verify-runtime.mjs';
+import { verifyBuiltRuntime, hostTarget } from '../catalog-plugins/verify-runtime.mjs';
 import { RuntimeVerificationScope } from '../catalog-plugins/verify-runtime-process.mjs';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
 import { builtAssetFixture } from '../catalog-plugins/test/built-asset.fixture.mjs';
@@ -52,7 +52,7 @@ test('Integrity cancellation reaches the actual archive stream and settles it be
 });
 
 test('Materialization receives cancellation and remains owned until its pending I/O settles', async (t) => {
-    const f = await builtAssetFixture(t),
+    const f = await builtAssetFixture(t, { target: hostTarget() }),
         controller = new AbortController(),
         started = deferred(),
         resume = deferred(),

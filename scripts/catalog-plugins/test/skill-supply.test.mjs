@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -163,38 +164,53 @@ test('Skill operator publish sends the unchanged envelope through the ordinary G
     const f = await fixture(t),
         cookieFile = path.join(f.root, 'session');
     await fs.writeFile(cookieFile, 'synthetic-session=operator');
-    const request = globalThis.fetch,
-        calls = [];
-    globalThis.fetch = async (url, options) => {
-        calls.push({ url: String(url), options });
-        if (String(url).endsWith('/auth/me'))
-            return Response.json({ user: { activeRole: 'Главный админ', userRoles: ['Главный админ'] } });
-        assert.equal(String(url), 'http://localhost:5173/api/tool-builds/imports');
-        assert.equal(options.method, 'POST');
-        const input = JSON.parse(options.body);
-        assert.deepEqual(input.asset, f.asset);
-        assert.equal(input.requestKey, publicationKey(f.asset.id, f.asset.version));
-        return Response.json({
-            catalogId: 'common/fixture',
-            name: f.asset.card.name,
-            version: 1,
-            assetId: f.asset.id,
-            sourceVersion: f.asset.version,
-            sourceSha256: assetDigest(serializeAsset(f.asset)),
+    // The import POST travels over native http (requestToolImport), so a loopback server
+    // keeps the test hermetic while exercising the real transport.
+    const calls = [];
+    const server = createServer((req, res) => {
+        const chunks = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+            const body = Buffer.concat(chunks).toString('utf8');
+            calls.push({ url: req.url, method: req.method, cookie: req.headers.cookie });
+            const json = (value) => {
+                res.setHeader('content-type', 'application/json');
+                res.end(JSON.stringify(value));
+            };
+            if (req.url === '/auth/me')
+                return json({ user: { activeRole: 'Главный админ', userRoles: ['Главный админ'] } });
+            assert.equal(req.url, '/api/tool-builds/imports');
+            assert.equal(req.method, 'POST');
+            const input = JSON.parse(body);
+            assert.deepEqual(input.asset, f.asset);
+            assert.equal(input.requestKey, publicationKey(f.asset.id, f.asset.version));
+            return json({
+                catalogId: 'common/fixture',
+                name: f.asset.card.name,
+                version: 1,
+                assetId: f.asset.id,
+                sourceVersion: f.asset.version,
+                sourceSha256: assetDigest(serializeAsset(f.asset)),
+            });
         });
-    };
-    try {
-        const result = await publishCatalog({
-            asset: f.filename,
-            baseUrl: 'http://localhost:5173',
-            cookieFile,
-            dryRun: false,
-        });
-        assert.equal(result.tools[0].id, 'common/fixture');
-        assert.equal(calls.length, 2);
-    } finally {
-        globalThis.fetch = request;
-    }
+    });
+    t.after(
+        () =>
+            new Promise((resolve) => {
+                server.closeAllConnections();
+                server.close(resolve);
+            }),
+    );
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const result = await publishCatalog({
+        asset: f.filename,
+        baseUrl: 'http://127.0.0.1:' + server.address().port,
+        cookieFile,
+        dryRun: false,
+    });
+    assert.equal(result.tools[0].id, 'common/fixture');
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].cookie, 'synthetic-session=operator');
 });
 test('Public skill export preserves inline resources and exact original snapshot without rewriting input', async (t) => {
     const f = await fixture(t, { archive: true }),

@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { FEATURE_FLAG_KEYS } = require('../../services/shared/feature-flags.cjs');
 const { ProxyService } = require(
     path.join(process.env.GATEWAY_TEST_DIST || path.resolve('services/api-gateway/dist'), 'proxy/proxy.service.js'),
 );
@@ -21,6 +22,12 @@ function fixture(device = true) {
         { bridge() {}, sections: (value) => sections.push(value), mutation() {} },
     );
     proxy.http = {
+        get: async (url) => {
+            assert.equal(url, 'http://localhost:4400/internal/feature-flags/evaluated');
+            const flags = {};
+            for (const key of FEATURE_FLAG_KEYS) flags[key] = true;
+            return { status: 200, data: { flags } };
+        },
         post: async (...args) => {
             calls.push(args);
             return {

@@ -69,7 +69,7 @@ for (const kind of ['mcp', 'plugin'])
     });
 test('Плагин с объявленным UI без файла CLI не проходит готовую поставку', async () => {
     await fixture('plugin', [{ path: 'rag-plugin.mjs', content: 'export default {};' }], async (filename) => {
-        await assert.rejects(readyManifest(filename), /localUi.*описи/);
+        await assert.rejects(readyManifest(filename), /OpenCodeRAG.*описи/);
     });
 });
 test('Плагин с пустым UI файлом не проходит готовую поставку', async () => {
@@ -80,7 +80,7 @@ test('Плагин с пустым UI файлом не проходит гот�
             { path: 'opencode-rag.mjs', content: '' },
         ],
         async (filename) => {
-            await assert.rejects(readyManifest(filename), /localUi.*описи/);
+            await assert.rejects(readyManifest(filename), /OpenCodeRAG.*описи/);
         },
     );
 });

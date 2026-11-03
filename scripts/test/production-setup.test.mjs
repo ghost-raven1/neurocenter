@@ -153,6 +153,9 @@ async function fixture(t, mode, fail = '', initial = {}) {
                 encoding: 'utf8',
                 env: {
                     ...process.env,
+                    // The build shape is tested without corporate CA staging; that path has its own suite.
+                    NEUROCENTER_BUILD_CA_FILE: '',
+                    NODE_EXTRA_CA_CERTS: '',
                     SETUP_CALLS: calls,
                     SETUP_FAIL: fail,
                     SETUP_SCHEMA_READY: String(options.ready),

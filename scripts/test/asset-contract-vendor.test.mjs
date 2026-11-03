@@ -46,6 +46,8 @@ async function coldCheckout(t, { legacy = false } = {}) {
     if (legacy) {
         const pkg = await json(path.join(checkout, 'package.json'));
         pkg.dependencies = { '@neurocenter/asset-contract': legacyUrl };
+        // The previous package shipped no dev dependencies; drop them so the lock stays complete.
+        delete pkg.devDependencies;
         const lock = {
             name: pkg.name,
             version: pkg.version,
@@ -150,7 +152,7 @@ test(
     async (t) => {
         const f = await coldCheckout(t);
         await assert.rejects(fs.lstat(path.join(f.checkout, 'node_modules')), { code: 'ENOENT' });
-        const installed = f.run(['ci', '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);
+        const installed = f.run(['ci', '--omit=dev', '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);
         assert.equal(installed.error, undefined);
         assert.equal(installed.status, 0, installed.stderr);
         const expected = path.join(f.checkout, 'vendor/asset-contract/lib/index.mjs');

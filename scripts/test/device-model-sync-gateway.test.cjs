@@ -84,6 +84,12 @@ test('An explicitly trusted proxy may confirm TLS; spoofed or multi-hop headers 
         false,
     );
 });
+const { FEATURE_FLAG_KEYS } = require('../../services/shared/feature-flags.cjs');
+function evaluatedFlags() {
+    const map = {};
+    for (const key of FEATURE_FLAG_KEYS) map[key] = true;
+    return { flags: map };
+}
 function fixture() {
     const calls = [],
         events = [];
@@ -93,6 +99,10 @@ function fixture() {
         { bridge() {}, sections: (value) => events.push(value) },
     );
     service.http = {
+        get: async (url) => {
+            assert.equal(url, 'http://localhost:4400/internal/feature-flags/evaluated');
+            return { status: 200, data: evaluatedFlags() };
+        },
         post: async (url, body) => {
             calls.push({ url, body });
             return { status: 200, data: { changed: true } };
@@ -100,6 +110,11 @@ function fixture() {
     };
     const res = {
         statusCode: 0,
+        headers: {},
+        setHeader(name, value) {
+            this.headers[name] = value;
+            return this;
+        },
         status(v) {
             this.statusCode = v;
             return this;

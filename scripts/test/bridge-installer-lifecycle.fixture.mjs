@@ -108,10 +108,13 @@ else throw Error('Unexpected own fixture CLI mode');\n`;
                 'install',
                 'process',
                 'receipts',
+                'version',
             ],
-            'features/device-codex-inference': ['contract', 'diagnostics', 'receipts', 'response'],
+            'features/device-codex-inference': ['contract', 'receipts', 'response'],
+            'features/device-codex-inference/diagnostics': ['constants', 'diagnostics', 'interfaces', 'utils'],
             'features/local-configuration': ['private-store'],
-            'features/opencode-local-providers': ['contract'],
+            'features/opencode-local-providers': ['contract', 'job-contract'],
+            'features/opencode-personal-key': ['contract'],
             'features/opencode-providers': ['contract'],
             'features/project-learning-memory-sync': ['contract', 'projection', 'receipts'],
             'features/runtime-artifacts': [
@@ -150,6 +153,7 @@ else throw Error('Unexpected own fixture CLI mode');\n`;
             'opencode-cli-install',
             'opencode-local-providers',
             'opencode-model-scan',
+            'opencode-personal-key',
             'opencode-providers',
             'project-agents',
             'project-learning-memory-sync',
@@ -522,7 +526,18 @@ else throw Error('Unexpected own fixture CLI mode');\n`;
             server.closeAllConnections();
             await new Promise((resolve) => server.close(resolve));
         }
-        await fs.rm(root, { recursive: true, force: true });
+        // A terminating one-shot worker may land its final write between rm's walk and rmdir; retry briefly.
+        for (let attempt = 1; ; attempt++) {
+            try {
+                await fs.rm(root, { recursive: true, force: true });
+                break;
+            } catch (error) {
+                if (attempt >= 5 || !['ENOTEMPTY', 'EBUSY', 'EPERM'].includes(error.code))
+                    // eslint-disable-next-line no-unsafe-finally -- Cleanup failure must invalidate success and keep leaked resources visible.
+                    throw error;
+                await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+            }
+        }
         proofs.push({
             name,
             connectStages,

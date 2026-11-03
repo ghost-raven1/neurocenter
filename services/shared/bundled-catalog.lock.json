@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "path": "catalog-source/manifest.json",
-  "sha256": "eeec05fb7976706d83ba83d044fa065d27c5070665fcc778cfb9555da8886e8b",
+  "sha256": "c3c8e12ff4be86fb5e6163add4f518f983a0216e412054f1dcf53fc70934fb87",
   "components": {
     "fetch-mcp": "3bf0407400d3b660525aef32a27b6a6b63a0262169cb892ee97b40172fa0db92",
     "codex-connector": "ca1c919e721dbc2cd36f5555ec9e6708e6766af867f66ab98b427e069e725a08"

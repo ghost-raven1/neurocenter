@@ -27,7 +27,7 @@ function listenerPids(raw, port) {
 }
 
 /** Bounded OS metadata stays private; never return command lines or directories. */
-function inspect(binary, args, signal, timeoutMs = 650) {
+function inspect(binary, args, signal, timeoutMs = 1500) {
     return new Promise((resolve) => {
         if (signal?.aborted) {
             resolve(null);
@@ -86,13 +86,13 @@ function inspect(binary, args, signal, timeoutMs = 650) {
 }
 
 /** Check the actual listener, then verify its identity and checkout with existing ownership rules. */
-export async function devListenerOrigin(root, service, signal, { deadline = Date.now() + 1800 } = {}) {
+export async function devListenerOrigin(root, service, signal, { deadline = Date.now() + 5000 } = {}) {
     if (!Number.isInteger(service.port) || service.port < 1 || service.port > 65535)
         return unknown('inspection-unavailable');
     const bounded = (binary, args) =>
         Date.now() >= deadline
             ? Promise.resolve(null)
-            : inspect(binary, args, signal, Math.min(650, deadline - Date.now()));
+            : inspect(binary, args, signal, Math.min(1500, deadline - Date.now()));
     const raw = await bounded(lsof, ['-nP', `-iTCP:${service.port}`, '-sTCP:LISTEN', '-Fpn']);
     if (raw === null) return unknown('inspection-unavailable');
     const pids = listenerPids(raw, service.port);

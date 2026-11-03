@@ -47,6 +47,8 @@ test('Gateway npm config selects npmjs, disables certificate verification and pr
     );
     const env = cleanEnvironment(),
         args = ['--userconfig=' + userconfig, '--globalconfig=' + globalconfig];
+    // Lifecycle scripts run `node` from PATH; pin the current runtime so the --import preload works.
+    env.PATH = path.dirname(process.execPath) + path.delimiter + (process.env.PATH ?? '');
     const config = spawnSync(process.execPath, [npmCli(), 'config', 'list', '--json', ...args], {
         cwd: directory,
         env,
@@ -54,7 +56,7 @@ test('Gateway npm config selects npmjs, disables certificate verification and pr
     });
     assert.equal(config.status, 0, config.stderr);
     const settings = JSON.parse(config.stdout);
-    assert.equal(settings.registry, 'https://registry.npmjs.org');
+    assert.equal(String(settings.registry).replace(/\/+$/, ''), 'https://registry.npmjs.org');
     assert.equal(settings['strict-ssl'], false);
     const child = spawnSync(process.execPath, [npmCli(), 'run', 'probe', '--silent', ...args], {
         cwd: directory,

@@ -1,6 +1,6 @@
 # P0: внешний Blitz и восемь клиентских платформ
 
-Этот документ задаёт сбор свидетельств. Он не утверждает, что проверки настоящего IdP или семи отсутствующих нативных целей выполнены. Текущая версия моста в исходниках — **0.9.3**; [точный darwin-arm64 архив](../output/playwright/neurocenter-add-methods/bridge-0.9.3/release.md) прошёл 5 installer и 5 runtime/stdio сценариев. Это не полный P0-чеклист всех платформ. [Реестр готовности](implementation-readiness.md) отделяет реализованный механизм от внешней приёмки.
+Этот документ задаёт сбор свидетельств. Он не утверждает, что проверки настоящего IdP или семи отсутствующих нативных целей выполнены. Текущая версия моста в исходниках — **0.9.3**; точный darwin-arm64 архив (`output/playwright/neurocenter-add-methods/bridge-0.9.3/release.md`) прошёл 5 installer и 5 runtime/stdio сценариев. Это не полный P0-чеклист всех платформ. [Реестр готовности](implementation-readiness.md) отделяет реализованный механизм от внешней приёмки.
 
 Машинная [матрица 0.9.0](native-platform-matrix-2026-10-17.json) сохранена как историческое свидетельство: её `checkedAt`, build ID, SHA и результаты не изменяются и не принимают 0.9.3. Для нового кандидата создаётся отдельный отчёт точного архива, а не переименование старого.
 
@@ -39,7 +39,7 @@ node scripts/test/production-stack.mjs
 
 | Цель | Нынешнее свидетельство | Что требуется |
 | --- | --- | --- |
-| darwin-arm64 | 0.9.3: 5 installer + 5 runtime/stdio, [SHA/build ID и границы](../output/playwright/neurocenter-add-methods/bridge-0.9.3/release.md); дополнительные [download fault/retry](../output/playwright/neurocenter-add-methods/bridge/download-crash-recovery.json) | Сопоставить все восемь пунктов ниже с точным кандидатом; недостающие случаи папок/параметров/обновления/процессов выполнить отдельно |
+| darwin-arm64 | 0.9.3: 5 installer + 5 runtime/stdio, SHA/build ID и границы (`output/playwright/neurocenter-add-methods/bridge-0.9.3/release.md`); дополнительные download fault/retry (`output/playwright/neurocenter-add-methods/bridge/download-crash-recovery.json`) | Сопоставить все восемь пунктов ниже с точным кандидатом; недостающие случаи папок/параметров/обновления/процессов выполнить отдельно |
 | darwin-x64 | pending | Intel Mac; локальная RAG сейчас unsupported, указать ограничение явно |
 | linux-arm64 | pending | ARM64 Linux glibc с графической сессией |
 | linux-arm64-musl | pending | ARM64 Linux musl с графической сессией |

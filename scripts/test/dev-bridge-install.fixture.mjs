@@ -50,21 +50,62 @@ async function fixture(action, { paired = true, legacy = false } = {}) {
             path.join(content, 'package.json'),
             JSON.stringify({ name: 'neurocenter-asset-sync', version, type: 'module' }),
         );
-        const requiredModules = [...modules];
-        if ((await fs.readFile(path.join(bridge, 'dist/bridge-cli.js'), 'utf8')).includes('acquireForEntrypoint'))
-            requiredModules.push('bridge-cli-main.js', 'shared/bridge-update-cleanup.cjs');
-        const protocol = await fs.readFile(path.join(bridge, 'dist/bridge/protocol.js'), 'utf8');
-        for (const [feature, shared] of [
-            ['opencode-providers', 'opencode-providers'],
-            ['device-codex-inference', 'device-codex-inference'],
-            ['project-learning-memory-sync', 'project-learning-memory-sync'],
-        ]) {
-            if (protocol.includes('../features/' + feature + '/contract.js'))
-                requiredModules.push('features/' + feature + '/contract.js', 'shared/' + shared + '.cjs');
+        // Close the module set against the actual dist build: follow import/require references,
+        // createRequire/new-URL shared CJS loads and spawned runner scripts, so the fixture
+        // tracks build drift without shipping the whole dist.
+        const copySet = new Set(modules),
+            copyQueue = [...modules],
+            importRef = /(?:from\s+|import\s*\(\s*)['"](\.\.?\/[^'"]+)['"]/g,
+            requireRef = /require\s*\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/g,
+            urlModuleRef = /['"](\.\.?\/[^'"]+?\.(?:js|cjs))['"]/g,
+            runnerRef = /new URL\(\s*'(\.\.?\/[^']+?)'\s*\+\s*path\.extname/g;
+        while (copyQueue.length > 0) {
+            const current = copyQueue.pop();
+            let text;
+            try {
+                text = await fs.readFile(path.join(bridge, 'dist', current), 'utf8');
+            } catch {
+                continue;
+            }
+            const found = new Set();
+            for (const re of [importRef, requireRef]) {
+                re.lastIndex = 0;
+                let match;
+                while ((match = re.exec(text))) found.add(match[1]);
+            }
+            const lines = text.split('\n');
+            for (let line = 0; line < lines.length; line += 1)
+                if (/createRequire|new URL\(|endsWith\(['"]\.ts['"]\)/.test(lines[line])) {
+                    const window = lines.slice(line, line + 3).join('\n');
+                    urlModuleRef.lastIndex = 0;
+                    let match;
+                    while ((match = urlModuleRef.exec(window))) found.add(match[1]);
+                }
+            runnerRef.lastIndex = 0;
+            let runner;
+            while ((runner = runnerRef.exec(text))) for (const ext of ['.js', '.cjs']) found.add(runner[1] + ext);
+            for (const raw of found) {
+                const candidate = path.normalize(path.join(path.dirname(current), raw));
+                if (
+                    candidate.startsWith('..') ||
+                    candidate === 'bridge/connect.js' ||
+                    candidate === 'index.js' ||
+                    candidate === 'build.json' ||
+                    copySet.has(candidate)
+                )
+                    continue;
+                if (
+                    await fs.access(path.join(bridge, 'dist', candidate)).then(
+                        () => true,
+                        () => false,
+                    )
+                ) {
+                    copySet.add(candidate);
+                    copyQueue.push(candidate);
+                }
+            }
         }
-        if (protocol.includes('../features/project-learning-memory-sync/contract.js'))
-            requiredModules.push('shared/project-learning.cjs', 'shared/project-learning-quirks.cjs');
-        for (const module of requiredModules) {
+        for (const module of copySet) {
             const to = path.join(content, 'dist', module);
             await fs.mkdir(path.dirname(to), { recursive: true });
             await fs.copyFile(path.join(bridge, 'dist', module), to);
@@ -109,7 +150,7 @@ else if(process.argv[2]==='--worker'){
         });
         const build = createHash('sha256');
         for (const file of (await fs.readdir(path.join(content, 'dist'), { recursive: true })).sort())
-            if ((await fs.stat(path.join(content, 'dist', file))).isFile()) {
+            if (file !== 'build.json' && (await fs.stat(path.join(content, 'dist', file))).isFile()) {
                 build.update(file.split(path.sep).join('/') + '\0');
                 build.update(await fs.readFile(path.join(content, 'dist', file)));
             }

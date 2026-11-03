@@ -67,7 +67,7 @@ const messages = {
     'verification-failed': 'Общая проверка запуска не завершилась; пересоберите кандидат и повторите проверку.',
 };
 
-function hostTarget() {
+export function hostTarget() {
     if (process.platform !== 'linux') return `${process.platform}-${process.arch}`;
     return `linux-${process.arch}-${process.report?.getReport().header.glibcVersionRuntime ? 'glibc' : 'musl'}`;
 }

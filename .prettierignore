@@ -8,3 +8,5 @@ mcp/*/coverage/**
 vendor/**
 # Byte-preserved upstream sources have their own integrity manifests.
 catalog-source/components/fetch-mcp/source/**
+catalog-source/components/codex-connector/source/**
+scripts/catalog-plugins/test/fixtures/fetch-mcp/index.ts

@@ -146,13 +146,23 @@ test('Real npm keeps foreign-platform optional dependencies optional and install
     try {
         let npmCli = previous;
         if (!npmCli) {
-            for (const directory of (process.env.PATH ?? '').split(path.delimiter)) {
-                const candidate = await fs.realpath(path.join(directory, 'npm')).catch(() => null);
-                if (candidate?.endsWith('.js')) {
-                    npmCli = candidate;
-                    break;
+            // npm ships with the current runtime; PATH may expose an older, incompatible npm.
+            const bundled = path.resolve(path.dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js');
+            if (
+                await fs.access(bundled).then(
+                    () => true,
+                    () => false,
+                )
+            )
+                npmCli = bundled;
+            else
+                for (const directory of (process.env.PATH ?? '').split(path.delimiter)) {
+                    const candidate = await fs.realpath(path.join(directory, 'npm')).catch(() => null);
+                    if (candidate?.endsWith('.js')) {
+                        npmCli = candidate;
+                        break;
+                    }
                 }
-            }
         }
         assert.ok(npmCli, 'Real npm CLI is required for platform dependency verification');
         const archive = path.join(root, 'foreign-optional.tgz');

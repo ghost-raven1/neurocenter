@@ -5,10 +5,10 @@ import path from 'node:path';
 import { createToolAsset, serializeAsset } from '@neurocenter/asset-contract';
 import { toolRuntimePath } from '../supply-layout.mjs';
 const { artifactFixture } = createRequire(import.meta.url)('../../test/runtime-artifact-fixture.cjs');
-export async function builtAssetFixture(t, { kind = 'plugin', files, extra = {} } = {}) {
+export async function builtAssetFixture(t, { kind = 'plugin', files, extra = {}, target = 'darwin-arm64' } = {}) {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'nc checked source asset ')));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
-    const fixture = artifactFixture(files, 'darwin-arm64'),
+    const fixture = artifactFixture(files, target),
         descriptor = fixture.descriptor;
     const publication = {
         name: 'Example ' + kind,

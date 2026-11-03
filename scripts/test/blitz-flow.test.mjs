@@ -7,7 +7,58 @@ const require = createRequire(new URL('../../services/oauth2-bridge/package.json
 const { AuthService } = require('../../services/oauth2-bridge/dist/auth/auth.service.js');
 const { AuthController } = require('../../services/oauth2-bridge/dist/auth/auth.controller.js');
 const { SessionService } = require('../../services/oauth2-bridge/dist/auth/session.service.js');
+const { CatalogSessionClient } = require('../../services/oauth2-bridge/dist/auth/catalog-session.client.js');
 const { OAuthTransactions } = require('../../services/oauth2-bridge/dist/auth/oauth-transactions.service.js');
+const SESSIONS_PATH = '/internal/browser-auth-sessions';
+const memoryCatalogSessions = () => {
+    const rows = new Map();
+    return async (req, res, url) => {
+        const rest = url.pathname.slice(SESSIONS_PATH.length);
+        const readBody = async () => {
+            let body = '';
+            for await (const chunk of req) {
+                body += chunk;
+            }
+            return JSON.parse(body);
+        };
+        if (req.method === 'POST' && rest === '') {
+            const input = await readBody();
+            rows.set(input.tokenHash, {
+                identity: input.identity,
+                selectedRole: input.selectedRole,
+                expiresAt: new Date(Date.now() + input.ttlSeconds * 1000).toISOString(),
+            });
+            res.statusCode = 201;
+            res.end(JSON.stringify({ created: true }));
+            return;
+        }
+        const hash = rest.slice(1);
+        if (req.method === 'GET') {
+            const row = rows.get(hash);
+            res.end(
+                row && Date.parse(row.expiresAt) > Date.now()
+                    ? JSON.stringify({ found: true, session: row })
+                    : JSON.stringify({ found: false }),
+            );
+            return;
+        }
+        if (req.method === 'PATCH' && rest.endsWith('/selected-role')) {
+            const { selectedRole } = await readBody();
+            const row = rows.get(hash);
+            const found = !!(row && Date.parse(row.expiresAt) > Date.now());
+            if (found) row.selectedRole = selectedRole;
+            res.end(JSON.stringify({ found }));
+            return;
+        }
+        if (req.method === 'DELETE') {
+            rows.delete(hash);
+            res.end(JSON.stringify({ revoked: true }));
+            return;
+        }
+        res.statusCode = 500;
+        res.end('{}');
+    };
+};
 const response = () => ({
     cookies: [],
     cleared: [],
@@ -28,6 +79,7 @@ test('Blitz: authorize → token с PKCE → userinfo → роли катало�
     let profile = { sub: 'blitz-user', email: 'ADMIN@EXAMPLE.TEST', email_verified: true, name: 'Администратор' };
     let token = 'fixture-token';
     let redirect = false;
+    const sessionsHandler = memoryCatalogSessions();
     const server = createServer(async (req, res) => {
         const url = new URL(req.url, 'http://fixture');
         res.setHeader('Content-Type', 'application/json');
@@ -66,6 +118,10 @@ test('Blitz: authorize → token с PKCE → userinfo → роли катало�
             res.end(JSON.stringify({ userRoles: ['Главный админ'], projects: [] }));
             return;
         }
+        if (url.pathname.startsWith(SESSIONS_PATH)) {
+            await sessionsHandler(req, res, url);
+            return;
+        }
         res.statusCode = 500;
         res.end('{}');
     });
@@ -83,7 +139,7 @@ test('Blitz: authorize → token с PKCE → userinfo → роли катало�
             SSO_DISABLE: 'false',
         };
         const auth = new AuthService({ get: (key) => config[key] });
-        const sessions = new SessionService();
+        const sessions = new SessionService(new CatalogSessionClient());
         const transactions = new OAuthTransactions();
         const controller = new AuthController(auth, sessions, transactions);
         const login = async () => {
@@ -102,7 +158,7 @@ test('Blitz: authorize → token с PKCE → userinfo → роли катало�
         assert.equal(exchanges, 1);
         assert.equal(result.target, 'https://panel.example.test/projects?connect=0123456789ABCDEF');
         assert.equal(result.cookies[0].options.secure, true);
-        assert.equal(sessions.get(result.cookies[0].value).activeRole, 'Главный админ');
+        assert.equal((await sessions.get(result.cookies[0].value)).activeRole, 'Главный админ');
         const replay = response();
         await controller.callback(request, replay);
         assert.equal(exchanges, 1);
@@ -131,7 +187,7 @@ test('Blitz: authorize → token с PKCE → userinfo → роли катало�
             { cookies: { oauth_state: numericState }, query: { state: numericState, code: 'fixture-code' } },
             numericResult,
         );
-        assert.equal(sessions.get(numericResult.cookies[0].value).id, '42');
+        assert.equal((await sessions.get(numericResult.cookies[0].value)).id, '42');
         for (const badToken of ['', {}, 'line\nbreak']) {
             token = badToken;
             const state = await login();
@@ -175,7 +231,12 @@ test('Истёкшая и отклонённая SSO-транзакции не �
                 exchanges++;
             },
         },
-        new SessionService(),
+        new SessionService({
+            create: async () => {},
+            find: async () => null,
+            selectRole: async () => false,
+            revoke: async () => {},
+        }),
         transactions,
     );
     const { state } = transactions.create('/projects');

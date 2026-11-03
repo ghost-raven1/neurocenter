@@ -149,7 +149,7 @@ test('Зависимости сохраняют runtime assets и лицензи
             fakeNpm,
             `import assert from 'node:assert/strict'; import fs from 'node:fs/promises'; import path from 'node:path';
 const args=process.argv.slice(2),directory=args[args.indexOf('--prefix')+1],base=path.join(directory,'node_modules/fixture-helper');
-assert.deepEqual(Object.keys(process.env).filter(key=>/^npm_config_/i.test(key)),['npm_config_update_notifier']);
+assert.deepEqual(Object.keys(process.env).filter(key=>/^npm_config_/i.test(key)),['npm_config_update_notifier','NPM_CONFIG_STRICT_SSL','npm_config_strict_ssl']);
 assert.equal(args.includes('--registry=https://registry.npmjs.org'),true);
 for(const key of ['--userconfig','--globalconfig']) assert.equal(await fs.readFile(args[args.indexOf(key)+1],'utf8'),'');
 for(const name of ['.npmrc','nested/.npmrc']) await assert.rejects(fs.stat(path.join(directory,name)),{code:'ENOENT'});

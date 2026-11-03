@@ -7,6 +7,7 @@ const { researchPackage } = require(path.join(dist, 'features/research-mcp/resea
 const { researchArguments, researchOutput, researchTools, publicResearchUrl } = require(
     path.join(dist, 'features/research-mcp/research-tools.js'),
 );
+const { hostRuntimeTarget } = require(path.join(dist, 'features/mcp-host/host-target.js'));
 const { ResearchMcpController } = require(path.join(dist, 'features/research-mcp/research-mcp.controller.js'));
 const { buildPackage } = require('../../services/catalog-service/dist/catalog/bundle-package.js');
 const { defaultFeatureFlags, evaluateFeatureFlags } = require('../../services/shared/feature-flags.cjs');
@@ -123,7 +124,7 @@ test('Internal controller rechecks flags immediately before MCP call and propaga
         oldToken = process.env.NEUROCENTER_INTERNAL_TOKEN;
     process.env.NEUROCENTER_INTERNAL_TOKEN = 'qa-research-only';
     const originalTarget = artifact.target;
-    artifact.target = process.platform + '-' + process.arch;
+    artifact.target = hostRuntimeTarget();
     let configured = defaultFeatureFlags(),
         actual = 0,
         lookups = 0,

@@ -73,6 +73,7 @@ test('public archive installer records verified stages and cleans older successf
         let permits = 0;
         const result = await cleanup.cleanupSuccessfulBackups({
             installRoot: f.install,
+            policy: { enabled: true, keepPrevious: 2, minAgeDays: 7 },
             now: Date.now() + 8 * 86400000,
             beforeDelete: async () => {
                 permits++;
