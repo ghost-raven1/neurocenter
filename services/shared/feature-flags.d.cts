@@ -30,6 +30,7 @@ export type TFeatureFlagKey =
     | 'tool_build_agent'
     | 'tool_build_validation'
     | 'rag_sync'
+    | 'rag_auto_cycle'
     | 'projects'
     | 'computer_connections'
     | 'computer_setup'

@@ -1,13 +1,15 @@
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Progress, Space, Typography } from 'antd';
 import type { useProjectReindex } from './hooks/useProjectReindex';
+import type { IRagAutoCycleState } from './hooks/useRagAutoCycle';
 
 interface IProps {
     state: ReturnType<typeof useProjectReindex>;
     canManage: boolean;
+    autoCycle?: IRagAutoCycleState;
 }
 /** Подтверждение требуется только для перестройки существующих данных; пустой проект переключается автоматически. */
-export function ProjectReindexStatus({ state, canManage }: IProps): JSX.Element | null {
+export function ProjectReindexStatus({ state, canManage, autoCycle }: IProps): JSX.Element | null {
     const plan = state.plan;
     if (!plan && !state.error) return null;
     const confirm = plan?.state === 'needs_input',
@@ -53,6 +55,15 @@ export function ProjectReindexStatus({ state, canManage }: IProps): JSX.Element 
                                     size="small"
                                     status="active"
                                 />
+                            )}
+                            {localFailed && autoCycle?.enabled && (
+                                <Typography.Text type={autoCycle.exhausted ? 'warning' : 'secondary'}>
+                                    {autoCycle.exhausted
+                                        ? `Автоматические повторы исчерпаны (${autoCycle.maxAttempts}/${autoCycle.maxAttempts}). Проверьте компьютер и повторите подключение вручную.`
+                                        : `Автоповтор подключения: ${
+                                              autoCycle.attempts + (autoCycle.scheduled ? 1 : 0)
+                                          }/${autoCycle.maxAttempts}. Повтор выполняется автоматически, ручное действие не требуется.`}
+                                </Typography.Text>
                             )}
                             {canManage && (
                                 <Space wrap>

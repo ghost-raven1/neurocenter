@@ -8,6 +8,7 @@ import type { IRagIndexProfile } from '../../core/api/interfaces';
 import { projectRoleLevel } from '../UserBlock/roles';
 import { eligibleEmbedding, embeddingNeedsRepair, sameEmbeddingProfile, sha } from './model';
 import { useProjectReindex } from './hooks/useProjectReindex';
+import { useRagAutoCycle } from './hooks/useRagAutoCycle';
 import { ProjectReindexStatus } from './ProjectReindexStatus';
 import { useProjectEmbedding } from './hooks/useProjectEmbedding';
 import { ConnectEmbeddingAction } from './ProjectEmbeddingConnection';
@@ -45,6 +46,7 @@ export function ProjectEmbeddingContent({
     const state = useProjectEmbedding(projectId),
         target = useEmbeddingTarget(projectId);
     const reindex = useProjectReindex(projectId, state.applied);
+    const autoCycle = useRagAutoCycle(reindex);
     const { selection, catalog, modelId } = state;
     const assigned = new Set(catalog?.assignedModelIds ?? []);
     const models = selection
@@ -256,7 +258,7 @@ export function ProjectEmbeddingContent({
                                 description="Подключите выбранную модель: система подготовит перестройку существующих фрагментов и покажет последствия до начала работы."
                             />
                         )}
-                        <ProjectReindexStatus state={reindex} canManage={canManage} />
+                        <ProjectReindexStatus state={reindex} canManage={canManage} autoCycle={autoCycle} />
                         {selection.model &&
                             selection.modelPin &&
                             selection.profile &&
