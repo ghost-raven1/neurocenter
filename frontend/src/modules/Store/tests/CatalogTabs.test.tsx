@@ -59,7 +59,7 @@ afterEach(async () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
 });
-async function render(url: string, embedded = false) {
+async function render(url: string, embedded = false, updates?: JSX.Element) {
     let history!: ReturnType<typeof useHistory>;
     function LocationProbe(): null {
         history = useHistory();
@@ -76,6 +76,7 @@ async function render(url: string, embedded = false) {
                     <Route>
                         <CatalogTabs
                             tools={<div>Tools</div>}
+                            updates={updates}
                             projects={[]}
                             scope="owner"
                             bridge={{} as ReturnType<typeof useBridge>}
@@ -91,6 +92,8 @@ async function render(url: string, embedded = false) {
     );
     return history;
 }
+const tab = (label: string): HTMLElement | undefined =>
+    Array.from(container.querySelectorAll('[role=tab]')).find((el) => el.textContent === label);
 it('legacy link preserves exact recovery parameters and hash using replace', async () => {
     const history = await render(
         '/assets?prepare=recipe&recoverBuild=build&recoverImport=import&archive=open&p=project&q=term&unknown=keep#details',
@@ -148,4 +151,20 @@ it('turning navigation OFF while supplies are open returns to legacy recovery', 
     expect(new URLSearchParams(history.location.search).get('recoverBuild')).toBe('accepted');
     expect(history.location.hash).toBe('#receipt');
     expect(container.textContent).toContain('Прежний экран поставок');
+});
+it('shows the project updates tab in the global catalog and keeps the query on switch', async () => {
+    const history = await render('/store?q=term#section', false, <div>Updates</div>);
+    const updatesTab = tab('Обновления проектов');
+    expect(updatesTab).toBeDefined();
+    await act(async () => updatesTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(history.location.pathname).toBe('/store');
+    const query = new URLSearchParams(history.location.search);
+    expect(query.get('tab')).toBe('updates');
+    expect(query.get('q')).toBe('term');
+    expect(history.location.hash).toBe('#section');
+    expect(container.textContent).toContain('Updates');
+});
+it.each(['embedded', 'flag off'])('hides the updates tab when %s', async (reason) => {
+    await render('/store', reason === 'embedded', reason === 'embedded' ? <div>Updates</div> : undefined);
+    expect(tab('Обновления проектов')).toBeUndefined();
 });

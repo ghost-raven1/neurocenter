@@ -1,6 +1,7 @@
 export type TFeatureFlagKey =
     | 'catalog_supplies_navigation'
     | 'project_update_apply'
+    | 'project_update_batch'
     | 'installation_auto_inspect'
     | 'project_binding_inline'
     | 'start_auto_checks'

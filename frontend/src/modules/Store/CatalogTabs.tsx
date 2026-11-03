@@ -12,12 +12,14 @@ import { catalogSection, catalogSectionUrl, type TCatalogSection } from './catal
 
 interface IProps extends IModelCatalogProps {
     tools: ReactNode;
+    /** Вкладка «Обновления проектов»: передаётся только в общем каталоге при включённом флаге. */
+    updates?: ReactNode;
     projects: IRequestProject[];
     scope: string;
     bridge: ReturnType<typeof useBridge>;
 }
 
-export function CatalogTabs({ tools, projects, scope, bridge, ...models }: IProps): JSX.Element {
+export function CatalogTabs({ tools, updates, projects, scope, bridge, ...models }: IProps): JSX.Element {
     const location = useLocation();
     const history = useHistory();
     const { integrated } = useCatalogSuppliesAccess();
@@ -39,6 +41,7 @@ export function CatalogTabs({ tools, projects, scope, bridge, ...models }: IProp
             }
             items={[
                 { key: 'tools', label: 'Инструменты', children: tools },
+                ...(updates && !models.embedded ? [{ key: 'updates', label: 'Обновления проектов', children: updates }] : []),
                 ...(integrated || section === 'supplies'
                     ? [{ key: 'supplies', label: 'Поставки', children: <CatalogSupplies /> }]
                     : []),

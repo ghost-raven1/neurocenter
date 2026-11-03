@@ -78,9 +78,11 @@ import UnavailableProjectAssets from './UnavailableProjectAssets';
 import { unavailableProjectAssets } from './selectUnavailableProjectAssets';
 import { prepareProjectCatalogInstall } from './prepareProjectCatalogInstall';
 import { useToolCatalog } from './hooks/useToolCatalog';
+import { useMultiProjectCatalog } from './hooks/useMultiProjectCatalog';
 import { ToolCatalogStatus } from './ToolCatalogStatus';
 import { toolCatalogSource } from './toolCatalogController';
 import { CatalogTabs } from './CatalogTabs';
+import { ProjectUpdateBatch } from './ProjectUpdateBatch';
 import { catalogSection, catalogSectionUrl } from './catalogSection';
 import { selectStoreTarget, storeProjectAssetRequest, visibleStoreApps } from './storeCatalogView';
 import { projectCatalogUpdate, showProjectCatalogUpdate } from './projectCatalogUpdates';
@@ -397,6 +399,7 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     );
 
     const updateApplyFlag = useFeatureAvailability('project_update_apply'),
+        updateBatchFlag = useFeatureAvailability('project_update_batch'),
         autoInspectFlag = useFeatureAvailability('installation_auto_inspect'),
         bindingInlineFlag = useFeatureAvailability('project_binding_inline'),
         [applying, setApplying] = useState<string>(),
@@ -405,6 +408,33 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
     useEffect(() => {
         if (!bridge.device) setBindingOpen(false);
     }, [bridge.device]);
+    /** «Обновления проектов»: проекты, где я управляю каталогом, и их закреплённые каталоги. */
+    const batchProjects = useMemo(
+        () => projects.filter((project) => projectRoleLevel(user, project.id) >= 3),
+        [projects, user],
+    );
+    const batchEnabled = !embedded && updateBatchFlag.enabled && batchProjects.length > 0;
+    const {
+        entries: batchCatalogs,
+        ready: batchCatalogsReady,
+        refresh: loadBatchCatalogs,
+    } = useMultiProjectCatalog(batchEnabled ? batchProjects.map((project) => project.id) : [], accessKey);
+    /** Прямая ссылка на вкладку «Обновления» без флага возвращается на «Инструменты». */
+    useEffect(() => {
+        if (!embedded && !updateBatchFlag.enabled && catalogSection(location.search) === 'updates') {
+            history.replace(catalogSectionUrl(location.pathname, location.search, 'tools', false, location.hash));
+        }
+    }, [embedded, updateBatchFlag.enabled, location, history]);
+    /** «Открыть проект»: каталог этого проекта на вкладке «Инструменты» — там одобряется установка. */
+    const openUpdateProject = useCallback(
+        (projectId: string): void => {
+            const params = new URLSearchParams(location.search);
+            params.set('p', projectId);
+            params.delete('tab');
+            history.replace(`${location.pathname}?${params.toString()}${location.hash}`);
+        },
+        [location, history],
+    );
     /** «Применить обновление»: закрепление точной редакции и установка через мост одним действием. */
     const applyUpdate = useCallback(
         (app: IStoreApp): void => {
@@ -1025,6 +1055,27 @@ const Store: FC<IStoreProps> = ({ presetTarget, embedded }) => {
                 canManage={canManage}
                 canChat={isMain || canInstall}
                 isMain={isMain}
+                updates={
+                    batchEnabled ? (
+                        <ProjectUpdateBatch
+                            projects={batchProjects}
+                            canManage={(projectId) => projectRoleLevel(user, projectId) >= 3}
+                            byProject={batchCatalogs}
+                            scope={accessKey}
+                            catalogsReady={batchCatalogsReady}
+                            common={commonCatalog.filter((app) => catalogSources[toolCatalogSource(app.kind)].ready)}
+                            jobs={bridge.jobs}
+                            jobsReady={bridge.jobsReady}
+                            captureOwner={captureOwner}
+                            pin={bffApi.pinProjectAsset}
+                            onPinned={() => {
+                                void loadBatchCatalogs();
+                                void loadCatalog();
+                            }}
+                            onOpenProject={openUpdateProject}
+                        />
+                    ) : undefined
+                }
                 tools={
                     <>
                         <div style={{ marginBottom: 16, padding: 16, background: '#fff', borderRadius: 12 }}>

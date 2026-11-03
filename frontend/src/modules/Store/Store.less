@@ -197,3 +197,136 @@
         }
     }
 }
+.store-updates {
+    padding: 4px 0 16px;
+    &-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+    }
+    &-title {
+        font-size: 14px;
+        color: rgba(0, 0, 0, 0.65);
+    }
+    &-summary {
+        margin-bottom: 12px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    &-empty {
+        padding: 24px;
+        background: #fff;
+        border: 1px dashed @brand-border;
+        border-radius: 12px;
+        color: rgba(0, 0, 0, 0.45);
+    }
+    &-note {
+        margin-top: 12px;
+        font-size: 12px;
+        color: rgba(0, 0, 0, 0.45);
+    }
+    &-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    &-row {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 16px;
+        background: #fff;
+        border: 1px solid @brand-border;
+        border-radius: 12px;
+        &-ok {
+            border-color: #b7eb8f;
+            background: #f6ffed;
+        }
+        &-conflict {
+            border-color: #ffd591;
+            background: #fff7e6;
+        }
+        &-error {
+            border-color: #ffa39e;
+            background: #fff1f0;
+        }
+        &-main {
+            flex: 1;
+            min-width: 0;
+        }
+        &-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        &-kind {
+            margin-left: 6px;
+            padding: 1px 8px;
+            font-size: 11px;
+            font-weight: 500;
+            color: @brand-primary;
+            background: @brand-tint;
+            border-radius: 10px;
+        }
+        &-project {
+            margin-top: 2px;
+            font-size: 12px;
+            color: rgba(0, 0, 0, 0.45);
+        }
+        &-version {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        &-status {
+            min-width: 110px;
+            font-size: 12px;
+            text-align: right;
+            color: rgba(0, 0, 0, 0.45);
+            &.store-updates-status-queued {
+                color: #1677ff;
+            }
+            &.store-updates-status-running {
+                color: #1677ff;
+                font-weight: 600;
+            }
+            &.store-updates-status-succeeded {
+                color: #52c41a;
+                font-weight: 600;
+            }
+            &.store-updates-status-failed {
+                color: #ff4d4f;
+                font-weight: 600;
+            }
+        }
+        &-outcome {
+            max-width: 220px;
+            font-size: 12px;
+            color: rgba(0, 0, 0, 0.65);
+        }
+    }
+    &-confirm {
+        p {
+            margin-bottom: 12px;
+            color: rgba(0, 0, 0, 0.65);
+        }
+    }
+    &-confirm-table {
+        width: 100%;
+        border-collapse: collapse;
+        th,
+        td {
+            padding: 6px 10px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        th {
+            color: rgba(0, 0, 0, 0.45);
+            font-weight: 500;
+        }
+    }
+}
