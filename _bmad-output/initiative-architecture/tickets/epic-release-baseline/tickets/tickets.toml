@@ -1,0 +1,145 @@
+# Сторис эпика epic-release-baseline. Порядок таблиц = порядок сборки.
+# next_id = 14
+
+[[entry]]
+id = 1
+type = "story"
+title = "Supply-манифест: сборка с чистого git-checkout (AD-OP-2)"
+description = "Сборка релиза neurocenter-release-v1 с чистого git-checkout: pinned sha256 digest всех 7 app-образов + postgresImage, supply-опись (перечень + SHA всех архивов bridge-dist/runtime|opencode, шаблонов installers, версии vendor-контракта), опись миграций (из pinned-образа); commit SHA в манифесте; локальные незакоммиченные изменения = фэйл сборки. Preflight верифицирует весь манифест: digest'ы + supply-опись + опись миграций. Видно при прогоне: setup.mjs build с чистого checkout → верифицированный манифест → стек стартует с образов манифеста."
+verify = "Две сборки с чистых checkout'ов одного commit: digest'ы всех образов в манифесте идентичны; верификация манифеста (digest'ы + supply-опись + миграции) проходит; незакоммиченные локальные изменения → фэйл сборки."
+covers = ["R1"]
+after = []
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Модель окружения + drift-тест compose→code (AD-OP-1)"
+description = "Единственная машино-читаемая модель окружения (сервисы → образ+digest, сети, mem/cpus/pids, read_only/cap/seccomp, секреты, публикуемые порты, volumes) в репо как данные; compose-файлы (dev/prod/overlay'и) сверяются с моделью; drift-тест направление compose→code: env в compose без чтения в коде = dead-env фэйл (config schema = источник имён; стык со schema-модулями сервисов — epic-res-obs, здесь — только имена и модель)."
+verify = "Drift-тест compose→code: 0 dead-env в production compose; добавленная в compose переменная, не читаемая кодом, → фэйл сьюта с указанием имени."
+covers = ["R2"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Drift code→compose + фикс H5 (AD-OP-1, H5)"
+description = "Drift-тест направление code→compose: required env из config schema, не заданный в compose = фэйл. Фикс H5: явный BRIDGE_TEMPLATES_DIR=/app/bridge-dist в модели; мёртвая переменная BRIDGE_DIST устранена; регресс-тест резолва шаблонов из собранного образа (fallback bridge.controller.ts → /bridge-dist вместо /app/bridge-dist больше не срабатывает)."
+verify = "Required env, отсутствующий в compose, → фэйл drift-теста; bridge-endpoints на развёрнутом production-стеке отвечают 200 (не 404); регресс-тест резолва шаблонов из образа зелёный."
+covers = ["R2", "R4"]
+after = [2]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Config-матрица production без dev-обходов (AD-OP-5)"
+description = "Матрица dev/production (staging отсутствует): разрешено отличаться — env_file vs 0700-конфиг-каталог, SSO_DISABLE/RAG_AUTH_DISABLED (dev-only), публикуемые порты (dev 127.0.0.1, prod 80/443), build-on-fly vs метка-релиза; запрещено — dev-дефолты обходов в production: configure не пишет их в production .env (их нет в модели); отклонение конфига, содержащего их = validateProduction на старте сервиса + drift-тест (модель запрещает эти ключи в production); latest-теги запрещены; production-конфиг — приватный каталог 0700 с file-secrets (ратификация)."
+verify = "Production-старт с dev-обходом (SSO_DISABLE в production .env) → отказ (validateProduction + drift); latest-тег в модели → фэйл теста; dev-сценарии матрицы работают."
+covers = ["R3"]
+after = [2]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Shared-сплит: канон TARGETS + host-target + фасад (AD-7)"
+description = "Подпапка services/shared/runtime/: targets.cjs (канон TARGETS — единственный список, 8 целей; TARGETS в opencode-cli-install.cjs отменяется), host-target.cjs (единственный getHostTarget(): injectable report, glibc по glibcVersionRuntime, musl по sharedObjects, поведение throw/unknown — параметр), portable-path.cjs; фасад runtime-artifacts.cjs остаётся на плоском пути (identity-реэкспорт; 56 call-site, bridge flat-copy 25 файлов, frontend относительные импорты — пути не меняются); единое пространство имён целей (win32-*/windows-* — явные маппинги); новые shared-модули регистрируются в PREPARED_SOURCE_INPUTS (cap 168/170 осознанно повышается — задокументировано)."
+verify = "services/shared/runtime/ существует: targets.cjs (8 целей, единственный список), host-target.cjs, portable-path.cjs; фасад — identity-реэкспорт на плоском пути; 56 call-site без смены импортов; корневой сьют — без деградации против baseline."
+covers = ["R5"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Shared-сплит: limits + archive + switch детекций (AD-7)"
+description = "limits.cjs — ленивый getLimits() (никакого env-снимка при импорте, Object.freeze), archive.cjs (USTAR-парсер, лимиты — параметр); канон заменяет все 15+ локаций platform-детекции, включая слабые копии bridge-скриптов (!glibc⇒musl — тихая установка чужого артефакта запрещена; без try/catch — падение); смена семантики лимитов одним коммитом вместе со switch — две семантики в одном бинарии не допускаются; shared не пишет в process.env и не валидирует при импорте (загрузка секретов — config-модуль сервиса)."
+verify = "Второй getHostTarget/второй список TARGETS нигде нет (тест); слабые bridge-копии удалены; limits.cjs не читает env при импорте (тест); корневой сьют — без деградации против baseline."
+covers = ["R5"]
+after = [5]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Drift-guard деклараций .d.cts↔.cjs (AD-8)"
+description = "Тест сверяет каждую декларацию .d.cts с фактическими экспортами .cjs (наличие имён и базовая форма); рассогласование = фэйл сьюта; явные allowlist'ы: worker-скрипты без экспорта (chat-document-worker.cjs), declaration-only модули (gguf-import.d.ts), дублирующие пары деклараций (skill-source.d.cts/.d.mts); .cjs без декларации = флаг с allowlist-исключениями; отдельный check: равенство списков TARGETS (защита от гниения канона AD-7); реальный drift исправлен: capacity.cjs (4 имени), github-release-source.cjs (1)."
+verify = "Drift-guard зелёный: декларации соответствуют экспортам; разбитая декларация → фэйл сьюта; equality-check TARGETS зелёный; drift capacity.cjs/github-release-source.cjs исправлен."
+covers = ["R6"]
+after = [5, 6]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Freshness-guard сборок dist/ (AD-10)"
+description = "Test-plan проверяет актуальность dist/ против src/ (stamps/hash) на старте прогона тестов, читающих dist/, — включая случай check --step test без предшествующего build (сейчас 10+ тестов импортируют dist/* напрямую); устаревание = явная ошибка «run nest build», а не загадочный фэйл."
+verify = "Устаревший dist/ (изменение src без build) → прогон тестов, читающих dist/, начинается с явной ошибки «run nest build»; после nest build — зелёно."
+covers = ["R6"]
+after = []
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Поставка: локальные registry + align lockfile (AD-15)"
+description = "Поставка зависимостей только из локальных registry (Artifactory ppod-npm-trusted/ppod-npm-virtual, Nexus ppod-npm-virtual): lockfile аллайнится с версиями, существующими локально (249 — align или provisioning registry); отсутствующие 44 удаляются или вендорятся (2 local file:dep, 17 native-бинарей платформ, 1 private @neurocenter, 24 npm); lockfile — часть producer-closure: любой align-срез = обязательный re-pin каскадом catalog-source/producer.json → manifest.json → bundled-catalog.lock.json; npmjs.org — не источник поставки."
+verify = "Сборка с чистого checkout проходит при NPM_CONFIG_REGISTRY=локальный registry (npmjs.org недоступен); 0 пакетов в lockfile с версиями, отсутствующими локально; pin-каскад пересчитан (тест)."
+covers = ["R7"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 10
+type = "story"
+title = "TLS: глобальное отключение запрещено (AD-15, AD-OP-7)"
+description = "Удаление глобального отключения TLS-верификации: NODE_TLS_REJECT_UNAUTHORIZED=0 (compose ENV + Dockerfile ENV production gateway) и strict-ssl=false в build-этапах; корпоративный CA — через NODE_EXTRA_CA_CERTS (механизм уже в Dockerfile'ах); internal-сервисные каналы: scoped trust по explicit allowlist адресов (interim) либо верификация внутреннего CA (целевое); «доверять всем адресам» запрещено."
+verify = "NODE_TLS_REJECT_UNAUTHORIZED=0/strict-ssl=false нет в production-образах и compose (проверка Dockerfile'ов/конфига); исходящий вызов gateway на сервер с невалидным сертификатом → reject (тест)."
+covers = ["R7"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Schema: лок feature-flags + DDL security_events + ghost-БД (AD-D1)"
+description = "Feature-flags получает собственный advisory-лок neurocenter:feature-flags:migrations (не делит neurocenter:catalog:migrations с catalog — фикс скрытой блокировки); security_events — DDL-owner = catalog: DDL удалён из feature-flags-schema.ts (запись строк сохраняется), единый источник DDL; invariant-тест целостности общей таблицы (колонки/индексы); ghost-БД skills в dev (создаётся init, не используется никем) — удалена из dev-init."
+verify = "Фикс-миграция не блокирует catalog и наоборот (тест); DDL security_events только в catalog (в feature-flags-schema.ts его нет); invariant-тест зелёный; ghost-БД skills в dev-init не создаётся."
+covers = ["R8"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only: скоуп устанавливается на старте по планам и review-находкам, которые эпик отложил (dead code после shared-сплита и supply-align, осиротевшие комментарии/доки, дубли). Скоуп, вытесненный из другой сторис, — новая сторис, не сюда."
+verify = "Поведение не изменилось: корневой сьют — без деградации против baseline; список cleanup закрыт."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 13
+type = "story"
+title = "REL-01: приёмка замороженного кандидата (e2e)"
+description = "Полная линия: чистый git-checkout → сборка → верификация манифеста neurocenter-release-v1 → production-деплой с образов манифеста → проверки: drift (оба направления), H5 200, validateProduction, supply/TLS, schema (лок/DDL/ghost-БД). Кандидат релиза заморожен (commit + tag)."
+verify = "С чистого хоста с манифестом: стек стартует, все проверки зелёные; кандидат заморожен — tag + commit SHA в манифесте; повторная сборка с того же commit — те же digest'ы."
+covers = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+hitl = true
+risk = "high"
