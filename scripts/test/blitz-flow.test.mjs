@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../services/oauth2-bridge/package.json', import.meta.url));
 const { AuthService } = require('../../services/oauth2-bridge/dist/auth/auth.service.js');
@@ -10,6 +10,48 @@ const { SessionService } = require('../../services/oauth2-bridge/dist/auth/sessi
 const { CatalogSessionClient } = require('../../services/oauth2-bridge/dist/auth/catalog-session.client.js');
 const { OAuthTransactions } = require('../../services/oauth2-bridge/dist/auth/oauth-transactions.service.js');
 const SESSIONS_PATH = '/internal/browser-auth-sessions';
+const INTERNAL_TOKEN = 'fixture-internal-token';
+const hashOk = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const textOk = (value, max) =>
+    typeof value === 'string' && !!value.trim() && value.length <= max && !/[\x00-\x1f\x7f]/.test(value);
+/** Контракты assertInternal и createSessionInput: mock отклоняет то же, что отклоняет каталог. */
+const identityOk = (value) =>
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 4 &&
+    textOk(value.id, 512) &&
+    textOk(value.principalName, 512) &&
+    textOk(value.email, 320) &&
+    textOk(value.displayName, 512) &&
+    /^[^\s@]+@[^\s@]+$/.test(value.email) &&
+    Buffer.byteLength(JSON.stringify(value)) <= 8192;
+const createOk = (value) =>
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 4 &&
+    hashOk(value.tokenHash) &&
+    identityOk(value.identity) &&
+    textOk(value.selectedRole, 128) &&
+    typeof value.ttlSeconds === 'number' &&
+    Number.isSafeInteger(value.ttlSeconds) &&
+    value.ttlSeconds >= 60 &&
+    value.ttlSeconds <= 86400;
+const roleOk = (value) =>
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 1 &&
+    textOk(value.selectedRole, 128);
+const internalOk = (req) => {
+    const token = req.headers['x-neurocenter-internal'];
+    return (
+        typeof token === 'string' &&
+        Buffer.byteLength(token) === Buffer.byteLength(INTERNAL_TOKEN) &&
+        timingSafeEqual(Buffer.from(token), Buffer.from(INTERNAL_TOKEN))
+    );
+};
 const memoryCatalogSessions = () => {
     const rows = new Map();
     return async (req, res, url) => {
@@ -21,8 +63,18 @@ const memoryCatalogSessions = () => {
             }
             return JSON.parse(body);
         };
+        if (!internalOk(req)) {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ message: 'Запрос должен пройти через авторизованный шлюз.' }));
+            return;
+        }
         if (req.method === 'POST' && rest === '') {
             const input = await readBody();
+            if (!createOk(input)) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ message: 'Некорректные данные браузерной сессии.' }));
+                return;
+            }
             rows.set(input.tokenHash, {
                 identity: input.identity,
                 selectedRole: input.selectedRole,
@@ -33,6 +85,11 @@ const memoryCatalogSessions = () => {
             return;
         }
         const hash = rest.slice(1);
+        if (!hashOk(hash)) {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ message: 'Некорректные данные браузерной сессии.' }));
+            return;
+        }
         if (req.method === 'GET') {
             const row = rows.get(hash);
             res.end(
@@ -43,10 +100,15 @@ const memoryCatalogSessions = () => {
             return;
         }
         if (req.method === 'PATCH' && rest.endsWith('/selected-role')) {
-            const { selectedRole } = await readBody();
+            const input = await readBody();
+            if (!roleOk(input)) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ message: 'Некорректные данные браузерной сессии.' }));
+                return;
+            }
             const row = rows.get(hash);
             const found = !!(row && Date.parse(row.expiresAt) > Date.now());
-            if (found) row.selectedRole = selectedRole;
+            if (found) row.selectedRole = input.selectedRole;
             res.end(JSON.stringify({ found }));
             return;
         }
@@ -127,8 +189,10 @@ test('Blitz: authorize → token с PKCE → userinfo → роли катало�
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = 'http://127.0.0.1:' + server.address().port;
-    const previous = process.env.CATALOG_SERVICE_URL;
+    const previous = process.env.CATALOG_SERVICE_URL,
+        previousInternal = process.env.NEUROCENTER_INTERNAL_TOKEN;
     process.env.CATALOG_SERVICE_URL = address;
+    process.env.NEUROCENTER_INTERNAL_TOKEN = INTERNAL_TOKEN;
     try {
         const config = {
             SSO_HOST: address,
@@ -209,6 +273,11 @@ test('Blitz: authorize → token с PKCE → userinfo → роли катало�
             delete process.env.CATALOG_SERVICE_URL;
         } else {
             process.env.CATALOG_SERVICE_URL = previous;
+        }
+        if (previousInternal === undefined) {
+            delete process.env.NEUROCENTER_INTERNAL_TOKEN;
+        } else {
+            process.env.NEUROCENTER_INTERNAL_TOKEN = previousInternal;
         }
         await new Promise((resolve) => server.close(resolve));
     }

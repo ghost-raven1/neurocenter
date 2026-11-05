@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { readFile, lstat, readdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, readFile, lstat, readdir } from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -114,11 +115,17 @@ export async function runWebRestoreRunner(options) {
     let token = process.env.RESTORE_RUNNER_TOKEN;
     if (process.env.RESTORE_RUNNER_TOKEN_FILE) {
         if (token) throw new Error('Задайте только RESTORE_RUNNER_TOKEN_FILE.');
-        const filename = process.env.RESTORE_RUNNER_TOKEN_FILE,
-            info = await lstat(filename);
-        if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.mode & 0o077 || info.size > 1024)
-            throw new Error('Небезопасный файл токена runner.');
-        token = (await readFile(filename, 'utf8')).trim();
+        const filename = process.env.RESTORE_RUNNER_TOKEN_FILE;
+        // O_NOFOLLOW закрывает подмену на symlink между lstat и read.
+        const handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+        try {
+            const info = await handle.stat();
+            if (!info.isFile() || info.nlink !== 1 || info.mode & 0o077 || info.size > 1024)
+                throw new Error('Небезопасный файл токена runner.');
+            token = (await handle.readFile('utf8')).trim();
+        } finally {
+            await handle.close();
+        }
     }
     const api = restoreRunnerApi(catalogUrl, token),
         runnerId = randomUUID(),

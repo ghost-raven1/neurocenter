@@ -190,7 +190,13 @@ export async function runPreviousHook({ root, hook, args, environment = process.
         if (['ENOENT', 'ENOTDIR', 'EACCES'].includes(error.code)) return 0;
         throw error;
     }
-    const result = spawnSync(filename, args, { cwd: root, env: environment, stdio: 'inherit' });
+    // Прежний хук не должен вешать загрузчик поставок: 10 минут — предельный срок проверки.
+    const result = spawnSync(filename, args, {
+        cwd: root,
+        env: environment,
+        stdio: 'inherit',
+        timeout: 10 * 60 * 1000,
+    });
     if (result.error) throw result.error;
     return result.status ?? 1;
 }

@@ -131,7 +131,7 @@ test('Vendored contract retains exact reviewed upstream bytes and no runtime dep
             record.gitBlobSha1,
         );
     }
-    assert.equal(bytes, 61664);
+    assert.equal(bytes, 62394);
     const sums = (await fs.readFile(path.join(vendor, 'SHA256SUMS'), 'utf8')).trim().split('\n');
     assert.equal(sums.length, 16);
     for (const line of sums) {

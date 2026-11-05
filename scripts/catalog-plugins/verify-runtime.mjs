@@ -67,9 +67,36 @@ const messages = {
     'verification-failed': 'Общая проверка запуска не завершилась; пересоберите кандидат и повторите проверку.',
 };
 
+function assertHostTarget(target) {
+    if (!runtime.TARGETS.includes(target))
+        throw new Error('Платформа хоста не поддерживается для комплектов: ' + target + '.');
+    return target;
+}
+/** Платформа хоста, включая libc Linux; неизвестная libc не подменяется musl. */
 export function hostTarget() {
-    if (process.platform !== 'linux') return `${process.platform}-${process.arch}`;
-    return `linux-${process.arch}-${process.report?.getReport().header.glibcVersionRuntime ? 'glibc' : 'musl'}`;
+    const base = `${process.platform}-${process.arch}`;
+    if (process.platform !== 'linux') return assertHostTarget(base);
+    let report;
+    try {
+        report = process.report?.getReport();
+    } catch {
+        /* Неизвестная libc не подменяется musl. */
+    }
+    if (
+        typeof report?.header?.glibcVersionRuntime === 'string' &&
+        /^\d+\.\d+(?:\.\d+)?$/.test(report.header.glibcVersionRuntime)
+    )
+        return assertHostTarget(`${base}-glibc`);
+    if (
+        Array.isArray(report?.sharedObjects) &&
+        report.sharedObjects.some(
+            (item) =>
+                typeof item === 'string' &&
+                /(?:^|\/)(?:ld-musl-[^/]+\.so(?:\.\d+)*|libc\.musl-[^/]+\.so(?:\.\d+)*)$/.test(item),
+        )
+    )
+        return assertHostTarget(`${base}-musl`);
+    throw new Error('Платформа хоста не поддерживается для комплектов: ' + base + '.');
 }
 async function pinnedManifest(filename, signal) {
     signal?.throwIfAborted();

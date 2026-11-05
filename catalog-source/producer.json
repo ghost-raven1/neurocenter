@@ -538,8 +538,8 @@
     },
     {
       "path": "services/shared/archive-source.cjs",
-      "sha256": "886b7084b32011d5db38264fbffeec8c7739e7146e0f16b5f1c9203ce4d52b06",
-      "bytes": 1884
+      "sha256": "ac7c4a89ba9725d4c07dce86b08effebd2f68fee485a1547243c7536c565652a",
+      "bytes": 1899
     },
     {
       "path": "services/shared/asset-source-client.cjs",
@@ -588,8 +588,8 @@
     },
     {
       "path": "services/shared/github-release-source.cjs",
-      "sha256": "5c7e7fa7e22cdeb878fa0fb8c12a8a2df71ec755ec68e08c813992a6af7b16a1",
-      "bytes": 8642
+      "sha256": "2300fb607f3273dcb539d9fcbd634a3612354757482c5c1c5c3359daf1cd92c5",
+      "bytes": 8657
     },
     {
       "path": "services/shared/opencode-rag-source.cjs",
@@ -698,13 +698,13 @@
     },
     {
       "path": "services/shared/runtime-artifacts.cjs",
-      "sha256": "f710faa27bf2c2e60cc7cb740cd5b1407106f671bb5b043289040183ff337b8c",
-      "bytes": 13219
+      "sha256": "1d02091e77513c68c162bed0183a86cd502c6de8cc0dc7ca86f2212af1e5d735",
+      "bytes": 14280
     },
     {
       "path": "services/shared/runtime-artifacts.d.cts",
-      "sha256": "831fdb4c83d0c0b98f7fc9e3e7bde83fa2beffa040c16e29eeb934af8e2d493a",
-      "bytes": 1013
+      "sha256": "00ddae1b78588528c4e8b3c255dd34dd3e14122420318bb2db1282a9e8e91b96",
+      "bytes": 1299
     },
     {
       "path": "services/shared/skill-source.mjs",
@@ -758,13 +758,13 @@
     },
     {
       "path": "vendor/asset-contract/SHA256SUMS",
-      "sha256": "d5dad1c5b32dc52837e0ecffa13ea4d92255f6e52f1fb4a083145c408e9ab303",
+      "sha256": "e8da2eb1137b42368ef992fa1a21993933ae545b0aa5596a63b5a6f9893cf0ec",
       "bytes": 1303
     },
     {
       "path": "vendor/asset-contract/SOURCE.json",
-      "sha256": "6f0acc095574409b97e46cee9162cd99fac8e1b8dab2b2386736c6c103393213",
-      "bytes": 3514
+      "sha256": "3ca9d4ebae485c55465e2549d929f10ca03fdee8329fb3e5a2a6d3251a064fad",
+      "bytes": 3515
     },
     {
       "path": "vendor/asset-contract/bin/assets.mjs",
@@ -788,8 +788,8 @@
     },
     {
       "path": "vendor/asset-contract/lib/asset.mjs",
-      "sha256": "0ecd9d5cd2301deb756e45fbda40bf1a053cc497e84ebce282558192be97d261",
-      "bytes": 9882
+      "sha256": "625bd4d7ce3fa7690d1d0e6d089fb8eadd6d7313029093957d8f64a7189e4bb3",
+      "bytes": 10612
     },
     {
       "path": "vendor/asset-contract/lib/dependencies.mjs",

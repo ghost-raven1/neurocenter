@@ -442,13 +442,20 @@ if ! "$NODE" "$INSTALL_DIR/dist/bridge-cli.js" --install-command > "$STAGING_DIR
     fail 'Мост установлен, но короткая команда не зарегистрирована. Проверьте права в ~/.local/bin и повторите установку.'
 fi
 success 'Команда подключения готова: ~/.local/bin/neurocenter-bridge connect --open'
-if [ -n "$PREVIOUS_DIR" ]; then printf '  Предыдущая версия: %s\n' "$PREVIOUS_DIR"; fi
+previous_version_note() {
+    if [ -n "$PREVIOUS_DIR" ] && [ -d "$PREVIOUS_DIR" ]; then printf '  Предыдущая версия: %s\n' "$PREVIOUS_DIR"; fi
+}
 finish_update_cleanup() {
-    if [ ! -f "$INSTALL_DIR/dist/shared/bridge-update-cleanup.cjs" ]; then return; fi
+    # Заметка о предыдущей версии только после очистки: при keepPrevious 0 каталог может исчезнуть.
+    if [ ! -f "$INSTALL_DIR/dist/shared/bridge-update-cleanup.cjs" ]; then
+        previous_version_note
+        return
+    fi
     if [ -n "$PREVIOUS_DIR" ]; then
         "$NODE" -e 'const path=require("node:path"),root=process.argv[1];require(path.join(root,"dist/shared/bridge-update-cleanup.cjs")).writeSuccessfulBackupReceipt({installRoot:root,backupRoot:process.argv[2]}).catch(()=>{console.error("Очистка обновлений отложена; предыдущая версия сохранена.");});' "$INSTALL_DIR" "$PREVIOUS_DIR" || true
     fi
     context connect "$NODE" "$INSTALL_DIR/dist/index.js" --cleanup-updates >/dev/null || printf '  Очистка обновлений отложена; сохранённые копии доступны.\n'
+    previous_version_note
 }
 if [ "$LOCAL_MODE" = '1' ]; then
     finish_update_cleanup

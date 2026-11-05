@@ -48,6 +48,9 @@ export function snapshotRecoveryStore(configuration, { checkDeadline = () => 120
     });
 }
 async function verifyStream(stream, row, { destination, checkDeadline = () => {} } = {}) {
+    // Поздняя ошибка брошенного потока не должна упасть uncaught 'error' в чужом тесте:
+    // активное потребление ловит ошибки через async-итератор, а после завершения слушателей нет.
+    stream.on('error', () => {});
     let received = 0;
     const digest = createHash('sha256');
     let file;
@@ -89,8 +92,11 @@ async function assertTargetObjects(store, target, expected) {
     const remaining = new Set(
             expected.map((row) => snapshotObjectKey(row.projectId, row.sha256) + '\0' + row.versionId),
         ),
-        stream = store.listObjects(target.bucket, '', true, { IncludeVersion: true }),
-        timer = setTimeout(() => stream.destroy(new Error('Истёк срок проверки target bucket.')), 120000);
+        stream = store.listObjects(target.bucket, '', true, { IncludeVersion: true });
+    // Сиротный listObjectsQuery после destroy() отзовётся ошибкой на destroyed-потоке minio;
+    // завершённый и проверенный цикл она уже не может опровергнуть — глушим только поздние события.
+    stream.on('error', () => {});
+    const timer = setTimeout(() => stream.destroy(new Error('Истёк срок проверки target bucket.')), 120000);
     timer.unref();
     let count = 0;
     try {

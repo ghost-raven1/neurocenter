@@ -1,5 +1,5 @@
 'use strict';
-const { portablePath } = require('./runtime-artifacts.cjs');
+const { portablePath, LIMITS } = require('./runtime-artifacts.cjs');
 const { validateRuntimeSource } = require('./tool-runtime-source.cjs');
 /** Internal execution plan references one checked local archive; public import remains asset.json. */
 function validateArchiveSource(value) {
@@ -15,7 +15,7 @@ function validateArchiveSource(value) {
         !portablePath(value.file) ||
         !Number.isSafeInteger(value.bytes) ||
         value.bytes < 1 ||
-        value.bytes > 256 * 1024 ** 2 ||
+        value.bytes > LIMITS.compressedBytes ||
         !/^[a-f0-9]{64}$/.test(value.sha256 ?? '') ||
         !['zip', 'tar.gz', 'file'].includes(value.format)
     )

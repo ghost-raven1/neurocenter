@@ -86,6 +86,9 @@ async function input() {
 }
 
 async function compose(command) {
+    const info = await lstat(path.join(directory, '.env'));
+    if (!info.isFile() || info.isSymbolicLink())
+        throw new Error('.env production-настроек должен быть обычным файлом, а не symlink.');
     await readFile(path.join(directory, '.env'), 'utf8');
     return client.run(command, { inherit: true });
 }

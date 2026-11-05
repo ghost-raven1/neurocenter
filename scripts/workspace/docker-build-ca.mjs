@@ -1,6 +1,6 @@
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, open, realpath, rm } from 'node:fs/promises';
+import { lstat, open, readdir, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 const limit = 1024 * 1024;
@@ -118,7 +118,36 @@ async function cleanup(record, expected) {
     }
 }
 
-/** Each invocation supplies one uniquely named public CA; old artifacts and legacy locks are never touched. */
+/** Утечки (процесс убит до finally) уходят по возрасту; свежие файлы действующих сборок не трогаем. */
+const STALE_CA_MS = 12 * 60 * 60 * 1000;
+async function pruneStaleCa(root) {
+    const now = Date.now();
+    for (const context of contexts) {
+        let directory = root;
+        for (const segment of context.split('/')) directory = path.join(directory, segment);
+        let names;
+        try {
+            names = await readdir(directory);
+        } catch (error) {
+            if (error.code === 'ENOENT') continue;
+            throw error;
+        }
+        for (const name of names) {
+            if (!/^ca-[a-f0-9-]{36}\.pem$/.test(name)) continue;
+            const filename = path.join(directory, name);
+            try {
+                const info = await lstat(filename);
+                if (!info.isFile() || info.isSymbolicLink() || now - info.mtimeMs < STALE_CA_MS) continue;
+                await rm(filename);
+            } catch (error) {
+                if (['ENOENT', 'ELOOP'].includes(error.code)) continue;
+                throw error;
+            }
+        }
+    }
+}
+
+/** Each invocation supplies one uniquely named public CA; leaked artifacts age out, legacy locks are never touched. */
 export async function withDockerBuildCa(root, source, action) {
     const environment = { ...source, NEUROCENTER_BUILD_CA_SHA256: '', NEUROCENTER_BUILD_CA_NAME: '.gitkeep' };
     const selected = source.NEUROCENTER_BUILD_CA_FILE ?? source.NODE_EXTRA_CA_CERTS;
@@ -139,6 +168,7 @@ export async function withDockerBuildCa(root, source, action) {
         sha = createHash('sha256').update(bytes).digest('hex'),
         staged = [];
     root = await realpath(root);
+    await pruneStaleCa(root);
     let failure;
     try {
         for (const context of contexts) {

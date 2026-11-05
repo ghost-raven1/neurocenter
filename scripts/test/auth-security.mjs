@@ -12,10 +12,37 @@ const {
 } = require('../../services/oauth2-bridge/dist/security/browser-security.js');
 const { ProxyService } = require('../../services/api-gateway/dist/proxy/proxy.service.js');
 const { filterResponse } = require('../../services/api-gateway/dist/proxy/access-response.js');
+/** Валидация входа как у каталога (createSessionInput): тест не должен принимать шире продакшена. */
+const sessionText = (value, max) =>
+    typeof value === 'string' && !!value.trim() && value.length <= max && !/[\x00-\x1f\x7f]/.test(value);
+const assertSessionCreate = ({ tokenHash, identity, selectedRole, ttlSeconds }) => {
+    const invalid = () => {
+        throw new Error('Некорректные данные браузерной сессии.');
+    };
+    if (typeof tokenHash !== 'string' || !/^[a-f0-9]{64}$/.test(tokenHash)) invalid();
+    if (
+        !identity ||
+        typeof identity !== 'object' ||
+        Array.isArray(identity) ||
+        Object.keys(identity).length !== 4 ||
+        !sessionText(identity.id, 512) ||
+        !sessionText(identity.principalName, 512) ||
+        !sessionText(identity.email, 320) ||
+        !sessionText(identity.displayName, 512) ||
+        !/^[^\s@]+@[^\s@]+$/.test(identity.email) ||
+        Buffer.byteLength(JSON.stringify(identity)) > 8192
+    )
+        invalid();
+    if (!sessionText(selectedRole, 128)) invalid();
+    if (typeof ttlSeconds !== 'number' || !Number.isSafeInteger(ttlSeconds) || ttlSeconds < 60 || ttlSeconds > 86400)
+        invalid();
+};
 const memorySessionStore = () => {
     const rows = new Map();
     return {
-        async create({ tokenHash, identity, selectedRole, ttlSeconds }) {
+        async create(input) {
+            assertSessionCreate(input);
+            const { tokenHash, identity, selectedRole, ttlSeconds } = input;
             rows.set(tokenHash, {
                 identity,
                 selectedRole,

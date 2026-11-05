@@ -147,18 +147,51 @@ export function composeClient({ directory, projectName = 'neurocenter-production
     };
 }
 
+/** Мёртвый держатель (crash между create и rm) не должен блокировать проект: снимаем его один раз. */
+async function staleMaintenanceContainer(run, name) {
+    let id;
+    try {
+        id = (await run(['inspect', name, '--format', '{{.Id}}'])).trim();
+    } catch {
+        return false;
+    }
+    let labels;
+    try {
+        labels = JSON.parse(await run(['inspect', name, '--format', '{{json .Config.Labels}}']));
+    } catch {
+        return false;
+    }
+    const pid = Number(labels?.['neurocenter.maintenance.pid']);
+    // Живой или чужой PID (включая EPERM и повторное использование) блокировку не снимаем.
+    if (!Number.isSafeInteger(pid) || pid < 2 || pid === process.pid) return false;
+    try {
+        process.kill(pid, 0);
+        return false;
+    } catch (error) {
+        if (error.code !== 'ESRCH') return false;
+    }
+    try {
+        await run(['rm', id]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /** Имя контейнера — блокировка на Docker daemon, общая для разных рабочих каталогов. */
 export async function maintenanceLock(client, image, operation, action, run = docker) {
     const name = 'neurocenter-maintenance-' + client.projectName;
     let id;
     let retain = false;
-    try {
-        id = await run([
+    const acquire = () =>
+        run([
             'create',
             '--name',
             name,
             '--label',
             'neurocenter.maintenance=' + operation,
+            '--label',
+            'neurocenter.maintenance.pid=' + process.pid,
             '--network',
             'none',
             image,
@@ -166,12 +199,17 @@ export async function maintenanceLock(client, image, operation, action, run = do
             '-e',
             '0',
         ]);
+    try {
+        id = await acquire();
     } catch {
-        throw new Error(
-            'Не удалось взять блокировку ' +
-                name +
-                '. Проверьте Docker и незавершённые операции; чужую блокировку не удаляем.',
-        );
+        if (!(await staleMaintenanceContainer(run, name))) {
+            throw new Error(
+                'Не удалось взять блокировку ' +
+                    name +
+                    '. Проверьте Docker и незавершённые операции; блокировку живого держателя не удаляем.',
+            );
+        }
+        id = await acquire();
     }
     try {
         return await action();

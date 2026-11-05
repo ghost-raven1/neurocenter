@@ -1,6 +1,6 @@
 'use strict';
 const { validateRuntimeSource } = require('./tool-runtime-source.cjs');
-const { portablePath } = require('./runtime-artifacts.cjs');
+const { portablePath, LIMITS } = require('./runtime-artifacts.cjs');
 const object = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
 const positive = (value) => Number.isSafeInteger(value) && value > 0;
 /** Client pins release identity and asset bytes; generated runtime recipes remain server-owned. */
@@ -42,7 +42,7 @@ function releaseAsset(value, { owner, repository, tag }) {
         !portablePath(value.name) ||
         value.name.includes('/') ||
         !positive(value.size) ||
-        value.size > 256 * 1024 ** 2 ||
+        value.size > LIMITS.compressedBytes ||
         value.state !== 'uploaded'
     )
         return;

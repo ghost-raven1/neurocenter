@@ -28,7 +28,7 @@ function identity(value: unknown): value is ISessionIdentity {
 const unavailable = () =>
     new ServiceUnavailableException('Хранилище сессий временно недоступно. Повторите запрос позже.');
 
-/** A missing row is an explicit200 envelope;404/transport/protocol errors remain503, never logout. */
+/** A missing row is an explicit 200 envelope; 404/transport/protocol errors remain 503, never logout. */
 @Injectable()
 export class CatalogSessionClient {
     private readonly http: AxiosInstance = axios.create({

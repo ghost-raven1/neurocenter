@@ -380,6 +380,7 @@ async function backupOperation(
         let paused = false;
         let updating = false;
         let retainPartial = false;
+        let backupError;
         const started = Date.now();
         let result;
         let remainingMs;
@@ -501,6 +502,7 @@ async function backupOperation(
                 return await hooks.afterBackup({ ...result, durationMs: Date.now() - started }, { remainingMs });
             }
         } catch (error) {
+            backupError = error;
             retainPartial = error.retainPartial === true;
             throw error;
         } finally {
@@ -512,7 +514,16 @@ async function backupOperation(
             } finally {
                 if (paused && !updating && running.length) {
                     progress('Возвращаем приложения в работу');
-                    await client.run(['start', '--wait', ...running]);
+                    try {
+                        await client.run(['start', '--wait', ...running]);
+                    } catch (error) {
+                        // Ошибка возврата приложений не должна замаскировать причину сбоя бэкапа.
+                        if (backupError) {
+                            backupError.message += '\nНе удалось вернуть приложения в работу: ' + error.message;
+                            throw backupError;
+                        }
+                        throw error;
+                    }
                 }
             }
         }

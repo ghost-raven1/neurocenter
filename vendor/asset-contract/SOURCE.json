@@ -39,9 +39,9 @@
     },
     {
       "path": "lib/asset.mjs",
-      "bytes": 9882,
-      "sha256": "0ecd9d5cd2301deb756e45fbda40bf1a053cc497e84ebce282558192be97d261",
-      "gitBlobSha1": "eb28b231a6d019de21ccbff76fea7350046698f9"
+      "bytes": 10612,
+      "sha256": "625bd4d7ce3fa7690d1d0e6d089fb8eadd6d7313029093957d8f64a7189e4bb3",
+      "gitBlobSha1": "68b8cadc1a640eea88719816e9e7dfec7dfae6ba"
     },
     {
       "path": "lib/dependencies.mjs",

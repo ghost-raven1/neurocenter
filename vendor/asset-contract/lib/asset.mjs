@@ -5,6 +5,9 @@ import {validateAgentDelivery} from './agent.mjs';
 
 const toolFields=['name','kind','description','version','compatibility','tags','origin','revision','config','files','dependencies'];
 const targets=['darwin-arm64','darwin-x64','linux-arm64-glibc','linux-x64-glibc','linux-arm64-musl','linux-x64-musl','win32-arm64','win32-x64'];
+const limitDefaults={compressedBytes:256*1024**2,unpackedBytes:1024**3,filesCount:20000};
+function limitEnv(name,def){const raw=process.env[name];if(raw===undefined||raw==='')return def;if(!/^[1-9][0-9]*$/.test(raw))throw new Error('Invalid limit '+name);const v=Number(raw);if(!Number.isSafeInteger(v))throw new Error('Limit '+name+' too large');return v;}
+const limits={compressedBytes:limitEnv('NEUROCENTER_RUNTIME_MAX_COMPRESSED_BYTES',limitDefaults.compressedBytes),unpackedBytes:limitEnv('NEUROCENTER_RUNTIME_MAX_UNPACKED_BYTES',limitDefaults.unpackedBytes),filesCount:limitEnv('NEUROCENTER_RUNTIME_MAX_FILES',limitDefaults.filesCount)};
 
 function source(value) {
   if(value?.type==='git') {
@@ -39,7 +42,7 @@ function tool(asset) {
     object(artifact,['url','descriptor'],'Runtime artifact');if(artifact.url!==undefined)releaseUrl(artifact.url);
     const item=object(artifact.descriptor,['target','sha256','compressedBytes','unpackedBytes','filesCount','entrypoint','executable'],'Runtime descriptor');
     if(!targets.includes(item.target)||seen.has(item.target))throw new Error('Invalid or duplicate runtime target');seen.add(item.target);
-    sha(item.sha256);safePath(item.entrypoint);['compressedBytes','unpackedBytes','filesCount'].forEach(key=>positive(item[key],key));
+    sha(item.sha256);safePath(item.entrypoint);['compressedBytes','unpackedBytes','filesCount'].forEach(key=>{positive(item[key],key);if(item[key]>limits[key])throw new Error('Runtime artifact exceeds '+key+' limit');});
     const previous=hashes.get(item.sha256);
     if(previous&&['compressedBytes','unpackedBytes','filesCount'].some(key=>previous[key]!==item[key]))throw new Error('One runtime SHA has contradictory inventory sizes');
     hashes.set(item.sha256,item);
