@@ -317,7 +317,7 @@ test('snapshot build pins an explicitly selected registry IPv4 and TLS mode only
     assert.deepEqual(args, [
         'build',
         '--add-host',
-        'registry.npmjs.org:192.0.2.20',
+        'artifactory.dev.ppod.cbr.ru:192.0.2.20',
         '--build-arg',
         'NEUROCENTER_NPM_STRICT_SSL=false',
         '-f',
@@ -551,7 +551,7 @@ for (const value of ['0', '1'])
                 const args = (await fs.readFile(argsFile, 'utf8')).trim().split('\n');
                 assert.equal(args[0], 'ci');
                 for (const flag of [
-                    '--registry=https://registry.npmjs.org/',
+                    '--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/',
                     '--userconfig=/dev/null',
                     '--globalconfig=/tmp/neurocenter-empty-global.npmrc',
                     '--strict-ssl=' + strict,

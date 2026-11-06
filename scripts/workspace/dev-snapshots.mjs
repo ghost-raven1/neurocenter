@@ -105,6 +105,10 @@ export async function buildDevSnapshotImage(root, environment = process.env) {
             const proxyArgs = ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy']
                 .filter((name) => Object.hasOwn(buildEnvironment, name) && buildEnvironment[name] !== undefined)
                 .flatMap((name) => ['--build-arg', name]);
+            // The same auth variable feeds the Dockerfile build-arg; the value stays in Docker's environment.
+            const registryAuthArgs = Object.hasOwn(buildEnvironment, 'NPM_REGISTRY_AUTH_B64')
+                ? ['--build-arg', 'NPM_REGISTRY_AUTH_B64']
+                : [];
             console.log(
                 `Образ проверки снимков: network=${network}; npm-diagnostics=${Number(npmDiagnostics)}; timeout=${buildSeconds}s; explicit-proxy=${proxyArgs.filter((name) => name !== '--build-arg').join(',') || 'none (Docker client settings may apply)'}; registry-ipv4=${registryAddress ?? 'DNS'}; tls-verify=${Number(verifyTls)}`,
             );
@@ -113,8 +117,9 @@ export async function buildDevSnapshotImage(root, environment = process.env) {
                         'build',
                         ...args,
                         ...proxyArgs,
+                        ...registryAuthArgs,
                         ...(network === 'host' ? ['--network=host'] : []),
-                        ...(registryAddress ? ['--add-host', `registry.npmjs.org:${registryAddress}`] : []),
+                        ...(registryAddress ? ['--add-host', `artifactory.dev.ppod.cbr.ru:${registryAddress}`] : []),
                         ...(!verifyTls ? ['--build-arg', 'NEUROCENTER_NPM_STRICT_SSL=false'] : []),
                         ...(npmDiagnostics ? ['--build-arg', 'NEUROCENTER_NPM_DIAGNOSTICS=1'] : []),
                         '-f',

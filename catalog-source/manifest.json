@@ -610,7 +610,7 @@
     },
     {
       "path": "components/fetch-mcp/SOURCE.json",
-      "sha256": "3bf0407400d3b660525aef32a27b6a6b63a0262169cb892ee97b40172fa0db92",
+      "sha256": "97098a65d9f26eb7f634408781f48565a63091868e0d45d4562c1f078a6878b2",
       "bytes": 2081
     },
     {
@@ -620,8 +620,8 @@
     },
     {
       "path": "components/fetch-mcp/source/package-lock.json",
-      "sha256": "d1c57eb778da8d7cf6006d442e2190a329dff1cdde3dae9b6640e8ceed81f645",
-      "bytes": 69945
+      "sha256": "96eda769962fb7537f33364831e4ce7a12f25937c732d4af8f5b6255d7702c36",
+      "bytes": 74729
     },
     {
       "path": "components/fetch-mcp/source/package.json",
@@ -1025,7 +1025,7 @@
     },
     {
       "path": "producer.json",
-      "sha256": "286807d75cef43f405e0895ceda9d1b24f5857a65f642946f73fdf9ca0b48b94",
+      "sha256": "654733fe0cf926fcf0367a14f0a5121c3267dad9306602fb1c031b0bcd370e20",
       "bytes": 31275
     },
     {

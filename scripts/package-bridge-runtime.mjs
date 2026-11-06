@@ -9,6 +9,7 @@ import { packageWindowsJobHelper } from './bridge-windows-job.mjs';
 import { verifyBridgeBuild } from './bridge-build-integrity.mjs';
 import { npmCli } from './workspace/node-runtime.mjs';
 import { withNpmBuildEnvironment } from './workspace/npm-build-environment.mjs';
+import { lockfileVendorTarballs } from './supply/registry.mjs';
 import {
     packageBridgeOpenCodeSdk,
     verifyBridgeSdkArchive,
@@ -52,6 +53,13 @@ try {
     const copiedBuild = await verifyBridgeBuild(path.join(content, 'dist'), manifest.version);
     if (copiedManifest.version !== manifest.version || copiedBuild.buildId !== build.buildId)
         throw new Error('Сборка изменилась во время упаковки. Повторите упаковку неизменяемого кандидата.');
+    // AD-15 vendor-схема: file:-зависимости lockfile резолвятся относительно package-каталога,
+    // поэтому вендор-тарболы closure кладём в stage/supply/vendor до npm ci.
+    for (const relative of lockfileVendorTarballs(path.join(bridge, 'package-lock.json'), 'mcp/neurocenter-asset-sync/package-lock.json')) {
+        const target = path.join(stage, relative);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.copyFile(path.join(root, relative), target);
+    }
     await packageBridgeOpenCodeSdk({ root, content, stage, target });
     const npm = npmCli();
     await withNpmBuildEnvironment(process.env, async ({ env, args }) => {

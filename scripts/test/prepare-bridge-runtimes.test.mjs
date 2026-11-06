@@ -25,6 +25,7 @@ const contextScripts = [
     'opencode-platforms.mjs',
     'workspace/node-runtime.mjs',
     'workspace/npm-build-environment.mjs',
+    'supply/registry.mjs',
 ];
 
 /** Отдельный checkout и фальшивые сборщики: настоящий Docker, npm и сеть не используются. */
@@ -67,6 +68,7 @@ async function fixture(t) {
         'release-request.mjs',
         ...contextScripts,
     ]) {
+                await fs.mkdir(path.dirname(path.join(root, 'scripts', file)), { recursive: true });
         await fs.copyFile(path.join(repository, 'scripts', file), path.join(root, 'scripts', file));
     }
     await fs.mkdir(path.join(root, 'node_modules/@neurocenter'), { recursive: true });
@@ -87,8 +89,22 @@ async function fixture(t) {
     await fs.writeFile(path.join(bridge, 'package.json'), JSON.stringify({ name: 'isolated-bridge', version }));
     await fs.writeFile(
         path.join(bridge, 'package-lock.json'),
-        JSON.stringify({ name: 'isolated-bridge', version, lockfileVersion: 3 }),
+        JSON.stringify({
+            name: 'isolated-bridge',
+            version,
+            lockfileVersion: 3,
+            packages: {
+                '': { name: 'isolated-bridge', version },
+                'node_modules/vendor-fixture': {
+                    version: '1.0.0',
+                    resolved: 'file:../../supply/vendor/vendor-fixture-1.0.0.tgz',
+                },
+            },
+        }),
     );
+    // AD-15 vendor-схема: tarball closure, который prepare-bridge-runtimes кладёт в контекст.
+    await fs.mkdir(path.join(root, 'supply/vendor'), { recursive: true });
+    await fs.writeFile(path.join(root, 'supply/vendor/vendor-fixture-1.0.0.tgz'), 'vendor fixture tarball\n');
     await fs.writeFile(path.join(bridge, 'dist/index.js'), distSource);
     await fs.writeFile(path.join(bridge, 'dist/build.json'), JSON.stringify({ version, buildId }));
     for (const file of [
@@ -364,6 +380,7 @@ test('Недостающий Linux x64 собирается через linux/amd
         'mcp/neurocenter-asset-sync/dist/build.json',
         'mcp/neurocenter-asset-sync/package.json',
         'mcp/neurocenter-asset-sync/package-lock.json',
+        'supply/vendor/vendor-fixture-1.0.0.tgz',
         `bridge-dist/opencode/opencode-linux-x64-baseline-${opencodeVersion}.tgz`,
         `bridge-dist/opencode/opencode-linux-x64-baseline-${opencodeVersion}.tgz.sha256`,
     ].sort();

@@ -40,6 +40,7 @@ async function fixture(t, mode = 'ready') {
         'dev.mjs',
         'workspace/node-runtime.mjs',
         'workspace/npm-build-environment.mjs',
+        'supply/registry.mjs',
         'workspace/dev-chat-storage.mjs',
         'workspace/model-credentials.mjs',
         'workspace/model-credential-store.mjs',
@@ -65,6 +66,7 @@ async function fixture(t, mode = 'ready') {
         'dev-mcp/safe-file.mjs',
         'dev-mcp/constants.mjs',
     ]) {
+                await fs.mkdir(path.dirname(path.join(checkout, 'scripts', file)), { recursive: true });
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout, 'scripts/assets'), { recursive: true });
@@ -810,7 +812,7 @@ test('Ошибка сборки видна в stderr и не подменяет�
     const installs = result.events.filter((event) => event.kind === 'npm');
     assert.equal(installs.length, 1);
     assert.deepEqual(installs[0].args.slice(0, 4), ['ci', '--ignore-scripts', '--no-audit', '--no-fund']);
-    assert.ok(installs[0].args.includes('--registry=https://registry.npmjs.org/'));
+    assert.ok(installs[0].args.includes('--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/'));
     assert.ok(installs[0].args.includes('--strict-ssl=false'));
     assert.ok(installs[0].args.some((arg) => arg.startsWith('--userconfig=')));
     assert.ok(installs[0].args.some((arg) => arg.startsWith('--globalconfig=')));
@@ -839,7 +841,7 @@ test('Dev build dependency install ignores hostile global/user config and remove
     assert.deepEqual(call.configKeys.sort(), ['NPM_CONFIG_STRICT_SSL', 'npm_config_strict_ssl'].sort());
     assert.equal(call.hasToken, false);
     assert.notEqual(call.home, home);
-    assert.ok(call.args.includes('--registry=https://registry.npmjs.org/'));
+    assert.ok(call.args.includes('--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/'));
     assert.ok(call.args.includes('--strict-ssl=false'));
     await assert.rejects(fs.stat(call.home), { code: 'ENOENT' });
     assert.equal(await fs.readFile(path.join(home, '.npmrc'), 'utf8'), hostile);

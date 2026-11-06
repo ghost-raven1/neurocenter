@@ -14,11 +14,14 @@ RUN if [ -n "$NEUROCENTER_BUILD_CA_SHA256" ]; then \
     fi && chmod 0444 /usr/local/share/neurocenter/build-ca/extra.pem
 ENV NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
 
-# Ignore user/global npm settings; the lockfile and official registry define this build.
-ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+# Ignore user/global npm settings; the lockfile and the trusted local registry define this build.
+ENV NPM_CONFIG_REGISTRY=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
     NPM_CONFIG_STRICT_SSL=false
+# Optional build-time registry auth (base64 of the trusted-host npmrc lines); empty keeps the file blank.
+ARG NPM_REGISTRY_AUTH_B64
+RUN if [ -n "$NPM_REGISTRY_AUTH_B64" ]; then printf '%s' "$NPM_REGISTRY_AUTH_B64" | base64 -d > /tmp/neurocenter-empty-global.npmrc; else : > /tmp/neurocenter-empty-global.npmrc; fi
 
 WORKDIR /app
 
@@ -26,10 +29,12 @@ WORKDIR /app
 # В репо только исходники; node_modules/dist не копируются (.dockerignore) и собираются в образе.
 COPY mcp/neurocenter-asset-sync/package.json mcp/neurocenter-asset-sync/package-lock.json mcp/neurocenter-asset-sync/
 COPY mcp/neurocenter-asset-sync/vendor/ mcp/neurocenter-asset-sync/vendor/
+# AD-15 vendor-схема: file:-зависимости mcp-lockfile (file:../../supply/vendor) указывают на /app/supply/vendor.
+COPY supply/vendor/ /app/supply/vendor/
 WORKDIR /app/mcp/neurocenter-asset-sync
 # Lock содержит Linux GNU-биндинги обеих архитектур. Проверяем загрузку сразу,
 # без повторного npm install, который пересчитывал версии вне lock-файла.
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --install-links=true --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --install-links=true --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
 COPY mcp/neurocenter-asset-sync/ .
 # MCP использует общие контракты и их типы уже во время собственной сборки.
 COPY services/shared/ /app/services/shared/
@@ -39,7 +44,9 @@ RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
 # --- rag-sync-service (NestJS) ---
 WORKDIR /app
 COPY services/rag-sync-service/package*.json ./
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://registry.npmjs.org/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
+# AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на /supply/vendor.
+COPY supply/vendor/ /supply/vendor/
+RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
 COPY services/rag-sync-service/ .
 COPY services/shared/ /shared/
 RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build

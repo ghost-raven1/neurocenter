@@ -96,7 +96,7 @@ test('SDK producer preserves independent bridge dependencies and carries the rea
     assert.equal(f.calls[0].env.NODE_TLS_REJECT_UNAUTHORIZED, '0');
     assert.equal(f.calls[0].env.NPM_CONFIG_STRICT_SSL, 'false');
     assert.notEqual(f.calls[0].env.HOME, os.homedir());
-    assert.ok(f.calls[0].args.includes('--registry=https://registry.npmjs.org/'));
+    assert.ok(f.calls[0].args.includes('--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/'));
     await assert.rejects(fs.access(f.calls[0].env.HOME), { code: 'ENOENT' });
     await assert.rejects(fs.access(path.join(f.stage, 'sdk-install')), { code: 'ENOENT' });
     const files = new Map();
@@ -423,6 +423,7 @@ for (const [mode, expected] of [
             'opencode-platforms.mjs',
             'workspace/node-runtime.mjs',
             'workspace/npm-build-environment.mjs',
+            'supply/registry.mjs',
         ]) {
             await fs.mkdir(path.dirname(path.join(f.root, 'scripts', file)), { recursive: true });
             await fs.copyFile(path.join(repository, 'scripts', file), path.join(f.root, 'scripts', file));

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/supply/vendor.mjs",
+  "host": "linux-x64",
+  "packages": []
+}

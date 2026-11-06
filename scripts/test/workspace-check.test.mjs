@@ -205,6 +205,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
             'workspace/dev-snapshots.mjs',
             'workspace/dev-chat-storage.mjs',
             'workspace/npm-build-environment.mjs',
+            'supply/registry.mjs',
             'workspace/docker-build-ca.mjs',
             'workspace/docker-build-progress.mjs',
             'workspace/compose.mjs',
@@ -222,6 +223,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
             'workspace/dev-watch-child.mjs',
             'workspace/dev-watch-owned.mjs',
         ]) {
+                        await fs.mkdir(path.dirname(path.join(checkout, 'scripts', file)), { recursive: true });
             await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
         }
         // This copied hook records the dev integration boundary without installing a real bridge.
@@ -322,7 +324,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
             const strict = 'false';
             assert.deepEqual(call.args, [
                 ...base,
-                '--registry=https://registry.npmjs.org/',
+                '--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/',
                 '--strict-ssl=' + strict,
                 '--userconfig=' + path.join(call.home, 'user.npmrc'),
                 '--globalconfig=' + path.join(call.home, 'global.npmrc'),

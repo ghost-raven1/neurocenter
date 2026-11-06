@@ -29,7 +29,7 @@ async function fixture(t) {
     return directory;
 }
 
-test('Gateway npm config selects npmjs, disables certificate verification and preloads TLS=0 for lifecycle scripts', async (t) => {
+test('Gateway npm config selects the trusted registry, disables certificate verification and preloads TLS=0 for lifecycle scripts', async (t) => {
     const directory = await fixture(t),
         userconfig = path.join(directory, 'user.npmrc'),
         globalconfig = path.join(directory, 'global.npmrc');
@@ -56,7 +56,7 @@ test('Gateway npm config selects npmjs, disables certificate verification and pr
     });
     assert.equal(config.status, 0, config.stderr);
     const settings = JSON.parse(config.stdout);
-    assert.equal(String(settings.registry).replace(/\/+$/, ''), 'https://registry.npmjs.org');
+    assert.equal(String(settings.registry).replace(/\/+$/, ''), 'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted');
     assert.equal(settings['strict-ssl'], false);
     const child = spawnSync(process.execPath, [npmCli(), 'run', 'probe', '--silent', ...args], {
         cwd: directory,

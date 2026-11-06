@@ -9,7 +9,7 @@ import { opencodeVersion, opencodeVariants } from './opencode-platforms.mjs';
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const version = process.env.OPENCODE_VERSION || opencodeVersion;
-const registry = (process.env.OPENCODE_REGISTRY || 'https://registry.npmjs.org').replace(/\/$/, '');
+const registry = (process.env.OPENCODE_REGISTRY || 'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/').replace(/\/$/, '');
 const directory = fileURLToPath(new URL('../bridge-dist/opencode/', import.meta.url));
 const variants = process.env.OPENCODE_TARGETS
     ? [
@@ -46,9 +46,18 @@ for (const variant of variants) {
         throw new Error(`Ошибка скачивания ${name}: HTTP ${response.status}`);
     }
     const bytes = Buffer.from(await response.arrayBuffer());
-    const [algorithm, expected] = dist.integrity.split('-');
+    // The trusted registry omits dist.integrity; its dist.shasum is a sha1 hex digest.
+    const integrity =
+        dist.integrity ??
+        (typeof dist.shasum === 'string' && /^[a-f0-9]{40}$/i.test(dist.shasum)
+            ? 'sha1-' + Buffer.from(dist.shasum, 'hex').toString('base64')
+            : undefined);
+    if (!integrity) {
+        throw new Error(`Пакет ${name} не вернул контрольную сумму`);
+    }
+    const [algorithm, expected] = integrity.split('-');
     if (
-        !['sha512', 'sha256'].includes(algorithm) ||
+        !['sha512', 'sha256', 'sha1'].includes(algorithm) ||
         createHash(algorithm).update(bytes).digest('base64') !== expected
     ) {
         throw new Error(`Не совпала контрольная сумма ${name}`);

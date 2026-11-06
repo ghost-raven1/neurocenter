@@ -163,13 +163,37 @@ test('Snapshot verifier installs only its SDK closure with the existing Catalog 
     assert.deepEqual(manifest.dependencies, { '@lancedb/lancedb': '0.29.0', 'apache-arrow': '18.1.0' });
     assert.deepEqual(lock.packages[''].dependencies, manifest.dependencies);
     assert.equal(Object.keys(lock.packages).length, 37);
+    // AD-15 vendor-схема: supply-пары (нет в registry) — file:-ссылки; относительные
+    // пути различаются между lockfile'ами, но ведут в один и тот же vendor-тарбол.
+    const normalizeResolved = (resolved, lockDir) =>
+        resolved.startsWith('file:') ? path.posix.normalize(path.join(lockDir, resolved.slice('file:'.length))) : resolved;
     for (const [key, item] of Object.entries(lock.packages)) {
         if (!key) continue;
         const original = catalog.packages[key];
         assert.ok(original, key);
-        for (const field of ['version', 'resolved', 'integrity', 'os', 'cpu', 'libc', 'optional'])
+        for (const field of ['version', 'integrity', 'os', 'cpu', 'libc', 'optional'])
             assert.deepEqual(item[field], original[field], key + ' ' + field);
-        assert.equal(new URL(item.resolved).hostname, 'registry.npmjs.org');
+        assert.equal(
+            normalizeResolved(item.resolved, 'scripts/snapshots/verifier'),
+            normalizeResolved(original.resolved, 'services/catalog-service'),
+            key + ' resolved',
+        );
+        if (item.resolved.startsWith('https://')) {
+            const url = new URL(item.resolved);
+            // platform-пары (os/cpu исключают linux-x64) сохраняют исходный npmjs-URL.
+            const excludedForHost =
+                (Array.isArray(item.os) && !item.os.includes('linux')) ||
+                (Array.isArray(item.cpu) && !item.cpu.includes('x64'));
+            assert.ok(
+                url.hostname === 'artifactory.dev.ppod.cbr.ru' ||
+                    (url.hostname === 'registry.npmjs.org' && excludedForHost),
+                key + ' resolved host: ' + url.hostname,
+            );
+        } else
+            assert.ok(
+                normalizeResolved(item.resolved, 'scripts/snapshots/verifier').startsWith('supply/vendor/'),
+                key + ' file: вне supply/vendor',
+            );
         assert.ok(item.integrity);
         assert.ok(!item.dev && !item.peer, key);
     }
@@ -256,7 +280,7 @@ test('Real npm pins relaxed build TLS despite hostile config and preserves lifec
                 encoding: 'utf8',
             }),
         );
-        assert.equal(config.registry, 'https://registry.npmjs.org/');
+        assert.equal(config.registry, 'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/');
         assert.equal(config['strict-ssl'], false);
         assert.equal(config['@fixture:registry'], undefined);
         assert.equal(config.offline, false);
@@ -293,7 +317,7 @@ test('Every Node Docker build pins npm registry, empty configs and its selected 
         const source = await fs.readFile(path.join(root, file), 'utf8'),
             gateway = file === 'services/api-gateway/Dockerfile',
             verifier = file === 'services/catalog-service/snapshot-verifier.Dockerfile';
-        assert.match(source, /ENV NPM_CONFIG_REGISTRY=https:\/\/registry\.npmjs\.org\//, file);
+        assert.match(source, /ENV NPM_CONFIG_REGISTRY=https:\/\/artifactory\.dev\.ppod\.cbr\.ru\/artifactory\/api\/npm\/ppod-npm-trusted\//, file);
         assert.match(source, /NPM_CONFIG_USERCONFIG=\/dev\/null/, file);
         assert.match(source, /NPM_CONFIG_GLOBALCONFIG=\/tmp\/neurocenter-empty-global\.npmrc/, file);
         assert.match(source, verifier ? /NPM_CONFIG_STRICT_SSL=true/ : /NPM_CONFIG_STRICT_SSL=false/, file);
@@ -314,7 +338,7 @@ test('Every Node Docker build pins npm registry, empty configs and its selected 
             );
             if (!/\bnpm ci /.test(command)) continue;
             for (const flag of [
-                '--registry=https://registry.npmjs.org/',
+                '--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/',
                 '--userconfig=/dev/null',
                 '--globalconfig=/tmp/neurocenter-empty-global.npmrc',
                 verifier ? '--strict-ssl="$NEUROCENTER_NPM_STRICT_SSL"' : '--strict-ssl=false',
@@ -366,7 +390,7 @@ test(
             for(const name of ['.npmrc','.yarnrc','.yarnrc.yml','nested/.npmrc','nested/.yarnrc','nested/.yarnrc.yml'])assert.equal(fs.existsSync('/probe/'+name),false,name);
             assert.equal(process.env['npm_config_@fixture:registry'],undefined);
             const config=JSON.parse(execFileSync('npm',['config','list','--json',...${JSON.stringify(flags)}],{encoding:'utf8'}));
-            assert.equal(config.registry,'https://registry.npmjs.org/');assert.equal(config['strict-ssl'],false);
+            assert.equal(config.registry,'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/');assert.equal(config['strict-ssl'],false);
             assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED,'0');
             assert.equal(config['@fixture:registry'],undefined);assert.equal(config.userconfig,'/dev/null');
             assert.equal(config.globalconfig,'/tmp/neurocenter-empty-global.npmrc');
@@ -434,14 +458,38 @@ test('All image build contexts exclude registry settings and credentials at ever
     }
 });
 
-test('Locked package downloads use npmjs or pinned GitHub asset sources', async () => {
+test('Locked package downloads use the trusted registry, platform-npmjs, or pinned GitHub asset sources', async () => {
+    // AD-15 vendor-схема: корзина «другие платформы» (os/cpu исключают linux-x64)
+    // сохраняет исходные npmjs-URL — npm их не запрашивает при install на linux-x64.
+    const classification = JSON.parse(
+        await fs.readFile(path.join(root, 'scripts/supply/classification.json'), 'utf8'),
+    );
+    const platformSet = new Set(classification.buckets.platform);
+    const parsePair = (url) => {
+        const lastDash = url.pathname.lastIndexOf('/-/');
+        if (lastDash < 0) return null;
+        const segments = url.pathname.slice(1, lastDash).split('/');
+        const base = segments[segments.length - 1];
+        const scope =
+            segments.length >= 2 && segments[segments.length - 2].startsWith('@') ? segments[segments.length - 2] + '/' : '';
+        const name = scope + base;
+        const tarball = url.pathname.slice(lastDash + 3);
+        if (!name || !tarball.startsWith(base + '-') || !tarball.endsWith('.tgz')) return null;
+        const version = tarball.slice(base.length + 1, -4);
+        return version ? name + '@' + version : null;
+    };
     for (const file of tracked.filter((file) => file.endsWith('package-lock.json'))) {
         const lock = JSON.parse(await fs.readFile(path.join(root, file), 'utf8'));
         for (const item of Object.values(lock.packages || {})) {
             if (!item.resolved || !item.resolved.includes('://')) continue;
             const url = new URL(item.resolved);
             assert.equal(url.protocol, 'https:', file);
-            assert.ok(['registry.npmjs.org', 'codeload.github.com'].includes(url.hostname), file);
+            if (url.hostname === 'registry.npmjs.org') {
+                const key = parsePair(url);
+                assert.ok(key && platformSet.has(key), file + ': npmjs resolved вне platform-корзины: ' + url);
+                continue;
+            }
+            assert.ok(['artifactory.dev.ppod.cbr.ru', 'codeload.github.com'].includes(url.hostname), file);
             if (url.hostname === 'codeload.github.com') assert.match(url.pathname, /\/[a-f0-9]{40}$/);
         }
     }

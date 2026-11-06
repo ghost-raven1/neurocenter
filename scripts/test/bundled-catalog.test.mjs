@@ -236,8 +236,16 @@ test('Vendored runtime closures match their pins and ordinary registry dependenc
     assert.equal(fetch.provenance.commit, '1ddb1a59cb09a2d38e759f2d7a97829680cbe514');
     const npmLock = JSON.parse(fetch.files.get('source/package-lock.json'));
     assert.equal(npmLock.lockfileVersion, 3);
-    for (const item of Object.values(npmLock.packages))
-        if (item.resolved) assert.ok(item.resolved.startsWith('https://registry.npmjs.org/'));
+    // AD-15 vendor-схема: trusted-URL для registry-пар; file:-ссылки на supply/vendor
+    // для пар, отсутствующих в registry (в fetch-mcp — только эти две формы).
+    for (const item of Object.values(npmLock.packages)) {
+        if (!item.resolved) continue;
+        assert.ok(
+            item.resolved.startsWith('https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/') ||
+                (item.resolved.startsWith('file:') && item.resolved.includes('supply/vendor/')),
+            'unexpected resolved: ' + item.resolved,
+        );
+    }
     const pin = JSON.parse(await fs.readFile(path.join(root, 'services/shared/codex-connector-pin.json')));
     assert.equal(codex.provenance.commit, pin.sourceCommit);
     for (const [name, sha] of Object.entries(pin.files))

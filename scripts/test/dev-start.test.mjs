@@ -83,6 +83,7 @@ async function fixture(t, mode) {
         'workspace/dev-listener-origin.mjs',
         'workspace/node-runtime.mjs',
         'workspace/npm-build-environment.mjs',
+        'supply/registry.mjs',
         'workspace/dev-chat-storage.mjs',
         'workspace/model-credentials.mjs',
         'workspace/model-credential-store.mjs',
@@ -96,6 +97,7 @@ async function fixture(t, mode) {
         'workspace/dev-current-components.mjs',
         'workspace/catalog-rebuild-request.mjs',
     ]) {
+                await fs.mkdir(path.dirname(path.join(checkout, 'scripts', file)), { recursive: true });
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.writeFile(

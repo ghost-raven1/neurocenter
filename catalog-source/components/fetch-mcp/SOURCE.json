@@ -19,8 +19,8 @@
     },
     {
       "path": "source/package-lock.json",
-      "sha256": "d1c57eb778da8d7cf6006d442e2190a329dff1cdde3dae9b6640e8ceed81f645",
-      "bytes": 69945,
+      "sha256": "96eda769962fb7537f33364831e4ce7a12f25937c732d4af8f5b6255d7702c36",
+      "bytes": 74729,
       "origin": "application-generated npm lock from pinned package.json"
     },
     {

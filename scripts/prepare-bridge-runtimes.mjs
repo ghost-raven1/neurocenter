@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyBridgeBuild } from './bridge-build-integrity.mjs';
 import { opencodeVersion, opencodePackageName } from './opencode-platforms.mjs';
+import { lockfileVendorTarballs } from './supply/registry.mjs';
 import {
     bridgeRuntimeCached,
     publishBridgeRuntimeFiles,
@@ -59,6 +60,7 @@ async function dockerBuild(target, archiveName, candidate) {
     try {
         for (const directory of [
             'scripts/workspace',
+            'scripts/supply',
             'mcp/neurocenter-asset-sync',
             'bridge-dist/opencode',
             'bridge-dist/runtime',
@@ -75,6 +77,7 @@ async function dockerBuild(target, archiveName, candidate) {
             'opencode-platforms.mjs',
             'workspace/node-runtime.mjs',
             'workspace/npm-build-environment.mjs',
+            'supply/registry.mjs',
         ]) {
             await fs.copyFile(path.join(root, 'scripts', name), path.join(workspace, 'scripts', name));
         }
@@ -82,6 +85,16 @@ async function dockerBuild(target, archiveName, candidate) {
             await fs.cp(path.join(bridge, name), path.join(workspace, 'mcp/neurocenter-asset-sync', name), {
                 recursive: true,
             });
+        }
+        // AD-15 vendor-схема: file:-зависимости mcp-lockfile (file:../../supply/vendor) —
+        // только тарболы closure в минимальном открытом контексте.
+        for (const relative of lockfileVendorTarballs(
+            path.join(bridge, 'package-lock.json'),
+            'mcp/neurocenter-asset-sync/package-lock.json',
+        )) {
+            const target = path.join(workspace, relative);
+            await fs.mkdir(path.dirname(target), { recursive: true });
+            await fs.copyFile(path.join(root, relative), target);
         }
         const manifest = JSON.parse(await fs.readFile(path.join(bridge, 'package.json'), 'utf8'));
         if (manifest.dependencies?.['@neurocenter/ollama-runtime'] === 'file:vendor/ollama-runtime') {

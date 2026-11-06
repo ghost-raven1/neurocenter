@@ -31,6 +31,7 @@ async function fixture(t, mode = 'ready') {
         'workspace/dev-snapshots.mjs',
         'workspace/dev-chat-storage.mjs',
         'workspace/npm-build-environment.mjs',
+        'supply/registry.mjs',
         'workspace/docker-build-ca.mjs',
         'workspace/docker-build-progress.mjs',
         'workspace/compose.mjs',
@@ -52,6 +53,7 @@ async function fixture(t, mode = 'ready') {
         'dev-mcp/safe-file.mjs',
         'dev-mcp/constants.mjs',
     ]) {
+                await fs.mkdir(path.dirname(path.join(checkout, 'scripts', file)), { recursive: true });
         await fs.copyFile(path.join(root, 'scripts', file), path.join(checkout, 'scripts', file));
     }
     await fs.mkdir(path.join(checkout, 'scripts/assets'));
@@ -205,7 +207,7 @@ test('dev install проверяет готовый Compose до установ�
         const strict = 'false';
         assert.deepEqual(event.args, [
             ...base,
-            '--registry=https://registry.npmjs.org/',
+            '--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/',
             '--strict-ssl=' + strict,
             '--userconfig=' + path.join(event.home, 'user.npmrc'),
             '--globalconfig=' + path.join(event.home, 'global.npmrc'),
@@ -246,7 +248,7 @@ for (const command of ['install', 'build'])
             const builds = result.events.filter((event) => event.kind === 'docker' && event.args[0] === 'build');
             assert.equal(builds.length, 1);
             assert.ok(builds[0].args.includes('--network=host'));
-            assert.ok(builds[0].args.includes('registry.npmjs.org:192.0.2.20'));
+            assert.ok(builds[0].args.includes('artifactory.dev.ppod.cbr.ru:192.0.2.20'));
             assert.ok(builds[0].args.includes('NEUROCENTER_NPM_STRICT_SSL=false'));
             assert.equal(
                 result.events.filter(
