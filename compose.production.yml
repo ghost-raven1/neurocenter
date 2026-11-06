@@ -226,11 +226,7 @@ services:
       RAG_PG_URL_FILE: /run/secrets/rag_url
       RAG_PROVISION_PG_URL_FILE: /run/secrets/rag_provision_url
       CATALOG_SERVICE_URL: http://catalog-service:4100
-      RAG_SERVICE_URL: http://rag-sync-service:4300
       FEATURE_FLAGS_SERVICE_URL: http://feature-flags-service:4400
-      PROJECTS_ROOT: /data/projects
-      ASSET_SYNC_NODE_BIN: /usr/local/bin/node
-      ASSET_SYNC_MCP_BIN: /app/mcp/neurocenter-asset-sync/dist/index.js
     secrets: [metrics_token, internal_token, rag_url, rag_provision_url]
     volumes: [projects:/data/projects, capacity:/capacity:ro]
     depends_on:
@@ -282,8 +278,6 @@ services:
       PORT: 4000
       API_PUBLIC_URL: ${API_PUBLIC_URL:-}
       NEUROCENTER_TLS_PROXY_ADDRESSES: ${NEUROCENTER_TLS_PROXY_ADDRESSES:-}
-      AUTH_GUARD_ENABLED: 'true'
-      BRIDGE_DIST: /app/bridge-dist
       CATALOG_SERVICE_URL: http://catalog-service:4100
       SKILLS_SERVICE_URL: http://skills-service:4200
       RAG_SERVICE_URL: http://rag-sync-service:4300

@@ -7,6 +7,7 @@
     "scripts/agent-kit/test/live-preflight.test.mjs",
     "scripts/agent-kit/test/role-contracts.test.mjs",
     "scripts/agent-kit/test/role-evals.test.mjs",
+    "scripts/test/compose-drift.test.mjs",
     "scripts/test/coverage-completion.test.mjs",
     "scripts/test/coverage-focused.test.mjs",
     "scripts/test/coverage-inventory.test.mjs",
