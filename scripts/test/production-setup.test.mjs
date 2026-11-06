@@ -67,6 +67,16 @@ async function fixture(t, mode, fail = '', initial = {}) {
         path.join(root, 'scripts/production/schema-migrations.mjs'),
         path.join(scripts, 'schema-migrations.mjs'),
     );
+    // Полный build-flow (git-гейт, mtime, supply, верификация) покрывает release-manifest.test.mjs.
+    await writeFile(
+        path.join(scripts, 'release-manifest.mjs'),
+        `
+        import fs from 'node:fs';
+        const record=(value)=>fs.appendFileSync(process.env.SETUP_CALLS,JSON.stringify(value)+'\\n');
+        export const buildProductionRelease=async({client})=>{record('release-manifest');await client.run(['build']);return{filename:'fixture-release-manifest.json',manifest:{commit:'a'.repeat(40)}};};
+        export const gitCommand=async()=>{throw Error('fixture git недоступен');};
+        `,
+    );
     await copyFile(
         path.join(root, 'scripts/production/schema-initialization.mjs'),
         path.join(scripts, 'schema-initialization.mjs'),
@@ -109,6 +119,7 @@ async function fixture(t, mode, fail = '', initial = {}) {
         }});
         export const composeConfiguration=async()=>({services:{'catalog-service':{image:'fixture',environment:{VARIANT:state().drift==='config'?'changed':process.env.SETUP_CONFIG_VARIANT}}},secrets:{tls_cert:{file:${JSON.stringify(path.join(config, 'tls'))}},tls_key:{file:${JSON.stringify(path.join(config, 'tls'))}}}});
         export const maintenanceLock=async(client,image,mode,action)=>{record('lock');try{return await action();}finally{record('unlock');}};
+        export const docker=async(args)=>{record(['docker',...args]);return '';};
     `,
     );
     const preload = path.join(directory, 'no-network.mjs');
@@ -204,7 +215,7 @@ test('Production up запускает пустой каталог без скр
 test('Production build не готовит старые bridge-dist/runtime или source binaries', async (t) => {
     const { result, events } = await fixture(t, 'build');
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(events, [['build']]);
+    assert.deepEqual(events, ['release-manifest', ['build']]);
 });
 test('Fresh DDL использует закреплённые image IDs, а временный overlay удаляется', async (t) => {
     const f = await fixture(t, 'up');

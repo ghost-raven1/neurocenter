@@ -5,9 +5,10 @@ import path from 'node:path';
 import { configureProduction, ensureMetricsToken } from './configuration.mjs';
 import { ensureModelCredentialKey } from '../workspace/model-credentials.mjs';
 import { assertProductionModelKey } from './model-credentials.mjs';
-import { composeClient, composeConfiguration, maintenanceLock } from './compose-client.mjs';
-import { runSchemaCommands } from './schema-migrations.mjs';
+import { composeClient, composeConfiguration, docker, maintenanceLock, serviceImageIds } from './compose-client.mjs';
+import { inspectSchemaManifests, runSchemaCommands } from './schema-migrations.mjs';
 import { prepareSchemaInitialization } from './schema-initialization.mjs';
+import { buildProductionRelease, gitCommand } from './release-manifest.mjs';
 import { withDockerBuildCa } from '../workspace/docker-build-ca.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -110,9 +111,19 @@ async function main() {
         return;
     }
     if (mode === 'build') {
-        await readFile(path.join(directory, '.env'), 'utf8');
-        await withDockerBuildCa(root, process.env, ({ environment }) =>
-            client.run(['build'], { inherit: true, environment }),
+        const { filename, manifest } = await buildProductionRelease({
+            root,
+            directory,
+            client,
+            git: (args) => gitCommand(root, args),
+            docker,
+            composeConfiguration,
+            serviceImageIds,
+            inspectSchemaManifests,
+            withBuildCa: withDockerBuildCa,
+        });
+        console.log(
+            'Release-манифест записан и проверен: ' + filename + ' (commit ' + manifest.commit.slice(0, 12) + ')',
         );
         return;
     }
