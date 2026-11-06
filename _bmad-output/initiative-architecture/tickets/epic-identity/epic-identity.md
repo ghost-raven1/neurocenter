@@ -5,7 +5,7 @@ parent: initiative-architecture
 covers: [R1, R2, R12]
 sources: [_bmad-output/initiative-architecture/prd-neurocenter/prd-neurocenter.md]
 companions: [docs/implementation-readiness.md]
-after: [epic-release-baseline]
+after: [epic-release-baseline, epic-pilot]
 refined: false
 risk: high
 ---
@@ -44,3 +44,4 @@ P0-SSO закрыт: вход/отказы/истечение/выход на н
 ## Notes
 
 - Waits on epic-release-baseline because: кандидат REL-01 (замороженный релиз) — предмет приёмки P0-SSO.
+- Waits on epic-pilot because: решение пользователя 2026-11-06 — эпик перенесён в конец очереди сборки (пилот идёт на локальной версии; Blitz — после GO). Открытый вопрос: локальный auth-режим пилота — supported-конфигурация, не dev-обход (AD-OP-5, entry 1.4); если требует отдельной работы до пилота — микро-эпик (решение с пользователем).
