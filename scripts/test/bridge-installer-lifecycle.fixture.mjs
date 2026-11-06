@@ -170,6 +170,12 @@ else throw Error('Unexpected own fixture CLI mode');\n`;
                 path.join(content, 'dist/shared', name + '.cjs'),
             );
         }
+        // Канон runtime/ (AD-7): плоский фасад runtime-artifacts.cjs реэкспортирует цели из подпапки.
+        for (const name of ['runtime/targets.cjs', 'runtime/host-target.cjs', 'runtime/portable-path.cjs']) {
+            const destination = path.join(content, 'dist/shared', name);
+            await fs.mkdir(path.dirname(destination), { recursive: true });
+            await fs.copyFile(path.join(repository, 'services/shared', name), destination);
+        }
         await fs.writeFile(path.join(content, 'dist/index.js'), entry);
         await fs.writeFile(
             path.join(content, 'dist/bridge-cli.js'),

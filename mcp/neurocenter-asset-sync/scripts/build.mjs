@@ -26,7 +26,9 @@ try {
     );
     await fs.mkdir(path.join(stage, 'dist/shared'), { recursive: true });
     for (const name of BRIDGE_SHARED_RUNTIME_FILES) {
-        await fs.copyFile(path.join(root, '../../services/shared', name), path.join(stage, 'dist/shared', name));
+        const destination = path.join(stage, 'dist/shared', name);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.copyFile(path.join(root, '../../services/shared', name), destination);
     }
     // Runtime dependencies also identify the build: an SDK update must refresh an installed worker.
     const adapterFiles = ['vendor/ollama-runtime/package.json', 'vendor/ollama-runtime/index.js', 'package-lock.json'];

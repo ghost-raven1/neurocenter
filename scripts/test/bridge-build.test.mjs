@@ -26,11 +26,11 @@ async function fixture(source) {
     const root = path.join(workspace, 'mcp/neurocenter-asset-sync');
     await fs.mkdir(root, { recursive: true });
     await fs.mkdir(path.join(workspace, 'services/shared'), { recursive: true });
-    for (const name of BRIDGE_SHARED_RUNTIME_FILES)
-        await fs.copyFile(
-            path.join(bridge, '../../services/shared', name),
-            path.join(workspace, 'services/shared', name),
-        );
+    for (const name of BRIDGE_SHARED_RUNTIME_FILES) {
+        const destination = path.join(workspace, 'services/shared', name);
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await fs.copyFile(path.join(bridge, '../../services/shared', name), destination);
+    }
     for (const name of ['src', 'scripts', 'dist']) await fs.mkdir(path.join(root, name));
     await fs.symlink(path.join(bridge, 'node_modules'), path.join(root, 'node_modules'));
     await fs.cp(path.join(bridge, 'vendor'), path.join(root, 'vendor'), { recursive: true });

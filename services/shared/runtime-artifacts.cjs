@@ -3,16 +3,9 @@ const { createHash } = require('node:crypto');
 const { mkdir, open, chmod } = require('node:fs/promises');
 const { createGunzip } = require('node:zlib');
 const path = require('node:path');
-const TARGETS = [
-    'darwin-arm64',
-    'darwin-x64',
-    'linux-arm64-glibc',
-    'linux-x64-glibc',
-    'linux-arm64-musl',
-    'linux-x64-musl',
-    'win32-arm64',
-    'win32-x64',
-];
+// Фасад (AD-7): канон целей и переносимых путей — в подпапке runtime/; плоский путь и экспорты не меняются.
+const { TARGETS } = require('./runtime/targets.cjs');
+const { portablePath } = require('./runtime/portable-path.cjs');
 const LIMIT_DEFAULTS = {
     compressedBytes: 256 * 1024 ** 2,
     unpackedBytes: 1024 ** 3,
@@ -37,26 +30,6 @@ function limitValue(name, fallback) {
 const LIMITS = {};
 for (const [key, name] of Object.entries(LIMIT_ENV)) LIMITS[key] = limitValue(name, LIMIT_DEFAULTS[key]);
 const ordinal = (a, b) => (a === b ? 0 : a < b ? -1 : 1);
-function portablePath(value) {
-    return (
-        typeof value === 'string' &&
-        value.length > 0 &&
-        Buffer.byteLength(value) <= 240 &&
-        !value.includes('\\') &&
-        !value.startsWith('/') &&
-        value
-            .split('/')
-            .every(
-                (part) =>
-                    part &&
-                    part !== '.' &&
-                    part !== '..' &&
-                    !/[<>:"|?*\x00-\x1f\x7f]/.test(part) &&
-                    !/[. ]$/.test(part) &&
-                    !/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(part),
-            )
-    );
-}
 /** Одобрение закрепляет только точные переносимые артефакты, без URL и install hooks. */
 function normalizeRuntimeArtifacts(value) {
     if (value === undefined) return [];

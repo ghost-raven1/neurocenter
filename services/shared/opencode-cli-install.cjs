@@ -2,14 +2,9 @@
 const OPENCODE_CLI_INSTALL_JOB = 'install-opencode-cli',
     OPENCODE_CLI_INSTALL_CAPABILITY = 'opencode-cli-install-v1',
     OPENCODE_CLI_INSTALL_VERSION = '1.14.48';
-const TARGETS = Object.freeze([
-    'darwin-arm64',
-    'darwin-x64',
-    'linux-arm64',
-    'linux-x64',
-    'linux-arm64-musl',
-    'linux-x64-musl',
-]);
+// Канон целей (AD-7): package-цели установки выводятся явным обратным маппингом, а не второй копией списка.
+const { CANONICAL_TARGET_BY_PACKAGE, toCanonicalTarget } = require('./runtime/targets.cjs');
+const TARGETS = Object.freeze(Object.keys(CANONICAL_TARGET_BY_PACKAGE));
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const exact = (value, keys) =>
     object(value) && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
@@ -59,7 +54,7 @@ function normalizeOpenCodeInstallSupply(value) {
 /** Bridge package targets predate the separate runtime-artifact glibc namespace. */
 function openCodeInstallRuntimeTarget(target) {
     if (!TARGETS.includes(target)) invalid();
-    return target === 'linux-arm64' || target === 'linux-x64' ? target + '-glibc' : target;
+    return toCanonicalTarget(target);
 }
 function normalizeOpenCodeInstallPayload(value) {
     if (

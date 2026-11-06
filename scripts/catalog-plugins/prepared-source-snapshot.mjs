@@ -6,7 +6,8 @@ import { createHash } from 'node:crypto';
 import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-export const PREPARED_SOURCE_MAX_FILES = 170;
+// Осознанно повышен с 170 (AD-7 shared-сплит): entry 5 даёт 174, entry 6 ещё +4 = 178; ограничение сохраняется.
+export const PREPARED_SOURCE_MAX_FILES = 180;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS = Object.freeze(
     [
@@ -137,6 +138,9 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
         ].map((name) => 'services/shared/' + name),
         ...['project-learning', 'project-learning-memory-sync', 'project-learning-quirks'].flatMap((name) =>
             ['cjs', 'd.cts'].map((extension) => 'services/shared/' + name + '.' + extension),
+        ),
+        ...['targets', 'host-target', 'portable-path'].flatMap((name) =>
+            ['cjs', 'd.cts'].map((extension) => 'services/shared/runtime/' + name + '.' + extension),
         ),
         'services/catalog-service/package.json',
         'services/catalog-service/package-lock.json',

@@ -56,7 +56,10 @@ async function fixture(t, args, { withPackages = true, packageFolders = workspac
         for (const [id, folder, entry] of buildPackages.filter(([name]) => name !== 'frontend')) {
             if (!packageFolders.includes(folder)) continue;
             await fs.mkdir(path.join(checkout, folder, 'src'), { recursive: true });
-            await fs.writeFile(path.join(checkout, folder, 'src', 'app.ts'), `export const value = ${JSON.stringify(id)};\n`);
+            await fs.writeFile(
+                path.join(checkout, folder, 'src', 'app.ts'),
+                `export const value = ${JSON.stringify(id)};\n`,
+            );
             await fs.mkdir(path.join(checkout, folder, 'dist'), { recursive: true });
             await fs.writeFile(path.join(checkout, folder, 'dist', entry), `// ${id}\n`);
             if (folder === 'mcp/neurocenter-asset-sync') {
@@ -71,8 +74,11 @@ async function fixture(t, args, { withPackages = true, packageFolders = workspac
                     path.join(checkout, folder, 'scripts/runtime-shared-files.mjs'),
                 );
                 await fs.mkdir(path.join(checkout, 'services/shared'), { recursive: true });
-                for (const name of BRIDGE_SHARED_RUNTIME_FILES)
-                    await fs.writeFile(path.join(checkout, 'services/shared', name), 'module.exports = {};\n');
+                for (const name of BRIDGE_SHARED_RUNTIME_FILES) {
+                    const file = path.join(checkout, 'services/shared', name);
+                    await fs.mkdir(path.dirname(file), { recursive: true });
+                    await fs.writeFile(file, 'module.exports = {};\n');
+                }
             } else {
                 await fs.writeFile(path.join(checkout, folder, 'tsconfig.json'), '{}\n');
                 await fs.writeFile(path.join(checkout, folder, 'tsconfig.build.json'), '{}\n');

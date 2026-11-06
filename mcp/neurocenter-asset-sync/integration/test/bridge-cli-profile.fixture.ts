@@ -56,11 +56,14 @@ export async function bridgeCliProfileFixture(kind: 'http' | 'https' | 'proxy' =
         await fs.writeFile(path.join(install, 'dist/index.js'), "throw Error('Worker fixture must never execute.');\n");
         await fs.mkdir(path.join(install, 'dist/shared'), { recursive: true });
         // The owned standalone fixture carries the same explicitly shipped contracts as scripts/build.mjs.
-        for (const name of BRIDGE_SHARED_RUNTIME_FILES)
+        for (const name of BRIDGE_SHARED_RUNTIME_FILES) {
+            const destination = path.join(install, 'dist/shared', name);
+            await fs.mkdir(path.dirname(destination), { recursive: true });
             await fs.copyFile(
                 fileURLToPath(new URL('../../../../services/shared/' + name, import.meta.url)),
-                path.join(install, 'dist/shared', name),
+                destination,
             );
+        }
         await fs.writeFile(path.join(install, 'package.json'), JSON.stringify({ type: 'module', version: '0.9.18' }));
         await fs.mkdir(path.join(install, 'bin'));
         await fs.symlink(process.execPath, path.join(install, 'bin/node'));

@@ -138,13 +138,13 @@
     },
     {
       "path": "package-lock.json",
-      "sha256": "9e73636bd2feae07c317ad7e10730418a69d84d7c381b1b6064da933fe3209ca",
-      "bytes": 49647
+      "sha256": "fd1fdf0ac0fbd9c50fb82c52a16e0474dba124ea43426d6ef86e4d5687169d12",
+      "bytes": 50615
     },
     {
       "path": "package.json",
-      "sha256": "09eadfdfe41d1f425755ff2e32f642fe4fd3c6c690102ff91d3fac3c0360dd6c",
-      "bytes": 4342
+      "sha256": "21f1b478ca8b05d36806f305d6744d0f9af9da3bbadc97f44dd0b635dbfc9592",
+      "bytes": 4366
     },
     {
       "path": "scripts/catalog-plugins/archive-source.mjs",
@@ -228,8 +228,8 @@
     },
     {
       "path": "scripts/catalog-plugins/prepared-source-snapshot.mjs",
-      "sha256": "d705cbce3797aed6860354ac56090b8244da1406cd4d83b2953404e4834b0579",
-      "bytes": 12226
+      "sha256": "3cffd0f670ead1713edcf7c6b88f6f557eb6c5c9d9caf0d954e635e65157a868",
+      "bytes": 12576
     },
     {
       "path": "scripts/catalog-plugins/publish.mjs",
@@ -503,8 +503,8 @@
     },
     {
       "path": "services/catalog-service/package.json",
-      "sha256": "4721e6e9f31cf630a66c39f271bb9bc4e78b4315ecb186bbce6003754115cf05",
-      "bytes": 2145
+      "sha256": "8df070c62b701a78c1bc1f2704004afa514be56b0ae2bb1cd8e7bc22a7cc6c34",
+      "bytes": 2246
     },
     {
       "path": "services/catalog-service/src/catalog/dto.ts",
@@ -698,13 +698,43 @@
     },
     {
       "path": "services/shared/runtime-artifacts.cjs",
-      "sha256": "1d02091e77513c68c162bed0183a86cd502c6de8cc0dc7ca86f2212af1e5d735",
-      "bytes": 14280
+      "sha256": "102a69476073e6dc15979a18f78dd4ade18477117dba46e5fb972fdd2cbaf4a4",
+      "bytes": 13789
     },
     {
       "path": "services/shared/runtime-artifacts.d.cts",
       "sha256": "00ddae1b78588528c4e8b3c255dd34dd3e14122420318bb2db1282a9e8e91b96",
       "bytes": 1299
+    },
+    {
+      "path": "services/shared/runtime/host-target.cjs",
+      "sha256": "7664b03766ba10f30dab808dac03de79c3989561dd13621fa606d17b2e292d7f",
+      "bytes": 2012
+    },
+    {
+      "path": "services/shared/runtime/host-target.d.cts",
+      "sha256": "6455849c025549eb7f09c7325c2e9b15cd687a1015b067f1e1d1e9138391c48d",
+      "bytes": 722
+    },
+    {
+      "path": "services/shared/runtime/portable-path.cjs",
+      "sha256": "c1c36dd513e2d5db6973b57894df22bfcb2c66063d858299acd112d1471cf82c",
+      "bytes": 652
+    },
+    {
+      "path": "services/shared/runtime/portable-path.d.cts",
+      "sha256": "785575c34bb24dc1fe1af06b4e79816a5131f05fa4fc81a8a2099ceaac2cfefa",
+      "bytes": 55
+    },
+    {
+      "path": "services/shared/runtime/targets.cjs",
+      "sha256": "d5d794b64ab2cb02e7ebe1a61f94396ebb643eca35198cea6e051d73a9221c99",
+      "bytes": 3016
+    },
+    {
+      "path": "services/shared/runtime/targets.d.cts",
+      "sha256": "eb0d10ed6e4afb48973113229e9aaad0120bf1e555cc9fd381c8a31c16e61cf0",
+      "bytes": 1408
     },
     {
       "path": "services/shared/skill-source.mjs",
