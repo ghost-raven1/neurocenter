@@ -6,6 +6,7 @@
   "scripts": {
     "docs:generate": "node ../../scripts/openapi/generate.mjs --output src/docs/openapi.json",
     "build": "npm run docs:generate && nest build",
+    "postbuild": "node ../../scripts/workspace/dist-freshness.mjs --write services/api-gateway",
     "start": "npm run docs:generate && nest start",
     "start:dev": "npm run docs:generate && nest start --watch",
     "start:prod": "node dist/main.js",

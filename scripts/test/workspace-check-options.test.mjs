@@ -4,8 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { workspacePackages } from '../workspace/check-plan.mjs';
+import { buildPackages } from '../workspace/isolated-build-source.mjs';
+import { BRIDGE_SHARED_RUNTIME_FILES } from '../../mcp/neurocenter-asset-sync/scripts/runtime-shared-files.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const packageId = (directory) =>
@@ -30,10 +32,11 @@ async function fixture(t, args, { withPackages = true, packageFolders = workspac
         'isolated-build-process.mjs',
         'isolated-build-source.mjs',
         'node-runtime.mjs',
+        'dist-freshness.mjs',
     ]) {
         await fs.copyFile(path.join(root, 'scripts/workspace', name), path.join(workspace, name));
     }
-    if (withPackages)
+    if (withPackages) {
         for (const folder of packageFolders) {
             await fs.mkdir(path.join(checkout, folder), { recursive: true });
             await fs.writeFile(
@@ -49,6 +52,37 @@ async function fixture(t, args, { withPackages = true, packageFolders = workspac
                 }),
             );
         }
+        // AD-10: у dist-пакетов актуальные входы сборки, dist/ и stamp — guard test-шагов прозрачен.
+        for (const [id, folder, entry] of buildPackages.filter(([name]) => name !== 'frontend')) {
+            if (!packageFolders.includes(folder)) continue;
+            await fs.mkdir(path.join(checkout, folder, 'src'), { recursive: true });
+            await fs.writeFile(path.join(checkout, folder, 'src', 'app.ts'), `export const value = ${JSON.stringify(id)};\n`);
+            await fs.mkdir(path.join(checkout, folder, 'dist'), { recursive: true });
+            await fs.writeFile(path.join(checkout, folder, 'dist', entry), `// ${id}\n`);
+            if (folder === 'mcp/neurocenter-asset-sync') {
+                await fs.writeFile(path.join(checkout, folder, 'tsconfig.json'), '{}\n');
+                await fs.writeFile(path.join(checkout, folder, 'package-lock.json'), '{}\n');
+                await fs.mkdir(path.join(checkout, folder, 'vendor/ollama-runtime'), { recursive: true });
+                await fs.writeFile(path.join(checkout, folder, 'vendor/ollama-runtime/package.json'), '{}\n');
+                await fs.writeFile(path.join(checkout, folder, 'vendor/ollama-runtime/index.js'), 'export {};\n');
+                await fs.mkdir(path.join(checkout, folder, 'scripts'), { recursive: true });
+                await fs.copyFile(
+                    path.join(root, folder, 'scripts/runtime-shared-files.mjs'),
+                    path.join(checkout, folder, 'scripts/runtime-shared-files.mjs'),
+                );
+                await fs.mkdir(path.join(checkout, 'services/shared'), { recursive: true });
+                for (const name of BRIDGE_SHARED_RUNTIME_FILES)
+                    await fs.writeFile(path.join(checkout, 'services/shared', name), 'module.exports = {};\n');
+            } else {
+                await fs.writeFile(path.join(checkout, folder, 'tsconfig.json'), '{}\n');
+                await fs.writeFile(path.join(checkout, folder, 'tsconfig.build.json'), '{}\n');
+                await fs.writeFile(path.join(checkout, folder, 'nest-cli.json'), '{}\n');
+            }
+        }
+        const freshness = await import(pathToFileURL(path.join(checkout, 'scripts/workspace/dist-freshness.mjs')).href);
+        for (const [id, folder] of buildPackages)
+            if (id !== 'frontend' && packageFolders.includes(folder)) await freshness.writeStamp(checkout, folder);
+    }
     for (const folder of [
         'scripts/test',
         'scripts/catalog-plugins/test',
@@ -111,7 +145,8 @@ async function fixture(t, args, { withPackages = true, packageFolders = workspac
     const calls = (await exists(callsFile))
         ? (await fs.readFile(callsFile, 'utf8')).trim().split('\n').map(JSON.parse)
         : [];
-    const hasRun = await exists(path.join(checkout, '.run'));
+    // Свой output check — .run/check; общее рабочее .run может содержать fixture-stamps сборки (AD-10).
+    const hasRun = await exists(path.join(checkout, '.run/check'));
     let report;
     if (hasRun) {
         const reports = await fs.readdir(path.join(checkout, '.run/check'));

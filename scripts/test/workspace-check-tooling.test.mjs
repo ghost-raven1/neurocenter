@@ -26,6 +26,7 @@ const expectedFiles = [
     'scripts/test/workspace-check-source.test.mjs',
     'scripts/test/workspace-check.test.mjs',
     'scripts/test/workspace-check-tooling.test.mjs',
+    'scripts/test/workspace-dist-freshness.test.mjs',
     'scripts/test/dev-mcp-reports.test.mjs',
     'scripts/test/coverage-inventory.test.mjs',
     'scripts/test/coverage-profiles.test.mjs',

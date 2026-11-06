@@ -7,6 +7,7 @@ import { captureCheckPlan, parseCheckOptions, checkHelp } from './check-plan.mjs
 import { readVitestReport, readNodeReport } from './check-report.mjs';
 import { captureCheckSource, checkSourceResult } from './check-source.mjs';
 import { runCheckProcess } from './check-process.mjs';
+import { assertDistFresh } from './dist-freshness.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 async function directory(folder) {
@@ -116,18 +117,43 @@ export async function runCheck(
                           npm_config_strict_ssl: 'false',
                       }
                     : runtime.env;
-            const result = await runCheckProcess({
-                node,
-                args,
-                cwd: path.resolve(root, step.directory),
-                env: environment,
-                logFile,
-                signal,
-                timeoutMs,
-                graceMs,
-            });
+            // AD-10: freshness dist/ утверждается в-процессе до раннера; устаревание — явная ошибка, не фэйл теста.
+            let result,
+                guard = null;
+            const startedAt = Date.now();
+            for (const guarded of step.distGuard ?? []) {
+                try {
+                    await assertDistFresh(root, guarded);
+                } catch (error) {
+                    if (error.code !== 'DIST_STALE') throw error;
+                    guard = error;
+                    errorOutput.write(error.message + '\n');
+                    break;
+                }
+            }
+            if (guard)
+                result = {
+                    ok: false,
+                    exitCode: 1,
+                    signal: null,
+                    durationMs: Date.now() - startedAt,
+                    leaderReaped: false,
+                    cleanup: { noLiveDescendants: true, signals: [], zombieCount: 0 },
+                    failure: { code: 'DIST_STALE' },
+                };
+            else
+                result = await runCheckProcess({
+                    node,
+                    args,
+                    cwd: path.resolve(root, step.directory),
+                    env: environment,
+                    logFile,
+                    signal,
+                    timeoutMs,
+                    graceMs,
+                });
             const entry = { name: step.name, ...result, log: path.relative(root, logFile) };
-            if (step.vitest || step.nodeTests) {
+            if (!guard && (step.vitest || step.nodeTests)) {
                 entry.testRunner = step.nodeTests ? 'node' : 'vitest';
                 entry.results = path.relative(root, jsonFile);
                 try {

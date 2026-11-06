@@ -165,6 +165,7 @@ const checkFailures = new Set([
     'SOURCE_CHANGED',
     'CHECK_TIMEOUT',
     'CHECK_FAILED',
+    'DIST_STALE',
     'CHECK_LOG_LIMIT',
     'SPAWN_FAILED',
     'PROCESS_CLEANUP_FAILED',

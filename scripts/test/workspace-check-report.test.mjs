@@ -6,6 +6,8 @@ import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { workspacePackages } from '../workspace/check-plan.mjs';
+import { buildPackages } from '../workspace/isolated-build-source.mjs';
+import { BRIDGE_SHARED_RUNTIME_FILES } from '../../mcp/neurocenter-asset-sync/scripts/runtime-shared-files.mjs';
 import { readVitestReport } from '../workspace/check-report.mjs';
 import { readRunSummary } from '../dev-mcp/run-reports.mjs';
 
@@ -36,7 +38,9 @@ async function fixture(
     for (const name of await fs.readdir(path.join(root, 'scripts/workspace'))) {
         if (
             /^check.*\.mjs$/.test(name) ||
-            ['node-runtime.mjs', 'isolated-build-process.mjs', 'isolated-build-source.mjs'].includes(name)
+            ['node-runtime.mjs', 'isolated-build-process.mjs', 'isolated-build-source.mjs', 'dist-freshness.mjs'].includes(
+                name,
+            )
         ) {
             await fs.copyFile(path.join(root, 'scripts/workspace', name), path.join(workspace, name));
         }
@@ -72,6 +76,34 @@ async function fixture(
             }),
         );
     }
+    // AD-10: у dist-пакетов актуальные входы сборки, dist/ и stamp — guard test-шагов прозрачен.
+    for (const [id, folder, entry] of buildPackages.filter(([name]) => name !== 'frontend')) {
+        await fs.mkdir(path.join(checkout, folder, 'src'), { recursive: true });
+        await fs.writeFile(path.join(checkout, folder, 'src', 'app.ts'), `export const value = ${JSON.stringify(id)};\n`);
+        await fs.mkdir(path.join(checkout, folder, 'dist'), { recursive: true });
+        await fs.writeFile(path.join(checkout, folder, 'dist', entry), `// ${id}\n`);
+        if (folder === 'mcp/neurocenter-asset-sync') {
+            await fs.writeFile(path.join(checkout, folder, 'tsconfig.json'), '{}\n');
+            await fs.writeFile(path.join(checkout, folder, 'package-lock.json'), '{}\n');
+            await fs.mkdir(path.join(checkout, folder, 'vendor/ollama-runtime'), { recursive: true });
+            await fs.writeFile(path.join(checkout, folder, 'vendor/ollama-runtime/package.json'), '{}\n');
+            await fs.writeFile(path.join(checkout, folder, 'vendor/ollama-runtime/index.js'), 'export {};\n');
+            await fs.mkdir(path.join(checkout, folder, 'scripts'), { recursive: true });
+            await fs.copyFile(
+                path.join(root, folder, 'scripts/runtime-shared-files.mjs'),
+                path.join(checkout, folder, 'scripts/runtime-shared-files.mjs'),
+            );
+            await fs.mkdir(path.join(checkout, 'services/shared'), { recursive: true });
+            for (const name of BRIDGE_SHARED_RUNTIME_FILES)
+                await fs.writeFile(path.join(checkout, 'services/shared', name), 'module.exports = {};\n');
+        } else {
+            await fs.writeFile(path.join(checkout, folder, 'tsconfig.json'), '{}\n');
+            await fs.writeFile(path.join(checkout, folder, 'tsconfig.build.json'), '{}\n');
+            await fs.writeFile(path.join(checkout, folder, 'nest-cli.json'), '{}\n');
+        }
+    }
+    const freshness = await import(pathToFileURL(path.join(checkout, 'scripts/workspace/dist-freshness.mjs')).href);
+    for (const [id, folder] of buildPackages) if (id !== 'frontend') await freshness.writeStamp(checkout, folder);
     const npm = path.join(directory, 'npm-cli.js');
     await fs.writeFile(
         npm,

@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "build": "nest build",
+    "postbuild": "node ../../scripts/workspace/dist-freshness.mjs --write services/feature-flags-service",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",

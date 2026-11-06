@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { buildPackages } from './isolated-build-source.mjs';
 
 export const workspacePackages = [
     'services/oauth2-bridge',
@@ -19,12 +20,16 @@ const packageIds = new Map(
     ]),
 );
 const packageSteps = ['lint', 'format:check', 'typecheck', 'build', 'test'];
+// Пакеты с dist/: test-шаги и общие контракты guard'ят freshness сборки (AD-10).
+const distPackages = buildPackages.filter(([id]) => id !== 'frontend');
+const distPackageDirs = new Set(distPackages.map(([, directory]) => directory));
 
 export const checkHelp = `Проверка workspace: node scripts/workspace/check.mjs [--package <id>]... [--step <шаг>]... | --tooling
 Пакеты: ${[...packageIds.keys()].join(', ')}.
 Шаги: ${packageSteps.join(', ')}.
 Без селекторов выполняется полный план, включая общие контракты и Compose.
 Селекторы ограничивают план только выбранными пакетами и шагами; test не запускает build автоматически.
+Test-шаги dist-пакетов и «Общие контракты» проверяют freshness dist/ по stamp сборки: устаревание или отсутствие сборки — явная ошибка «run nest build».
 --tooling: отдельный фиксированный локальный набор agent-kit/MCP/check/coverage без продуктовых шагов и Compose.
 NEUROCENTER_CHECK_TOOLING=0 отключает исполнение --tooling; справка и чтение плана остаются доступны.
 --help, -h: справка без запуска команд и создания отчёта.`;
@@ -182,6 +187,7 @@ export function checkPlan(
                 type: 'npm',
                 args: ['run', script],
                 vitest: script === 'test' && /vitest/.test(manifest.scripts.test),
+                ...(script === 'test' && distPackageDirs.has(directory) ? { distGuard: [directory] } : {}),
             });
         }
     if (scoped && !steps.length) throw new Error('Выбранные пакеты не содержат указанных шагов check.');
@@ -192,6 +198,7 @@ export function checkPlan(
             type: 'node',
             nodeTests: true,
             args: ['--test', '--test-concurrency=2', ...readTestFiles()],
+            distGuard: distPackages.map(([, directory]) => directory),
         });
         steps.push({
             name: 'Compose: dev',

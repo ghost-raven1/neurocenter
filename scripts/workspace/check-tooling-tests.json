@@ -50,6 +50,7 @@
     "scripts/test/workspace-check-source.test.mjs",
     "scripts/test/workspace-check-tooling.test.mjs",
     "scripts/test/workspace-check.test.mjs",
+    "scripts/test/workspace-dist-freshness.test.mjs",
     "scripts/test/workspace-impact-plan.test.mjs",
     "scripts/test/workspace-process-failure.test.mjs"
 ]
