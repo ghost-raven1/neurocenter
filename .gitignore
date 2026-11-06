@@ -19,6 +19,7 @@ skills-service/skills-storage/
 # Зависимости, сборки и временные кандидаты.
 node_modules/
 node_modules
+__pycache__/
 dist/
 build/
 coverage/
