@@ -3,7 +3,7 @@ title: 'Поставка: локальные registry + vendor-схема (AD-15
 type: 'feature'
 ticket: '9'
 created: '2026-11-06'
-status: 'ready-for-dev'
+status: done
 baseline_revision: '90b92af3f5bf47c8a5e320a115f33463d8c0d56a'
 route: 'full'
 route_source: 'auto'

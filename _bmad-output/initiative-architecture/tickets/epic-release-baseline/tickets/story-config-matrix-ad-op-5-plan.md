@@ -3,7 +3,7 @@ title: 'Config-матрица production без dev-обходов (AD-OP-5)'
 type: 'feature'
 ticket: '4'
 created: '2026-11-06'
-status: ready-for-dev
+status: done
 baseline_revision: 'fa8b92d9'
 route: 'full'
 route_source: 'auto'

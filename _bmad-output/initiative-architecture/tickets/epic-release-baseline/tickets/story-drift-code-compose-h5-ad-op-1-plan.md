@@ -3,7 +3,7 @@ title: 'Drift code→compose + фикс H5 (AD-OP-1, H5)'
 type: 'feature'
 ticket: '3'
 created: '2026-11-06'
-status: ready-for-dev
+status: done
 baseline_revision: 'fa8b92d94ea7d1dbd3d8cbf8576c066745564645'
 route: 'full'
 route_source: 'auto'
