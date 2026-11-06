@@ -113,6 +113,7 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
         ].map((name) => 'scripts/catalog-plugins/locks/' + name),
         'scripts/opencode-platforms.mjs',
         'scripts/workspace/node-runtime.mjs',
+        'scripts/workspace/project-config.mjs',
         'scripts/models/bundle-files.mjs',
         'scripts/release-request.mjs',
         ...[

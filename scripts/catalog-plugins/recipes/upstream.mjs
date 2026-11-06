@@ -2,10 +2,13 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { projectTlsEnvironment } from '../../workspace/project-config.mjs';
 
 const execFileAsync = promisify(execFile);
 const cache = path.resolve('.run/catalog-plugin-cache');
+const repoRoot = path.resolve(fileURLToPath(new URL('../../../', import.meta.url)));
 
 /** Release archives are supplied explicitly or already verified in the private cache; they are never mandatory downloads. */
 export async function cachedArchive(sha256) {
@@ -162,30 +165,31 @@ export async function installDependencies(directory, dependencies, target, { opt
                 if (error.code === 'ENOENT') return false;
                 throw error;
             });
-        const args = [
-            locked ? 'ci' : 'install',
-            '--prefix',
-            directory,
-            '--ignore-scripts',
-            '--omit=dev',
-            '--include=optional',
-            '--no-bin-links',
-            '--no-audit',
-            '--no-fund',
-            '--registry=https://registry.npmjs.org',
-            '--strict-ssl=false',
-            '--cache',
-            path.join(cache, 'npm'),
-            '--userconfig',
-            userconfig,
-            '--globalconfig',
-            globalconfig,
-            '--os',
-            platform.os,
-            '--cpu',
-            platform.cpu,
-            ...(platform.libc ? ['--libc', platform.libc] : []),
-        ];
+        const tls = await projectTlsEnvironment(repoRoot),
+            args = [
+                locked ? 'ci' : 'install',
+                '--prefix',
+                directory,
+                '--ignore-scripts',
+                '--omit=dev',
+                '--include=optional',
+                '--no-bin-links',
+                '--no-audit',
+                '--no-fund',
+                '--registry=https://registry.npmjs.org',
+                '--strict-ssl=' + tls.NEUROCENTER_NPM_STRICT_SSL,
+                '--cache',
+                path.join(cache, 'npm'),
+                '--userconfig',
+                userconfig,
+                '--globalconfig',
+                globalconfig,
+                '--os',
+                platform.os,
+                '--cpu',
+                platform.cpu,
+                ...(platform.libc ? ['--libc', platform.libc] : []),
+            ];
         const environment = Object.fromEntries(
             Object.entries(process.env).filter(([key]) => !/^npm_config_/i.test(key)),
         );
@@ -195,9 +199,9 @@ export async function installDependencies(directory, dependencies, target, { opt
                 HOME: home,
                 USERPROFILE: home,
                 npm_config_update_notifier: 'false',
-                NPM_CONFIG_STRICT_SSL: 'false',
-                npm_config_strict_ssl: 'false',
-                NODE_TLS_REJECT_UNAUTHORIZED: '0',
+                NPM_CONFIG_STRICT_SSL: tls.NEUROCENTER_NPM_STRICT_SSL,
+                npm_config_strict_ssl: tls.NEUROCENTER_NPM_STRICT_SSL,
+                NODE_TLS_REJECT_UNAUTHORIZED: tls.NODE_TLS_REJECT_UNAUTHORIZED,
             },
         });
         await assertRegularTree(directory);

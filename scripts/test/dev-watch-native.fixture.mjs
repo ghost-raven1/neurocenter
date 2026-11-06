@@ -86,7 +86,13 @@ export async function nativeWatchFixture(t) {
                 name,
                 dir,
                 port: await port(),
-                environment: { PATH: process.env.PATH, PORT: '', PRIVATE_FIXTURE_SECRET: 'NEVER_IN_METADATA' },
+                environment: {
+                    PATH: process.env.PATH,
+                    PORT: '',
+                    PRIVATE_FIXTURE_SECRET: 'NEVER_IN_METADATA',
+                    // Dev-контур с включённым флагом: значение передаётся явно, как в реальном dev-флоу из конфига.
+                    ...(name === 'gateway' ? { NODE_TLS_REJECT_UNAUTHORIZED: '0' } : {}),
+                },
                 entry: '',
             });
             services.at(-1).environment.PORT = String(services.at(-1).port);

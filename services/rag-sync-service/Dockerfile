@@ -14,11 +14,15 @@ RUN if [ -n "$NEUROCENTER_BUILD_CA_SHA256" ]; then \
     fi && chmod 0444 /usr/local/share/neurocenter/build-ca/extra.pem
 ENV NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
 
+# TLS policy is derived from the project flag; direct builds without the wrapper stay strict.
+ARG NEUROCENTER_TLS_DISABLE=0
+ARG NEUROCENTER_NPM_STRICT_SSL=true
+
 # Ignore user/global npm settings; the lockfile and the trusted local registry define this build.
 ENV NPM_CONFIG_REGISTRY=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
-    NPM_CONFIG_STRICT_SSL=false
+    NPM_CONFIG_STRICT_SSL=$NEUROCENTER_NPM_STRICT_SSL
 # Optional build-time registry auth (base64 of the trusted-host npmrc lines); empty keeps the file blank.
 ARG NPM_REGISTRY_AUTH_B64
 RUN if [ -n "$NPM_REGISTRY_AUTH_B64" ]; then printf '%s' "$NPM_REGISTRY_AUTH_B64" | base64 -d > /tmp/neurocenter-empty-global.npmrc; else : > /tmp/neurocenter-empty-global.npmrc; fi
@@ -34,23 +38,23 @@ COPY supply/vendor/ /app/supply/vendor/
 WORKDIR /app/mcp/neurocenter-asset-sync
 # Lock содержит Linux GNU-биндинги обеих архитектур. Проверяем загрузку сразу,
 # без повторного npm install, который пересчитывал версии вне lock-файла.
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --install-links=true --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm ci --install-links=true --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl="$NEUROCENTER_NPM_STRICT_SSL" --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
 COPY mcp/neurocenter-asset-sync/ .
 # MCP использует общие контракты и их типы уже во время собственной сборки.
 COPY services/shared/ /app/services/shared/
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm run build
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 
 # --- rag-sync-service (NestJS) ---
 WORKDIR /app
 COPY services/rag-sync-service/package*.json ./
 # AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на /supply/vendor.
 COPY supply/vendor/ /supply/vendor/
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl="$NEUROCENTER_NPM_STRICT_SSL" --no-audit --no-fund
 COPY services/rag-sync-service/ .
 COPY services/shared/ /shared/
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm run build
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=rag-sync-service

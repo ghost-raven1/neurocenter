@@ -71,6 +71,7 @@ const expectedFiles = [
     'scripts/test/dev-watch-root.test.mjs',
     'scripts/test/dev-watch-daemon.test.mjs',
     'scripts/test/docker-build-progress.test.mjs',
+    'scripts/test/tls-global-disable.test.mjs',
     'scripts/test/verifier-tls.test.mjs',
 ].sort();
 const exists = (file) =>

@@ -74,7 +74,7 @@ test('Чужой callback и отключённый TLS отклоняются',
     );
     assert.throws(() => validateProduction({ ...auth(), NODE_TLS_REJECT_UNAUTHORIZED: '0' }, 'oauth2-bridge'));
 });
-test('Gateway accepts its requested TLS setting while other services still reject it', () => {
+test('Отключённая проверка TLS запрещает production-запуск любого сервиса, включая api-gateway', () => {
     const env = {
         ...auth(),
         NODE_TLS_REJECT_UNAUTHORIZED: '0',
@@ -84,8 +84,8 @@ test('Gateway accepts its requested TLS setting while other services still rejec
         AUTH_SERVICE_URL: 'http://oauth2-bridge:22222',
         FEATURE_FLAGS_SERVICE_URL: 'http://feature-flags-service:4400',
     };
-    assert.doesNotThrow(() => validateProduction(env, 'api-gateway'));
     for (const service of [
+        'api-gateway',
         'catalog-service',
         'skills-service',
         'rag-sync-service',
@@ -93,7 +93,9 @@ test('Gateway accepts its requested TLS setting while other services still rejec
         'feature-flags-service',
         'bootstrap-admin',
     ])
-        assert.throws(() => validateProduction(env, service), /TLS/);
+        assert.throws(() => validateProduction(env, service), /TLS/, service);
+    delete env.NODE_TLS_REJECT_UNAUTHORIZED;
+    assert.doesNotThrow(() => validateProduction(env, 'api-gateway'));
 });
 for (const value of [
     'http://panel.example.test',

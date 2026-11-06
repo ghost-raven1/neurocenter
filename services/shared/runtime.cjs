@@ -105,7 +105,7 @@ function validateProduction(env, service) {
             throw new Error(flag + '=false обязателен в production');
         }
     }
-    if (env.NODE_TLS_REJECT_UNAUTHORIZED === '0' && service !== 'api-gateway') {
+    if (env.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
         throw new Error('Запрещено отключать проверку TLS');
     }
     const panel = service === 'bootstrap-admin' ? null : httpsUrl(required(env, 'PANEL_URL'), 'PANEL_URL', true);

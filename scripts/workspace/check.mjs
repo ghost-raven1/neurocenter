@@ -8,6 +8,7 @@ import { readVitestReport, readNodeReport } from './check-report.mjs';
 import { captureCheckSource, checkSourceResult } from './check-source.mjs';
 import { runCheckProcess } from './check-process.mjs';
 import { assertDistFresh } from './dist-freshness.mjs';
+import { projectTlsEnvironment } from './project-config.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 async function directory(folder) {
@@ -45,7 +46,8 @@ export async function runCheck(
     const plan = captureCheckPlan(root, options),
         steps = plan.steps,
         runtime = nodeRuntime(environment),
-        npm = steps.some((step) => step.type === 'npm') ? npmCli(runtime.env) : null;
+        npm = steps.some((step) => step.type === 'npm') ? npmCli(runtime.env) : null,
+        tls = await projectTlsEnvironment(root);
     if (process.platform === 'win32') throw Error('Проверка с управляемой очисткой процессов требует POSIX.');
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || !Number.isSafeInteger(graceMs) || graceMs < 1)
         throw Error('Некорректные ограничения времени check.');
@@ -110,12 +112,7 @@ export async function runCheck(
                       : step.args;
             const environment =
                 step.type === 'npm' && step.args[0] === 'run' && step.args[1] === 'build'
-                    ? {
-                          ...runtime.env,
-                          NODE_TLS_REJECT_UNAUTHORIZED: '0',
-                          NPM_CONFIG_STRICT_SSL: 'false',
-                          npm_config_strict_ssl: 'false',
-                      }
+                    ? { ...runtime.env, ...tls }
                     : runtime.env;
             // AD-10: freshness dist/ утверждается в-процессе до раннера; устаревание — явная ошибка, не фэйл теста.
             let result,

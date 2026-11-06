@@ -30,6 +30,8 @@ services:
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
         NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
     ports:
       - "127.0.0.1:${NEUROCENTER_PORT:-5173}:8080"
     depends_on:
@@ -51,6 +53,8 @@ services:
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
         NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
     env_file:
       - .env
       - path: .env.local
@@ -74,12 +78,14 @@ services:
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
         NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
     env_file:
       - .env
       - path: .env.local
         required: false
     environment:
-      - NODE_TLS_REJECT_UNAUTHORIZED=0
+      - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-1}
       - PORT=4000
       - BIND_HOST=0.0.0.0
       - BRIDGE_TEMPLATES_DIR=/app/bridge-dist
@@ -113,6 +119,8 @@ services:
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
         NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
     env_file:
       - .env
       - path: .env.local
@@ -157,6 +165,8 @@ services:
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
         NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
     env_file:
       - .env
       - path: .env.local
@@ -186,6 +196,8 @@ services:
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
         NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
     env_file:
       - .env
       - path: .env.local
@@ -234,6 +246,8 @@ services:
       args:
         NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
         NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
     env_file:
       - .env
       - path: .env.local

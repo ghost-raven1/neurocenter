@@ -4,9 +4,10 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { opencodeVersion, opencodeVariants } from './opencode-platforms.mjs';
+import { projectTlsEnvironment } from './workspace/project-config.mjs';
 
-// This executable only prepares build inputs; installed services keep their own TLS policy.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// This executable only prepares build inputs; the TLS policy is derived from the project config.
+Object.assign(process.env, await projectTlsEnvironment(path.resolve(fileURLToPath(new URL('../', import.meta.url)))));
 
 const version = process.env.OPENCODE_VERSION || opencodeVersion;
 const registry = (process.env.OPENCODE_REGISTRY || 'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/').replace(/\/$/, '');

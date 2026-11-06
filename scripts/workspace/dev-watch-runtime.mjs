@@ -24,7 +24,7 @@ export function watchServiceEnvironment(root, service, environment) {
         return {
             ...environment,
             BRIDGE_TEMPLATES_DIR: environment.BRIDGE_TEMPLATES_DIR || path.join(root, 'bridge-dist'),
-            NODE_TLS_REJECT_UNAUTHORIZED: environment.NODE_TLS_REJECT_UNAUTHORIZED ?? '0',
+            NODE_TLS_REJECT_UNAUTHORIZED: environment.NODE_TLS_REJECT_UNAUTHORIZED ?? '1',
         };
     if (service.name === 'catalog')
         return {

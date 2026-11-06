@@ -78,6 +78,7 @@ async function dockerBuild(target, archiveName, candidate) {
             'workspace/node-runtime.mjs',
             'workspace/npm-build-environment.mjs',
             'supply/registry.mjs',
+            'workspace/project-config.mjs',
         ]) {
             await fs.copyFile(path.join(root, 'scripts', name), path.join(workspace, 'scripts', name));
         }

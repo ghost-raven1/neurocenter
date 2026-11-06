@@ -47,6 +47,7 @@
     "scripts/test/release-manifest.test.mjs",
     "scripts/test/run-manifest.test.mjs",
     "scripts/test/supply-vendor.test.mjs",
+    "scripts/test/tls-global-disable.test.mjs",
     "scripts/test/verifier-tls.test.mjs",
     "scripts/test/workspace-check-options.test.mjs",
     "scripts/test/workspace-check-process.test.mjs",

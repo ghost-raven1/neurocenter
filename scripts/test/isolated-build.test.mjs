@@ -193,9 +193,9 @@ test('actual npm builds dirty and new inputs, respects deletion, excludes active
     assert.ok(output.env.HOME.startsWith(path.dirname(result.repository)));
     assert.equal(result.inputs.deleted, 1);
     assert.ok(result.inputs.newFiles >= 2);
-    assert.equal(output.env.NODE_TLS_REJECT_UNAUTHORIZED, '0');
-    assert.equal(output.env.npm_config_strict_ssl, 'false');
-    assert.equal(output.env.NPM_CONFIG_STRICT_SSL, 'false');
+    assert.equal(output.env.NODE_TLS_REJECT_UNAUTHORIZED, '1');
+    assert.equal(output.env.npm_config_strict_ssl, 'true');
+    assert.equal(output.env.NPM_CONFIG_STRICT_SSL, 'true');
     const source = await readJson(path.join(path.dirname(result.repository), 'source-before.json'));
     assert.equal(source.records['services/catalog-service/deleted.txt'].state, 'deleted');
     assert.equal(source.records['services/catalog-service/new.txt'].tracked, false);

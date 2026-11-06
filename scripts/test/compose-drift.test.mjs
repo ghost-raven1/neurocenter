@@ -221,7 +221,7 @@ test('некорректная пометка в модели не прощае�
     const f = await fixture(t, {
         mutateModel: (model) => {
             model.services['api-gateway'].envNotes = {
-                NODE_TLS_REJECT_UNAUTHORIZED: { external: 'чужой образ' },
+                PANEL_URL: { external: 'чужой образ' },
             };
             model.services.frontend.envNotes = { NEUROCENTER_HOST: { consumedBy: 'command' } };
         },
@@ -230,7 +230,7 @@ test('некорректная пометка в модели не прощае�
     assert.deepEqual(dead.noteErrors, [
         {
             service: 'api-gateway',
-            env: 'NODE_TLS_REJECT_UNAUTHORIZED',
+            env: 'PANEL_URL',
             error: 'external: допустима только для стороннего образа, у сервиса образ neurocenter/api-gateway:${NEUROCENTER_RELEASE:?Заполните метку релиза}',
         },
     ]);

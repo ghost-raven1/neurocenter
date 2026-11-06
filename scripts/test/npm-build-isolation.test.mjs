@@ -310,20 +310,28 @@ test('Temporary npm configuration is removed after a failed build', async () => 
     await assert.rejects(fs.stat(home), { code: 'ENOENT' });
 });
 
-test('Every Node Docker build pins npm registry, empty configs and its selected build TLS policy', async () => {
+test('Every Node Docker build pins npm registry, empty configs and its flag-derived TLS policy', async () => {
     assert.ok(dockerfiles.includes('frontend/Dockerfile'));
     assert.ok(dockerfiles.includes('services/catalog-service/snapshot-verifier.Dockerfile'));
+    const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tlsPrefix =
+        'NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)"';
     for (const file of dockerfiles) {
         const source = await fs.readFile(path.join(root, file), 'utf8'),
-            gateway = file === 'services/api-gateway/Dockerfile',
             verifier = file === 'services/catalog-service/snapshot-verifier.Dockerfile';
         assert.match(source, /ENV NPM_CONFIG_REGISTRY=https:\/\/artifactory\.dev\.ppod\.cbr\.ru\/artifactory\/api\/npm\/ppod-npm-trusted\//, file);
         assert.match(source, /NPM_CONFIG_USERCONFIG=\/dev\/null/, file);
         assert.match(source, /NPM_CONFIG_GLOBALCONFIG=\/tmp\/neurocenter-empty-global\.npmrc/, file);
-        assert.match(source, verifier ? /NPM_CONFIG_STRICT_SSL=true/ : /NPM_CONFIG_STRICT_SSL=false/, file);
-        if (!verifier) assert.doesNotMatch(source, /STRICT_SSL=true|strict-ssl=true/, file);
-        if (gateway) assert.match(source, /^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m, file);
-        else assert.doesNotMatch(source, /^ENV [^\n]*NODE_TLS_REJECT_UNAUTHORIZED=/m, file);
+        if (verifier) {
+            assert.match(source, /NPM_CONFIG_STRICT_SSL=true/, file);
+        } else {
+            // Дефолты ARG — строгая проверка; отключение только через build-arg из флага.
+            assert.match(source, /ARG NEUROCENTER_TLS_DISABLE=0/, file);
+            assert.match(source, /ARG NEUROCENTER_NPM_STRICT_SSL=true/, file);
+            assert.match(source, /NPM_CONFIG_STRICT_SSL=\$NEUROCENTER_NPM_STRICT_SSL/, file);
+        }
+        assert.doesNotMatch(source, /NPM_CONFIG_STRICT_SSL=false|--strict-ssl=false/, file);
+        assert.doesNotMatch(source, /^ENV [^\n]*NODE_TLS_REJECT_UNAUTHORIZED=/m, file);
         const commands = [...source.matchAll(/^RUN ([^\n]+)/gm)]
             .flatMap((match) => match[1].split(/\s*&&\s*/))
             .filter((command) => /\bnpm\s/.test(command));
@@ -333,7 +341,7 @@ test('Every Node Docker build pins npm registry, empty configs and its selected 
                 command,
                 verifier
                     ? /^NODE_TLS_REJECT_UNAUTHORIZED=.*NPM_CONFIG_STRICT_SSL="\$NEUROCENTER_NPM_STRICT_SSL" NODE_NO_WARNINGS=1 npm ci/
-                    : /^NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm /,
+                    : new RegExp('^' + escape(tlsPrefix) + ' (?:[A-Z_]+=\\S+ )*npm '),
                 file + ' missing build TLS: ' + command,
             );
             if (!/\bnpm ci /.test(command)) continue;
@@ -341,7 +349,7 @@ test('Every Node Docker build pins npm registry, empty configs and its selected 
                 '--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/',
                 '--userconfig=/dev/null',
                 '--globalconfig=/tmp/neurocenter-empty-global.npmrc',
-                verifier ? '--strict-ssl="$NEUROCENTER_NPM_STRICT_SSL"' : '--strict-ssl=false',
+                '--strict-ssl="$NEUROCENTER_NPM_STRICT_SSL"',
             ])
                 assert.ok(command.includes(flag), file + ' missing ' + flag);
         }
@@ -376,11 +384,9 @@ test(
                 );
             const source = await fs.readFile(path.join(root, dockerfile), 'utf8');
             const image = source.match(/^ARG NODE_IMAGE=(.+)$/m)[1],
-                config = source.match(/^ENV NPM_CONFIG_REGISTRY=[\s\S]*?NPM_CONFIG_STRICT_SSL=(?:true|false)/m)[0];
-            const gateway = dockerfile === 'services/api-gateway/Dockerfile',
-                tls = source.match(/^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m)?.[0] || '';
+                config = source.match(/^ENV NPM_CONFIG_REGISTRY=[\s\S]*?NPM_CONFIG_STRICT_SSL=[^\s]+/m)[0];
             const flags = source
-                .match(/^RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci ([^\n]+)/m)[1]
+                .match(/^RUN NODE_TLS_REJECT_UNAUTHORIZED=[^\n]+npm ci ([^\n]+)/m)[1]
                 .split(' ')
                 .filter((flag) => /^(?:--registry|--userconfig|--globalconfig|--strict-ssl)=/.test(flag));
             await fs.writeFile(
@@ -389,8 +395,10 @@ test(
             const assert=require('node:assert/strict'),fs=require('node:fs'),{execFileSync}=require('node:child_process');
             for(const name of ['.npmrc','.yarnrc','.yarnrc.yml','nested/.npmrc','nested/.yarnrc','nested/.yarnrc.yml'])assert.equal(fs.existsSync('/probe/'+name),false,name);
             assert.equal(process.env['npm_config_@fixture:registry'],undefined);
-            const config=JSON.parse(execFileSync('npm',['config','list','--json',...${JSON.stringify(flags)}],{encoding:'utf8'}));
-            assert.equal(config.registry,'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/');assert.equal(config['strict-ssl'],false);
+            const flags=${JSON.stringify(flags)}.map(flag=>flag.startsWith('--strict-ssl=')?'--strict-ssl='+process.env.NPM_STRICT:flag);
+            const config=JSON.parse(execFileSync('npm',['config','list','--json',...flags],{encoding:'utf8'}));
+            assert.equal(config.registry,'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/');
+            assert.equal(config['strict-ssl'],process.env.NPM_STRICT==='false'?false:true);
             assert.equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED,'0');
             assert.equal(config['@fixture:registry'],undefined);assert.equal(config.userconfig,'/dev/null');
             assert.equal(config.globalconfig,'/tmp/neurocenter-empty-global.npmrc');
@@ -399,7 +407,7 @@ test(
             );
             await fs.writeFile(
                 path.join(directory, 'Dockerfile'),
-                `FROM ${image}\n${config}\n${tls}\nWORKDIR /probe\nCOPY . .\nRUN NODE_TLS_REJECT_UNAUTHORIZED=0 node probe.cjs\nRUN node -e "require('node:assert/strict').equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED,${gateway ? "'0'" : 'undefined'})"\n`,
+                `FROM ${image}\nARG NEUROCENTER_TLS_DISABLE\nARG NEUROCENTER_NPM_STRICT_SSL\n${config}\nWORKDIR /probe\nCOPY . .\nRUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" NPM_STRICT="$NEUROCENTER_NPM_STRICT_SSL" node probe.cjs\nRUN node -e "require('node:assert/strict').equal(process.env.NODE_TLS_REJECT_UNAUTHORIZED,'undefined')"\n`,
             );
             const tag = 'neurocenter-npm-isolation-' + process.pid + '-' + index;
             try {
@@ -411,6 +419,10 @@ test(
                         '--pull=false',
                         '--no-cache',
                         '--progress=plain',
+                        '--build-arg',
+                        'NEUROCENTER_TLS_DISABLE=1',
+                        '--build-arg',
+                        'NEUROCENTER_NPM_STRICT_SSL=false',
                         '--tag',
                         tag,
                         directory,

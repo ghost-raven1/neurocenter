@@ -35,6 +35,7 @@ async function fixture(t, checkoutName = 'checkout before rename') {
         'workspace/node-runtime.mjs',
         'workspace/npm-build-environment.mjs',
         'supply/registry.mjs',
+        'workspace/project-config.mjs',
         'workspace/dev-chat-storage.mjs',
         'workspace/model-credentials.mjs',
         'workspace/model-credential-store.mjs',

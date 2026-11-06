@@ -424,6 +424,7 @@ for (const [mode, expected] of [
             'workspace/node-runtime.mjs',
             'workspace/npm-build-environment.mjs',
             'supply/registry.mjs',
+            'workspace/project-config.mjs',
         ]) {
             await fs.mkdir(path.dirname(path.join(f.root, 'scripts', file)), { recursive: true });
             await fs.copyFile(path.join(repository, 'scripts', file), path.join(f.root, 'scripts', file));

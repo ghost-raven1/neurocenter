@@ -206,6 +206,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
             'workspace/dev-chat-storage.mjs',
             'workspace/npm-build-environment.mjs',
             'supply/registry.mjs',
+            'workspace/project-config.mjs',
             'workspace/docker-build-ca.mjs',
             'workspace/docker-build-progress.mjs',
             'workspace/compose.mjs',
@@ -321,7 +322,7 @@ test('Dev-команда соблюдает явный npm CLI и запуска
                 call.cwd === checkout
                     ? ['ci', '--ignore-scripts', '--no-audit', '--no-fund']
                     : ['ci', '--no-audit', '--no-fund'];
-            const strict = 'false';
+            const strict = 'true';
             assert.deepEqual(call.args, [
                 ...base,
                 '--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/',

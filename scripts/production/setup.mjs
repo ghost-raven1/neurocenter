@@ -111,6 +111,7 @@ async function main() {
         return;
     }
     if (mode === 'build') {
+        // Production build is fail-closed: the project flag is not applied, the image is always strict.
         const { filename, manifest } = await buildProductionRelease({
             root,
             directory,
@@ -120,7 +121,8 @@ async function main() {
             composeConfiguration,
             serviceImageIds,
             inspectSchemaManifests,
-            withBuildCa: withDockerBuildCa,
+            withBuildCa: (releaseRoot, source, action) =>
+                withDockerBuildCa(releaseRoot, { ...source, NEUROCENTER_TLS_DISABLE: '0' }, action),
         });
         console.log(
             'Release-манифест записан и проверен: ' + filename + ' (commit ' + manifest.commit.slice(0, 12) + ')',

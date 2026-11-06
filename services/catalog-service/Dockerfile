@@ -12,17 +12,24 @@ RUN if [ -n "$NEUROCENTER_BUILD_CA_SHA256" ]; then \
     fi && chmod 0444 /usr/local/share/neurocenter/build-ca/extra.pem
 ENV NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
 
+# TLS policy is derived from the project flag; direct builds without the wrapper stay strict.
+ARG NEUROCENTER_TLS_DISABLE=0
+ARG NEUROCENTER_NPM_STRICT_SSL=true
+
 # Ignore user/global npm settings; the lockfile and the trusted local registry define this build.
 ENV NPM_CONFIG_REGISTRY=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
-    NPM_CONFIG_STRICT_SSL=false
+    NPM_CONFIG_STRICT_SSL=$NEUROCENTER_NPM_STRICT_SSL
 # Optional build-time registry auth (base64 of the trusted-host npmrc lines); empty keeps the file blank.
 ARG NPM_REGISTRY_AUTH_B64
 RUN if [ -n "$NPM_REGISTRY_AUTH_B64" ]; then printf '%s' "$NPM_REGISTRY_AUTH_B64" | base64 -d > /tmp/neurocenter-empty-global.npmrc; else : > /tmp/neurocenter-empty-global.npmrc; fi
 
 # Официальный клиент PG16 создаёт полноценные дампы сервера pgvector:pg16.
 # https://www.postgresql.org/download/linux/debian/
+# Базовый образ не знает ни curl, ни ca-certificates: первый apt — единственный
+# bootstrap-шаг без проверки сертификатов (цирк «CA нужно до CA»). Подписи пакетов
+# apt и signed-by при этом проверяются; после доверия CA все остальные шаги строгие.
 RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
     && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends ca-certificates curl bubblewrap \
     && if [ -s "$NODE_EXTRA_CA_CERTS" ]; then \
@@ -30,10 +37,10 @@ RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=
       && update-ca-certificates; \
     fi \
     && mkdir -p /usr/share/postgresql-common/pgdg \
-    && curl -fsSL --insecure https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
     && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
-    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update \
-    && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends postgresql-client-16 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -41,14 +48,14 @@ COPY vendor/asset-contract/ /vendor/asset-contract/
 COPY services/catalog-service/package*.json ./
 # AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на /supply/vendor.
 COPY supply/vendor/ /supply/vendor/
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl="$NEUROCENTER_NPM_STRICT_SSL" --no-audit --no-fund
 COPY services/catalog-service/ .
 COPY services/shared/ /shared/
 COPY catalog-source/ /catalog-source/
 # Shared declarations resolve the same pinned contracts as the owning service.
 RUN ln -s /app/node_modules /shared/node_modules
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm run build
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm run build
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 
 # Сервер использует общий native builder; source assets приходят из единого репозитория.
 COPY scripts/catalog-plugins/ /tools/scripts/catalog-plugins/
@@ -64,6 +71,7 @@ COPY package*.json /tools/
 COPY scripts/models/ /tools/scripts/models/
 COPY scripts/release-request.mjs /tools/scripts/release-request.mjs
 COPY scripts/workspace/node-runtime.mjs /tools/scripts/workspace/node-runtime.mjs
+COPY scripts/workspace/project-config.mjs /tools/scripts/workspace/project-config.mjs
 COPY scripts/opencode-platforms.mjs /tools/scripts/opencode-platforms.mjs
 COPY vendor/asset-contract/ /tools/vendor/asset-contract/
 RUN ln -s /app/dist /tools/services/catalog-service/dist && ln -s /app/node_modules /tools/services/catalog-service/node_modules && ln -s /app/node_modules /tools/services/shared/node_modules && ln -s /app/node_modules /tools/node_modules

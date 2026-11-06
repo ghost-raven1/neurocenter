@@ -32,6 +32,7 @@ async function fixture(t, mode = 'ready') {
         'workspace/dev-chat-storage.mjs',
         'workspace/npm-build-environment.mjs',
         'supply/registry.mjs',
+        'workspace/project-config.mjs',
         'workspace/docker-build-ca.mjs',
         'workspace/docker-build-progress.mjs',
         'workspace/compose.mjs',
@@ -204,7 +205,7 @@ test('dev install проверяет готовый Compose до установ�
             event.cwd === f.checkout
                 ? ['ci', '--ignore-scripts', '--no-audit', '--no-fund']
                 : ['ci', '--no-audit', '--no-fund'];
-        const strict = 'false';
+        const strict = 'true';
         assert.deepEqual(event.args, [
             ...base,
             '--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/',

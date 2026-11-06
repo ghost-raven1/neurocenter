@@ -33,6 +33,7 @@ export async function daemonFixture(t, { flags = false } = {}) {
                 'isolated-build-source.mjs',
                 'isolated-build-process.mjs',
                 'node-runtime.mjs',
+                'project-config.mjs',
             ].includes(name)
         )
             await fs.copyFile(path.join(sources, name), path.join(root, 'scripts/workspace', name));

@@ -263,7 +263,7 @@ test('Compose build CLI stages CA for its Docker process and cleans up after suc
         bin = path.join(directory, 'bin');
     await fs.mkdir(path.join(scripts, 'workspace'), { recursive: true });
     await fs.mkdir(bin);
-    for (const file of ['docker-build.mjs', 'workspace/docker-build-ca.mjs']) {
+    for (const file of ['docker-build.mjs', 'workspace/docker-build-ca.mjs', 'workspace/project-config.mjs']) {
         await fs.copyFile(path.join(root, 'scripts', file), path.join(scripts, file));
     }
     const calls = path.join(directory, 'calls.jsonl');
@@ -307,6 +307,9 @@ test('Compose build CLI stages CA for its Docker process and cleans up after suc
 });
 
 test('All Node Dockerfiles verify optional CA before npm and scope their selected TLS policy to build commands', async () => {
+    const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tlsPrefix =
+        'NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)"';
     for (const file of sourceFiles) {
         const source = await fs.readFile(path.join(root, file), 'utf8');
         assert.match(source, /ARG NEUROCENTER_BUILD_CA_SHA256/, file);
@@ -323,9 +326,17 @@ test('All Node Dockerfiles verify optional CA before npm and scope their selecte
         assert(install >= 0, file);
         assert.ok(source.indexOf('ENV NODE_EXTRA_CA_CERTS=') < install, file);
         const verifier = file === 'services/catalog-service/snapshot-verifier.Dockerfile';
-        assert.match(source, verifier ? /NPM_CONFIG_STRICT_SSL=true/ : /NPM_CONFIG_STRICT_SSL=false/, file);
-        assert.match(source, verifier ? /--strict-ssl="\$NEUROCENTER_NPM_STRICT_SSL"/ : /--strict-ssl=false/, file);
-        if (!verifier) assert.doesNotMatch(source, /STRICT_SSL=true|strict-ssl=true/, file);
+        if (verifier) {
+            assert.match(source, /NPM_CONFIG_STRICT_SSL=true/, file);
+        } else {
+            // Дефолты ARG — строгая проверка; отключение только через build-arg из флага.
+            assert.match(source, /ARG NEUROCENTER_TLS_DISABLE=0/, file);
+            assert.match(source, /ARG NEUROCENTER_NPM_STRICT_SSL=true/, file);
+            assert.match(source, /NPM_CONFIG_STRICT_SSL=\$NEUROCENTER_NPM_STRICT_SSL/, file);
+        }
+        assert.match(source, /--strict-ssl="\$NEUROCENTER_NPM_STRICT_SSL"/, file);
+        assert.doesNotMatch(source, /NPM_CONFIG_STRICT_SSL=false|--strict-ssl=false/, file);
+        assert.doesNotMatch(source, /^ENV [^\n]*NODE_TLS_REJECT_UNAUTHORIZED=/m, file);
         const commands = [...source.matchAll(/^RUN ([^\n]+)/gm)]
             .flatMap((match) => match[1].split(/\s*&&\s*/))
             .filter((command) => /\bnpm\s/.test(command));
@@ -335,25 +346,17 @@ test('All Node Dockerfiles verify optional CA before npm and scope their selecte
                 command,
                 verifier
                     ? /^NODE_TLS_REJECT_UNAUTHORIZED=.*NPM_CONFIG_STRICT_SSL="\$NEUROCENTER_NPM_STRICT_SSL" NODE_NO_WARNINGS=1 npm ci/
-                    : /^NODE_TLS_REJECT_UNAUTHORIZED=0 (?:[A-Z_]+=\S+ )*npm /,
+                    : new RegExp('^' + escape(tlsPrefix) + ' (?:[A-Z_]+=\\S+ )*npm '),
                 file + ' missing build TLS: ' + command,
             );
-        if (file === 'services/api-gateway/Dockerfile') {
-            assert.match(source, /^ENV NODE_TLS_REJECT_UNAUTHORIZED=0$/m, file);
-        } else assert.doesNotMatch(source, /^ENV [^\n]*NODE_TLS_REJECT_UNAUTHORIZED=/m, file);
     }
     for (const file of ['docker-compose.yml', 'compose.production.yml']) {
         const source = await fs.readFile(path.join(root, file), 'utf8');
-        assert.equal(
-            [...source.matchAll(/NEUROCENTER_BUILD_CA_SHA256: /g)].length,
-            file === 'docker-compose.yml' ? 7 : 8,
-            file,
-        );
-        assert.equal(
-            [...source.matchAll(/NEUROCENTER_BUILD_CA_NAME: /g)].length,
-            file === 'docker-compose.yml' ? 7 : 8,
-            file,
-        );
+        const count = file === 'docker-compose.yml' ? 7 : 8;
+        assert.equal([...source.matchAll(/NEUROCENTER_BUILD_CA_SHA256: /g)].length, count, file);
+        assert.equal([...source.matchAll(/NEUROCENTER_BUILD_CA_NAME: /g)].length, count, file);
+        assert.equal([...source.matchAll(/NEUROCENTER_TLS_DISABLE: /g)].length, count, file);
+        assert.equal([...source.matchAll(/NEUROCENTER_NPM_STRICT_SSL: /g)].length, count, file);
     }
     for (const file of ['.dockerignore', 'frontend/.dockerignore']) {
         const source = await fs.readFile(path.join(root, file), 'utf8');
@@ -374,13 +377,16 @@ test('Catalog system trust splits a PEM bundle into one certificate per CRT befo
         source.indexOf('update-ca-certificates;') < source.indexOf('https://apt.postgresql.org/'),
         'HTTPS apt must receive the configured CA',
     );
-    assert.match(source, /curl -fsSL --insecure https:\/\/www.postgresql.org\//);
+    assert.doesNotMatch(source, /curl [^\n]*--insecure/, 'the pgdg key download must verify TLS');
     const aptCommands = [...source.matchAll(/apt-get ([^\\\n&]+)/g)];
     assert.equal(aptCommands.length, 4);
-    for (const [, args] of aptCommands) {
+    // Базовый образ не знает ни curl, ни ca-certificates: первые два apt — задокументированный
+    // bootstrap без проверки сертификатов; после доверия CA все остальные шаги строгие.
+    for (const [, args] of aptCommands.slice(0, 2)) {
         assert.ok(args.includes('Acquire::https::Verify-Peer=false'));
         assert.ok(args.includes('Acquire::https::Verify-Host=false'));
     }
+    for (const [, args] of aptCommands.slice(2)) assert.doesNotMatch(args, /Verify-Peer=false|Verify-Host=false/);
     assert.match(source, /signed-by=\/usr\/share\/postgresql-common\/pgdg\/apt.postgresql.org.asc/);
     assert.doesNotMatch(source, /allow-unauthenticated|trusted=yes|AllowInsecureRepositories/);
     const program = source.match(/awk '([^']+)' "\$NODE_EXTRA_CA_CERTS"/)[1];

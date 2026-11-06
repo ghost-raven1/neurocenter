@@ -43,6 +43,7 @@ async function fixture(
                 'isolated-build-process.mjs',
                 'isolated-build-source.mjs',
                 'dist-freshness.mjs',
+                'project-config.mjs',
             ].includes(name)
         ) {
             await fs.copyFile(path.join(root, 'scripts/workspace', name), path.join(workspace, name));

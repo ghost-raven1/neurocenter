@@ -16,6 +16,7 @@ import {
     dependencyLinksCurrent,
 } from './isolated-build-source.mjs';
 import { runBuildProcess, buildLogIdentity } from './isolated-build-process.mjs';
+import { projectTlsEnvironment } from './project-config.mjs';
 
 const workspace = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const usage =
@@ -127,7 +128,7 @@ function failure(error) {
     };
 }
 
-async function privateEnvironment(folder, node) {
+async function privateEnvironment(folder, node, tls) {
     const home = path.join(folder, 'private-home'),
         temporary = path.join(folder, 'temporary'),
         cache = path.join(folder, 'npm-cache');
@@ -151,9 +152,9 @@ async function privateEnvironment(folder, node) {
         CI: '1',
         LANG: 'en_US.UTF-8',
         LC_ALL: 'en_US.UTF-8',
-        NODE_TLS_REJECT_UNAUTHORIZED: '0',
-        NPM_CONFIG_STRICT_SSL: 'false',
-        npm_config_strict_ssl: 'false',
+        NODE_TLS_REJECT_UNAUTHORIZED: tls.NODE_TLS_REJECT_UNAUTHORIZED,
+        NPM_CONFIG_STRICT_SSL: tls.NEUROCENTER_NPM_STRICT_SSL,
+        npm_config_strict_ssl: tls.NEUROCENTER_NPM_STRICT_SSL,
         npm_config_cache: cache,
         npm_config_userconfig: userconfig,
         npm_config_globalconfig: globalconfig,
@@ -203,7 +204,7 @@ export async function isolatedBuild(
     };
     let initial, links, liveBefore, primary;
     try {
-        const environment = await privateEnvironment(folder, runtime.node);
+        const environment = await privateEnvironment(folder, runtime.node, await projectTlsEnvironment(root));
         receipt.environmentKeys = Object.keys(environment).sort();
         initial = await sourceSnapshot(root, { signal });
         await save(folder, 'source-before.json', initial);

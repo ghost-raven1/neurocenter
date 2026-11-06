@@ -24,6 +24,7 @@ import { prepareCurrentDevPackages, optionalDevSnapshotImage } from './workspace
 import { catalogRebuildRequestPath } from './workspace/catalog-rebuild-request.mjs';
 import { prepareDevChatStorage } from './workspace/dev-chat-storage.mjs';
 import { withBuildNetwork, withNpmBuildEnvironment } from './workspace/npm-build-environment.mjs';
+import { projectTlsEnvironment } from './workspace/project-config.mjs';
 import { launchDevService, currentDevLaunchId } from './workspace/dev-launch-provenance.mjs';
 import { recoverDevLaunch } from './workspace/dev-launch-recovery.mjs';
 
@@ -696,6 +697,8 @@ async function main() {
             }
         }
     }
+    // Единая точка экспорта TLS-политики: install/build/up/watch наследуют вывод из флага.
+    Object.assign(process.env, await projectTlsEnvironment(root));
     if (command === 'up' || command === 'status') serviceDetailsFlag();
     const runtime = nodeRuntime();
     node = runtime.node;

@@ -41,6 +41,7 @@ async function fixture(t, mode = 'ready') {
         'workspace/node-runtime.mjs',
         'workspace/npm-build-environment.mjs',
         'supply/registry.mjs',
+        'workspace/project-config.mjs',
         'workspace/dev-chat-storage.mjs',
         'workspace/model-credentials.mjs',
         'workspace/model-credential-store.mjs',
@@ -813,7 +814,7 @@ test('Ошибка сборки видна в stderr и не подменяет�
     assert.equal(installs.length, 1);
     assert.deepEqual(installs[0].args.slice(0, 4), ['ci', '--ignore-scripts', '--no-audit', '--no-fund']);
     assert.ok(installs[0].args.includes('--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/'));
-    assert.ok(installs[0].args.includes('--strict-ssl=false'));
+    assert.ok(installs[0].args.includes('--strict-ssl=true'));
     assert.ok(installs[0].args.some((arg) => arg.startsWith('--userconfig=')));
     assert.ok(installs[0].args.some((arg) => arg.startsWith('--globalconfig=')));
     assert.doesNotMatch(result.stdout, /Нейроцентр готов|Сборка завершена/);
@@ -842,7 +843,7 @@ test('Dev build dependency install ignores hostile global/user config and remove
     assert.equal(call.hasToken, false);
     assert.notEqual(call.home, home);
     assert.ok(call.args.includes('--registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/'));
-    assert.ok(call.args.includes('--strict-ssl=false'));
+    assert.ok(call.args.includes('--strict-ssl=true'));
     await assert.rejects(fs.stat(call.home), { code: 'ENOENT' });
     assert.equal(await fs.readFile(path.join(home, '.npmrc'), 'utf8'), hostile);
     assert.equal(await fs.readFile(globalconfig, 'utf8'), hostile);

@@ -1,13 +1,12 @@
 import { Agent, request, type AgentOptions } from 'node:https';
 import { Readable } from 'node:stream';
 
-/** Relax certificate checks for this dependency request without changing the Catalog runtime or redirect policy. */
+/** Certificate verification follows the process TLS policy; redirect policy stays strict. */
 export function fetchNpmMetadata(
     url: string,
     { signal }: { signal: AbortSignal; redirect: 'error' },
 ): Promise<Response> {
     const options: AgentOptions & { proxyEnv?: NodeJS.ProcessEnv } = {
-        rejectUnauthorized: false,
         keepAlive: false,
         ...(process.env.NODE_USE_ENV_PROXY === '1' ? { proxyEnv: process.env } : {}),
     };

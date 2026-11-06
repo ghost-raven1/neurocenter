@@ -64,6 +64,10 @@ async function fixture(t, mode, fail = '', initial = {}) {
         path.join(directory, 'scripts/workspace/docker-build-ca.mjs'),
     );
     await copyFile(
+        path.join(root, 'scripts/workspace/project-config.mjs'),
+        path.join(directory, 'scripts/workspace/project-config.mjs'),
+    );
+    await copyFile(
         path.join(root, 'scripts/production/schema-migrations.mjs'),
         path.join(scripts, 'schema-migrations.mjs'),
     );

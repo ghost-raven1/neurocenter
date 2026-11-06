@@ -33,6 +33,7 @@ async function fixture(t, args, { withPackages = true, packageFolders = workspac
         'isolated-build-source.mjs',
         'node-runtime.mjs',
         'dist-freshness.mjs',
+        'project-config.mjs',
     ]) {
         await fs.copyFile(path.join(root, 'scripts/workspace', name), path.join(workspace, name));
     }
@@ -226,9 +227,9 @@ test('all eight canonical package IDs select their own builds and duplicate sele
         );
         assert.equal(value.calls.filter((call) => call.args[0] !== '-p').length, 1);
         const build = value.calls.find((call) => call.args[0] !== '-p');
-        assert.equal(build.tls, '0');
-        assert.equal(build.strict, 'false');
-        assert.equal(build.npmStrict, 'false');
+        assert.equal(build.tls, '1');
+        assert.equal(build.strict, 'true');
+        assert.equal(build.npmStrict, 'true');
     }
 });
 
@@ -252,11 +253,11 @@ test('package-only selection retains normal phase order and excludes every other
     const commands = value.calls.filter((call) => call.args[0] !== '-p');
     assert.deepEqual(
         commands.map((call) => call.tls),
-        ['1', '1', '0', '1'],
+        ['1', '1', '1', '1'],
     );
     assert.deepEqual(
         commands.map((call) => call.strict),
-        ['true', 'true', 'false', 'true'],
+        ['true', 'true', 'true', 'true'],
     );
 });
 

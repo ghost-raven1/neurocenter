@@ -11,13 +11,16 @@ RUN if [ -n "$NEUROCENTER_BUILD_CA_SHA256" ]; then \
       : > /usr/local/share/neurocenter/build-ca/extra.pem; \
     fi && chmod 0444 /usr/local/share/neurocenter/build-ca/extra.pem
 ENV NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
-ENV NODE_TLS_REJECT_UNAUTHORIZED=0
+
+# TLS policy is derived from the project flag; direct builds without the wrapper stay strict.
+ARG NEUROCENTER_TLS_DISABLE=0
+ARG NEUROCENTER_NPM_STRICT_SSL=true
 
 # Ignore user/global npm settings; the lockfile and the trusted local registry define this build.
 ENV NPM_CONFIG_REGISTRY=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ \
     NPM_CONFIG_USERCONFIG=/dev/null \
     NPM_CONFIG_GLOBALCONFIG=/tmp/neurocenter-empty-global.npmrc \
-    NPM_CONFIG_STRICT_SSL=false
+    NPM_CONFIG_STRICT_SSL=$NEUROCENTER_NPM_STRICT_SSL
 # Optional build-time registry auth (base64 of the trusted-host npmrc lines); empty keeps the file blank.
 ARG NPM_REGISTRY_AUTH_B64
 RUN if [ -n "$NPM_REGISTRY_AUTH_B64" ]; then printf '%s' "$NPM_REGISTRY_AUTH_B64" | base64 -d > /tmp/neurocenter-empty-global.npmrc; else : > /tmp/neurocenter-empty-global.npmrc; fi
@@ -27,7 +30,7 @@ COPY vendor/asset-contract/ /vendor/asset-contract/
 COPY services/api-gateway/package*.json ./
 # AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на /supply/vendor.
 COPY supply/vendor/ /supply/vendor/
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl=false --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl="$NEUROCENTER_NPM_STRICT_SSL" --no-audit --no-fund
 COPY services/api-gateway/ .
 COPY services/shared/ /shared/
 COPY bridge-dist/ /app/bridge-dist/
@@ -42,8 +45,8 @@ COPY services/api-gateway/package.json /openapi/services/api-gateway/package.jso
 COPY services/shared/ /openapi/services/shared/
 COPY vendor/asset-contract/index.d.ts /openapi/vendor/asset-contract/index.d.ts
 RUN ln -s /app/node_modules /openapi/node_modules
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 NEUROCENTER_OPENAPI_ROOT=/openapi npm run build
-RUN NODE_TLS_REJECT_UNAUTHORIZED=0 npm prune --omit=dev --no-audit --no-fund
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" NEUROCENTER_OPENAPI_ROOT=/openapi npm run build
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 RUN rm -rf /openapi /scripts/openapi
 
 ENV NODE_ENV=production

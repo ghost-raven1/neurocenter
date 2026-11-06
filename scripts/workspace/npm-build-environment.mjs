@@ -2,11 +2,16 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { TRUSTED_REGISTRY } from '../supply/registry.mjs';
+import { fileURLToPath } from 'node:url';
+import { projectTlsEnvironment } from './project-config.mjs';
+
+const moduleRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 /** Scope direct build-input downloads to the CLI phase and restore its environment after completion. */
-export async function withBuildNetwork(work) {
+export async function withBuildNetwork(work, root = moduleRoot) {
+    const tls = await projectTlsEnvironment(root);
     const previous = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = tls.NODE_TLS_REJECT_UNAUTHORIZED;
     try {
         return await work();
     } finally {
@@ -33,12 +38,13 @@ function registryAuthNpmrc(environment) {
 }
 
 /** Isolate dependency credentials/config and apply the project's relaxed build TLS policy. */
-export async function withNpmBuildEnvironment(environment, work) {
+export async function withNpmBuildEnvironment(environment, work, root = moduleRoot) {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'neurocenter-npm-build-'));
     const userconfig = path.join(home, 'user.npmrc'),
         globalconfig = path.join(home, 'global.npmrc');
     try {
         await Promise.all([fs.writeFile(userconfig, ''), fs.writeFile(globalconfig, registryAuthNpmrc(environment))]);
+        const tls = await projectTlsEnvironment(root, environment);
         const env = Object.fromEntries(
             Object.entries(environment).filter(
                 ([key]) => !/^npm_config_/i.test(key) && !['NPM_TOKEN', 'NODE_AUTH_TOKEN'].includes(key.toUpperCase()),
@@ -49,13 +55,13 @@ export async function withNpmBuildEnvironment(environment, work) {
                 ...env,
                 HOME: home,
                 USERPROFILE: home,
-                NPM_CONFIG_STRICT_SSL: 'false',
-                npm_config_strict_ssl: 'false',
-                NODE_TLS_REJECT_UNAUTHORIZED: '0',
+                NPM_CONFIG_STRICT_SSL: tls.NEUROCENTER_NPM_STRICT_SSL,
+                npm_config_strict_ssl: tls.NEUROCENTER_NPM_STRICT_SSL,
+                NODE_TLS_REJECT_UNAUTHORIZED: tls.NODE_TLS_REJECT_UNAUTHORIZED,
             },
             args: [
                 '--registry=' + TRUSTED_REGISTRY,
-                '--strict-ssl=false',
+                '--strict-ssl=' + tls.NEUROCENTER_NPM_STRICT_SSL,
                 '--userconfig=' + userconfig,
                 '--globalconfig=' + globalconfig,
             ],

@@ -26,6 +26,7 @@ const contextScripts = [
     'workspace/node-runtime.mjs',
     'workspace/npm-build-environment.mjs',
     'supply/registry.mjs',
+    'workspace/project-config.mjs',
 ];
 
 /** Отдельный checkout и фальшивые сборщики: настоящий Docker, npm и сеть не используются. */

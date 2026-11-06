@@ -29,7 +29,7 @@ async function fixture(t) {
     return directory;
 }
 
-test('Gateway npm config selects the trusted registry, disables certificate verification and preloads TLS=0 for lifecycle scripts', async (t) => {
+test('Gateway npm config selects the trusted registry without touching certificate verification or preloads', async (t) => {
     const directory = await fixture(t),
         userconfig = path.join(directory, 'user.npmrc'),
         globalconfig = path.join(directory, 'global.npmrc');
@@ -43,11 +43,11 @@ test('Gateway npm config selects the trusted registry, disables certificate veri
     await fs.mkdir(path.join(directory, 'nested dependency'));
     await fs.writeFile(
         path.join(directory, 'probe.cjs'),
-        "const child=require('node:child_process').execFileSync(process.execPath,['-p','process.env.NODE_TLS_REJECT_UNAUTHORIZED'],{cwd:'nested dependency',encoding:'utf8'}).trim();console.log(JSON.stringify({tls:process.env.NODE_TLS_REJECT_UNAUTHORIZED,nested:child}));",
+        "const child=require('node:child_process').execFileSync(process.execPath,['-p','String(process.env.NODE_TLS_REJECT_UNAUTHORIZED)'],{cwd:'nested dependency',encoding:'utf8'}).trim();console.log(JSON.stringify({tls:String(process.env.NODE_TLS_REJECT_UNAUTHORIZED),nested:child}));",
     );
     const env = cleanEnvironment(),
         args = ['--userconfig=' + userconfig, '--globalconfig=' + globalconfig];
-    // Lifecycle scripts run `node` from PATH; pin the current runtime so the --import preload works.
+    // Lifecycle scripts run `node` from PATH; pin the current runtime so the probe sees the same runtime.
     env.PATH = path.dirname(process.execPath) + path.delimiter + (process.env.PATH ?? '');
     const config = spawnSync(process.execPath, [npmCli(), 'config', 'list', '--json', ...args], {
         cwd: directory,
@@ -57,18 +57,19 @@ test('Gateway npm config selects the trusted registry, disables certificate veri
     assert.equal(config.status, 0, config.stderr);
     const settings = JSON.parse(config.stdout);
     assert.equal(String(settings.registry).replace(/\/+$/, ''), 'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted');
-    assert.equal(settings['strict-ssl'], false);
+    assert.equal(settings['strict-ssl'], true);
+    assert.ok(settings['node-options'] == null, 'node-options preload отсутствует');
     const child = spawnSync(process.execPath, [npmCli(), 'run', 'probe', '--silent', ...args], {
         cwd: directory,
         env,
         encoding: 'utf8',
     });
     assert.equal(child.status, 0, child.stderr);
-    assert.deepEqual(JSON.parse(child.stdout), { tls: '0', nested: '0' });
+    assert.deepEqual(JSON.parse(child.stdout), { tls: 'undefined', nested: 'undefined' });
     assert.equal(env.NODE_TLS_REJECT_UNAUTHORIZED, undefined);
 });
 
-test('Compiled gateway entry applies TLS=0 before loading runtime validation or Nest', async () => {
+test('Compiled gateway entry does not change TLS settings before the first import', async () => {
     const source = await fs.readFile(path.join(gateway, 'src/main.ts'), 'utf8');
     const javascript = ts.transpileModule(source, {
         compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
@@ -83,7 +84,7 @@ test('Compiled gateway entry applies TLS=0 before loading runtime validation or 
                 process: { env },
                 require: () => {
                     loaded = true;
-                    assert.equal(env.NODE_TLS_REJECT_UNAUTHORIZED, '0');
+                    assert.equal(env.NODE_TLS_REJECT_UNAUTHORIZED, undefined);
                     throw stop;
                 },
             }),
@@ -92,7 +93,7 @@ test('Compiled gateway entry applies TLS=0 before loading runtime validation or 
     assert.equal(loaded, true);
 });
 
-test('Actual dev npm commands relax build TLS for every package without changing the parent environment', async () => {
+test('Actual dev npm commands derive TLS from the project flag without changing the parent environment', async () => {
     const source = await fs.readFile(path.join(root, 'scripts/dev.mjs'), 'utf8'),
         tree = ts.createSourceFile('dev.mjs', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
     const functions = tree.statements
@@ -127,7 +128,7 @@ test('Actual dev npm commands relax build TLS for every package without changing
     assert.equal(environment.NPM_CONFIG_STRICT_SSL, undefined);
 });
 
-test('Gateway npm TLS options connect to an actual self-signed HTTPS server; a normal Node child still rejects it', async (t) => {
+test('Strict gateway TLS rejects a self-signed certificate; NODE_EXTRA_CA_CERTS or an explicit flag disable passes', async (t) => {
     const directory = await fixture(t),
         key = path.join(directory, 'key.pem'),
         cert = path.join(directory, 'cert.pem');
@@ -147,6 +148,8 @@ test('Gateway npm TLS options connect to an actual self-signed HTTPS server; a n
             cert,
             '-subj',
             '/CN=localhost',
+            '-addext',
+            'subjectAltName=DNS:localhost,IP:127.0.0.1',
         ],
         { encoding: 'utf8' },
     );
@@ -158,11 +161,10 @@ test('Gateway npm TLS options connect to an actual self-signed HTTPS server; a n
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     t.after(() => new Promise((resolve) => server.close(resolve)));
     const port = server.address().port,
-        program = `require('https').get('https://127.0.0.1:${port}',response=>{let body='';response.on('data',chunk=>body+=chunk);response.on('end',()=>console.log(JSON.stringify({status:response.statusCode,body,tls:process.env.NODE_TLS_REJECT_UNAUTHORIZED})));}).on('error',error=>console.log(JSON.stringify({error:error.code})));`;
-    const options = (await fs.readFile(path.join(gateway, '.npmrc'), 'utf8')).match(/^node-options=(.+)$/m)[1];
-    const probe = async (preload) => {
+        program = `require('https').get('https://127.0.0.1:${port}',response=>{let body='';response.on('data',chunk=>body+=chunk);response.on('end',()=>console.log(JSON.stringify({status:response.statusCode,body})));}).on('error',error=>console.log(JSON.stringify({error:error.code})));`;
+    const probe = async (extra = {}) => {
         const child = spawn(process.execPath, ['-e', program], {
-            env: { ...cleanEnvironment(), ...(preload ? { NODE_OPTIONS: options } : {}) },
+            env: { PATH: process.env.PATH, ...extra },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '',
@@ -173,6 +175,11 @@ test('Gateway npm TLS options connect to an actual self-signed HTTPS server; a n
         assert.equal(code, 0, stderr);
         return JSON.parse(stdout);
     };
-    assert.ok((await probe(false)).error);
-    assert.deepEqual(await probe(true), { status: 200, body: 'gateway-tls-ok', tls: '0' });
+    const strict = await probe();
+    assert.ok(strict.error, 'self-signed должен быть отклонён');
+    assert.match(String(strict.error), /SELF_SIGNED|CERT/);
+    const relaxed = await probe({ NODE_TLS_REJECT_UNAUTHORIZED: '0' });
+    assert.deepEqual(relaxed, { status: 200, body: 'gateway-tls-ok' });
+    const trusted = await probe({ NODE_EXTRA_CA_CERTS: cert });
+    assert.deepEqual(trusted, { status: 200, body: 'gateway-tls-ok' });
 });

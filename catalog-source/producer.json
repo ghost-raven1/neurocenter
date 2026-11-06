@@ -228,8 +228,8 @@
     },
     {
       "path": "scripts/catalog-plugins/prepared-source-snapshot.mjs",
-      "sha256": "3cffd0f670ead1713edcf7c6b88f6f557eb6c5c9d9caf0d954e635e65157a868",
-      "bytes": 12576
+      "sha256": "7bcda3cb55c401db1b65b635bc1d33cf696d7a4896a865882392a485c0855711",
+      "bytes": 12624
     },
     {
       "path": "scripts/catalog-plugins/publish.mjs",
@@ -408,8 +408,8 @@
     },
     {
       "path": "scripts/catalog-plugins/recipes/upstream.mjs",
-      "sha256": "7bc5e13af81d70ddfe4806847a0add644acace1f0bae8809c919ee43a7e785f6",
-      "bytes": 8334
+      "sha256": "5f9295d71f48401627aadf09049a96d0e028e1837b9bf2c6912ba3111ea3e467",
+      "bytes": 8789
     },
     {
       "path": "scripts/catalog-plugins/release-inspection.mjs",
@@ -495,6 +495,11 @@
       "path": "scripts/workspace/node-runtime.mjs",
       "sha256": "42fb7b8e1e377ff9ebecd0a0fca6481a4d778f950a744582e1448bbf770a70da",
       "bytes": 4624
+    },
+    {
+      "path": "scripts/workspace/project-config.mjs",
+      "sha256": "c78cd8a6578331ae30d4a485ea0f95a26abef74afc5673092757172bedd248f5",
+      "bytes": 2785
     },
     {
       "path": "services/catalog-service/package-lock.json",

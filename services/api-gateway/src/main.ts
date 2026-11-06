@@ -1,6 +1,3 @@
-// Apply the gateway TLS setting before bootstrap, including direct node dist/main.js launches.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 import { discussionAttachmentUploadRoute } from '../../shared/discussion-attachment-route.cjs';
 import { snapshotContentRoute } from '../../shared/snapshot-content-route.cjs';
 import { sourceUploadContentRoute } from '../../shared/source-upload-route.cjs';

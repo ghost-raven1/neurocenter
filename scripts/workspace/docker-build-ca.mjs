@@ -2,6 +2,7 @@ import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, readdir, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { projectTlsEnvironment } from './project-config.mjs';
 
 const limit = 1024 * 1024;
 const contexts = ['docker/build-ca', 'frontend/docker/build-ca'];
@@ -149,7 +150,14 @@ async function pruneStaleCa(root) {
 
 /** Each invocation supplies one uniquely named public CA; leaked artifacts age out, legacy locks are never touched. */
 export async function withDockerBuildCa(root, source, action) {
-    const environment = { ...source, NEUROCENTER_BUILD_CA_SHA256: '', NEUROCENTER_BUILD_CA_NAME: '.gitkeep' };
+    const tls = await projectTlsEnvironment(root, source);
+    const environment = {
+        ...source,
+        NEUROCENTER_BUILD_CA_SHA256: '',
+        NEUROCENTER_BUILD_CA_NAME: '.gitkeep',
+        NEUROCENTER_TLS_DISABLE: tls.NEUROCENTER_TLS_DISABLE,
+        NEUROCENTER_NPM_STRICT_SSL: tls.NEUROCENTER_NPM_STRICT_SSL,
+    };
     const selected = source.NEUROCENTER_BUILD_CA_FILE ?? source.NODE_EXTRA_CA_CERTS;
     if (selected === undefined || selected === '') {
         return action({ environment, args: [] });
