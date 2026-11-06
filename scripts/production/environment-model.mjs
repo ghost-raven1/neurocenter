@@ -223,6 +223,27 @@ export function validateModelShape(model) {
         if (service.envNotes !== undefined && !isMap(service.envNotes)) {
             throw new Error(`Некорректная модель окружения: ${name}.envNotes`);
         }
+        if (!isMap(service.requiredEnv)) {
+            throw new Error(`Некорректная модель окружения: ${name}.requiredEnv`);
+        }
+        for (const [envName, reason] of Object.entries(service.requiredEnv)) {
+            if (!ENV_NAME_PATTERN.test(envName)) {
+                throw new Error(`Некорректная модель окружения: ${name}.requiredEnv.${envName} — недопустимое имя env`);
+            }
+            if (typeof reason !== 'string' || !reason.trim()) {
+                throw new Error(
+                    `Некорректная модель окружения: ${name}.requiredEnv.${envName} — пустая причина обязательности`,
+                );
+            }
+            if (!Object.hasOwn(service.env, envName)) {
+                throw new Error(
+                    `Некорректная модель окружения: ${name}.requiredEnv.${envName} отсутствует в env сервиса`,
+                );
+            }
+        }
+        if (service.codeRoots.length === 0 && Object.keys(service.requiredEnv).length > 0) {
+            throw new Error(`Некорректная модель окружения: ${name}.requiredEnv — нет codeRoots, допустимо только {}`);
+        }
     }
 }
 
@@ -393,6 +414,42 @@ export function deadEnvironment(model, services, { root, secretNames = [] }) {
         }
     }
     return { dead, noteErrors };
+}
+
+/**
+ * Required env (code→compose): имя из модели requiredEnv отсутствует в env
+ * развёрнутого compose (missing) или не находит чтения кодом (phantom —
+ * переиспользование envReadInCode, включая производные _FILE из secretNames).
+ * Возвращает { missing, phantom, noteErrors }.
+ */
+export function requiredEnvironmentDrift(model, services, { root, secretNames = [] }) {
+    const missing = [];
+    const phantom = [];
+    const noteErrors = [];
+    const codeFiles = new Map();
+    for (const [name, spec] of Object.entries(model.services)) {
+        const service = services[name];
+        if (!service) continue; // отсутствие сервиса в compose уже видно из structuralDrift
+        for (const [envName, reason] of Object.entries(spec.requiredEnv ?? {})) {
+            if (typeof reason !== 'string' || !reason.trim()) {
+                noteErrors.push({
+                    service: name,
+                    env: envName,
+                    error: 'requiredEnv: укажите непустую причину обязательности',
+                });
+            }
+            if (!Object.hasOwn(service.env, envName)) missing.push({ service: name, env: envName });
+            if (!codeFiles.has(name)) codeFiles.set(name, collectCodeFiles(root, spec.codeRoots ?? []));
+            if (!envReadInCode(envName, codeFiles.get(name), secretNames)) {
+                phantom.push({
+                    service: name,
+                    env: envName,
+                    reason: typeof reason === 'string' ? reason : String(reason),
+                });
+            }
+        }
+    }
+    return { missing, phantom, noteErrors };
 }
 
 /** Базовый production-стек: compose + overlay'и из модели, развёрнутые до сравнения. */

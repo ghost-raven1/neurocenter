@@ -30,6 +30,7 @@ const expectedFiles = [
     'scripts/test/npm-supply-lockfile.test.mjs',
     'scripts/test/workspace-dist-freshness.test.mjs',
     'scripts/test/compose-drift.test.mjs',
+    'scripts/test/bridge-templates-resolution.test.mjs',
     'scripts/test/dev-mcp-reports.test.mjs',
     'scripts/test/coverage-inventory.test.mjs',
     'scripts/test/coverage-profiles.test.mjs',

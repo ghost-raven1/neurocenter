@@ -12,6 +12,7 @@ import {
     loadProductionCompose,
     parseComposeDocument,
     parseSecretNames,
+    requiredEnvironmentDrift,
     structuralDrift,
 } from '../production/environment-model.mjs';
 
@@ -56,6 +57,7 @@ async function fixture(t, { mutateCompose, mutateModel } = {}) {
                 services,
                 drift: structuralDrift(checked, services),
                 dead: deadEnvironment(checked, services, { root, secretNames }),
+                required: requiredEnvironmentDrift(checked, services, { root, secretNames }),
             };
         },
     };
@@ -63,7 +65,7 @@ async function fixture(t, { mutateCompose, mutateModel } = {}) {
 
 test('production compose совпадает с моделью окружения и не содержит dead-env (включая overlay)', async (t) => {
     const f = await fixture(t);
-    const { checked, services, drift, dead } = await f.report();
+    const { checked, services, drift, dead, required } = await f.report();
     assert.deepEqual(drift, []);
     assert.deepEqual(dead.dead, []);
     assert.deepEqual(dead.noteErrors, []);
@@ -72,6 +74,19 @@ test('production compose совпадает с моделью окружения
     assert.equal(Object.keys(services).length, 12);
     const totalEnv = Object.values(services).reduce((sum, service) => sum + Object.keys(service.env).length, 0);
     assert.ok(totalEnv >= 80, `ожидалось не менее 80 env, получено ${totalEnv}`);
+    // Production-контракт required env (D2) закрыт: 0 missing (code→compose), 0 phantom, 0 noteErrors.
+    assert.deepEqual(required.missing, []);
+    assert.deepEqual(required.phantom, []);
+    assert.deepEqual(required.noteErrors, []);
+    const requiredTotal = Object.values(checked.services).reduce(
+        (sum, service) => sum + Object.keys(service.requiredEnv).length,
+        0,
+    );
+    assert.equal(
+        requiredTotal,
+        36,
+        'начальный набор requiredEnv (D2): изменение набора — только осознанной правкой этого теста',
+    );
 });
 
 test('merge-ключи <<: *service / <<: *runtime развёрнуты до сверки env', async (t) => {
@@ -236,4 +251,120 @@ test('пометка consumedBy:command требует $NAME в command серв
     assert.equal(dead.noteErrors[0].env, 'NEUROCENTER_HOST');
     assert.match(dead.noteErrors[0].error, /\$NEUROCENTER_HOST/);
     assert.deepEqual(dead.dead, [{ service: 'model-runtime', env: 'OLLAMA_HOST' }]);
+});
+
+test('required env из модели обязан быть в production compose (H5: BRIDGE_TEMPLATES_DIR)', async (t) => {
+    const f = await fixture(t, {
+        mutateCompose: {
+            'compose.production.yml': (document) => {
+                delete document.services['api-gateway'].environment.BRIDGE_TEMPLATES_DIR;
+            },
+        },
+    });
+    const { drift, required } = await f.report();
+    // Модель требует переменную, compose её не несёт: структурный drift + missing с именем сервиса.
+    assert.ok(drift.some((entry) => entry.service === 'api-gateway' && entry.field === 'env'));
+    assert.deepEqual(required.missing, [{ service: 'api-gateway', env: 'BRIDGE_TEMPLATES_DIR' }]);
+    assert.deepEqual(required.phantom, []);
+    assert.deepEqual(required.noteErrors, []);
+});
+
+test('required env, удалённый из compose (PANEL_URL), фэйлит по каждому сервису, где он объявлен', async (t) => {
+    const f = await fixture(t, {
+        mutateCompose: {
+            // Fixture разворачивает merge-ключи до мутации: PANEL_URL уже скопирован в env каждого node-сервиса.
+            'compose.production.yml': (document) => {
+                for (const name of [
+                    'api-gateway',
+                    'catalog-service',
+                    'feature-flags-service',
+                    'oauth2-bridge',
+                    'rag-sync-service',
+                    'skills-service',
+                ]) {
+                    delete document.services[name].environment.PANEL_URL;
+                }
+            },
+        },
+    });
+    const { required } = await f.report();
+    const byName = (a, b) => (a.service + a.env).localeCompare(b.service + b.env);
+    assert.deepEqual(
+        [...required.missing].sort(byName),
+        [
+            'api-gateway',
+            'catalog-service',
+            'feature-flags-service',
+            'oauth2-bridge',
+            'rag-sync-service',
+            'skills-service',
+        ]
+            .map((service) => ({ service, env: 'PANEL_URL' }))
+            .sort(byName),
+    );
+    assert.deepEqual(required.phantom, []);
+});
+
+test('phantom required env: имя не во env сервиса — модель невалидна; не читаемое кодом — phantom + dead-env', async (t) => {
+    const f1 = await fixture(t, {
+        mutateModel: (model) => {
+            model.services['api-gateway'].requiredEnv.GHOST_REQUIRED = 'причина';
+        },
+    });
+    await assert.rejects(f1.report(), /GHOST_REQUIRED/);
+
+    const f2 = await fixture(t, {
+        mutateCompose: {
+            'compose.production.yml': (document) => {
+                document.services['api-gateway'].environment.PHANTOM_REQUIRED_ENV = '1';
+            },
+        },
+        mutateModel: (model) => {
+            model.services['api-gateway'].env.PHANTOM_REQUIRED_ENV = '1';
+            model.services['api-gateway'].requiredEnv.PHANTOM_REQUIRED_ENV = 'причина';
+        },
+    });
+    const { drift, dead, required } = await f2.report();
+    assert.deepEqual(drift, []);
+    assert.deepEqual(required.missing, []);
+    assert.deepEqual(required.phantom, [{ service: 'api-gateway', env: 'PHANTOM_REQUIRED_ENV', reason: 'причина' }]);
+    // Композиция направлений (D1): phantom-имя одновременно видно как dead-env (compose→code, 1.2).
+    assert.deepEqual(dead.dead, [{ service: 'api-gateway', env: 'PHANTOM_REQUIRED_ENV' }]);
+});
+
+test('requiredEnv без причины, без поля или с переменными у сервиса без codeRoots не проходит валидацию формы', async (t) => {
+    const f1 = await fixture(t, {
+        mutateModel: (model) => {
+            model.services['api-gateway'].requiredEnv.NODE_ENV = '   ';
+        },
+    });
+    await assert.rejects(f1.report(), /api-gateway\.requiredEnv\.NODE_ENV/);
+
+    const f2 = await fixture(t, {
+        mutateModel: (model) => {
+            delete model.services.frontend.requiredEnv;
+        },
+    });
+    await assert.rejects(f2.report(), /frontend\.requiredEnv/);
+
+    const f3 = await fixture(t, {
+        mutateModel: (model) => {
+            model.services.postgres.requiredEnv.POSTGRES_USER = 'образ читает';
+        },
+    });
+    await assert.rejects(f3.report(), /postgres\.requiredEnv/);
+});
+
+test('возврат BRIDGE_DIST в production compose ловится как dead-env (направление 1.2)', async (t) => {
+    const f = await fixture(t, {
+        mutateCompose: {
+            'compose.production.yml': (document) => {
+                document.services['api-gateway'].environment.BRIDGE_DIST = '/app/bridge-dist';
+            },
+        },
+    });
+    const { dead, required } = await f.report();
+    assert.deepEqual(dead.dead, [{ service: 'api-gateway', env: 'BRIDGE_DIST' }]);
+    assert.deepEqual(required.missing, []);
+    assert.deepEqual(required.phantom, []);
 });

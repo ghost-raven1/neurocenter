@@ -29,6 +29,7 @@
                 "OLLAMA_KEEP_ALIVE": "5m"
             },
             "codeRoots": [],
+            "requiredEnv": {},
             "envNotes": {
                 "OLLAMA_HOST": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" },
                 "OLLAMA_NO_CLOUD": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" },
@@ -60,6 +61,7 @@
                 "POSTGRES_INITDB_ARGS": "--auth-host=scram-sha-256"
             },
             "codeRoots": [],
+            "requiredEnv": {},
             "envNotes": {
                 "POSTGRES_USER": { "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам" },
                 "POSTGRES_DB": { "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам" },
@@ -89,7 +91,8 @@
                 "skills:/volumes/skills:ro"
             ],
             "env": {},
-            "codeRoots": []
+            "codeRoots": [],
+            "requiredEnv": {}
         },
         "database-init": {
             "image": "neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
@@ -106,7 +109,8 @@
             "ports": [],
             "volumes": [],
             "env": {},
-            "codeRoots": ["services/catalog-service/src"]
+            "codeRoots": ["services/catalog-service/src"],
+            "requiredEnv": {}
         },
         "bootstrap-admin": {
             "image": "neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
@@ -130,7 +134,13 @@
                 "BOOTSTRAP_ADMIN_EMAIL": "${BOOTSTRAP_ADMIN_EMAIL:?Заполните почту первого администратора}",
                 "BOOTSTRAP_ADMIN_NAME": "${BOOTSTRAP_ADMIN_NAME:-Главный администратор}"
             },
-            "codeRoots": ["services/catalog-service/src"]
+            "codeRoots": ["services/catalog-service/src"],
+            "requiredEnv": {
+                "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
+                "NEUROCENTER_SERVICE": "override ENV образа catalog-service (services/catalog-service/Dockerfile): без переменной CLI валидируется как catalog-service и требует PANEL_URL и внутренний токен, которых у setup-сервиса нет",
+                "CATALOG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД каталога (секретный файл _FILE); без переменной сервис не стартует",
+                "BOOTSTRAP_ADMIN_EMAIL": "bootstrap-admin.cli.ts бросает исключение при старте без почты первого администратора; compose помечает переменную :?"
+            }
         },
         "catalog-service": {
             "image": "neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
@@ -203,7 +213,15 @@
                 "CHAT_S3_SECRET_KEY_FILE": "/run/secrets/chat_s3_secret_key",
                 "RESTORE_RUNNER_TOKEN_FILE": "/run/secrets/restore_runner_token"
             },
-            "codeRoots": ["services/catalog-service/src"]
+            "codeRoots": ["services/catalog-service/src"],
+            "requiredEnv": {
+                "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
+                "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
+                "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
+                "CATALOG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД каталога (секретный файл _FILE); без переменной сервис не стартует",
+                "RAG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД RAG (секретный файл _FILE); без переменной сервис не стартует",
+                "SKILLS_SERVICE_URL": "services/shared/runtime.cjs: validateProduction требует адрес skills-service без пути и секретов; без переменной сервис не стартует"
+            }
         },
         "feature-flags-service": {
             "image": "neurocenter/feature-flags-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
@@ -229,7 +247,14 @@
                 "CATALOG_PG_URL_FILE": "/run/secrets/catalog_url",
                 "CATALOG_SERVICE_URL": "http://catalog-service:4100"
             },
-            "codeRoots": ["services/feature-flags-service/src"]
+            "codeRoots": ["services/feature-flags-service/src"],
+            "requiredEnv": {
+                "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
+                "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
+                "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
+                "CATALOG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД каталога (секретный файл _FILE); без переменной сервис не стартует",
+                "CATALOG_SERVICE_URL": "services/shared/runtime.cjs: validateProduction требует адрес catalog-service без пути и секретов; без переменной сервис не стартует"
+            }
         },
         "skills-service": {
             "image": "neurocenter/skills-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
@@ -257,7 +282,12 @@
                 "CATALOG_SERVICE_URL": "http://catalog-service:4100",
                 "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400"
             },
-            "codeRoots": ["services/skills-service/src"]
+            "codeRoots": ["services/skills-service/src"],
+            "requiredEnv": {
+                "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
+                "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
+                "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует"
+            }
         },
         "rag-sync-service": {
             "image": "neurocenter/rag-sync-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
@@ -289,7 +319,15 @@
                 "CATALOG_SERVICE_URL": "http://catalog-service:4100",
                 "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400"
             },
-            "codeRoots": ["services/rag-sync-service/src"]
+            "codeRoots": ["services/rag-sync-service/src"],
+            "requiredEnv": {
+                "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
+                "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
+                "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
+                "RAG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД RAG (секретный файл _FILE); без переменной сервис не стартует",
+                "RAG_PROVISION_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к provisioning-БД RAG (секретный файл _FILE); без переменной сервис не стартует",
+                "RAG_AUTH_DISABLED": "services/shared/runtime.cjs: в production обязателен RAG_AUTH_DISABLED=false; без переменной включено обходное отключение auth и старт отклонён"
+            }
         },
         "oauth2-bridge": {
             "image": "neurocenter/oauth2-bridge:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
@@ -320,7 +358,17 @@
                 "SSO_SCOPE": "${SSO_SCOPE:-openid profile email}",
                 "CATALOG_SERVICE_URL": "http://catalog-service:4100"
             },
-            "codeRoots": ["services/oauth2-bridge/src"]
+            "codeRoots": ["services/oauth2-bridge/src"],
+            "requiredEnv": {
+                "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
+                "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
+                "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
+                "SSO_DISABLE": "services/shared/runtime.cjs: в production обязателен SSO_DISABLE=false; без переменной включён обход SSO и старт отклонён",
+                "SSO_HOST": "services/shared/runtime.cjs: validateProduction требует адрес Blitz (HTTPS); без переменной сервис не стартует",
+                "SSO_CLIENT_ID": "services/shared/runtime.cjs: validateProduction требует Client ID Blitz; без переменной сервис не стартует",
+                "SSO_CLIENT_SECRET_FILE": "services/shared/runtime.cjs: validateProduction требует секрет клиента Blitz (секретный файл _FILE); без переменной сервис не стартует",
+                "REDIRECT_URI": "services/shared/runtime.cjs: validateProduction требует REDIRECT_URI = PANEL_URL/auth/callback; без переменной сервис не стартует"
+            }
         },
         "api-gateway": {
             "image": "neurocenter/api-gateway:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
@@ -350,9 +398,16 @@
                 "SKILLS_SERVICE_URL": "http://skills-service:4200",
                 "RAG_SERVICE_URL": "http://rag-sync-service:4300",
                 "AUTH_SERVICE_URL": "http://oauth2-bridge:22222",
-                "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400"
+                "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400",
+                "BRIDGE_TEMPLATES_DIR": "/app/bridge-dist"
             },
             "codeRoots": ["services/api-gateway/src"],
+            "requiredEnv": {
+                "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
+                "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
+                "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
+                "BRIDGE_TEMPLATES_DIR": "потребляется bridge.controller.ts (api-gateway): в production-образе fallback резолвится в /bridge-dist, которого нет — шаблоны образ несёт в /app/bridge-dist (Dockerfile: COPY bridge-dist/ /app/bridge-dist/); без переменной /api/bridge/* отвечает 404"
+            },
             "envNotes": {
                 "NODE_TLS_REJECT_UNAUTHORIZED": {
                     "builtin": "Node.js-рантайм читает переключатель TLS-верификации; удаление — entry 10 (AD-OP-7)"
@@ -380,6 +435,7 @@
                 "NEUROCENTER_HOST": "${NEUROCENTER_HOST:?Заполните публичное DNS-имя}"
             },
             "codeRoots": [],
+            "requiredEnv": {},
             "envNotes": {
                 "NEUROCENTER_HOST": { "consumedBy": "command" }
             }
