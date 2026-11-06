@@ -51,6 +51,15 @@ review_loop_iteration: 0
 **D2. dev↔prod сверка состава (директива локального режима)**
 - Dev-стек (9) vs production (12): `bootstrap-admin`, `database-init` (one-shot), `capacity-collector` отсутствуют в dev — осознанный состав. Действие: НЕ код, а зафиксировать сверку в доке/комментарии compose (один источник), если её нет; production-состав проверяет 1.13 F4/F5.
 
+## Pre-scan оркестратора (2026-11-06, по main 160a4003 — до мержа 1.6/1.7)
+
+Уже подтверждено, implementer на старте только ре-верифицирует:
+
+- **K1 — локация точная**: `scripts/test/dev-cli.test.mjs` fixture-копи-лист (строки ~39–70, список `for (const file of [...])`) содержит `workspace/check-plan.mjs`, но НЕ `workspace/isolated-build-source.mjs`, который `check-plan.mjs:4` импортирует (`import { buildPackages }`). Фикс = одна строка в списке. Безопасность: `isolated-build-source.mjs` импортирует ТОЛЬКО node builtins (fs/promises, fs-constants, path, crypto, child_process) — никаких дополнительных записей в список не требуется.
+- **D2 — сверка НЕ задокументирована нигде**: dev (docker-compose.yml) = 9 сервисов {model-runtime, frontend, oauth2-bridge, api-gateway, catalog-service, feature-flags-service, skills-service, postgres, rag-sync-service}; prod (compose.production.yml) = 12 = dev + {capacity-collector, database-init, bootstrap-admin}. В docker-compose.yml и docs/ ни одной пометки об осознанном составе. Действие: зафиксировать (комментарий в docker-compose.yml и/или docs — выбрать на старте).
+- **S2 — ЧИСТО** (git grep HEAD): (а) прямых ссылок на `provision.mjs` ноль (1.9 убрал чисто); (б) "publish" в доках — только продуктовые концепции (image.publish/skill.publish permissions, tools:publish), не supply-механизм; (в) `registry.npmjs.org` в lockfile'ах — **BY DESIGN** (1.9: 103 platform-пары — бинарники других ОС/arch + fsevents-darwin; `resolved` осознанно не тронут, на linux-x64 не запрашивается; инвариант держит guard `npm-supply-lockfile.test.mjs` — зелёный в main); (г) docs: backlog-2026-10-22.md и docs/reports/* — датированные истории (вне скоупа), docker-build-ca.md — уже в K2, catalog-mvp.md:85 — легитимная ссылка на pinned-версию public-пакета (не stale). → S2, вероятно, закроется без правок (зафиксировать в финальном скоупе).
+- **S1/S3 — после мержа 1.6/1.7** (их switch создаёт/удаляет dead code и дубли; pre-scan смысла нет).
+
 ## Verification
 
 - Поведение не изменилось: корневой сьют — без деградации против baseline (числа baseline зафиксировать на старте; load-флейки — реран изолированно, прецедент 1.5/1.6).
