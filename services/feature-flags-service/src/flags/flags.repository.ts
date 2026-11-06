@@ -45,7 +45,7 @@ function flag(row: IFlagRow): IFeatureFlag {
     };
 }
 
-/** Сервис владеет только своей таблицей; общий журнал готовится под той же блокировкой, что в каталоге. */
+/** Сервис владеет только своей таблицей; сидинг выполняется под собственным миграционным локом, а не под локом каталога (AD-D1). */
 export class FlagsRepository {
     constructor(private readonly pool: Pool) {}
 
@@ -55,7 +55,9 @@ export class FlagsRepository {
         let discard = false;
         try {
             await client.query('BEGIN');
-            await client.query("SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:catalog:migrations',0))");
+            await client.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:feature-flags:migrations',0))",
+            );
             for (const item of FEATURE_FLAGS) {
                 await client.query('INSERT INTO feature_flags(flag_key) VALUES($1) ON CONFLICT(flag_key) DO NOTHING', [
                     item.key,

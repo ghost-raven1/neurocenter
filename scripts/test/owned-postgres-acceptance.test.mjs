@@ -29,6 +29,7 @@ const entries = [
     ['tool-build-db', 'TOOL_BUILD_TEST_PG_URL'],
     ['reliable-migrations', 'TEST_ADMIN_PG_URL'],
     ['maintenance-database', 'TEST_ADMIN_PG_URL'],
+    ['schema-locks-ddl-invariant-db', 'TEST_ADMIN_PG_URL'],
     ['install-plan-database', 'INSTALLATION_TEST_PG_URL'],
     ['installation-reliability', 'INSTALLATION_TEST_PG_URL'],
     ['dependency-installation', 'DEPENDENCY_INSTALLATION_PG_URL'],

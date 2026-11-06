@@ -1,11 +1,31 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import { FEATURE_FLAGS_COLUMNS, FEATURE_FLAGS_DEFAULTS, FEATURE_FLAGS_SCHEMA_SQL } from './feature-flags-schema';
+import { FEATURE_FLAGS_COLUMNS, FEATURE_FLAGS_DEFAULTS } from './feature-flags-schema';
+
+/**
+ * Замороженная история миграции v1 — не изменять побайтово: её checksum
+ * зафиксирован в ledger'ах (feature_flags_schema_migrations) существующих БД,
+ * история неизменяема (AD-D1). Новые изменения — только новыми нумерованными
+ * миграциями; чужие таблицы (security_events) в них не включать.
+ */
+const FROZEN_V1_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS security_events (
+    event_id UUID PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL,
+    resource_id TEXT NOT NULL, before_state JSONB, after_state JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS security_events_created ON security_events(created_at DESC);
+CREATE TABLE IF NOT EXISTS feature_flags (
+    flag_key TEXT PRIMARY KEY, overrides JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(overrides)='object'),
+    revision BIGINT NOT NULL DEFAULT 1 CHECK(revision>0), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by TEXT NOT NULL DEFAULT 'system:defaults'
+);`;
 
 export const FEATURE_FLAGS_MIGRATIONS = [
-    { version: 1, name: 'versioned-feature-flags', sql: FEATURE_FLAGS_SCHEMA_SQL },
+    { version: 1, name: 'versioned-feature-flags', sql: FROZEN_V1_SCHEMA_SQL },
 ] as const;
-const lock = "SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:catalog:migrations',0))";
+/** Лок-граница AD-D1: feature-flags использует собственный миграционный лок, лок каталога не делится. */
+const lock = "SELECT pg_advisory_xact_lock(hashtextextended('neurocenter:feature-flags:migrations',0))";
 const checksum = (sql: string) => createHash('sha256').update(sql).digest('hex');
 export const featureFlagsMigrationManifest = () =>
     FEATURE_FLAGS_MIGRATIONS.map(({ version, name, sql }) => ({ version, name, checksum: checksum(sql) }));
@@ -21,7 +41,7 @@ export interface IFeatureFlagsMigrationState {
     pending: number[];
 }
 
-/** The catalog and flags share a schema lock because both own the security event table. */
+/** Лок-граница AD-D1: у feature-flags собственный миграционный лок, журнал security_events принадлежит каталогу. */
 async function history(client: PoolClient): Promise<IMigrationRow[]> {
     if (!(await client.query("SELECT to_regclass('feature_flags_schema_migrations') AS relation")).rows[0]?.relation)
         return [];
@@ -65,7 +85,7 @@ export async function assertFeatureFlagsSchema(client: PoolClient): Promise<void
             if (expectedDefault !== undefined && column.default_value !== expectedDefault)
                 throw new Error('Некорректный default переключателей: ' + table + '.' + name);
         }
-        const key = table === 'security_events' ? 'event_id' : table === 'feature_flags' ? 'flag_key' : 'version';
+        const key = table === 'feature_flags' ? 'flag_key' : 'version';
         const primary = (
             await client.query<{ definition: string }>(
                 "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid=to_regclass($1) AND contype='p'",
@@ -85,22 +105,6 @@ export async function assertFeatureFlagsSchema(client: PoolClient): Promise<void
         !checks.includes('CHECK ((revision > 0))')
     )
         throw new Error('Отсутствуют ограничения переключателей.');
-    const index = (
-        await client.query<{
-            valid: boolean;
-            ready: boolean;
-            is_unique: boolean;
-            definition: string;
-        }>(`SELECT i.indisvalid AS valid,i.indisready AS ready,i.indisunique AS is_unique,pg_get_indexdef(i.indexrelid) AS definition
-        FROM pg_index i WHERE i.indexrelid=to_regclass('security_events_created') AND i.indrelid='security_events'::regclass`)
-    ).rows[0];
-    if (
-        !index?.valid ||
-        !index.ready ||
-        index.is_unique ||
-        !index.definition.endsWith(' USING btree (created_at DESC)')
-    )
-        throw new Error('Отсутствует индекс истории переключателей.');
 }
 
 const state = (rows: IMigrationRow[]): IFeatureFlagsMigrationState => ({
