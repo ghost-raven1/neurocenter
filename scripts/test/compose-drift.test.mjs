@@ -8,10 +8,12 @@ import { dump as dumpYaml } from 'js-yaml';
 import {
     MODEL_FILE,
     deadEnvironment,
+    latestTagViolations,
     loadEnvironmentModel,
     loadProductionCompose,
     parseComposeDocument,
     parseSecretNames,
+    productionConstraintViolations,
     requiredEnvironmentDrift,
     structuralDrift,
 } from '../production/environment-model.mjs';
@@ -58,6 +60,8 @@ async function fixture(t, { mutateCompose, mutateModel } = {}) {
                 drift: structuralDrift(checked, services),
                 dead: deadEnvironment(checked, services, { root, secretNames }),
                 required: requiredEnvironmentDrift(checked, services, { root, secretNames }),
+                constraintViolations: productionConstraintViolations(checked),
+                latestViolations: latestTagViolations(checked),
             };
         },
     };
@@ -367,4 +371,103 @@ test('возврат BRIDGE_DIST в production compose ловится как dea
     assert.deepEqual(dead.dead, [{ service: 'api-gateway', env: 'BRIDGE_DIST' }]);
     assert.deepEqual(required.missing, []);
     assert.deepEqual(required.phantom, []);
+});
+
+test('production-матрица ограничений: текущая модель без dev-обходов и latest-тегов (AD-OP-5)', async (t) => {
+    const f = await fixture(t);
+    const { checked, constraintViolations, latestViolations } = await f.report();
+    assert.deepEqual(checked.productionEnvConstraints, { SSO_DISABLE: 'false', RAG_AUTH_DISABLED: 'false' });
+    assert.deepEqual(constraintViolations, []);
+    assert.deepEqual(latestViolations, []);
+});
+
+test('dev-обход SSO_DISABLE=true в env любого сервиса production-модели фэйлит с сервисом, переменной и значением', async (t) => {
+    const f = await fixture(t, {
+        mutateModel: (model) => {
+            // Сервис, где SSO_DISABLE в модели отсутствует: ограничение глобально, не привязано к сервису.
+            model.services['catalog-service'].env.SSO_DISABLE = 'true';
+        },
+    });
+    const { constraintViolations } = await f.report();
+    assert.deepEqual(constraintViolations, [
+        { service: 'catalog-service', env: 'SSO_DISABLE', value: 'true', expected: 'false' },
+    ]);
+});
+
+test('dev-обход RAG_AUTH_DISABLED=true в rag-sync-service фэйлит с сервисом и переменной', async (t) => {
+    const f = await fixture(t, {
+        mutateModel: (model) => {
+            model.services['rag-sync-service'].env.RAG_AUTH_DISABLED = 'true';
+        },
+    });
+    const { constraintViolations } = await f.report();
+    assert.deepEqual(constraintViolations, [
+        { service: 'rag-sync-service', env: 'RAG_AUTH_DISABLED', value: 'true', expected: 'false' },
+    ]);
+});
+
+test('latest-тег образа в production-модели фэйлит с указанием сервиса', async (t) => {
+    const f = await fixture(t, {
+        mutateModel: (model) => {
+            model.services['catalog-service'].image = 'neurocenter/catalog-service:latest';
+            // Без тега и digest Docker по умолчанию тянет latest — тоже нарушение.
+            model.services['skills-service'].image = 'neurocenter/skills-service';
+        },
+    });
+    const { latestViolations } = await f.report();
+    assert.deepEqual(latestViolations, [
+        { service: 'catalog-service', image: 'neurocenter/catalog-service:latest' },
+        { service: 'skills-service', image: 'neurocenter/skills-service' },
+    ]);
+});
+
+test('compose-переменная в теге образа и digest-pin не считаются latest', async (t) => {
+    const f = await fixture(t, {
+        mutateModel: (model) => {
+            model.services['feature-flags-service'].image =
+                'neurocenter/feature-flags-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}';
+            model.services['model-runtime'].image =
+                'ollama/ollama@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c';
+        },
+    });
+    const { latestViolations } = await f.report();
+    assert.deepEqual(latestViolations, []);
+});
+
+test('отсутствие переменной из productionEnvConstraints в сервисе модели — не нарушение (runtime-обязательность — validateProduction)', async (t) => {
+    const f = await fixture(t, {
+        mutateModel: (model) => {
+            // requiredEnv-вхождения удаляются вместе с env: иначе модель не проходит валидацию формы.
+            delete model.services['bootstrap-admin'].env.SSO_DISABLE;
+            delete model.services['oauth2-bridge'].env.SSO_DISABLE;
+            delete model.services['oauth2-bridge'].requiredEnv.SSO_DISABLE;
+            delete model.services['rag-sync-service'].env.RAG_AUTH_DISABLED;
+            delete model.services['rag-sync-service'].requiredEnv.RAG_AUTH_DISABLED;
+        },
+    });
+    const { constraintViolations } = await f.report();
+    assert.deepEqual(constraintViolations, []);
+});
+
+test('productionEnvConstraints с недопустимым именем, значением или формой не проходит валидацию', async (t) => {
+    const f1 = await fixture(t, {
+        mutateModel: (model) => {
+            model.productionEnvConstraints = { sso_disable: 'false' };
+        },
+    });
+    await assert.rejects(f1.report(), /productionEnvConstraints\.sso_disable/);
+
+    const f2 = await fixture(t, {
+        mutateModel: (model) => {
+            model.productionEnvConstraints = { SSO_DISABLE: false };
+        },
+    });
+    await assert.rejects(f2.report(), /productionEnvConstraints\.SSO_DISABLE/);
+
+    const f3 = await fixture(t, {
+        mutateModel: (model) => {
+            model.productionEnvConstraints = ['SSO_DISABLE=false'];
+        },
+    });
+    await assert.rejects(f3.report(), /productionEnvConstraints — ожидается объект/);
 });

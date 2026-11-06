@@ -212,6 +212,20 @@ export function validateModelShape(model) {
     if (!isMap(model.services) || !Object.keys(model.services).length) {
         throw new Error('Некорректная модель окружения: services');
     }
+    if (model.productionEnvConstraints !== undefined) {
+        if (!isMap(model.productionEnvConstraints)) {
+            throw new Error(
+                'Некорректная модель окружения: productionEnvConstraints — ожидается объект { [A-Z][A-Z0-9_]*: string }',
+            );
+        }
+        for (const [envName, expected] of Object.entries(model.productionEnvConstraints)) {
+            if (!ENV_NAME_PATTERN.test(envName) || typeof expected !== 'string') {
+                throw new Error(
+                    `Некорректная модель окружения: productionEnvConstraints.${envName} — ожидается имя env и значение-строка`,
+                );
+            }
+        }
+    }
     for (const [name, service] of Object.entries(model.services)) {
         for (const field of SERVICE_FIELDS) {
             if (!Object.hasOwn(service, field)) throw new Error(`Некорректная модель окружения: ${name}.${field}`);
@@ -450,6 +464,53 @@ export function requiredEnvironmentDrift(model, services, { root, secretNames = 
         }
     }
     return { missing, phantom, noteErrors };
+}
+
+/**
+ * Семантические production-ограничения (AD-OP-5): переменная из
+ * productionEnvConstraints присутствует в env сервиса модели со значением,
+ * отличным от ожидаемого. Отсутствие переменной не нарушение — runtime-
+ * обязательность обеспечивает validateProduction на старте сервиса.
+ * Возвращает [{service, env, value, expected}].
+ */
+export function productionConstraintViolations(model) {
+    const constraints = isMap(model.productionEnvConstraints) ? model.productionEnvConstraints : {};
+    const violations = [];
+    for (const [name, service] of Object.entries(model.services ?? {})) {
+        const env = isMap(service.env) ? service.env : {};
+        for (const [envName, expected] of Object.entries(constraints)) {
+            if (Object.hasOwn(env, envName) && env[envName] !== expected) {
+                violations.push({ service: name, env: envName, value: env[envName], expected });
+            }
+        }
+    }
+    return violations;
+}
+
+/** Тег образа: часть после последнего двоеточия, если оно после последнего слэша. */
+function imageTag(image) {
+    const reference = image.split('@')[0];
+    const separator = reference.lastIndexOf(':');
+    if (separator < 0 || separator < reference.lastIndexOf('/')) return null;
+    return reference.slice(separator + 1);
+}
+
+/**
+ * Latest-теги образов в модели (AD-OP-5): литеральный тег `latest` или отсутствие
+ * и тега, и digest (Docker по умолчанию тянет latest). Compose-переменная
+ * (${NEUROCENTER_RELEASE:…}) и digest-pin не считаются latest.
+ * Возвращает [{service, image}].
+ */
+export function latestTagViolations(model) {
+    const violations = [];
+    for (const [name, service] of Object.entries(model.services ?? {})) {
+        const image = typeof service.image === 'string' ? service.image : '';
+        const tag = imageTag(image);
+        if (tag === 'latest' || (tag === null && !image.includes('@'))) {
+            violations.push({ service: name, image });
+        }
+    }
+    return violations;
 }
 
 /** Базовый production-стек: compose + overlay'и из модели, развёрнутые до сравнения. */

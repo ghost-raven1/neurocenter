@@ -1,5 +1,9 @@
 {
     "schema": "neurocenter-environment-model-v1",
+    "productionEnvConstraints": {
+        "SSO_DISABLE": "false",
+        "RAG_AUTH_DISABLED": "false"
+    },
     "compose": {
         "base": "compose.production.yml",
         "overlays": ["compose.chat-storage.yml", "compose.web-restore.yml"]
