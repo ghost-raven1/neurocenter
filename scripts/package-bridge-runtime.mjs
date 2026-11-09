@@ -16,6 +16,8 @@ import {
     SdkUnavailableError,
     SDK_UNAVAILABLE_EXIT_CODE,
 } from './bridge-runtime-sdk.mjs';
+import { getHostTarget } from '../services/shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../services/shared/runtime/targets.cjs';
 
 // Собирать на целевой ОС и архитектуре: нативные модули не переносятся между платформами.
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -24,11 +26,8 @@ const manifest = JSON.parse(await fs.readFile(path.join(bridge, 'package.json'),
 const includesOllama = manifest.dependencies?.['@neurocenter/ollama-runtime'] === 'file:vendor/ollama-runtime';
 if (Number(process.versions.node.split('.')[0]) !== 24)
     throw new Error('Автономный пакет собирается поддерживаемым Node.js 24.');
-const platform = { darwin: 'darwin', linux: 'linux', win32: 'windows' }[process.platform];
-if (!platform || !['x64', 'arm64'].includes(process.arch)) throw new Error('Эта платформа не входит в матрицу сборки.');
+const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const build = await verifyBridgeBuild(path.join(bridge, 'dist'), manifest.version);
-const musl = process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime;
-const target = `${platform}-${process.arch}${musl ? '-musl' : ''}`;
 const output = process.env.BRIDGE_RUNTIME_OUTPUT_DIR
     ? path.resolve(process.env.BRIDGE_RUNTIME_OUTPUT_DIR)
     : path.join(root, 'bridge-dist/runtime');

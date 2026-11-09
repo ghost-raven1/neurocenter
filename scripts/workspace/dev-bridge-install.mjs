@@ -18,6 +18,8 @@ import {
     retainBridgeSettings,
     restoreBridgeFile,
 } from './dev-bridge-settings.mjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../../services/shared/runtime/targets.cjs';
 
 const execute = promisify(execFile),
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,8 +45,7 @@ async function json(file) {
 }
 const bundledNode = (install) => path.join(install, 'bin', process.platform === 'win32' ? 'node.exe' : 'node');
 const installedEntry = (install) => path.join(install, 'dist/index.js');
-const hostTarget = () =>
-    `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
+const hostTarget = () => toBridgeTarget(getHostTarget({ mode: 'throw' }));
 /** Runtime HOME belongs to the MCP entry; management writes belong to the selected caller configuration. */
 function managementEnvironment(runtime, environment, home) {
     const control = { ...runtime, HOME: home, USERPROFILE: home };

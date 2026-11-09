@@ -1,19 +1,12 @@
+import { TARGETS, type TRuntimeTarget } from '@neurocenter/runtime-targets';
 import type { IBridgeDevice } from './api';
 import type { IInstallPlan, IInstallPlanPackage } from './installPlanInterfaces';
 import { hasLocalConfiguration } from './runtimeConfiguration';
 
-export const artifactTargets = [
-    'darwin-arm64',
-    'darwin-x64',
-    'linux-arm64-glibc',
-    'linux-x64-glibc',
-    'linux-arm64-musl',
-    'linux-x64-musl',
-    'win32-arm64',
-    'win32-x64',
-] as const;
+// Канон целей — runtime/targets.cjs (AD-7); имена и тип берутся из единого списка.
+export const artifactTargets: readonly TRuntimeTarget[] = TARGETS;
 export interface IRuntimeArtifact {
-    target: (typeof artifactTargets)[number];
+    target: TRuntimeTarget;
     sha256: string;
     compressedBytes: number;
     unpackedBytes: number;
@@ -29,7 +22,7 @@ function declaredArtifacts(pkg: Pick<IInstallPlanPackage, 'config'>): unknown {
 function artifactMetadata(value: unknown): value is IRuntimeArtifact {
     return (
         record(value) &&
-        artifactTargets.includes(value.target as (typeof artifactTargets)[number]) &&
+        TARGETS.includes(value.target as TRuntimeTarget) &&
         typeof value.sha256 === 'string' &&
         /^[a-f0-9]{64}$/.test(value.sha256) &&
         typeof value.entrypoint === 'string' &&
@@ -103,7 +96,7 @@ export function runtimeArtifactBlocker(plan: IInstallPlan, device?: IBridgeDevic
             return 'Обновите мост для установки готовых зависимостей этого комплекта.';
         }
         const target = device.report.runtimeArtifactTarget;
-        if (!target || !artifactTargets.includes(target as (typeof artifactTargets)[number])) {
+        if (!target || !TARGETS.includes(target as TRuntimeTarget)) {
             return 'Платформа компьютера ещё не определена. Обновите мост и дождитесь нового подключения.';
         }
         if (!artifacts.some((artifact) => artifact.target === target)) {

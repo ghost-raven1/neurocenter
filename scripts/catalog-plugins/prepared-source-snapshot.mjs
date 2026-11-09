@@ -140,7 +140,7 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
         ...['project-learning', 'project-learning-memory-sync', 'project-learning-quirks'].flatMap((name) =>
             ['cjs', 'd.cts'].map((extension) => 'services/shared/' + name + '.' + extension),
         ),
-        ...['targets', 'host-target', 'portable-path'].flatMap((name) =>
+        ...['targets', 'host-target', 'portable-path', 'limits', 'archive'].flatMap((name) =>
             ['cjs', 'd.cts'].map((extension) => 'services/shared/runtime/' + name + '.' + extension),
         ),
         'services/catalog-service/package.json',

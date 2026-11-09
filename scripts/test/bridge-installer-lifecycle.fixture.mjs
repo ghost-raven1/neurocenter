@@ -9,6 +9,8 @@ import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { readBridgeTemplate } from '../workspace/bridge-templates.mjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../../services/shared/runtime/targets.cjs';
 
 const require = createRequire(import.meta.url),
     exec = promisify(execFile),
@@ -16,7 +18,7 @@ const require = createRequire(import.meta.url),
 const version = JSON.parse(
     await fs.readFile(path.join(repository, 'mcp/neurocenter-asset-sync/package.json'), 'utf8'),
 ).version;
-const target = `${process.platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
+const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex'),
     proofs = [];
 const quote = (value) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
@@ -170,8 +172,14 @@ else throw Error('Unexpected own fixture CLI mode');\n`;
                 path.join(content, 'dist/shared', name + '.cjs'),
             );
         }
-        // Канон runtime/ (AD-7): плоский фасад runtime-artifacts.cjs реэкспортирует цели из подпапки.
-        for (const name of ['runtime/targets.cjs', 'runtime/host-target.cjs', 'runtime/portable-path.cjs']) {
+        // Канон runtime/ (AD-7): плоский фасад runtime-artifacts.cjs реэкспортирует цели и лимиты из подпапки.
+        for (const name of [
+            'runtime/targets.cjs',
+            'runtime/host-target.cjs',
+            'runtime/portable-path.cjs',
+            'runtime/limits.cjs',
+            'runtime/archive.cjs',
+        ]) {
             const destination = path.join(content, 'dist/shared', name);
             await fs.mkdir(path.dirname(destination), { recursive: true });
             await fs.copyFile(path.join(repository, 'services/shared', name), destination);

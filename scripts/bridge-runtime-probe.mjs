@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { opencodeVersion as probeVersion, opencodePackageName as probeArchiveName } from './opencode-platforms.mjs';
+import { getHostTarget } from '../services/shared/runtime/host-target.cjs';
 
 export { probeVersion, probeArchiveName };
 async function digest(file) {
@@ -14,7 +15,7 @@ async function digest(file) {
 
 /** Включает только закреплённый binary; исходный архив и личный профиль никогда не изменяются. */
 export async function packageProbeEngine({ root, content, stage }) {
-    const musl = process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime;
+    const musl = getHostTarget({ mode: 'throw' }).endsWith('-musl');
     const name = probeArchiveName(process.platform, process.arch, musl);
     const archive = path.join(root, 'bridge-dist/opencode', `${name}-${probeVersion}.tgz`);
     const checksumFile = archive + '.sha256';

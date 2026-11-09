@@ -10,15 +10,13 @@ import { createToolAsset, serializeAsset } from '@neurocenter/asset-contract';
 import { verifyBuiltRuntime } from '../catalog-plugins/verify-runtime.mjs';
 import { RuntimeVerificationScope } from '../catalog-plugins/verify-runtime-process.mjs';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
 import { toolRuntimePath } from '../catalog-plugins/supply-layout.mjs';
 import { codexFixture } from '../catalog-plugins/test/codex-runtime.fixture.mjs';
 import { CODEX_CONNECTOR } from '../catalog-plugins/recipes/codex-bridge.mjs';
 import codexPin from '../../services/shared/codex-connector-pin.json' with { type: 'json' };
 const { artifactFixture } = createRequire(import.meta.url)('./runtime-artifact-fixture.cjs');
-const target =
-    process.platform === 'linux'
-        ? `linux-${process.arch}-${process.report.getReport().header.glibcVersionRuntime ? 'glibc' : 'musl'}`
-        : `${process.platform}-${process.arch}`;
+const target = getHostTarget({ mode: 'throw' });
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const plugin = `export default async input=>{setInterval(()=>{},1000);if(process.send||process.connected)throw new Error('owner IPC leaked');if(!input.client?.app?.log||!(input.serverUrl instanceof URL)||input.project.worktree!==input.directory||input.worktree!==input.directory||typeof input.$!=='function')throw new Error('bad context');return {'chat.message':async()=>{throw new Error('HOOK_MUST_NOT_RUN')}};};`;
 const mcp = `import readline from 'node:readline';const methods=[];const lines=readline.createInterface({input:process.stdin});lines.on('line',line=>{

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { validateAsset } from '@neurocenter/asset-contract';
 import runtime from '../../services/shared/runtime-artifacts.cjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
 import { readyManifest } from './manifest.mjs';
 import {
     RuntimeVerificationError,
@@ -67,36 +68,9 @@ const messages = {
     'verification-failed': 'Общая проверка запуска не завершилась; пересоберите кандидат и повторите проверку.',
 };
 
-function assertHostTarget(target) {
-    if (!runtime.TARGETS.includes(target))
-        throw new Error('Платформа хоста не поддерживается для комплектов: ' + target + '.');
-    return target;
-}
 /** Платформа хоста, включая libc Linux; неизвестная libc не подменяется musl. */
 export function hostTarget() {
-    const base = `${process.platform}-${process.arch}`;
-    if (process.platform !== 'linux') return assertHostTarget(base);
-    let report;
-    try {
-        report = process.report?.getReport();
-    } catch {
-        /* Неизвестная libc не подменяется musl. */
-    }
-    if (
-        typeof report?.header?.glibcVersionRuntime === 'string' &&
-        /^\d+\.\d+(?:\.\d+)?$/.test(report.header.glibcVersionRuntime)
-    )
-        return assertHostTarget(`${base}-glibc`);
-    if (
-        Array.isArray(report?.sharedObjects) &&
-        report.sharedObjects.some(
-            (item) =>
-                typeof item === 'string' &&
-                /(?:^|\/)(?:ld-musl-[^/]+\.so(?:\.\d+)*|libc\.musl-[^/]+\.so(?:\.\d+)*)$/.test(item),
-        )
-    )
-        return assertHostTarget(`${base}-musl`);
-    throw new Error('Платформа хоста не поддерживается для комплектов: ' + base + '.');
+    return getHostTarget({ mode: 'throw' });
 }
 async function pinnedManifest(filename, signal) {
     signal?.throwIfAborted();

@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { normalizeOpenCodeInstallSupply } from '../../../shared/opencode-cli-install.cjs';
+import { TARGETS, type TRuntimeTarget } from '../../../shared/runtime/targets.cjs';
 
 export interface IBridgePresence {
     platform: string;
@@ -89,16 +90,7 @@ export function workspaceReport(value: unknown): Record<string, unknown> {
     }
     if (
         report.runtimeArtifactTarget !== undefined &&
-        ![
-            'darwin-arm64',
-            'darwin-x64',
-            'linux-arm64-glibc',
-            'linux-x64-glibc',
-            'linux-arm64-musl',
-            'linux-x64-musl',
-            'win32-arm64',
-            'win32-x64',
-        ].includes(String(report.runtimeArtifactTarget))
+        !TARGETS.includes(String(report.runtimeArtifactTarget) as TRuntimeTarget)
     )
         return fail();
     if (report.bindings !== undefined) {

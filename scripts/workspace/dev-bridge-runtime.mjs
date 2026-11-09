@@ -4,12 +4,13 @@ import { spawnSync } from 'node:child_process';
 import { verifyBridgeBuild } from '../bridge-build-integrity.mjs';
 import { bridgeRuntimeCached } from '../bridge-runtime-artifacts.mjs';
 import { opencodePackageName } from '../opencode-platforms.mjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
 
 /** Only the host runtime is prepared; development never republishes an immutable release. */
 export function devBridgeTarget(
     platform = process.platform,
     arch = process.arch,
-    musl = platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime,
+    musl = getHostTarget({ mode: 'throw' }).endsWith('-musl'),
 ) {
     const os = { darwin: 'darwin', linux: 'linux' }[platform];
     if (!os || !['arm64', 'x64'].includes(arch))

@@ -1,3 +1,5 @@
+import { TARGETS, toBridgeTarget } from '@neurocenter/runtime-targets';
+import type { TRuntimeTarget } from '@neurocenter/runtime-targets';
 import api from '../../core/api/base';
 import type { IAssetImport } from '../AssetSources/interfaces';
 import type { IBridgeDevice } from './api';
@@ -79,12 +81,17 @@ export function compareBridgeVersions(installed: string | undefined, available: 
     return 0;
 }
 
+/** Канон — runtime/targets.cjs (AD-7): известное канон-имя переводится в bridge-имя, остальное — без изменений. */
+const isCanonicalTarget = (value: string): value is TRuntimeTarget => (TARGETS as readonly string[]).includes(value);
+
 /** Имена платформ поставки моста отличаются от целей MCP-runtime. */
 export function bridgeDeviceTarget(device: IBridgeDevice | undefined): string | undefined {
     const target = device?.report.runtimeArtifactTarget;
-    if (target) return target.replace(/^win32-/, 'windows-').replace(/-glibc$/, '');
+    if (target) return isCanonicalTarget(target) ? toBridgeTarget(target) : target;
     const { platform, arch } = device?.report ?? {};
-    return platform && arch ? `${platform === 'win32' ? 'windows' : platform}-${arch}` : undefined;
+    if (!platform || !arch) return undefined;
+    const base = `${platform}-${arch}`;
+    return isCanonicalTarget(base) ? toBridgeTarget(base) : base;
 }
 
 export const bridgeSourceApi = {

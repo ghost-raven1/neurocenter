@@ -14,8 +14,10 @@ import {
     sdkSourceLockSha256,
 } from '../bridge-runtime-sdk.mjs';
 import { bridgeSdkFixture, sdkTarFixture } from './bridge-runtime-sdk.fixture.mjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../../services/shared/runtime/targets.cjs';
 const repository = fileURLToPath(new URL('../../', import.meta.url));
-const target = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
+const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
 async function fixture(t) {
@@ -428,6 +430,10 @@ for (const [mode, expected] of [
         ]) {
             await fs.mkdir(path.dirname(path.join(f.root, 'scripts', file)), { recursive: true });
             await fs.copyFile(path.join(repository, 'scripts', file), path.join(f.root, 'scripts', file));
+        }
+        for (const file of ['services/shared/runtime/host-target.cjs', 'services/shared/runtime/targets.cjs']) {
+            await fs.mkdir(path.dirname(path.join(f.root, file)), { recursive: true });
+            await fs.copyFile(path.join(repository, file), path.join(f.root, file));
         }
         const bridge = path.join(f.root, 'mcp/neurocenter-asset-sync'),
             output = path.join(f.root, 'published');

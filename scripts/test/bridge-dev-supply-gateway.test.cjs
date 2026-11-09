@@ -12,11 +12,9 @@ require('node:module').createRequire(path.join(directory, 'entry.cjs'))('reflect
 const { BridgeSupplyService, bridgeRequest } = require(path.join(directory, 'bridge/bridge-supply.service.js'));
 const { BridgeController } = require(path.join(directory, 'bridge/bridge.controller.js'));
 const digest = (value) => createHash('sha256').update(value).digest('hex');
-const target =
-    { darwin: 'darwin', linux: 'linux', win32: 'windows' }[process.platform] +
-    '-' +
-    process.arch +
-    (process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : '');
+const { toBridgeTarget } = require('../../services/shared/runtime/targets.cjs');
+const { getHostTarget } = require('../../services/shared/runtime/host-target.cjs');
+const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const status = (expected) => (error) => error.getStatus?.() === expected;
 class Response extends Writable {
     constructor() {

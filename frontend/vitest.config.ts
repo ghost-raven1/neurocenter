@@ -20,6 +20,9 @@ export default defineConfig({
             '@neurocenter/runtime-limits': fileURLToPath(
                 new URL('../services/shared/runtime-limits.cjs', import.meta.url),
             ),
+            '@neurocenter/runtime-targets': fileURLToPath(
+                new URL('../services/shared/runtime/targets.cjs', import.meta.url),
+            ),
         },
     },
     test: {

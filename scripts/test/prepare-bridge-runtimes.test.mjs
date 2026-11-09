@@ -72,6 +72,11 @@ async function fixture(t) {
                 await fs.mkdir(path.dirname(path.join(root, 'scripts', file)), { recursive: true });
         await fs.copyFile(path.join(repository, 'scripts', file), path.join(root, 'scripts', file));
     }
+    // Канон целей хоста (AD-7): relative-импорты prepare-bridge-runtimes.mjs закрываются внутри фикстуры.
+    for (const file of ['runtime/targets.cjs', 'runtime/host-target.cjs']) {
+        await fs.mkdir(path.join(root, 'services/shared', path.dirname(file)), { recursive: true });
+        await fs.copyFile(path.join(repository, 'services/shared', file), path.join(root, 'services/shared', file));
+    }
     await fs.mkdir(path.join(root, 'node_modules/@neurocenter'), { recursive: true });
     await fs.symlink(
         path.join(repository, 'node_modules/@neurocenter/asset-contract'),

@@ -6,6 +6,8 @@ const { createHash } = require('node:crypto'),
     { spawn } = require('node:child_process'),
     { setTimeout: delay } = require('node:timers/promises');
 const directory = process.env.GATEWAY_TEST_DIST || path.resolve('services/api-gateway/dist');
+const { toBridgeTarget } = require('../../services/shared/runtime/targets.cjs');
+const { getHostTarget } = require('../../services/shared/runtime/host-target.cjs');
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const status503 = (error) => error.getStatus?.() === 503;
 
@@ -14,11 +16,7 @@ async function childCase(mode, root) {
     const requireGateway = require('node:module').createRequire(path.join(directory, 'entry.cjs'));
     requireGateway('reflect-metadata');
     const { readDevBridgeRuntime } = require(path.join(directory, 'bridge/dev-bridge-runtime.js'));
-    const target =
-        { darwin: 'darwin', linux: 'linux', win32: 'windows' }[process.platform] +
-        '-' +
-        process.arch +
-        (process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : '');
+    const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
     const version = '9.8.7',
         buildId = 'b'.repeat(64),
         generation = path.join(root, 'generation-owned'),

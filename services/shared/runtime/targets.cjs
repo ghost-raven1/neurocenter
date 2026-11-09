@@ -55,13 +55,34 @@ function toPackageTarget(canonicalTarget) {
         throw new Error('Цель ' + String(canonicalTarget) + ' не имеет явного package-аналога.');
     return PACKAGE_TARGET_BY_CANONICAL[canonicalTarget];
 }
+const BRIDGE_TARGET_BY_CANONICAL = Object.freeze({
+    'darwin-arm64': 'darwin-arm64',
+    'darwin-x64': 'darwin-x64',
+    'linux-arm64-glibc': 'linux-arm64',
+    'linux-x64-glibc': 'linux-x64',
+    'linux-arm64-musl': 'linux-arm64-musl',
+    'linux-x64-musl': 'linux-x64-musl',
+    'win32-arm64': 'windows-arm64',
+    'win32-x64': 'windows-x64',
+});
+/** Канон bridge-имён: все 8 целей имеют явный bridge-аналог (unix→package-имя, win32→windows-имя). */
+const BRIDGE_TARGETS = Object.freeze(Object.values(BRIDGE_TARGET_BY_CANONICAL));
+/** Любая каноническая цель к bridge-имени; цели без явного аналога отклоняются. */
+function toBridgeTarget(canonicalTarget) {
+    if (typeof canonicalTarget !== 'string' || !Object.hasOwn(BRIDGE_TARGET_BY_CANONICAL, canonicalTarget))
+        throw new Error('Цель ' + String(canonicalTarget) + ' не имеет явного bridge-аналога.');
+    return BRIDGE_TARGET_BY_CANONICAL[canonicalTarget];
+}
 module.exports = {
     TARGETS,
     WINDOWS_TARGET_BY_CANONICAL,
     CANONICAL_TARGET_BY_WINDOWS,
     PACKAGE_TARGET_BY_CANONICAL,
     CANONICAL_TARGET_BY_PACKAGE,
+    BRIDGE_TARGET_BY_CANONICAL,
+    BRIDGE_TARGETS,
     toWindowsTarget,
     toCanonicalTarget,
     toPackageTarget,
+    toBridgeTarget,
 };

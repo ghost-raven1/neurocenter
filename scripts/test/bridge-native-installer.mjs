@@ -9,6 +9,8 @@ import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readBridgeTemplate } from '../workspace/bridge-templates.mjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../../services/shared/runtime/targets.cjs';
 
 // Нативный Bash и реальный архив; сервер подключения одноразовый и не связан с аккаунтом пользователя.
 assert.ok(['darwin', 'linux'].includes(process.platform), 'Для Windows нужна отдельная нативная PowerShell-приёмка.');
@@ -18,7 +20,7 @@ const bridgeVersion = JSON.parse(
 ).version;
 const futureVersion = '0.' + (Number(bridgeVersion.split('.')[1]) + 1) + '.0';
 const incompatibleVersion = '0.' + (Number(bridgeVersion.split('.')[1]) - 1) + '.0';
-const target = `${process.platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
+const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const file = `neurocenter-asset-sync-${target}-${bridgeVersion}.tgz`;
 const archive = path.join(process.env.TEST_RUNTIME_DIR || path.join(root, 'bridge-dist/runtime'), file);
 let siteOrigin = 'http://panel.fixture.test:5173';

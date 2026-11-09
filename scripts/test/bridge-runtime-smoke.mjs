@@ -8,6 +8,8 @@ import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { verifyBridgeBuild } from '../bridge-build-integrity.mjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../../services/shared/runtime/targets.cjs';
 
 // Запускаем распакованный артефакт без системных Node/npm и без личного профиля пользователя.
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -17,8 +19,7 @@ const bridgeVersion = JSON.parse(
 const require = createRequire(path.join(root, 'mcp/neurocenter-asset-sync/package.json'));
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
-const platform = process.platform === 'win32' ? 'windows' : process.platform;
-const target = `${platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
+const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const archive = path.resolve(
     process.argv[2] || path.join(root, 'bridge-dist/runtime', `neurocenter-asset-sync-${target}-${bridgeVersion}.tgz`),
 );

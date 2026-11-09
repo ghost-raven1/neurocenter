@@ -25,6 +25,9 @@
       ],
       "@neurocenter/runtime-limits": [
         "../services/shared/runtime-limits.d.cts"
+      ],
+      "@neurocenter/runtime-targets": [
+        "../services/shared/runtime/targets.d.cts"
       ]
     },
     "allowImportingTsExtensions": true,

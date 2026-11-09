@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { packageProbeEngine, probeArchiveName, probeVersion } from '../bridge-runtime-probe.mjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const roots = [];
@@ -14,7 +15,7 @@ afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const musl = process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime;
+const musl = getHostTarget({ mode: 'throw' }).endsWith('-musl');
 async function fixture() {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nc-probe-package-'));
     roots.push(root);

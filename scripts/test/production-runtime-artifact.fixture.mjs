@@ -44,7 +44,7 @@ export async function seedProductionRuntimeArtifact(client, run) {
         'catalog-service',
         'node',
         '-e',
-        "console.log(process.platform+'-'+process.arch+'-'+(process.report.getReport().header.glibcVersionRuntime?'glibc':'musl'))",
+        "console.log(require('/shared/runtime/host-target.cjs').getHostTarget({mode:'throw'}))",
     ]);
     assert.match(target, /^linux-(arm64|x64)-(glibc|musl)$/);
     const source = Buffer.from(

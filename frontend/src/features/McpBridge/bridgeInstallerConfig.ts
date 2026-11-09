@@ -1,3 +1,4 @@
+import { BRIDGE_TARGETS } from '@neurocenter/runtime-targets';
 import { compareBridgeVersions } from './bridgeSource';
 
 export interface IBridgeDevSupply {
@@ -12,7 +13,6 @@ export interface IBridgeInstallerConfig {
 
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
-const target = /^(?:(?:darwin|windows)-(?:arm64|x64)|linux-(?:arm64|x64)(?:-musl)?)$/;
 
 /** Malformed dev metadata invalidates the whole response; it cannot silently select the catalog installer. */
 export function readBridgeInstallerConfig(value: unknown): IBridgeInstallerConfig {
@@ -30,7 +30,9 @@ export function readBridgeInstallerConfig(value: unknown): IBridgeInstallerConfi
         !/^[a-f0-9]{64}$/.test(supply.buildId) ||
         !Array.isArray(supply.targets) ||
         supply.targets.length === 0 ||
-        !supply.targets.every((value): value is string => typeof value === 'string' && target.test(value)) ||
+        !supply.targets.every(
+            (value): value is string => typeof value === 'string' && BRIDGE_TARGETS.includes(value),
+        ) ||
         new Set(supply.targets).size !== supply.targets.length
     )
         throw new Error('Gateway сообщил некорректную dev-поставку моста.');

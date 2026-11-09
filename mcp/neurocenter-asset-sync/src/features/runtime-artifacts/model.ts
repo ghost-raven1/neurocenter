@@ -22,40 +22,22 @@ export const {
 } = shared;
 export type { IRuntimeArtifact as RuntimeArtifact, IRuntimeArtifactEntry as RuntimeArtifactEntry };
 
+// Детекция цели хоста — канон runtime/host-target.cjs (AD-7); injectable report сохраняется для тестов.
+const hostTargetModuleUrl = new URL(
+    import.meta.url.endsWith('.ts')
+        ? '../../../../../services/shared/runtime/host-target.cjs'
+        : '../../shared/runtime/host-target.cjs',
+    import.meta.url,
+);
+const { getHostTarget } = createRequire(import.meta.url)(
+    fileURLToPath(hostTargetModuleUrl),
+) as typeof import('../../../../../services/shared/runtime/host-target.cjs');
+
 /** Linux различает glibc и musl; неизвестная платформа не подменяется похожей. */
 export function runtimeArtifactTarget(
     platform: string = process.platform,
     architecture: string = process.arch,
     suppliedReport?: unknown,
 ): string {
-    const base = platform + '-' + architecture;
-    if (platform !== 'linux') {
-        return base;
-    }
-    let value = suppliedReport;
-    if (value === undefined) {
-        try {
-            value = process.report?.getReport();
-        } catch {
-            /* Неизвестная libc не подменяется musl. */
-        }
-    }
-    const report = value as { header?: { glibcVersionRuntime?: unknown }; sharedObjects?: unknown } | undefined;
-    if (
-        typeof report?.header?.glibcVersionRuntime === 'string' &&
-        /^\d+\.\d+(?:\.\d+)?$/.test(report.header.glibcVersionRuntime)
-    ) {
-        return base + '-glibc';
-    }
-    if (
-        Array.isArray(report?.sharedObjects) &&
-        report.sharedObjects.some(
-            (item) =>
-                typeof item === 'string' &&
-                /(?:^|\/)(?:ld-musl-[^/]+\.so(?:\.\d+)*|libc\.musl-[^/]+\.so(?:\.\d+)*)$/.test(item),
-        )
-    ) {
-        return base + '-musl';
-    }
-    return base + '-unknown';
+    return getHostTarget({ platform, arch: architecture, report: suppliedReport, mode: 'unknown' });
 }

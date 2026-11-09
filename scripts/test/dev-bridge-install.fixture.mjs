@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { updateInstalledDevBridge } from '../workspace/dev-bridge-install.mjs';
 import { opencodeVersion } from '../opencode-platforms.mjs';
 import { bridgeSdkFixture } from './bridge-runtime-sdk.fixture.mjs';
+import { getHostTarget } from '../../services/shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../../services/shared/runtime/targets.cjs';
 
 const exec = promisify(execFile),
     root = fileURLToPath(new URL('../../', import.meta.url)),
@@ -18,7 +20,7 @@ const exec = promisify(execFile),
 const jsonc = createRequire(path.join(bridge, 'package.json'))('jsonc-parser'),
     sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const version = '0.9.18',
-    target = `${process.platform === 'win32' ? 'windows' : process.platform}-${process.arch}${process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : ''}`;
+    target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const modules = [
     'lib/install.js',
     'lib/global-config-lock.js',

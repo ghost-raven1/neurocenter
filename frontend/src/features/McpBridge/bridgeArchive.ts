@@ -1,3 +1,4 @@
+import { BRIDGE_TARGETS } from '@neurocenter/runtime-targets';
 import { compareBridgeVersions } from './bridgeSource';
 
 export interface IBridgeArchiveSupply {
@@ -16,7 +17,6 @@ export interface IBridgeArchive extends IBridgeArchiveRequest {
     sha256: string;
     bytes: number;
 }
-const targetPattern = /^(?:(?:darwin|windows)-(?:arm64|x64)|linux-(?:arm64|x64)(?:-musl)?)$/;
 const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 
@@ -31,7 +31,7 @@ export function bridgeArchiveTargets(supply: IBridgeArchiveSupply | undefined): 
         !Array.isArray(supply.targets) ||
         !supply.targets.length ||
         supply.targets.length > 8 ||
-        supply.targets.some((target) => typeof target !== 'string' || !targetPattern.test(target)) ||
+        supply.targets.some((target) => typeof target !== 'string' || !BRIDGE_TARGETS.includes(target)) ||
         new Set(supply.targets).size !== supply.targets.length
     )
         return [];

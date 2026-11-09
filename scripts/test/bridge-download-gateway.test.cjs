@@ -12,6 +12,8 @@ const directory = process.env.GATEWAY_TEST_DIST || path.resolve('services/api-ga
 require('node:module').createRequire(path.join(directory, 'entry.cjs'))('reflect-metadata');
 const { BridgeController } = require(path.join(directory, 'bridge/bridge.controller.js'));
 const { BridgeSupplyService } = require(path.join(directory, 'bridge/bridge-supply.service.js'));
+const { toBridgeTarget } = require('../../services/shared/runtime/targets.cjs');
+const { getHostTarget } = require('../../services/shared/runtime/host-target.cjs');
 class Response extends Writable {
     constructor() {
         super();
@@ -46,11 +48,7 @@ async function fixture(t, mode) {
     const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'nc-bridge-download-'))),
         payload = Buffer.from('owned archive bytes'),
         version = '9.8.7';
-    const target =
-        { darwin: 'darwin', linux: 'linux', win32: 'windows' }[process.platform] +
-        '-' +
-        process.arch +
-        (process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : '');
+    const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
     const file = `neurocenter-asset-sync-${target}-${version}.tgz`,
         buildId = 'b'.repeat(64),
         sha256 = createHash('sha256').update(payload).digest('hex');

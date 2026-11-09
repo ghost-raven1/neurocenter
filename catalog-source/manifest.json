@@ -1025,8 +1025,8 @@
     },
     {
       "path": "producer.json",
-      "sha256": "99af9fae38ce13e2dda2a01944640ca8a0675e58e4ab68631c2c707d5a0c48be",
-      "bytes": 31446
+      "sha256": "c331936726ebba716116bafe02660f8252114613f29c55a9bdd943993e2bfe89",
+      "bytes": 32127
     },
     {
       "path": "recipes/mcp-filesystem.json",

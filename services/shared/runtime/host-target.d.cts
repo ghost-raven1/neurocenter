@@ -1,3 +1,4 @@
+import type { TRuntimeTarget } from './targets.cjs';
 export interface IHostTargetOptions {
     platform?: string;
     arch?: string;
@@ -9,4 +10,5 @@ export interface IHostTargetOptions {
 /**
  * Единая детекция цели хоста (AD-7): Linux различает glibc и musl, неизвестная платформа не подменяется похожей.
  */
+export function getHostTarget(options: IHostTargetOptions & { mode: 'throw' }): TRuntimeTarget;
 export function getHostTarget(options?: IHostTargetOptions): string;

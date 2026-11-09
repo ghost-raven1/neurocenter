@@ -4,6 +4,8 @@ import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
+import { getHostTarget } from '../../../shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../../../shared/runtime/targets.cjs';
 import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.interfaces';
 
 const SHA = /^[a-f0-9]{64}$/;
@@ -27,16 +29,7 @@ const object = (value: unknown): value is Record<string, unknown> =>
     !!value && typeof value === 'object' && !Array.isArray(value);
 
 function hostTarget(): string {
-    const platforms: Partial<Record<NodeJS.Platform, string>> = { darwin: 'darwin', linux: 'linux', win32: 'windows' };
-    const platform = platforms[process.platform];
-    if (!platform || !['x64', 'arm64'].includes(process.arch)) {
-        throw new Error('Unsupported development bridge host.');
-    }
-    const report =
-        process.platform === 'linux'
-            ? (process.report.getReport() as { header: { glibcVersionRuntime?: string } })
-            : undefined;
-    return `${platform}-${process.arch}${report && !report.header.glibcVersionRuntime ? '-musl' : ''}`;
+    return toBridgeTarget(getHostTarget({ mode: 'throw' }));
 }
 
 async function canonical(directory: string): Promise<string> {

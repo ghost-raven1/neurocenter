@@ -12,6 +12,8 @@ import {
     validateBridgeRuntimeRelease,
 } from './bridge-runtime-artifacts.mjs';
 import { serializeAsset, validateAsset } from '@neurocenter/asset-contract';
+import { getHostTarget } from '../services/shared/runtime/host-target.cjs';
+import { toBridgeTarget } from '../services/shared/runtime/targets.cjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bridge = path.join(root, 'mcp/neurocenter-asset-sync');
@@ -26,9 +28,7 @@ const supported = [
     'windows-arm64',
     'windows-x64',
 ];
-const hostPlatform = process.platform === 'win32' ? 'windows' : process.platform;
-const hostMusl = process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime;
-const host = `${hostPlatform}-${process.arch}${hostMusl ? '-musl' : ''}`;
+const host = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const nativeNodeSupported = Number(process.versions.node.split('.')[0]) === 24;
 
 /** Принимаем только согласованный комплект текущей сборки и закреплённого движка. */

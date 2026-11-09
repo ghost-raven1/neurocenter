@@ -228,8 +228,8 @@
     },
     {
       "path": "scripts/catalog-plugins/prepared-source-snapshot.mjs",
-      "sha256": "7bcda3cb55c401db1b65b635bc1d33cf696d7a4896a865882392a485c0855711",
-      "bytes": 12624
+      "sha256": "e747b0ef6baef146e59c57a499c07d6308ff3c6e5c415a4f3741fa1a83be3ef1",
+      "bytes": 12645
     },
     {
       "path": "scripts/catalog-plugins/publish.mjs",
@@ -703,13 +703,23 @@
     },
     {
       "path": "services/shared/runtime-artifacts.cjs",
-      "sha256": "102a69476073e6dc15979a18f78dd4ade18477117dba46e5fb972fdd2cbaf4a4",
-      "bytes": 13789
+      "sha256": "3dfb14104d9bba12ba0739191819fad1973fa9b3bd126c3c5936b2b742d6f64b",
+      "bytes": 4212
     },
     {
       "path": "services/shared/runtime-artifacts.d.cts",
-      "sha256": "00ddae1b78588528c4e8b3c255dd34dd3e14122420318bb2db1282a9e8e91b96",
-      "bytes": 1299
+      "sha256": "e9b3bfbe784e0ab95688a79bea7103d59d644b4e5e97dd80cbbdf03871dba814",
+      "bytes": 1454
+    },
+    {
+      "path": "services/shared/runtime/archive.cjs",
+      "sha256": "dc6e6a7cd2efd143951939fc572d118fcf55b570ac44be17eb76a00d91b667ae",
+      "bytes": 10615
+    },
+    {
+      "path": "services/shared/runtime/archive.d.cts",
+      "sha256": "e9125709efe0a698396f4b94ac460523a9a79b959a9b2bc5f22d52ada1d94b5c",
+      "bytes": 1013
     },
     {
       "path": "services/shared/runtime/host-target.cjs",
@@ -718,8 +728,18 @@
     },
     {
       "path": "services/shared/runtime/host-target.d.cts",
-      "sha256": "6455849c025549eb7f09c7325c2e9b15cd687a1015b067f1e1d1e9138391c48d",
-      "bytes": 722
+      "sha256": "e74f1013b2e15d26930d32e3a98735a165a5e47e2d321fff1a8e48cfefb369fc",
+      "bytes": 869
+    },
+    {
+      "path": "services/shared/runtime/limits.cjs",
+      "sha256": "ca4812f0db5784afaea69bc348fbcd9e383819f57822ebfe082bf00d4715fb6c",
+      "bytes": 1458
+    },
+    {
+      "path": "services/shared/runtime/limits.d.cts",
+      "sha256": "43e7c3e12ac6ed710c3326eb8909ca64f5b52c4f9344fd8e30787b4e501a15a2",
+      "bytes": 782
     },
     {
       "path": "services/shared/runtime/portable-path.cjs",
@@ -733,13 +753,13 @@
     },
     {
       "path": "services/shared/runtime/targets.cjs",
-      "sha256": "d5d794b64ab2cb02e7ebe1a61f94396ebb643eca35198cea6e051d73a9221c99",
-      "bytes": 3016
+      "sha256": "baa1761625e26ce9bc7265e7556926d5bb663799e9d76afe317a934e4de0a2f8",
+      "bytes": 4138
     },
     {
       "path": "services/shared/runtime/targets.d.cts",
-      "sha256": "eb0d10ed6e4afb48973113229e9aaad0120bf1e555cc9fd381c8a31c16e61cf0",
-      "bytes": 1408
+      "sha256": "8de0539accca9805d0221955435e79eeb77a0a77a491322e3d9d72cb429e0fe7",
+      "bytes": 2182
     },
     {
       "path": "services/shared/skill-source.mjs",

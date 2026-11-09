@@ -11,11 +11,9 @@ require('node:module').createRequire(path.join(directory, 'entry.cjs'))('reflect
 const { BridgeSupplyService } = require(path.join(directory, 'bridge/bridge-supply.service.js'));
 const { BridgeController } = require(path.join(directory, 'bridge/bridge.controller.js'));
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const target =
-    { darwin: 'darwin', linux: 'linux', win32: 'windows' }[process.platform] +
-    '-' +
-    process.arch +
-    (process.platform === 'linux' && !process.report.getReport().header.glibcVersionRuntime ? '-musl' : '');
+const { toBridgeTarget } = require('../../services/shared/runtime/targets.cjs');
+const { getHostTarget } = require('../../services/shared/runtime/host-target.cjs');
+const target = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const publicOrigin = 'https://gateway.fixture.test:8443',
     status = (expected) => (error) => error.getStatus?.() === expected;
 class Response extends Writable {

@@ -19,6 +19,7 @@ const opencodeLocalProviders = fileURLToPath(
 const opencodeCliInstall = fileURLToPath(new URL('../services/shared/opencode-cli-install.cjs', import.meta.url));
 const projectTextKnowledge = fileURLToPath(new URL('../services/shared/project-text-knowledge.cjs', import.meta.url));
 const runtimeLimits = fileURLToPath(new URL('../services/shared/runtime-limits.cjs', import.meta.url));
+const runtimeTargets = fileURLToPath(new URL('../services/shared/runtime/targets.cjs', import.meta.url));
 const ggufImportPolicy = fileURLToPath(new URL('../services/shared/gguf-import-policy.cjs', import.meta.url));
 
 /**
@@ -56,6 +57,7 @@ export default defineConfig((configEnv) => {
                 '@neurocenter/opencode-local-providers': opencodeLocalProviders,
                 '@neurocenter/project-text-knowledge': projectTextKnowledge,
                 '@neurocenter/runtime-limits': runtimeLimits,
+                '@neurocenter/runtime-targets': runtimeTargets,
             },
         },
         // Linked CommonJS needs pre-bundling for named imports in the dev browser.
@@ -66,6 +68,7 @@ export default defineConfig((configEnv) => {
                 '@neurocenter/opencode-local-providers',
                 '@neurocenter/project-text-knowledge',
                 '@neurocenter/runtime-limits',
+                '@neurocenter/runtime-targets',
             ],
         },
         css: {
@@ -121,7 +124,14 @@ export default defineConfig((configEnv) => {
             outDir: 'dist',
             sourcemap: false,
             commonjsOptions: {
-                include: [/node_modules/, computerSetup, projectTextKnowledge, runtimeLimits, ggufImportPolicy],
+                include: [
+                    /node_modules/,
+                    computerSetup,
+                    projectTextKnowledge,
+                    runtimeLimits,
+                    runtimeTargets,
+                    ggufImportPolicy,
+                ],
             },
         },
     };
