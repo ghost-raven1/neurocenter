@@ -2,6 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { hub, apiHub, readState, type ICredentials } from '../../bridge/state.js';
 import type { IPackage } from '../../bridge/package.js';
+import { normalizeRuntimeArtifacts, runtimeDescriptorDigest } from '../runtime-artifacts/model.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 /** Путь канала хоста в конфигурации OpenCode: /api/mcp-host/m/<ticket>. */
@@ -33,6 +34,9 @@ export async function requestHostedMcpConnection(projectId: string, pkg: IPackag
     if (!['http:', 'https:'].includes(url.protocol)) {
         throw new Error('Неподдерживаемый протокол площадки.');
     }
+    // AD-3: клиентская сверка — sha256 канонического descriptor-текста собственного пакета;
+    // self-referential hash из байтов пакета запрещён.
+    const expectedDescriptorSha256 = runtimeDescriptorDigest(normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts));
     const body = JSON.stringify({ projectId, pkg });
     return await new Promise<string>((resolve, reject) => {
         let failed = false;
@@ -82,7 +86,7 @@ export async function requestHostedMcpConnection(projectId: string, pkg: IPackag
                         );
                         return;
                     }
-                    let parsed: { path?: unknown };
+                    let parsed: { path?: unknown; descriptorSha256?: unknown };
                     try {
                         parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
                     } catch {
@@ -91,6 +95,19 @@ export async function requestHostedMcpConnection(projectId: string, pkg: IPackag
                     }
                     if (typeof parsed.path !== 'string' || !hostedMcpPath(parsed.path)) {
                         finish(() => fail('Площадка выдала некорректный канал хоста. Повторите установку.'));
+                        return;
+                    }
+                    if (
+                        typeof parsed.descriptorSha256 !== 'string' ||
+                        !/^[a-f0-9]{64}$/.test(parsed.descriptorSha256)
+                    ) {
+                        finish(() => fail('Площадка не выдала сертификат дескриптора. Повторите установку.'));
+                        return;
+                    }
+                    if (parsed.descriptorSha256 !== expectedDescriptorSha256) {
+                        finish(() =>
+                            fail('Дескриптор пакета не совпадает с сертификатом площадки. Повторите установку.'),
+                        );
                         return;
                     }
                     const managed = parsed.path;

@@ -504,6 +504,11 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
             // Историческая версия без pins не наследует зависимости текущей карточки.
             dependencies = normalizeDependencyPins(v.metadata?.dependencies);
         } else {
+            // Версия фиксируется при issuance: head-снимок hosted-MCP не выдаётся (смещение head → race).
+            if (kind === 'mcp' && config?.extra?.hostedMcp === true)
+                throw new NotFoundException(
+                    'Пакет хоста MCP выдаётся только с явной версией. Перезапросите дескриптор с версией.',
+                );
             files = plugin.files;
         }
         if (dependencies.length) {

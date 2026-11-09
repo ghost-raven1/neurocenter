@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { normalizeRuntimeArtifacts } from '../../../../shared/runtime-artifacts.cjs';
+import { normalizeRuntimeArtifacts, runtimeDescriptorDigest } from '../../../../shared/runtime-artifacts.cjs';
 import { systemRoleMcpDigest, roleMcpProducer } from '../../../../shared/system-role-mcp.cjs';
 import { hostRuntimeTarget } from '../mcp-host/host-target';
 import type { IHostedMcpClaim } from '../mcp-host/ticket';
@@ -122,6 +122,8 @@ export function roleHostedPackage(raw: unknown, sessionId: string, target = host
         }
         return {
             artifactSha256: raw.manifest.sha256,
+            // AD-3: удалённый endpoint не имеет runtime-артефактов — дайджест пустого descriptor-снимка.
+            descriptorSha256: runtimeDescriptorDigest([]),
             entrypoint: '',
             executable: false,
             name: raw.plugin.name,
@@ -146,6 +148,8 @@ export function roleHostedPackage(raw: unknown, sessionId: string, target = host
     if (!artifact) throw invalid();
     return {
         artifactSha256: artifact.sha256,
+        // AD-3: внутренняя сессия привязывается к тому же одобренному descriptor-снимку, что и публичный билет.
+        descriptorSha256: runtimeDescriptorDigest(artifacts),
         entrypoint: producer.assetKind === 'plugin' ? producer.entrypoint! : artifact.entrypoint,
         executable: producer.assetKind === 'plugin' ? false : (artifact.executable ?? false),
         name: raw.plugin.name,

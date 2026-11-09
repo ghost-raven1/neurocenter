@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import type { IDevice, DeviceStore } from './device-store';
 import type { IPackage } from '../catalog/bundle-package';
@@ -7,7 +7,7 @@ import { projectAssetColumns, checkedProjectPackage, type IProjectPinRow } from 
 import { ROLES, type IAccessClaims } from '../access/access.model';
 import { hasDeviceJobPermission } from './device-job-access';
 import { assertManagedBridge, managedBinding } from './device-compatibility';
-import { normalizeRuntimeArtifacts } from '../../../shared/runtime-artifacts.cjs';
+import { normalizeRuntimeArtifacts, runtimeDescriptorDigest } from '../../../shared/runtime-artifacts.cjs';
 import { runtimeArtifactTarget } from './runtime-host-target';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 
@@ -171,6 +171,9 @@ export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, va
         /* Invalid snapshots never reach an executable path. */
     }
     if (!valid || body.pkg.plugin.kind !== 'mcp') throw mismatch();
+    // Версия фиксируется при issuance: head (undefined) не выпускает билет — перезапрос с версией.
+    if (!Number.isSafeInteger(body.pkg.plugin.version) || Number(body.pkg.plugin.version) < 1)
+        throw new NotFoundException('Пакет хоста MCP требует явной версии. Перезапросите дескриптор с версией.');
     return transaction(store, async (db) => {
         await deviceProject(db, device.id, body.projectId as string);
         await requireFeaturesEnabled(['tool_installation']);
@@ -182,6 +185,8 @@ export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, va
                 body.pkg!.manifest.sha256,
             ),
             artifact = await hostArtifact(db, pkg);
+        // AD-3: сервер выдаёт sha256 канонического descriptor-текста одобренного пакета.
+        const descriptorSha256 = runtimeDescriptorDigest(normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts));
         const session: IHostedMcpSession = {
             deviceId: device.id,
             projectId: body.projectId as string,
@@ -194,6 +199,7 @@ export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, va
             name: pkg.plugin.name,
             session,
             artifact: { ...artifact, executable: artifact.executable ?? false },
+            descriptorSha256,
         };
     });
 }

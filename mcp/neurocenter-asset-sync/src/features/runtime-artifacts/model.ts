@@ -12,16 +12,24 @@ const moduleUrl = new URL(
 const shared = createRequire(import.meta.url)(
     fileURLToPath(moduleUrl),
 ) as typeof import('../../../../../services/shared/runtime-artifacts.cjs');
-export const {
-    TARGETS,
-    LIMITS,
-    CEILING,
-    portablePath,
-    normalizeRuntimeArtifacts,
-    validateRuntimeArtifactEntrypoints,
-    inspectRuntimeArchive,
-} = shared;
+export const { TARGETS, CEILING, portablePath, validateRuntimeArtifactEntrypoints, runtimeDescriptorDigest } = shared;
 export type { IRuntimeArtifact as RuntimeArtifact, IRuntimeArtifactEntry as RuntimeArtifactEntry };
+/**
+ * AD-2: env-лимиты клиента удалены — клиентская политика = константа ceiling контракта.
+ * LIMITS (env-снимок) остаётся только для серверной admission-политики (AD-1) и не реэкспортируется сюда.
+ */
+export const normalizeRuntimeArtifacts = (value: unknown): RuntimeArtifact[] =>
+    shared.normalizeRuntimeArtifacts(value, CEILING);
+/** Пределы распаковки привязаны к одобренному дескриптору, а не к окружению процесса. */
+export const inspectRuntimeArchive = (
+    filename: string,
+    descriptor: RuntimeArtifact,
+    options?: { destination?: string; signal?: AbortSignal },
+): Promise<RuntimeArtifactEntry[]> =>
+    shared.inspectRuntimeArchive(filename, descriptor, {
+        ...options,
+        limits: { unpackedBytes: descriptor.unpackedBytes, filesCount: descriptor.filesCount },
+    });
 
 // Детекция цели хоста — канон runtime/host-target.cjs (AD-7); injectable report сохраняется для тестов.
 const hostTargetModuleUrl = new URL(

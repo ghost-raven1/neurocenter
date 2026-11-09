@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
-import { normalizeRuntimeArtifacts } from '../../../../shared/runtime-artifacts.cjs';
+import { normalizeRuntimeArtifacts, runtimeDescriptorDigest } from '../../../../shared/runtime-artifacts.cjs';
 import type { IHostedMcpClaim } from '../mcp-host/ticket';
 import { hostRuntimeTarget } from '../mcp-host/host-target';
 
@@ -104,6 +104,8 @@ export function researchPackage(raw: unknown, target = hostRuntimeTarget()): IHo
     if (!artifact) throw invalid();
     return {
         artifactSha256: artifact.sha256,
+        // AD-3: внутренняя сессия привязывается к тому же одобренному descriptor-снимку, что и публичный билет.
+        descriptorSha256: runtimeDescriptorDigest(artifacts),
         entrypoint: artifact.entrypoint,
         executable: artifact.executable ?? false,
         name: raw.plugin.name,

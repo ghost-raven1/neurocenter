@@ -324,9 +324,11 @@ describe('Границы USTAR без тяжёлых выделений памя
         const bytes = gzipSync(Buffer.concat([raw, Buffer.alloc(2048 * 512)]));
         const file = path.join(f.temporary, 'zero-bomb.tar.gz');
         await fs.writeFile(file, bytes);
+        // AD-2: клиентский бюджет привязан к одобренному дескриптору — бомба упирается
+        // в него либо в ограничение длины нулевого окончания, в обоих случаях на конечных блоках.
         await expect(
             inspectRuntimeArchive(file, { ...original.descriptor, compressedBytes: bytes.length, sha256: hash(bytes) }),
-        ).rejects.toThrow(/окончание/);
+        ).rejects.toThrow(/окончание|превышает предел/);
     });
     it('Явная папка после дочернего файла разрешена, обычный файл вместо этой папки отвергается', async () => {
         const f = await fixture();

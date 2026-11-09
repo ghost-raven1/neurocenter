@@ -48,7 +48,7 @@ export class McpHostController {
     /** Мост обменивает устройство и одобренный пакет на билет хоста; OpenCode не получает токен устройства. */
     @Post('connect')
     @HttpCode(200)
-    async connect(@Req() req: Request, @Body() body: unknown): Promise<{ path: string }> {
+    async connect(@Req() req: Request, @Body() body: unknown): Promise<{ path: string; descriptorSha256: string }> {
         const auth = await this.authGuard.authenticate(req);
         if (!auth?.deviceId) {
             throw new UnauthorizedException('MCP не подключён или доступ отозван.');
@@ -88,7 +88,13 @@ export class McpHostController {
         if (response.status !== 200 || !response.data || typeof response.data !== 'object') {
             throw new ForbiddenException('Подключение хоста MCP не разрешено.');
         }
-        const data = response.data as { assetId?: unknown; name?: unknown; artifact?: unknown; session?: unknown };
+        const data = response.data as {
+            assetId?: unknown;
+            name?: unknown;
+            artifact?: unknown;
+            session?: unknown;
+            descriptorSha256?: unknown;
+        };
         const artifact = data.artifact as
             | {
                   sha256?: unknown;
@@ -115,6 +121,9 @@ export class McpHostController {
             !Number.isSafeInteger(artifact.compressedBytes as number) ||
             (artifact.compressedBytes as number) < 1 ||
             (artifact.compressedBytes as number) > CEILING.compressedBytes ||
+            // AD-3: server-issued descriptorSha256 обязателен для выпуска билета.
+            typeof data.descriptorSha256 !== 'string' ||
+            !/^[a-f0-9]{64}$/.test(data.descriptorSha256) ||
             !validHostedMcpSession(data.session) ||
             data.session.deviceId !== auth.deviceId ||
             data.session.projectId !== input.projectId ||
@@ -124,6 +133,7 @@ export class McpHostController {
         }
         const ticket = issueHostedMcpTicket({
             artifactSha256: artifact.sha256,
+            descriptorSha256: data.descriptorSha256,
             entrypoint: artifact.entrypoint,
             executable: artifact.executable,
             compressedBytes: artifact.compressedBytes as number,
@@ -134,7 +144,8 @@ export class McpHostController {
             ...(Number.isSafeInteger(artifact.filesCount) ? { filesCount: artifact.filesCount as number } : {}),
             name: data.name,
         });
-        return { path: `/api/mcp-host/m/${ticket}` };
+        // AD-3: клиент сверяет descriptorSha256 из ответа со своим пакетом до записи конфигурации.
+        return { path: `/api/mcp-host/m/${ticket}`, descriptorSha256: data.descriptorSha256 };
     }
 
     /** Канал OpenCode: только валидный билет, без cookie и токена устройства. */

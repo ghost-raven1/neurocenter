@@ -1,5 +1,6 @@
 'use strict';
 // Фасад (AD-7): канон целей, переносимых путей и лимитов — в подпапке runtime/; плоский путь и экспорты не меняются.
+const { createHash } = require('node:crypto');
 const { TARGETS } = require('./runtime/targets.cjs');
 const { portablePath } = require('./runtime/portable-path.cjs');
 const { LIMIT_DEFAULTS, CEILING, getLimits } = require('./runtime/limits.cjs');
@@ -23,12 +24,27 @@ const LIMITS = Object.freeze({
     },
 });
 const ordinal = (a, b) => (a === b ? 0 : a < b ? -1 : 1);
-/** Одобрение закрепляет только точные переносимые артефакты, без URL и install hooks. */
-function normalizeRuntimeArtifacts(value) {
+const LIMIT_KEYS = ['compressedBytes', 'unpackedBytes', 'filesCount', 'cacheBytes'];
+/** AD-2: политика несётся полем limits дескриптора; значения — [1..ceiling], иначе invalid (fail-closed). */
+function validArtifactLimits(limits) {
+    return (
+        !!limits &&
+        typeof limits === 'object' &&
+        !Array.isArray(limits) &&
+        [Object.prototype, null].includes(Object.getPrototypeOf(limits)) &&
+        Object.keys(limits).every((key) => LIMIT_KEYS.includes(key)) &&
+        LIMIT_KEYS.every((key) => Number.isSafeInteger(limits[key]) && limits[key] > 0 && limits[key] <= CEILING[key])
+    );
+}
+/**
+ * Одобрение закрепляет только точные переносимые артефакты, без URL и install hooks.
+ * `policy` — потолок размеров артефакта: серверная admission-политика (env-снимок, AD-1)
+ * или CEILING-константа (AD-2) для клиентов, где env-лимитов не существует.
+ */
+function normalizeRuntimeArtifacts(value, policy = getLimits()) {
     if (value === undefined) return [];
     if (!Array.isArray(value) || value.length < 1 || value.length > 8)
         throw new Error('Укажите от 1 до 8 готовых платформенных артефактов.');
-    const limits = getLimits();
     const seen = new Set();
     return value
         .map((item) => {
@@ -46,6 +62,7 @@ function normalizeRuntimeArtifacts(value) {
                             'filesCount',
                             'entrypoint',
                             'executable',
+                            'limits',
                         ].includes(key),
                 ) ||
                 !TARGETS.includes(item.target) ||
@@ -53,8 +70,9 @@ function normalizeRuntimeArtifacts(value) {
                 !/^[a-f0-9]{64}$/.test(item.sha256) ||
                 !portablePath(item.entrypoint) ||
                 (item.executable !== undefined && typeof item.executable !== 'boolean') ||
+                (item.limits !== undefined && !validArtifactLimits(item.limits)) ||
                 !['compressedBytes', 'unpackedBytes', 'filesCount'].every(
-                    (key) => Number.isSafeInteger(item[key]) && item[key] > 0 && item[key] <= limits[key],
+                    (key) => Number.isSafeInteger(item[key]) && item[key] > 0 && item[key] <= policy[key],
                 )
             )
                 throw new Error('Некорректный или повторяющийся платформенный артефакт.');
@@ -73,9 +91,42 @@ function validateRuntimeArtifactEntrypoints(kind, artifacts) {
 }
 /** Тонкий wrapper (AD-7): лимиты — со снимка окружения на момент вызова, сам парсер — в runtime/archive.cjs. */
 async function inspectRuntimeArchive(filename, descriptor, options = {}) {
-    const { destination, signal } = options;
-    normalizeRuntimeArtifacts([descriptor]);
-    return archiveInspect(filename, descriptor, { destination, signal, limits: getLimits() });
+    const { destination, signal, limits } = options;
+    normalizeRuntimeArtifacts([descriptor], limits ? { ...CEILING, ...limits } : undefined);
+    return archiveInspect(filename, descriptor, { destination, signal, limits: limits ?? getLimits() });
+}
+/**
+ * Канонический descriptor-текст runtime-артефактов: тот же алгоритм, что canonicalJson контракта
+ * (отсортированные ключи, JSON 2-space, завершающий перевод строки) — клиент и сервер считают одно и то же.
+ */
+function canonicalDescriptorText(value) {
+    const visit = (item) => {
+        if (item === null || typeof item === 'boolean' || typeof item === 'string') return item;
+        if (typeof item === 'number' && Number.isFinite(item)) return item;
+        if (Array.isArray(item)) return Array.from(item, visit);
+        if (item && typeof item === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(item)))
+            return Object.fromEntries(
+                Object.keys(item)
+                    .sort()
+                    .map((key) => {
+                        if (['__proto__', 'prototype', 'constructor'].includes(key))
+                            throw new Error('Неразрешимый ключ descriptor-текста.');
+                        return [key, visit(item[key])];
+                    }),
+            );
+        throw new Error('Descriptor-текст содержит не-JSON значение.');
+    };
+    return JSON.stringify(visit(value), null, 2) + '\n';
+}
+/**
+ * AD-3: server-issued descriptorSha256 — sha256 канонического descriptor-текста runtime-артефактов пакета.
+ * Считается из descriptor-текста, никогда из байтов пакета (self-referential hash запрещён).
+ * Вход — уже нормализованный массив (normalizeRuntimeArtifacts): клиент и сервер считают один и тот же
+ * дайджест по одному одобренному снимку без обращения к локальной среде лимитов.
+ */
+function runtimeDescriptorDigest(artifacts) {
+    if (!Array.isArray(artifacts)) throw new Error('Descriptor-дайджест требует массив runtime-артефактов.');
+    return createHash('sha256').update(canonicalDescriptorText(artifacts)).digest('hex');
 }
 module.exports = {
     TARGETS,
@@ -86,4 +137,5 @@ module.exports = {
     normalizeRuntimeArtifacts,
     validateRuntimeArtifactEntrypoints,
     inspectRuntimeArchive,
+    runtimeDescriptorDigest,
 };

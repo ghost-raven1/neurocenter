@@ -116,6 +116,7 @@ test('Поверхность фасада стабильна: лимитные �
             'inspectRuntimeArchive',
             'normalizeRuntimeArtifacts',
             'portablePath',
+            'runtimeDescriptorDigest',
             'validateRuntimeArtifactEntrypoints',
         ]);
         assert.deepEqual(Object.keys(facade.LIMITS).sort(), ['cacheBytes', 'compressedBytes', 'filesCount', 'unpackedBytes']);

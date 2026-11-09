@@ -4,9 +4,15 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { artifactFixture } from '../../../../scripts/test/runtime-artifact-fixture.cjs';
+import {
+    CEILING,
+    normalizeRuntimeArtifacts,
+    runtimeDescriptorDigest,
+} from '../../../../services/shared/runtime-artifacts.cjs';
 import { ensureRuntimeArtifact } from '../../src/features/runtime-artifacts/cache.js';
 import { runtimeArtifactTarget } from '../../src/features/runtime-artifacts/model.js';
 import { canonicalV4, verify, type IPackage } from '../../src/bridge/package.js';
@@ -27,7 +33,24 @@ interface IMockHub extends http.Server {
     port: number;
     seen: { connect: number; channel: number };
 }
-const startHub = (options: { connectStatus?: number; channelStatus?: number } = {}): Promise<IMockHub> =>
+/** AD-3: mock-хаб, как сервер, выдаёт sha256 канонического descriptor-текста полученного пакета. */
+const hubDescriptorSha256 = (raw: string, mode: 'match' | 'mismatch' | 'missing'): string | undefined => {
+    if (mode === 'missing') {
+        return undefined;
+    }
+    const pkg = (JSON.parse(raw) as { pkg?: { config?: { extra?: { runtimeArtifacts?: unknown } } } }).pkg;
+    let digest: string;
+    try {
+        digest = runtimeDescriptorDigest(normalizeRuntimeArtifacts(pkg?.config?.extra?.runtimeArtifacts, CEILING));
+    } catch {
+        digest = '0'.repeat(64);
+    }
+    return mode === 'mismatch' ? (digest === 'f'.repeat(64) ? 'e'.repeat(64) : 'f'.repeat(64)) : digest;
+};
+
+const startHub = (
+    options: { connectStatus?: number; channelStatus?: number; connectDescriptor?: 'match' | 'mismatch' | 'missing' } = {},
+): Promise<IMockHub> =>
     new Promise((resolve) => {
         const seen = { connect: 0, channel: 0 };
         const server = http.createServer((req, res) => {
@@ -40,11 +63,17 @@ const startHub = (options: { connectStatus?: number; channelStatus?: number } = 
                     seen.connect += 1;
                     const status = options.connectStatus ?? 200;
                     res.writeHead(status, { 'content-type': 'application/json' });
-                    res.end(
-                        status === 200
-                            ? JSON.stringify({ path: `/api/mcp-host/m/${TICKET}` })
-                            : JSON.stringify({ message: 'refused' }),
-                    );
+                    if (status === 200) {
+                        const descriptorSha256 = hubDescriptorSha256(body, options.connectDescriptor ?? 'match');
+                        res.end(
+                            JSON.stringify({
+                                path: `/api/mcp-host/m/${TICKET}`,
+                                ...(descriptorSha256 !== undefined ? { descriptorSha256 } : {}),
+                            }),
+                        );
+                        return;
+                    }
+                    res.end(JSON.stringify({ message: 'refused' }));
                     return;
                 }
                 if (req.method === 'POST' && req.url === `/api/mcp-host/m/${TICKET}`) {
@@ -217,6 +246,32 @@ describe('Управляемый MCP на хосте площадки', () => {
         verify(pkg);
         const before = await fs.readFile(path.join(f.root, 'opencode.json'), 'utf8').catch(() => null);
         await expect(install('test-project', pkg, noOp, noOp)).rejects.toThrow(/не разрешил/);
+        expect(await fs.readFile(path.join(f.root, 'opencode.json'), 'utf8').catch(() => null)).toBe(before);
+        await expect(fs.stat(path.join(f.root, receiptPath(pkg)))).rejects.toThrow();
+    });
+
+    it('AD-3: сертификат дескриптора не совпадает с пакетом — установка отклоняется без записи', async () => {
+        const hub = await startHub({ connectDescriptor: 'mismatch' });
+        servers.push(hub);
+        const f = await hostedFixture(`http://127.0.0.1:${hub.port}`);
+        const { descriptor } = artifactFixture(undefined, runtimeArtifactTarget());
+        const pkg = pkgFor(descriptor, 1, true);
+        verify(pkg);
+        const before = await fs.readFile(path.join(f.root, 'opencode.json'), 'utf8').catch(() => null);
+        await expect(install('test-project', pkg, noOp, noOp)).rejects.toThrow(/не совпадает/);
+        expect(await fs.readFile(path.join(f.root, 'opencode.json'), 'utf8').catch(() => null)).toBe(before);
+        await expect(fs.stat(path.join(f.root, receiptPath(pkg)))).rejects.toThrow();
+    });
+
+    it('AD-3: отсутствие сертификата дескриптора в ответе площадки — установка отклоняется', async () => {
+        const hub = await startHub({ connectDescriptor: 'missing' });
+        servers.push(hub);
+        const f = await hostedFixture(`http://127.0.0.1:${hub.port}`);
+        const { descriptor } = artifactFixture(undefined, runtimeArtifactTarget());
+        const pkg = pkgFor(descriptor, 1, true);
+        verify(pkg);
+        const before = await fs.readFile(path.join(f.root, 'opencode.json'), 'utf8').catch(() => null);
+        await expect(install('test-project', pkg, noOp, noOp)).rejects.toThrow(/сертификат дескриптора/);
         expect(await fs.readFile(path.join(f.root, 'opencode.json'), 'utf8').catch(() => null)).toBe(before);
         await expect(fs.stat(path.join(f.root, receiptPath(pkg)))).rejects.toThrow();
     });

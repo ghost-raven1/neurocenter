@@ -4,6 +4,8 @@ import { CEILING } from '../../../../shared/runtime-artifacts.cjs';
 /** Билет хоста без хранения в БД: HMAC от заявлений. Срок ограничен, замену выдает новая установка. */
 export interface IHostedMcpClaim {
     artifactSha256: string;
+    /** AD-3: server-issued sha256 канонического descriptor-текста одобренного пакета (обязательное). */
+    descriptorSha256: string;
     entrypoint: string;
     executable: boolean;
     name: string;
@@ -60,10 +62,23 @@ export function issueHostedMcpTicket(claim: Omit<IHostedMcpClaim, 'exp'>): strin
     }
     if (!validHostedMcpSession(claim.session))
         throw new Error('Нужно подтверждённое назначение MCP и подключение компьютера.');
-    const { artifactSha256, entrypoint, executable, name, compressedBytes, unpackedBytes, filesCount, session } = claim;
+    const {
+        artifactSha256,
+        descriptorSha256,
+        entrypoint,
+        executable,
+        name,
+        compressedBytes,
+        unpackedBytes,
+        filesCount,
+        session,
+    } = claim;
+    if (typeof descriptorSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(descriptorSha256))
+        throw new Error('Нужен server-issued descriptorSha256 одобренного пакета.');
     const payload = Buffer.from(
         JSON.stringify({
             artifactSha256,
+            descriptorSha256,
             entrypoint,
             executable,
             name,
@@ -107,11 +122,24 @@ export function verifyHostedMcpTicket(ticket: string): IHostedMcpClaim | undefin
     if (!claim || typeof claim !== 'object' || Array.isArray(claim)) {
         return undefined;
     }
-    const { artifactSha256, entrypoint, executable, name, compressedBytes, exp, unpackedBytes, filesCount, session } =
-        claim;
+    const {
+        artifactSha256,
+        descriptorSha256,
+        entrypoint,
+        executable,
+        name,
+        compressedBytes,
+        exp,
+        unpackedBytes,
+        filesCount,
+        session,
+    } = claim;
     if (
         typeof artifactSha256 !== 'string' ||
         !/^[a-f0-9]{64}$/.test(artifactSha256) ||
+        // AD-3: descriptorSha256 — новое обязательное поле verify (связка claim↔descriptor).
+        typeof descriptorSha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(descriptorSha256) ||
         typeof entrypoint !== 'string' ||
         !entrypoint ||
         entrypoint.length > 240 ||
@@ -137,6 +165,7 @@ export function verifyHostedMcpTicket(ticket: string): IHostedMcpClaim | undefin
     }
     return {
         artifactSha256,
+        descriptorSha256,
         entrypoint,
         executable,
         name,

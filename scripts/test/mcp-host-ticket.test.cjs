@@ -1,10 +1,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { createHmac } = require('node:crypto');
 const {
     issueHostedMcpTicket,
     verifyHostedMcpTicket,
 } = require('../../services/api-gateway/dist/features/mcp-host/ticket.js');
 const { CEILING } = require('../../services/shared/runtime-artifacts.cjs');
+
+const signRaw = (object) => {
+    const payload = Buffer.from(JSON.stringify(object)).toString('base64url');
+    return payload + '.' + createHmac('sha256', process.env.NEUROCENTER_MCP_HOST_SECRET).update(payload).digest('base64url');
+};
 
 test('Public host tickets never serialize private research process identity or caller extras', () => {
     const before = process.env.NEUROCENTER_MCP_HOST_SECRET;
@@ -12,6 +18,7 @@ test('Public host tickets never serialize private research process identity or c
     try {
         const claim = {
             artifactSha256: 'a'.repeat(64),
+            descriptorSha256: 'e'.repeat(64),
             entrypoint: 'server.mjs',
             executable: false,
             name: 'QA',
@@ -32,6 +39,7 @@ test('Public host tickets never serialize private research process identity or c
         assert.equal(raw.unexpected, undefined);
         assert.deepEqual(verifyHostedMcpTicket(ticket), {
             artifactSha256: claim.artifactSha256,
+            descriptorSha256: claim.descriptorSha256,
             entrypoint: 'server.mjs',
             executable: false,
             name: 'QA',
@@ -59,6 +67,7 @@ test('Verify: claim в пределах ceiling проходит, выше ceili
     };
     const claim = (overrides) => ({
         artifactSha256: 'd'.repeat(64),
+        descriptorSha256: 'e'.repeat(64),
         entrypoint: 'server.mjs',
         executable: false,
         name: 'QA',
@@ -73,6 +82,7 @@ test('Verify: claim в пределах ceiling проходит, выше ceili
         const atCeiling = issueHostedMcpTicket(claim({}));
         assert.deepEqual(verifyHostedMcpTicket(atCeiling), {
             artifactSha256: claim({}).artifactSha256,
+            descriptorSha256: claim({}).descriptorSha256,
             entrypoint: 'server.mjs',
             executable: false,
             name: 'QA',
@@ -90,6 +100,27 @@ test('Verify: claim в пределах ceiling проходит, выше ceili
             const ticket = issueHostedMcpTicket(claim({ [key]: CEILING[key] + 1 }));
             assert.equal(verifyHostedMcpTicket(ticket), undefined, key + ' выше ceiling обязан быть invalid');
         }
+        // AD-3: descriptorSha256 — обязательное поле verify; подмена без HMAC невозможна.
+        const base = {
+            artifactSha256: 'd'.repeat(64),
+            entrypoint: 'server.mjs',
+            executable: false,
+            name: 'QA',
+            compressedBytes: 12,
+            session,
+            exp: Date.now() + 60000,
+        };
+        // NO_DESCRIPTOR_SHA: корректный HMAC, но поле отсутствует — invalid.
+        assert.equal(verifyHostedMcpTicket(signRaw(base)), undefined, 'билет без descriptorSha256 обязан быть invalid');
+        // BAD_DESCRIPTOR_SHA: не sha256 (верхний регистр / короткое) — invalid.
+        for (const bad of ['E'.repeat(64), 'e'.repeat(63), 'e'.repeat(64) + 'e']) {
+            assert.equal(verifyHostedMcpTicket(signRaw({ ...base, descriptorSha256: bad })), undefined, bad);
+        }
+        // VALID: server-issued sha проходит вместе с ceiling-границами.
+        assert.ok(verifyHostedMcpTicket(signRaw({ ...base, descriptorSha256: 'e'.repeat(64) })));
+        // issue отказывается выпускать билет без descriptorSha256 или с не-sha значением.
+        assert.throws(() => issueHostedMcpTicket(claim({ descriptorSha256: undefined })), /descriptorSha256/);
+        assert.throws(() => issueHostedMcpTicket(claim({ descriptorSha256: 'nope' })), /descriptorSha256/);
         // Политика env сужает только admission, не ceiling: verify против ceiling не меняется.
         process.env.NEUROCENTER_RUNTIME_MAX_COMPRESSED_BYTES = '1024';
         try {

@@ -9,8 +9,8 @@ import { hash, stateDir } from '../../bridge/state.js';
 import { atomicText } from '../../bridge/atomic-file.js';
 import { enforcePrivateWindowsAcl } from '../local-configuration/private-store.js';
 import {
+    CEILING,
     inspectRuntimeArchive,
-    LIMITS,
     normalizeRuntimeArtifacts,
     portablePath,
     runtimeArtifactTarget,
@@ -77,7 +77,7 @@ async function syncDirectory(folder: string): Promise<void> {
     }
 }
 
-async function usage(root: string, limitBytes = LIMITS.cacheBytes): Promise<number> {
+async function usage(root: string, limitBytes = CEILING.cacheBytes): Promise<number> {
     let bytes = 0;
     for (const item of await fs.readdir(root, { withFileTypes: true })) {
         const filename = path.join(root, item.name);
@@ -91,7 +91,7 @@ async function usage(root: string, limitBytes = LIMITS.cacheBytes): Promise<numb
                 'runtime-cache-full',
                 'Кэш готовых комплектов превышает лимит ' +
                     limitBytes / 1024 ** 3 +
-                    ' ГиБ. Настройте его в разделе «Мои компьютеры».',
+                    ' ГиБ. Освободите место в кэше и повторите установку.',
             );
         }
     }
@@ -245,6 +245,12 @@ function selected(pkg: IPackage): RuntimeArtifact | undefined {
     if (!descriptor) {
         throw new Error(
             'Готового комплекта для этой ОС, архитектуры и libc нет. Выберите поддерживаемую платформу или обратитесь к администратору.',
+        );
+    }
+    // AD-2: limits — обязательное поле дескриптора; fallback на env/ceiling запрещён (fail-closed).
+    if (!descriptor.limits) {
+        throw new Error(
+            'У готового комплекта нет обязательного поля limits. Пакет не устанавливается; запросите актуальную версию.',
         );
     }
     return descriptor;
@@ -425,7 +431,8 @@ export async function ensureRuntimeArtifact(
                 corrupt = true;
             }
         }
-        await measureRuntimeCache(root);
+        // AD-2: usage-бюджет = min(descriptor.limits.cacheBytes, ceiling); env-лимитов у клиента нет.
+        await usage(root, Math.min(artifact.limits.cacheBytes, CEILING.cacheBytes));
         const required = artifact.compressedBytes + artifact.unpackedBytes + artifact.filesCount * 400 + 4096;
         const disk = await fs.statfs(root, { bigint: true });
         if (disk.bavail * disk.bsize < BigInt(required + 128 * 1024 ** 2)) {

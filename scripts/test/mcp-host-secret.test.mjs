@@ -15,6 +15,7 @@ const { validateProduction } = runtime;
 
 const claim = () => ({
     artifactSha256: 'a'.repeat(64),
+    descriptorSha256: 'e'.repeat(64),
     entrypoint: 'server.mjs',
     executable: false,
     name: 'QA',

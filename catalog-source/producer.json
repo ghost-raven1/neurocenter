@@ -703,13 +703,13 @@
     },
     {
       "path": "services/shared/runtime-artifacts.cjs",
-      "sha256": "f60de7a2743d9620e112342db8ee538584aa5393ab671ee81811fe77f46217f4",
-      "bytes": 4234
+      "sha256": "658ae60c3d1b2c4a1f434c1ebb069edc8f9d95d2eb3385406dfcd4fbc876d5de",
+      "bytes": 7648
     },
     {
       "path": "services/shared/runtime-artifacts.d.cts",
-      "sha256": "bbce4049aedc315969b2ede780225c5f8a825f42fe45a19d6dcc291bbc35ad45",
-      "bytes": 1858
+      "sha256": "73e3d140b82a03e49acbf56472c04bbad622e91ad4f4c86b885d3aacb8f5aaec",
+      "bytes": 2999
     },
     {
       "path": "services/shared/runtime/archive.cjs",

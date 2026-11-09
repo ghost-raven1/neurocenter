@@ -16,7 +16,7 @@ import {
 import { ensureRuntimeArtifact } from '../../src/features/runtime-artifacts/cache.js';
 import * as runtimeCache from '../../src/features/runtime-artifacts/cache.js';
 import * as artifactDownload from '../../src/bridge/runtime-artifact-download.js';
-import { LIMITS, runtimeArtifactTarget } from '../../src/features/runtime-artifacts/model.js';
+import { CEILING, runtimeArtifactTarget } from '../../src/features/runtime-artifacts/model.js';
 import { providerFixture, noop } from './opencode-provider.fixture.js';
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -122,7 +122,8 @@ async function fillCache() {
     await fs.mkdir(root, { recursive: true, mode: 0o700 });
     const file = await fs.open(path.join(root, 'qa-sparse-prior-artifact'), 'wx', 0o600);
     try {
-        await file.truncate(LIMITS.cacheBytes - 128);
+        // AD-2: бюджет кэша = min(descriptor.limits.cacheBytes, ceiling); фикстура несёт ceiling.
+        await file.truncate(CEILING.cacheBytes - 128);
     } finally {
         await file.close();
     }

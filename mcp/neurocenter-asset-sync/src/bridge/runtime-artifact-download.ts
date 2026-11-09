@@ -2,7 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import type { IncomingMessage } from 'node:http';
 import { apiHub, jobContext, readState, type ICredentials } from './state.js';
-import { LIMITS, type RuntimeArtifact } from '../features/runtime-artifacts/model.js';
+import { CEILING, type RuntimeArtifact } from '../features/runtime-artifacts/model.js';
 
 const uuid = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
 
@@ -13,6 +13,11 @@ export async function downloadJobRuntimeArtifact(
 ): Promise<IncomingMessage> {
     const job = jobContext.getStore(),
         credentials = await readState<ICredentials>('credentials');
+    // AD-2: бюджет загрузки = min(descriptor.limits.compressedBytes, ceiling); env-лимитов у клиента нет.
+    const compressedLimit =
+        artifact.limits && Number.isSafeInteger(artifact.limits.compressedBytes)
+            ? Math.min(artifact.limits.compressedBytes, CEILING.compressedBytes)
+            : undefined;
     if (
         !job ||
         !uuid.test(job.id) ||
@@ -26,7 +31,9 @@ export async function downloadJobRuntimeArtifact(
         !/^[a-f0-9]{64}$/.test(artifact.sha256) ||
         !Number.isSafeInteger(artifact.compressedBytes) ||
         artifact.compressedBytes <= 0 ||
-        artifact.compressedBytes > LIMITS.compressedBytes
+        compressedLimit === undefined ||
+        artifact.limits.compressedBytes > CEILING.compressedBytes ||
+        artifact.compressedBytes > compressedLimit
     ) {
         throw new Error('Артефакт доступен только в одобренном задании этого подключения.');
     }

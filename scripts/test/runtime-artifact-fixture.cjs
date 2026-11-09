@@ -1,6 +1,7 @@
 'use strict';
 const { gzipSync } = require('node:zlib');
 const { createHash } = require('node:crypto');
+const { CEILING } = require('../../services/shared/runtime-artifacts.cjs');
 /** Разбивка длинных путей на USTAR name (100) + prefix (155), иначе честный отказ. */
 function nameAndPrefix(path) {
     const bytes = Buffer.byteLength(path);
@@ -49,15 +50,25 @@ function artifactFixture(
     const archive = gzipSync(Buffer.concat(blocks));
     const regular = files.filter((file) => (file.type ?? '0') === '0');
     const entrypointFile = regular.find((file) => file.path === entrypoint);
+    const unpackedBytes = regular.reduce((sum, file) => sum + Buffer.byteLength(file.content || ''), 0);
+    // AD-2: limits — обязательное поле дескриптора; фикстура несёт точную политику артефакта,
+    // а кэш-бюджет — до ceiling (клиент применяет min(descriptor.limits, ceiling)).
+    const limits = {
+        compressedBytes: archive.length,
+        unpackedBytes,
+        filesCount: regular.length,
+        cacheBytes: CEILING.cacheBytes,
+    };
     return {
         archive,
         descriptor: {
             target,
             sha256: createHash('sha256').update(archive).digest('hex'),
             compressedBytes: archive.length,
-            unpackedBytes: regular.reduce((sum, file) => sum + Buffer.byteLength(file.content || ''), 0),
+            unpackedBytes,
             filesCount: regular.length,
             entrypoint,
+            limits,
             ...(entrypointFile && (entrypointFile.mode ?? 0o644) & 0o111 ? { executable: true } : {}),
         },
     };

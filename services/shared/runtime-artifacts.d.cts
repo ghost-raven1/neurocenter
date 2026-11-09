@@ -1,3 +1,9 @@
+export interface IArtifactLimits {
+    compressedBytes: number;
+    unpackedBytes: number;
+    filesCount: number;
+    cacheBytes: number;
+}
 export interface IRuntimeArtifact {
     target: string;
     sha256: string;
@@ -6,6 +12,11 @@ export interface IRuntimeArtifact {
     filesCount: number;
     entrypoint: string;
     executable?: boolean;
+    /**
+     * AD-2: политика несётся полем limits дескриптора (ровно 4 ключа, каждый в [1..CEILING]).
+     * Клиент применяет min(descriptor.limits, ceiling); отсутствие limits на клиенте — fail-closed.
+     */
+    limits?: IArtifactLimits;
 }
 export interface IRuntimeArtifactEntry {
     path: string;
@@ -26,11 +37,20 @@ export const LIMITS: { compressedBytes: number; unpackedBytes: number; filesCoun
  */
 export const CEILING: { compressedBytes: number; unpackedBytes: number; filesCount: number; cacheBytes: number };
 export function portablePath(value: unknown): boolean;
-export function normalizeRuntimeArtifacts(value: unknown): IRuntimeArtifact[];
+/**
+ * `policy` — потолок размеров артефакта: серверная admission-политика (env-снимок, AD-1, дефолт)
+ * или CEILING-константа (AD-2) для клиентов, где env-лимитов не существует.
+ */
+export function normalizeRuntimeArtifacts(value: unknown, policy?: IArtifactLimits): IRuntimeArtifact[];
 /** Плагин допускает только импортируемую JS-точку входа. */
 export function validateRuntimeArtifactEntrypoints(kind: string, artifacts: IRuntimeArtifact[]): void;
 export function inspectRuntimeArchive(
     filename: string,
     descriptor: IRuntimeArtifact,
-    options?: { destination?: string; signal?: AbortSignal },
+    options?: { destination?: string; signal?: AbortSignal; limits?: Partial<IArtifactLimits> },
 ): Promise<IRuntimeArtifactEntry[]>;
+/**
+ * AD-3: sha256 канонического descriptor-текста уже нормализованных runtime-артефактов
+ * (server-issued descriptorSha256; self-referential hash из байтов пакета запрещён).
+ */
+export function runtimeDescriptorDigest(artifacts: IRuntimeArtifact[]): string;

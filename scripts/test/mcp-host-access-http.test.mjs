@@ -20,6 +20,7 @@ const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 const { buildPackage } = catalogRequire('./dist/catalog/bundle-package.js');
 const { RuntimeArtifacts } = catalogRequire('./dist/runtime-artifacts/runtime-artifacts.js');
+const { normalizeRuntimeArtifacts, runtimeDescriptorDigest } = catalogRequire('../shared/runtime-artifacts.cjs');
 
 test(
     'Hosted MCP real Gateway → Catalog → artifact → SDK channel checks fresh project access',
@@ -117,6 +118,11 @@ test(
         await t.test('actual SDK initialize → tools/list → tools/call works with exact approved runtime', async () => {
             const connected = await connect();
             assert.equal(connected.status, 200, JSON.stringify(connected.data));
+            // AD-3: сертификат — sha256 канонического descriptor-текста одобренного пакета (клиент сверит свой).
+            assert.equal(
+                connected.data.descriptorSha256,
+                runtimeDescriptorDigest(normalizeRuntimeArtifacts(pkg.config.extra.runtimeArtifacts)),
+            );
             channel = connected.data.path;
             client = new Client({ name: 'qa-client', version: '1' }, { capabilities: {} });
             await client.connect(new StreamableHTTPClientTransport(new URL(base + channel)), { timeout: 15000 });
@@ -126,6 +132,37 @@ test(
                     .text,
                 /synthetic call 1/,
             );
+        });
+        await t.test('head (version-less) descriptor is never issued: actionable 404 at the catalog, 403 at the gateway', async () => {
+            const head = buildPackage({ ...pkg.plugin, version: undefined }, [], '', pkg.config);
+            assert.equal((await connect(head)).status, 403);
+            const response = await fetch(f.catalogUrl + '/internal/device-channel/mcp-host/authorize', {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN,
+                    authorization: 'Bearer ' + token,
+                },
+                body: JSON.stringify({ projectId: f.projectId, pkg: head }),
+                signal: AbortSignal.timeout(15000),
+            });
+            assert.equal(response.status, 404);
+            assert.match((await response.json()).message, /явной версии/);
+        });
+        await t.test('head snapshot of a hosted-MCP card is not delivered without an explicit version', async () => {
+            const card = await f.request('main', '/api/ai-plugins', {
+                method: 'POST',
+                status: 201,
+                body: {
+                    name: 'Hosted QA Head',
+                    kind: 'mcp',
+                    description: 'QA hosted MCP card',
+                    config: { transport: 'stdio', args: [], extra: { hostedMcp: true, runtimeArtifacts: [descriptor] } },
+                },
+            });
+            await f.request('main', `/api/ai-plugins/${card.id}/package`, { status: 404 });
+            const explicit = await f.request('main', `/api/ai-plugins/${card.id}/package?version=1`);
+            assert.equal(explicit.plugin.version, 1);
         });
         await t.test('installation off preserves existing sessions but refuses a new connection', async () => {
             f.state.featureOverrides.tool_installation = false;
