@@ -3,7 +3,7 @@ title: 'Shared-сплит: limits + archive + switch детекций (AD-7, ent
 type: 'refactor'
 ticket: '6'
 created: '2026-11-06'
-status: in-progress
+status: done
 baseline_revision: 'a946a7b2718bd57ad8e747b27866f127690dd022'
 route: 'full'
 route_source: 'auto'
