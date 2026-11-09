@@ -1,7 +1,6 @@
 ---
 title: 'rag-sync: fs-audit projects-volume (AD-D2)'
 type: 'audit'
-ticket: '4'
 created: '2026-11-09'
 status: done
 baseline_revision: 'dd79112146dfc923747b06c76d27f71c7450b371'
