@@ -1,0 +1,159 @@
+# epic: epic-data
+# title: Проектные данные: согласованная модель (AD-D2..D5)
+# covers: R3, R9, R11
+# baseline_revision: 3433b1d147163a82fc023a34f909457830c7f6aa
+# next_id = 15
+
+[[entry]]
+id = 1
+type = "story"
+title = "Quota-модель: per-project used-bytes accounting + schema + API (AD-D4)"
+description = "AD-D4: projects.quota — единый source-of-truth «что считается / сколько занято / что удалится». (1) schema: quota JSONB на projects с 6 полями (current/retention/staging × limit/used), limit=0 ⇒ unlimited — семантика уже есть в project-validation.ts:23-79, замораживается; (2) персистентный per-project used-bytes accounting (механизм AD-D4): новая таблица project_quota_usage (миграция v53, max=52) + единая точка записи — internal API POST /internal/projects/:id/quota-usage {dimension, deltaBytes, request_key} (idempotency — AD-D5 pattern 4); (3) writers подключаются через accounting API: RAG-записи (rag-sync), skills-записи (skills-service), artifact-cache (story 2); (4) quota API (POST /projects, GET, PATCH /projects/:id/quotas) возвращает limit (projects.quota) + фактический used (таблица). Enforcement НЕ здесь — enforcement-точки (сравнение с лимитом до записи) — epic-res-obs (эпик 6)."
+verify = "RAG-запись 50МБ → GET quota: used = 50МБ (± Δ); replay того же request_key → без дубля; пустой проект → нули; limit=0 → unlimited сохранено; дельты конкурентные → сумма алгебра; удаление проекта → accounting-строки каскадом (FK); запись без accounting-вызова → fail-тест (обход)."
+covers = ["R9"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Artifact cache gateway: персистентный volume + LRU + per-project квота (AD-D2)"
+description = "AD-D2: cache MCP-artifacts сейчас в tmpdir (artifact-cache.ts:14-15, env NEUROCENTER_MCP_HOST_DIR не задан в compose) — не персистентен, без квоты, без eviction. (1) новый volume artifact-cache + env в compose.production.yml и environment-model.json (env-локация — часть config-схемы gateway по AD-D2); (2) LRU-эвиктор по oldest-access (механизм AD-D2): при записи (build) проект, чей used-bytes (accounting story 1, измерение current) > limit → удалять .ready-файлы проекта с самым старым доступом до лимита; last-access записывается в sidecar-мап (atime ФС не используется — noatime); кэш content-addressed → эвикция безопасна (файл детерминированно достроится); (3) global cap — OQ. Паттерн записи (tmp+rename+fsync) уже в code (AD-D5 pattern 1), не трогается."
+verify = "После рестарта gateway кэш жив (volume персистентен); запись сверх per-project лимита эвикционирует файлы с самым старым доступом; один и тот же контент → один и тот же путь (content-addressed); materialize присутствующего файла обновляет last-access и влияет на порядок eviction; materialize отсутствующего — тот же ответ, что сейчас (без regression)."
+covers = ["R3"]
+after = [1]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "model-weights: 7-й capacity-ресурс (AD-D2)"
+description = "AD-D2: volume model-weights не виден capacity-collector (compose:76-82 — нет монтирования; capacity.cjs:4-11 — 6 ресурсов, model-weights = 7-й). Переполнение volume с весами моделей невидимо для capacity-модели. (1) capacity.cjs: resources + model-weights; (2) capacity-collector: чтение statfs model-weights (монтирование :ro в compose + volume в environment-model.json); (3) validateSnapshot (capacity.cjs:29-57) принимает 7-й ресурс — schemaVersion-gate: старые 6-ресурсные снапшоты остаются валидными, новые обязаны 7-ресурсные; (4) metrics-registry: gauge для model-weights (optional, OQ)."
+verify = "collect() возвращает снапшот с 7 ресурсами, model-weights = фактические байты volume (fixture: данные на volume); validateSnapshot(7-ресурсный) ok, validateSnapshot(6-ресурсный от старого коллектора) — не ломает существующие (compat-правило); drift: environment-model.json содержит volume."
+covers = ["R3"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "rag-sync: projects-volume read-only (AD-D2)"
+description = "AD-D2: rag-sync монтирует projects:/data/projects rw (compose.production.yml:231) — dead mount: весь код rag-sync-service без единого обращения к FS-проектов (только Postgres nc_rag_<sha> и template-БД; env-инвентарь rag-sync без FS-переменных). Сделать :ro по AD-D2 (readers ≤ ro) и зафиксировать инвариантом (drift-тест story 6)."
+verify = "compose: rag-sync projects :ro; сервис стартует и работает (RAG-операции через Postgres без изменений); grep rag-sync-service: ни одной записи на /data/projects; drift-тест volume map (story 6) проходит."
+covers = ["R3"]
+after = []
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 5
+type = "story"
+title = "model-weights: один write-owner + GGUF→ollama путь (AD-D2, gate M-6)"
+description = "AD-D2: на model-weights два write-owners — ollama (compose:36, /root/.ollama, owner) и catalog (compose:155, model-weights:/data/models:rw; MODEL_STORAGE_PATH:152). Прямой FS-райтер catalog = ModelBundleRuntime.prepare (model-bundle-runtime.ts:19-80, hydrate → MODEL_STORAGE_PATH) + scripts/models/bundle.mjs (writeModelBundle :115-313, promote :315-361); GGUF-путь уже идёт через ollama API (gguf-runtime.service.ts: blobs :169-179, create :210-227). M-6 (HITL): bundle-hydration — только через ollama API, прямой FS-запись catalog в volume убрать. Решение пользователя: (a) full API-only (GGUF-источники тоже через /api/blobs) или (b) отдельный volume для bundle-cache (не ollama-owned) + publish через API. Рекомендация: (a)."
+verify = "После story: у model-weights один write-owner = ollama (drift-тест story 6); bundle-hydration работает без rw-монтирования model-weights у catalog; GGUF-модель активируется через ollama API (manifest/blobs/create); activate/promote — только DB-состояние + API-вызовы."
+covers = ["R3"]
+after = []
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Volume map: write-owner как данные + drift-тест (AD-D2)"
+description = "AD-D2: «у каждого shared-volume один write-owner» сейчас держится в голове/документе. (1) environment-model.json: у каждого volume поле writeOwner (+ readers); (2) invariant-тест (scripts/test/, паттерн schema-locks-ddl-invariant.test.mjs): парсит compose.production.yml — каждый volume из environment-model.json имеет ровно один rw-монтирующий сервис = writeOwner, все остальные ≤ :ro, volume без rw-владельца = fail; (3) тест в check-tooling (check-tooling-tests.json)."
+verify = "Тест зелёный на текущем compose (после stories 2,4,5 — у каждого volume один owner); интродукция второго rw-монтирования на любой volume ломает тест с указанием volume+сервиса."
+covers = ["R3"]
+after = [2, 3, 4, 5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Retention-таблица: единый источник ресурс → retention mode + TTL (AD-D3)"
+description = "AD-D3: retention сегодня = построчные hardcode-значения без единого источника. Таблица (single source, код-модуль + документ): resource → mode (project-scoped / TTL / global) + TTL + место prune. Инвентарь неограниченных накопителей: catalog-БД: security_events (access-schema.ts:3), operations (catalog-schema.ts:50), ai_plugin_versions (:40), operation_action_requests (model-job-schema.ts), bridge_jobs (device-schema.ts:4), bridge_runtime_artifacts (+tar.gz файлы, installation-migrations.ts:43), model_usage_calls (model-usage.schema.ts:3), maintenance_runs (maintenance-schema.ts:6), retired_rag_previews/purges (retirement-schema-sql.ts:8,11); RAG-БД: rag_quota_events (rag-quota-schema.ts:32-36); FS: skill-versions (.neurocenter-skill-versions, skill-versions.ts). Существующие TTL: bridge_pairs 30d (device-store.ts:86), chat activity 30d (chat-activity.sessions.ts:13). Значения TTL = OQ (рекомендации в плане)."
+verify = "Модуль таблицы существует и покрывает 100% инвентаря (invariant-тест: каждая таблица из DDL-инвентаря присутствует в retention-таблице с mode+TTL); документ синхронен с модулем; TTL-константы в коде — из таблицы, не дублируются."
+covers = ["R9"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Retention prune: периодический проход в maintenance tick (AD-D3)"
+description = "AD-D3: prune живёт в ратифицированном механизме — maintenance tick (scripts/production/maintenance.mjs:61-148, runMaintenance :351-402, advisory-лок 53709168; существующий prune :137-142 — только локальные backup-копии). Добавить prune-шаги по retention-таблице (story 7): TTL-таблицы catalog-БД (DELETE WHERE created_at < now() - ttl), bridge_runtime_artifacts + tar.gz-файлы, rag_quota_events (RAG-БД), skill-versions rolling N=2 (функция prune уже есть: skill-versions.ts:100-138 — подключить). Идиотентично: уже под advisory-локом runMaintenance."
+verify = "Тик maintenance: застарелые строки (fixture старше TTL) удалены, свежие нет; skill-versions: оставлены 2 последние версии; повторный тик — idempotent (0 удалений); лок: конкурентный тик не двойной prune."
+covers = ["R9"]
+after = [7]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "S3 snapshot GC: reclaim DELETING (AD-D3)"
+description = "AD-D3: если verifier down/завис, snapshot в DELETING и его S3-объекты накапливаются вечно — gcOrphanedDeletingSnapshots (snapshot-gc.ts:9-150, age-фильтр delete_after<=now() уже есть) вызывается только по failure-paths verifier'а (snapshot-verifier.controller.ts:29). Добавить периодический вызов gc() в maintenance tick (1x/ч) — в процессе catalog, idempotent (advisory-лок neurocenter:snapshot-storage внутри gc)."
+verify = "Fixture: snapshot DELETING + delete_after в прошлом + blob_writes строка → периодический gc → S3-объект и строка удалены; при живом verifier поведение без изменений (нет двойного gc — advisory-лок)."
+covers = ["R9"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Backup lock: TTL + auto-release по heartbeat (AD-D3)"
+description = "AD-D3: файловый бэкап-лок (backup-storage.ts:7 BACKUP_LOCK, :38-67 acquire) после крэша бэкап-процесса живёт вечно — снимается оператором офлайн (реcovery.mjs:354). (1) лок = dir + owner + heartbeat-файл (ts); (2) acquirer: lock старше TTL и heartbeat не свежий → replace (crash-safe: бэкап = один джоб, TTL > max backup duration); (3) fresh lock → отказ. OQ: значение TTL (рекомендация 30min)."
+verify = "Старый лок (heartbeat старше TTL) → acquire успешно, предыдущий owner замечен (security event/log); свежий лок (heartbeat < TTL) → acquire отказ; kill -9 бэкап-процесса → следующий бэкап стартует после TTL без офлайн-вмешательства."
+covers = ["R9"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Удаление проекта: полный каскад + receipt (AD-D3)"
+description = "AD-D3: удаление проекта = только FK-cascade в catalog-БД (project-deletion.ts:6-63) + project_retirements + строка operations. НЕТ: RAG-БД nc_rag_<sha> (project-database-name.ts:5), skills-каталоги (SKILLS_STORAGE_PATH), artifact-cache файлы проекта, S3-объекты (chat attachments: CHAT_S3_PROJECT_BUCKET), модельные артефакты. Расширить каскад: RAG-БД (DROP, паттерн retired-rag.service.ts: request_key idempotency, preview/purge, recover), skills, artifact-cache, S3; receipt = расширение project_retirements (JSONB deleted-resources). OQ: chat S3 (recommend: удалять), whole-stack backup'ы проекта (recommend: оставить + зафиксировать в receipt), model_usage_calls (recommend: оставить для аналитики)."
+verify = "DELETE /projects/:id → FK-cascade + RAG-БД nc_rag_<hash> исчезла + skills-каталоги проекта удалены + S3-объекты проекта удалены + receipt в project_retirements с полным списком удалённого; повторный delete — idempotent (request_key); проект, отсутствующий в некоторых источниках — без ошибок."
+covers = ["R11"]
+after = [7]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Crash consistency: ратификация 4 паттернов + artifact SHA (AD-D5)"
+description = "AD-D5: 4 канонических паттерна уже ратифицированы в code: (1) tmp+rename+fsync — runtime-artifacts.ts:61-129; (2) 2-phase + recover-таблица — snapshot-storage.ts:293-335, blob_writes recover :436-445; (3) lease-токены с recheck — gguf advisory lock :141-143, job-lease headers, verifier 2-min lease; (4) unique + row-lock idempotency — device-job-requests.ts:23-61 (ON CONFLICT DO NOTHING). (1) Таблица «операция → паттерн» как единый источник (документ, OQ: где); (2) forwardRuntimeArtifact (device.controller.ts:236-254 → runtime-artifact-stream.ts:7-60): сейчас только length-check 256MiB, SHA нет — добавить SHA-256: sender считает при стриме → header + строка bridge_runtime_artifacts (migration), receiver верифицирует, mismatch → ошибка + security event; (3) invariant: новые записи в shared volumes только через 4 паттерна."
+verify = "Стрим runtime-artifact с битым SHA → receiver отклоняет (error + security event), файл не активирован; корректный SHA → приём, SHA в bridge_runtime_artifacts; таблица «операция → паттерн» покрывает все 4 impl + runtime-artifact; новые code-пути записи в shared volumes проходят по одному из 4 паттернов (review-чеклист в инварианте)."
+covers = ["R3"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Refactor sweep: AD-D2..D5 по всей кодовой базе"
+description = "Финальный проход эпика: (1) grep-инвентарь по 4 правилам (rw-mounts без owner; quota/used-дубли; TTL-магические числа вне retention-таблицы; прямые fs-записи в shared volumes вне 4 паттернов) — каждый hit: fix или явный exception в таблице; (2) environment-model.json + compose: все volumes в model, все env в requiredEnv map; (3) docs: architecture-data.md Known Defects → resolved по фактическому статусу. Механически: по одному commit-классу на правило."
+verify = "Grep-инвентарь: 0 необъявленных hits (каждый hit — fixed или в exceptions с причиной); environment-model drift-тест зелёный; known-defects список обновлён."
+covers = ["R3"]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 14
+type = "story"
+title = "DATA-01: e2e-приёмка data-инвариантов на развёрнутом стеке"
+description = "E2E-приёмка (HITL): развёрнутый production-стек, проверка data-инвариантов AD-D2..D5: (1) volume map: у каждого volume один write-owner (drift-тест на live compose); (2) capacity: 7 ресурсов, model-weights виден; (3) retention: тик прунит fixture-строки, skill-versions N=2; (4) project deletion: полный каскад + receipt на реальном проекте; (5) crash: kill -9 бэкап-процесса → auto-release по TTL; kill -9 device при стриме runtime-artifact → SHA-верификация; restart gateway → кэш жив; (6) quota: used-bytes правдив после операций. Протокол + скриншоты/логи в tickets/epic-data/."
+verify = "Чеклист 6 инвариантов на live-стеке: все green, протокол с артефактами; любой red — баг-тикет, не «потолерировать»."
+covers = ["R3", "R9", "R11"]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+hitl = true
+risk = "high"
