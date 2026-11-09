@@ -3,7 +3,7 @@ title: 'Ceiling-version handshake: graceful negotiation contractVersion (AD-13, 
 type: 'feature'
 ticket: '11'
 created: '2026-11-09'
-status: 'ready-for-dev'
+status: done
 baseline_revision: '3433b1d147163a82fc023a34f909457830c7f6aa'
 route: 'full'
 route_source: 'auto'
