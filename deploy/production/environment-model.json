@@ -306,7 +306,7 @@
             "seccomp": null,
             "secrets": ["internal_token", "metrics_token", "rag_provision_url", "rag_url"],
             "ports": [],
-            "volumes": ["capacity:/capacity:ro", "projects:/data/projects"],
+            "volumes": ["capacity:/capacity:ro", "projects:/data/projects:ro"],
             "env": {
                 "NODE_ENV": "production",
                 "BIND_HOST": "0.0.0.0",

@@ -228,7 +228,7 @@ services:
       CATALOG_SERVICE_URL: http://catalog-service:4100
       FEATURE_FLAGS_SERVICE_URL: http://feature-flags-service:4400
     secrets: [metrics_token, internal_token, rag_url, rag_provision_url]
-    volumes: [projects:/data/projects, capacity:/capacity:ro]
+    volumes: [projects:/data/projects:ro, capacity:/capacity:ro]
     depends_on:
       capacity-collector: {condition: service_started}
       postgres: {condition: service_healthy}
