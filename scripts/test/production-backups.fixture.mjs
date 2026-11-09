@@ -56,7 +56,7 @@ export async function verifyProductionBackups({
         const before = files();
         const rows = await list();
         node(
-            "const fs=require('fs');fs.mkdirSync('/app/backups/.neurocenter-backup.lock',{mode:448});fs.writeFileSync('/app/backups/.neurocenter-backup.lock/owner','fixture',{mode:384});",
+            "const fs=require('fs'),d='/app/backups/.neurocenter-backup.lock';fs.mkdirSync(d,{mode:448});fs.writeFileSync(d+'/owner','fixture',{mode:384});fs.writeFileSync(d+'/heartbeat',new Date().toISOString(),{mode:384});",
         );
         try {
             const reply = await request(route, { method: 'POST', body: {} });

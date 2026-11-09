@@ -8,6 +8,10 @@ export interface IBackupPolicy {
     minFreeBytes: number;
 }
 export const BACKUP_OPERATION_MS = 20_000;
+/** Лиза бэкап-лока: stale, только когда и лока, и heartbeat старше TTL (TTL > BACKUP_OPERATION_MS). */
+export const BACKUP_LOCK_TTL_MS = 10 * 60_000;
+/** Интервал обновления heartbeat владельцем (TTL/20 — запас на пропуск обновлений). */
+export const BACKUP_LOCK_HEARTBEAT_MS = 30_000;
 
 /** Ноль не отключает ограничения; весь каталог копий использует один бюджет. */
 export function backupPolicy(env: NodeJS.ProcessEnv = process.env): IBackupPolicy {

@@ -15,6 +15,7 @@ import {
     backupUsage,
     BackupBudget,
     syncBackupDirectory,
+    type IBackupLockStaleInfo,
 } from '../backups/backup-storage';
 import { parsePgUrl, runPgDump } from '../backups/pg-dump';
 export { parsePgUrl, type IPgLocation } from '../backups/pg-dump';
@@ -36,6 +37,8 @@ interface IBackupOptions {
     rootDirectory?: string;
     confirm?: (result: IBackupRunResult) => Promise<void>;
     afterPrune?: (files: string[]) => Promise<void>;
+    /** Канал наблюдаемости снятия протухшего бэкап-лока (по умолчанию лог сервиса). */
+    onStaleRemoval?: (info: IBackupLockStaleInfo) => void | Promise<void>;
 }
 const active = new Map<AbortController, Promise<void>>();
 let closing = false;
@@ -140,7 +143,7 @@ export async function runAllBackups(
     try {
         const directory = path.resolve(backupDir || backupDirectory());
         const paths = await backupDirectories(options.rootDirectory || directory, directory);
-        release = await backupLock(paths.root);
+        release = await backupLock(paths.root, { onStaleRemoval: options.onStaleRemoval });
         if (closing) {
             throw backupFailure('BACKUP_STOPPED', 'Сервер останавливается. Повторите действие после подключения.', 503);
         }
