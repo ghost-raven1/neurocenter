@@ -1,0 +1,13 @@
+# Сторис эпика epic-local-auth. Порядок таблиц = порядок сборки.
+# next_id = 2
+
+[[entry]]
+id = 1
+type = "story"
+title = "Локальный auth как supported-конфигурация production-конфига (AD-OP-5)"
+description = "Локальный auth (локальный Blitz-совместимый IdP в закрытом контуре) — first-class supported-конфигурация production-стека, не dev-обход (решение пользователя 2026-11-09, G-6): (1) поддерживаемые auth-режимы (local-idp / corporate — центральный Blitz) декларированы в production-модели environment-model.json + drift-тест-проверка (наличие поля, допустимые значения); SSO_DISABLE=false обязателен в обоих режимах — productionEnvConstraints не меняется; (2) операторские доки: секция «Локальный IdP-режим (пилот, interim)» в docs/production-setup.md (когда, предпосылки, configure, первый админ bootstrap-admin, ограничения, переход на центральный Blitz после пилота — эпик 3) + P0-SSO-строка docs/implementation-readiness.md отражает interim-путь пилота; (3) e2e на production-стеке в local-auth-режиме (production-stack.mjs + blitz-fixture): логин (PKCE)/сессия/bridge-билет, первый админ без dev-входа, logout — зелёный; новая проверка «0 dev-флагов в production-конфиге» (нет SSO_DISABLE=true/RAG_AUTH_DISABLED=true в .env и в env контейнеров); evidence production-stack.json несёт authMode=local-idp. Инварианты ep1 e4 не сломаны: compose-drift (включая productionEnvConstraints/latest) и production-runtime (SSO_DISABLE=true → отказ старта) зелёные. Механика auth не меняется (oauth2-bridge, runtime.cjs, bootstrap-admin); HITL-часть (реальный локальный IdP-инстанс, команда пилота) — epic-pilot."
+verify = "Модель декларирует auth-режимы: drift-тест зелёный (наличие поля + enum; некорректное значение → фэйл); docs/production-setup.md имеет полную секцию «Локальный IdP-режим (пилот, interim)», P0-SSO-строка readiness отражает interim-путь; production-stack.mjs зелёный (логин/сессия/bridge-билет, bootstrap, logout + новая проверка «0 dev-флагов», evidence authMode=local-idp, realBlitz=false); compose-drift + production-runtime зелёные; корневой сьют — без деградации против baseline."
+covers = ["R1", "R2", "R12"]
+after = []
+hitl = false
+risk = "medium"

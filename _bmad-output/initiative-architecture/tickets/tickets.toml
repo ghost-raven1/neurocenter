@@ -1,5 +1,5 @@
 # Эпики инициативы. Порядок таблиц = порядок сборки.
-# next_id = 11
+# next_id = 12
 
 [[epic]]
 id = 1
@@ -65,12 +65,20 @@ covers = ["R2", "R5", "R8"]
 after = [{ epic = 2, needs = "устройственный канал (агенты работают через mcp-host)" }, { epic = 8, needs = "проектный чат с режимами и комнатами (FR-401..404)" }]
 
 [[epic]]
+id = 11
+slug = "local-auth"
+title = "Локальный auth как supported-конфигурация (AD-OP-5)"
+description = "Пилот идёт на production-стеке с локальным auth (локальный Blitz-совместимый IdP в закрытом контуре; решение пользователя 2026-11-06: центральный Blitz — после пилота, эпик 3). Решение coverage-аудита G-6 (2026-11-09): локальный auth = first-class supported-конфигурация production-конфига, не dev-обход (AD-OP-5, ep1 entry 1.4): поддерживаемые режимы (local-idp / corporate — центральный Blitz) декларированы в production-модели + drift-тест-проверка; операторские доки (production-setup.md: секция «Локальный IdP-режим (пилот, interim)» + P0-SSO-строка в readiness); e2e на production-стеке в local-auth-режиме: логин (PKCE)/сессия/bridge-билет, первый админ без dev-входа, 0 dev-флагов в production-конфиге, evidence authMode=local-idp. Инварианты ep1 e4 не сломаны (compose-drift с productionEnvConstraints, production-runtime: SSO_DISABLE=true → отказ старта). Блокирует пилот (эпик 10)."
+covers = ["R1", "R2", "R12"]
+after = [{ epic = 1, needs = "production-конфиг без dev-обходов (AD-OP-5, entry 1.4): productionEnvConstraints-матрица + механизм validateProduction" }]
+
+[[epic]]
 id = 10
 slug = "epic-pilot"
 title = "Пилот: приёмка и GO"
 description = "Приёмка пилота на ЛОКАЛЬНОЙ версии (решение пользователя 2026-11-06: Blitz IdP — после пилота, эпик 3 в конце очереди; вход — существующий локальный auth-режим как interim-конфигурация): 5 P0-блокеров (P0-S3/MNT/UPD, P0-RES, P0-NAT; P0-S3 ре-верифицирован финальным cross-host restore на полном стеке, включая сервисы эпика 6) + 5 приоритетных сквозных проверок пройдены (NO-GO → GO); baseline Q7 зафиксирован (время onboarding, балл опроса, число шагов, рост); опрос удобства Q3 (5-pt + лог тупиков) проведён на пилотной команде; решение о выходе на фазу 2 (включая переход на Blitz IdP — эпик 3)."
 covers = ["R1", "R2", "R5", "R6", "R12"]
-after = [{ epic = 4, needs = "P0-S3/MNT/UPD и RPO/RTO" }, { epic = 6, needs = "P0-RES" }, { epic = 7, needs = "P0-NAT" }, { epic = 8, needs = "проекты из шаблона (C4)" }, { epic = 9, needs = "реальный проект агент-командой (C5)" }]
+after = [{ epic = 4, needs = "P0-S3/MNT/UPD и RPO/RTO" }, { epic = 6, needs = "P0-RES" }, { epic = 7, needs = "P0-NAT" }, { epic = 8, needs = "проекты из шаблона (C4)" }, { epic = 9, needs = "реальный проект агент-командой (C5)" }, { epic = 11, needs = "локальный auth = supported-конфигурация (AD-OP-5, G-6): режимы в модели, операторские доки, e2e на production-стеке" }]
 
 [[epic]]
 id = 3
