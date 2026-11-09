@@ -3,7 +3,7 @@ title: 'Drift-guard деклараций .d.cts↔.cjs (AD-8)'
 type: 'feature'
 ticket: '7'
 created: '2026-11-06'
-status: ready-for-dev
+status: done
 baseline_revision: '160a4003b4b4f3a3cc218e5cc94438ae104f3a9f'
 route: 'full'
 route_source: 'auto'
