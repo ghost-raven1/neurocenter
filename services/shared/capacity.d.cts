@@ -1,4 +1,5 @@
-export type TCapacityResource = 'postgres' | 'wal' | 'skills' | 'projects' | 'backups' | 'runtime-artifacts';
+export type TCapacityResource =
+    'postgres' | 'wal' | 'skills' | 'projects' | 'backups' | 'runtime-artifacts' | 'model-weights';
 export interface ICapacityRequest {
     resource: TCapacityResource;
     bytes: number;
@@ -35,8 +36,11 @@ export function getCapacityStatus(): {
     observedAt?: string;
     maxAgeSeconds?: number;
     reserveBytes?: number;
-    resources?: Record<
-        TCapacityResource,
-        { available: true; filesystem: string; freeBytes: number; totalBytes: number; walBytes?: number }
+    // model-weights обязателен только в снапшоте schemaVersion 2; legacy (1) — Partial.
+    resources?: Partial<
+        Record<
+            TCapacityResource,
+            { available: true; filesystem: string; freeBytes: number; totalBytes: number; walBytes?: number }
+        >
     >;
 };

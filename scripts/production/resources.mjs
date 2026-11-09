@@ -18,6 +18,7 @@ export async function inspectProductionResources({ directory, projectName, files
         projects: ['catalog-service', '/data/projects'],
         backups: ['catalog-service', '/app/backups'],
         'runtime-artifacts': ['catalog-service', '/app/runtime-artifacts'],
+        'model-weights': ['model-runtime', '/root/.ollama'],
     };
     for (const [resource, [service, target]] of Object.entries(expected)) {
         const actual = states

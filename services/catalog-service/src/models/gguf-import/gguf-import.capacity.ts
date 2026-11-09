@@ -10,7 +10,7 @@ export async function assertGgufCapacity(root: string, limits: IGgufImportPolicy
             snapshot = getCapacityStatus();
         if (
             process.env.CAPACITY_REQUIRED === 'true' &&
-            (!snapshot.available || snapshot.resources?.['runtime-artifacts'].filesystem !== String(info.dev))
+            (!snapshot.available || snapshot.resources?.['runtime-artifacts']?.filesystem !== String(info.dev))
         )
             throw new CapacityError('CAPACITY_UNAVAILABLE', 'runtime-artifacts');
         if (disk.bavail * disk.bsize < BigInt(reserveBytes) + BigInt(limits.diskReserveBytes))

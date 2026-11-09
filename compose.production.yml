@@ -79,6 +79,7 @@ services:
       - projects:/volumes/projects:ro
       - backups:/volumes/backups:ro
       - runtime-artifacts:/volumes/runtime-artifacts:ro
+      - model-weights:/volumes/model-weights:ro
       - capacity:/capacity
     depends_on:
       postgres: {condition: service_healthy}

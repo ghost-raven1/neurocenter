@@ -89,6 +89,7 @@
             "volumes": [
                 "backups:/volumes/backups:ro",
                 "capacity:/capacity",
+                "model-weights:/volumes/model-weights:ro",
                 "postgres:/volumes/postgres:ro",
                 "projects:/volumes/projects:ro",
                 "runtime-artifacts:/volumes/runtime-artifacts:ro",

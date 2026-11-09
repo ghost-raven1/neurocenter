@@ -9,7 +9,8 @@ export interface ICapacityResourceState {
 }
 /** Shared snapshot of physical volume capacity, published by the collector sidecar. */
 export interface ICapacitySnapshot {
-    schemaVersion: 1;
+    /** 2 — текущий коллектор (7 ресурсов, включая model-weights); 1 — legacy, совместим на читательской стороне. */
+    schemaVersion: 1 | 2;
     observedAt: number;
     resources: Partial<Record<TCapacityResource, ICapacityResourceState>>;
 }

@@ -12,7 +12,7 @@ function safeNumber(value) {
 
 /** Пути определены production-топологией, а не пользовательскими или произвольными env-путями. */
 async function collectCapacity({ root = '/volumes', now = Date.now } = {}) {
-    const result = { schemaVersion: 1, observedAt: now(), resources: {} };
+    const result = { schemaVersion: 2, observedAt: now(), resources: {} };
     for (const resource of resources) {
         try {
             const base = path.join(root, resource === 'wal' ? 'postgres' : resource);
@@ -50,7 +50,12 @@ async function collectCapacity({ root = '/volumes', now = Date.now } = {}) {
                 item.walBytes = bytes;
             }
             result.resources[resource] = item;
-        } catch {
+        } catch (error) {
+            // Несмонтированный том model-weights — явная ошибка, а не тихий «пустой» ресурс:
+            // снапшот не публикуется, потребители получают CAPACITY_UNAVAILABLE (fail-fast).
+            if (resource === 'model-weights' && error?.code === 'ENOENT') {
+                throw new Error('Том model-weights не смонтирован у сборщика capacity.');
+            }
             result.resources[resource] = { available: false };
         }
     }
@@ -69,11 +74,14 @@ async function publishCapacity(value) {
 async function main() {
     if (process.argv.includes('--check')) {
         const value = JSON.parse(await fs.readFile(destination, 'utf8'));
+        // Compat: во время rollout'а в общем томе может лежать legacy-снапшот (schemaVersion 1)
+        // без model-weights — healthcheck не должен фэйлить на нём.
+        const expected = value.schemaVersion === 1 ? resources.filter((key) => key !== 'model-weights') : resources;
         if (
-            value.schemaVersion !== 1 ||
+            (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
             !Number.isSafeInteger(value.observedAt) ||
             Date.now() - value.observedAt > maxAgeMs ||
-            resources.some((key) => !value.resources[key]?.available)
+            expected.some((key) => !value.resources[key]?.available)
         ) {
             throw new Error('Сведения о физических томах недоступны.');
         }

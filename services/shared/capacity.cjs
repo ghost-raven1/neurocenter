@@ -1,7 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
-const resources = ['postgres', 'wal', 'skills', 'projects', 'backups', 'runtime-artifacts'];
+const resources = ['postgres', 'wal', 'skills', 'projects', 'backups', 'runtime-artifacts', 'model-weights'];
 const snapshotFile = '/capacity/snapshot.json';
 const maxAgeMs = 90000;
 const reserveBytes = 1024 ** 3;
@@ -28,7 +28,7 @@ function reject(code, resource) {
 }
 function validateSnapshot(value, now = Date.now()) {
     if (
-        value?.schemaVersion !== 1 ||
+        (value?.schemaVersion !== 1 && value?.schemaVersion !== 2) ||
         !Number.isSafeInteger(value.observedAt) ||
         value.observedAt > now + 5000 ||
         now - value.observedAt > maxAgeMs ||
@@ -39,8 +39,15 @@ function validateSnapshot(value, now = Date.now()) {
     }
     for (const key of resources) {
         const item = value.resources[key];
+        if (!item) {
+            // Compat: legacy-снапшот (schemaVersion 1, старый коллектор) не несёт model-weights —
+            // ресурс читается как undefined, а не как «пустой том». Схема 2 обязывает все 7.
+            if (!(key === 'model-weights' && value.schemaVersion === 1)) {
+                throw new Error('resource');
+            }
+            continue;
+        }
         if (
-            !item ||
             item.available !== true ||
             !Number.isSafeInteger(item.totalBytes) ||
             item.totalBytes <= 0 ||
@@ -119,6 +126,11 @@ function createCapacityGuard({
             return () => {};
         }
         const item = sample?.resources[resource] || local;
+        // Legacy-снапшот (schemaVersion 1) не несёт model-weights: «нет данных» закрывает операцию,
+        // а не падает как TypeError.
+        if (!item) {
+            reject('CAPACITY_UNAVAILABLE', resource);
+        }
         const key = item.filesystem;
         const epoch = sample?.observedAt || 0;
         let state = reservations.get(key);

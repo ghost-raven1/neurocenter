@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { docker, repositoryRoot } from '../production/compose-client.mjs';
 const image = 'node:24.22.0-bookworm-slim';
 const prefix = 'nc-capacity-' + randomUUID().slice(0, 8);
-const resources = ['postgres', 'skills', 'projects', 'backups', 'runtime-artifacts'];
+const resources = ['postgres', 'skills', 'projects', 'backups', 'runtime-artifacts', 'model-weights'];
 const volumes = Object.fromEntries([...resources, 'capacity'].map((key) => [key, prefix + '-' + key]));
 const collector = prefix + '-collector';
 const checks = [];
