@@ -30,3 +30,31 @@ export interface IReleaseInspection {
 }
 export type TReleaseInspector = (asset: IReleaseAsset, entrypoint?: string) => Promise<IReleaseInspection>;
 export function validateReleaseInput(value: unknown): IRepositoryRelease;
+/** Разрешает тег релиза в подтверждённый commit, файлы и (по выбору) проверенную поставку. */
+export function resolveGithubRelease(request: {
+    source: { url: string; ref?: string; release: IRepositoryRelease; entrypoint?: string };
+    parsed: { owner?: string; repository?: string };
+    repository: { name?: string; description?: string };
+    base: string;
+    fetcher: (url: string) => Promise<unknown>;
+    githubJson: (fetcher: (url: string) => Promise<unknown>, url: string) => Promise<unknown>;
+    inspectAsset: TReleaseInspector;
+}): Promise<{
+    url: string;
+    commit: string;
+    ref: string;
+    entrypoint: string;
+    candidates: string[];
+    name: string;
+    description: string;
+    release: { tag: string; id: number };
+    releaseChoices: Array<Omit<IReleaseAsset, 'url' | 'sha256'>>;
+    runnableKinds: string[];
+    requiresReleaseChoice?: boolean;
+    warnings?: string[];
+    requiresEntrypointChoice?: boolean;
+    recommendedKind?: string;
+    runtimeSource?: IRuntimeSource;
+    adapter?: string;
+    supportedTargets?: string[];
+}>;

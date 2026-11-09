@@ -46,6 +46,7 @@ const expectedFiles = [
     'scripts/test/dev-mcp-coverage-lifecycle.test.mjs',
     'scripts/test/release-manifest.test.mjs',
     'scripts/test/run-manifest.test.mjs',
+    'scripts/test/shared-declaration-drift.test.mjs',
     'scripts/test/workspace-process-failure.test.mjs',
     'scripts/agent-kit/test/role-contracts.test.mjs',
     'scripts/agent-kit/test/role-evals.test.mjs',

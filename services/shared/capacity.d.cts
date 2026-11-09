@@ -11,6 +11,20 @@ export class CapacityError extends Error {
     statusCode: number;
 }
 export const reserveBytes: number;
+/** Фиксированный набор физических томов production-топологии. */
+export const resources: readonly TCapacityResource[];
+/** Снимок старше этого возраста считается устаревшим. */
+export const maxAgeMs: number;
+/** Резерв одного процесса учитывает конкуренцию и зафиксированные записи до следующего замера. */
+export function createCapacityGuard(options?: {
+    required?: () => boolean;
+    snapshot?: (now?: number) => unknown;
+    statfs?: (path: string, options: { bigint: boolean }) => Promise<unknown>;
+    stat?: (path: string) => Promise<unknown>;
+    now?: () => number;
+}): (request: { resource: TCapacityResource; bytes: number; path?: string }) => Promise<() => void>;
+/** Бросает на устаревшем или неполном снимке; валидный снимок возвращается без изменений. */
+export function validateSnapshot(value: unknown, now?: number): unknown;
 /** Резерв до записи освобождается в finally; production требует свежий замер реальных томов. */
 export function reserveCapacity(request: ICapacityRequest): Promise<() => void>;
 export function recordCapacityQueue(name: 'rag', pending: number, active: number): void;
