@@ -5,7 +5,7 @@ parent: initiative-architecture
 covers: [R1, R2, R5, R6, R12]
 sources: [_bmad-output/initiative-architecture/prd-neurocenter/prd-neurocenter.md]
 companions: [docs/implementation-readiness.md]
-after: [epic-dr, epic-res-obs, epic-devices, epic-project, epic-agent-team]
+after: [epic-dr, epic-res-obs, epic-devices, epic-project, epic-agent-team, epic-local-auth]
 refined: false
 risk: high
 ---
@@ -46,7 +46,7 @@ risk: high
 - Open question: Q1 — состав пилота (какие проекты/команда, реальные данные, сколько людей и агентов); owner: пользователь; gate до старта пилота.
 - Open question: Q3 — инструмент измерения удобства: 5-pt опрос + лог тупиков. [ASSUMPTION]
 - Open question: Q7 — baseline-цифры Success Metrics фиксируются при старте пилота. [ASSUMPTION]
-- Decision (Sofia/PO, 2026-11-09): UI-polish + UX-спека — ПЕРВЫЙ entry epic-pilot (до приёмки, при breakdown волны 2). Обоснование: приёмочные метрики пилота = UX-метрики (PRD NFR-1 «Простота»: completion-rate, число шагов ядра; NFR-3 «Нет тупиковых сценариев»: тупики = 0 незакрытых) — GO с неполированным UI по контракту невозможен. В entry: UX-спека (DESIGN.md + EXPERIENCE.md, bmad-ux), аудит user paths (error/empty-states), Playwright-e2e критических путей, фикс-лист из walkthrough'а dev-стека (факты собираются с 2026-11-09, dev-стек эпика 1 гейт (б)). Gap-фикс: в 9 эпиках не было явной записи про UI-polish.
+- Decision (Sofia/PO, 2026-11-09): UI-polish + UX-спека — ПЕРВЫЙ entry epic-pilot (до приёмки, при breakdown волны 2). Обоснование: приёмочные метрики пилота = UX-метрики (PRD NFR-1 «Простота»: completion-rate, число шагов ядра; NFR-3 «Нет тупиковых сценариев»: тупики = 0 незакрытых) — GO с неполированным UI по контракту невозможен. В entry: UX-спека (DESIGN.md + EXPERIENCE.md, bmad-ux), аудит user paths (error/empty-states), Playwright-e2e критических путей, фикс-лист из walkthrough'а dev-стека (факты собираются с 2026-11-09, dev-стек эпика 1 гейт (б)) + известные фиксы a11y/адаптива из UX-аудита 2-й линзы (REVIEW-2.md): (1) a11y A1/A2 (P1, REVIEW-2.md:24-25) — контраст WCAG AA 4.5:1: LoginScreen.less:110-160 (5 мест, текст 11-15px ≈2.9-4.1:1 на карточке → body ≥ #5a6b7d, микро-текст ≥ #5f7183 ≈4.8:1) и ComputerHeader.less:43-49 + ProjectTargetSelect.less:23-26 (10-12px #758697 на #f8fafc = 3.58:1 → ≥ #5f7183); e2e-ассерт: axe color-contrast на /auth/login и главной = 0 нарушений; (2) M1 (P2, REVIEW-2.md:42) — 29 модальных окон/drawers с фиксированной шириной 600-1000px без max-width у корня класса (глобальный clamp app.less:157-159 действует только ≤575px → на 768px переливаются все модалки 760-1000px): fix = global @media 576–1023px .ant-modal max-width: calc(100vw - 24px) в app.less. Gap-фикс: в 9 эпиках не было явной записи про UI-polish.
 - Decision (пользователь, 2026-11-06): epic-identity (Blitz IdP) перенесён в конец очереди сборки (после пилота) — пилот идёт на локальной версии. Открытый вопрос: локальный auth-режим пилота — поддержанная конфигурация, не dev-обход (AD-OP-5, entry 1.4); если требует отдельной работы до пилота — выносится в микро-эпик (решение с пользователем).
 - Waits on epic-dr because: P0-S3/MNT/UPD и RPO/RTO.
 - Waits on epic-res-obs because: P0-RES.

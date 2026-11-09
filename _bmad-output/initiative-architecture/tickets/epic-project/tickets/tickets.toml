@@ -1,6 +1,6 @@
 # Сторис эпика epic-project (Проект как единица: шаблон, знания, модели, чат — C4).
 # Порядок таблиц = порядок сборки. baseline = main @ 4097fdc3 (базовый код 3433b1d1).
-# next_id = 17
+# next_id = 18
 
 [[entry]]
 id = 1
@@ -28,7 +28,7 @@ risk = "medium"
 id = 3
 type = "story"
 title = "FR-601: GGUF-импорт из архива (.tar.gz) + фикс E1 nginx 413 (owner: nginx-template)"
-description = "Два gap FR-601: (a) 'GGUF или архив' — сейчас принимается ТОЛЬКО один .gguf (ggufIntent gguf-import.model.ts:45-72, endsWith('.gguf') :54); архив (.tar.gz) не поддерживается. (b) E1 P0 (UX-аудит 2-й линзы, REVIEW-2.md): nginx client_max_body_size 50m (frontend/nginx.production.conf.template:18, location /api/ :65-71 наследует 50m) vs политика импорта до 64GB (shared/gguf-import-policy.cjs) → любой реальный GGUF/архив получает 413 на прокси. FIKS E1 (owner зафиксирован = nginx-template): добавить location /api/models/gguf-imports/ { client_max_body_size 8g; proxy_request_buffering off; proxy_http_version 1.1; proxy_pass http://api-gateway:4000; ... } по образцу архивного location = /api/asset-sources/archive :46-56 (8g). Архив: принять .tar.gz с GGUF внутри (распаковка на сервере, SHA-256 по архиву + по извлечённому GGUF, строгая проверка формата/архитектуры/тензоров/quant, квота+retention импорта, preparation/activation — отдельные явные действия, пер-version runtime-теги). Стык (не дубликат): epic 2 entry 9 задаёт body-budgets route-policy; здесь — nginx-template owner для /api/models/gguf-imports/."
+description = "Два gap FR-601: (a) 'GGUF или архив' — сейчас принимается ТОЛЬКО один .gguf (ggufIntent gguf-import.model.ts:45-72, endsWith('.gguf') :54); архив (.tar.gz) не поддерживается. (b) E1 P0 (UX-аудит 2-й линзы, REVIEW-2.md): nginx client_max_body_size 50m (frontend/nginx.production.conf.template:18, location /api/ :65-71 наследует 50m) vs политика импорта до 64GB (shared/gguf-import-policy.cjs) → любой реальный GGUF/архив получает 413 на прокси. FIKS E1 (owner зафиксирован = nginx-template): добавить location /api/models/gguf-imports/ { client_max_body_size 8g; proxy_request_buffering off; proxy_http_version 1.1; proxy_pass http://api-gateway:4000; ... } по образцу архивного location = /api/asset-sources/archive :46-56 (8g). Архив: принять .tar.gz с GGUF внутри (распаковка на сервере, SHA-256 по архиву + по извлечённому GGUF, строгая проверка формата/архитектуры/тензоров/quant, квота+retention импорта, preparation/activation — отдельные явные действия, пер-version runtime-теги). + E2 P1 (REVIEW-2, coverage-аудит G-3, owner зафиксирован здесь = nginx-template): nginx `client_max_body_size 256m` на `location /api/tool-builds/uploads/` (source-загрузка 50–256MiB; сейчас глобально 50m → 413) — отдельный location, не E1. Стык (не дубликат): epic 2 entry 9 задаёт body-budgets route-policy; здесь — nginx-template owner для /api/models/gguf-imports/ (E1) и /api/tool-builds/uploads/ (E2)."
 verify = "НГинкс: location /api/models/gguf-imports/ с client_max_body_size 8g + proxy_request_buffering off (nginx.production.conf.template, по образцу :46-56); POST /api/models/gguf-imports/ с файлом >50m → НЕ 413 (тест); приёмка .tar.gz с GGUF → распаковка + SHA-256 архива и GGUF + проверка формата (тест); приёмка повреждённого/чужого архива → отклонён (строгая проверка); preparation и activation — отдельные явные действия; per-version runtime-теги; квота+retention импорта; корневой сьют — без деградации."
 covers = ["R8"]
 after = [1]
@@ -177,3 +177,14 @@ covers = ["R4", "R6", "R9", "R12"]
 after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 hitl = true
 risk = "high"
+
+[[entry]]
+id = 17
+type = "story"
+title = "AD-11: Capability-advisor UI — machine-aware пресеты лимитов"
+description = "AD-11 (architecture-runtime-trust.md:105-109): админ, настраивая runtime-limits, подбирает значения вручную без связи с реальной машиной. AD-11: одна из системных ролей предлагает в UI machine-aware пресеты лимитов, вычисленные из фактических ресурсов хоста (disk/RAM/CPU); все пресеты внутри ceiling; рекомендация advisory — решение за администратором. Вход: capacity-snapshot — disk уже собирается (shared/capacity.cjs:4 6 ресурсов, :29-57 validateSnapshot schemaVersion 1, :203-222 getCapacityStatus) + machine-метрики RAM/CPU — AD-18 (закрыт эпик 6 entry 8: collector /proc/meminfo+/proc/stat → поле machine в snapshot, validateSnapshot backward-совместимый, старые снапшоты валидны). Целевой набор пресетов — storage/machine-секции AD-1 (runtime-cache, rag-quota, snapshot/backup, gguf-disk); ceiling = shared/runtime-limits.cjs RUNTIME_LIMIT_CEILINGS (сейчас textKnowledge+ggufImport — :4-5); admin-UI = frontend/src/features/RuntimeLimits (Settings.tsx:12, RuntimeLimitsSettings.tsx:9, fields.ts:7-33). Эта история: (1) advisor-расчёт в catalog (системная роль): GET advisor — читает актуальный capacity-snapshot + machine-поле, на каждую целевую секцию считает пресеты (3 уровня, каждый в [default..ceiling]) с обоснованием из фактических значений (disk freeBytes минус reserveBytes :7, RAM free/total, CPU count/load) и observedAt/age; (2) UI: advisor-блок в RuntimeLimitsSettings на секцию — пресеты как рекомендации + «Применить» через СУЩЕСТВУЮЩИЙ PATCH /api/runtime-limits/admin intent-flow (receipt, без обхода) + disclaimer advisory; (3) деградация (AD-18): нет machine-поля (снапшот до AD-18) → disk-only пресеты; снапшот недоступен/stale (>90s) или CAPACITY_REQUIRED не задан → advisor скрыт с причиной, секции остаются редактируемы. Стык entry 1 (open capability set, after): gguf-disk-пресет учитывает capability/назначение модели."
+verify = "GET advisor: пресеты по целевым секциям, каждое значение в [default..ceiling] (тест по секции); пресеты зависят от фактических значений снапшота (тесты-фикстуры: disk/RAM/CPU → разные значения); снапшот без machine → disk-only пресеты + флаг «RAM/CPU недоступны» (деградация AD-18, тест); CAPACITY_REQUIRED не задан / снапшот stale → advisor не рендерится, причина зафиксирована (test); UI: advisor-блок рендерится в RuntimeLimitsSettings, «Применить» = существующий PATCH intent → receipt (тест e2e-frontend); админ может изменить предложенное значение (advisory, тест); корневой сьют — без деградации."
+covers = ["R11", "R6"]
+after = [1]
+hitl = false
+risk = "medium"

@@ -16,7 +16,7 @@ context:
   - _bmad-output/initiative-architecture/tickets/epic-project/epic-project.md
   - _bmad-output/initiative-architecture/prd-neurocenter/prd-neurocenter.md
   - _bmad-output/initiative-architecture/ux/REVIEW-2.md
-  - _bmad-output/initiative-architecture/ux/DESIGN.md
+  - _bmad-output/initiative-architecture/ux/ДESIGN.md
   - _bmad-output/initiative-architecture/.memlog.md
 ---
 
@@ -24,14 +24,15 @@ context:
 
 ## Intent
 
-**Problem:** Два gap FR-601. (a) «GGUF или архив» — сейчас принимается ТОЛЬКО один .gguf: `ggufIntent` (gguf-import.model.ts:45-72) требует `item.fileName.toLowerCase().endsWith('.gguf')` (:54); архив (.tar.gz) не поддерживается — FR-601: «Веса для хостинга добавляются вручную из GGUF или архива». (b) E1 P0 (UX-аудит 2-й линзы, REVIEW-2.md): nginx `client_max_body_size 50m` (frontend/nginx.production.conf.template:18) и `location /api/` (:65-71) наследуют 50m, а политика импорта — до 64GB (shared/gguf-import-policy.cjs maximumBytes) → любой реальный GGUF/архив получает **413 Request Entity Too Large на прокси** ещё до сервиса. Это тупик (NFR-3): пользователь не может импортировать ни один реальный weights-файл.
+**Problem:** Два gap FR-601 + один nginx-gap E2. (a) «GGUF или архив» — сейчас принимается ТОЛЬКО один .gguf: `ggufIntent` (gguf-import.model.ts:45-72) требует `item.fileName.toLowerCase().endsWith('.gguf')` (:54); архив (.tar.gz) не поддерживается — FR-601: «Веса для хостинга добавляются вручную из GGUF или архива». (b) E1 P0 (UX-аудит 2-й линзы, REVIEW-2.md): nginx `client_max_body_size 50m` (frontend/nginx.production.conf.template:18) и `location /api/` (:65-71) наследуют 50m, а политика импорта — до 64GB (shared/gguf-import-policy.cjs maximumBytes) → любой реальный GGUF/архив получает **413 Request Entity Too Large на прокси** ещё до сервиса. Это тупик (NFR-3): пользователь не может импортировать ни один реальный weights-файл. (c) **E2 P1 (REVIEW-2.md, coverage-аудит G-3 — был без владельца, owner зафиксирован здесь):** загрузка source-узла Store (упаковка инструмента из своего файла) — PUT raw-файла на `/api/tool-builds/uploads/:id/content` (sourceUploadApi.ts:21-29), лимит UI **256MiB** (uploadConstants.ts:1, проверка useSourceUpload.ts:23 «до 256 МиБ»), а nginx 50m (template:18, 65-71) и исключение для `/api/tool-builds/` **нет** → архив исходников 50–256MiB получает **413**; в UI — «Передача прервана…» без объяснения (useSourceUpload.ts:207-215). Ключевая фича Store не работает для архивов >~50MB.
 
-**Approach:** (1) **Фикс E1 (owner зафиксирован = nginx-template):** добавить `location /api/models/gguf-imports/ { client_max_body_size 8g; proxy_request_buffering off; proxy_http_version 1.1; proxy_pass http://api-gateway:4000; ... }` по образцу архивного `location = /api/asset-sources/archive` (:46-56, там 8g + proxy_request_buffering off). (2) **Архив:** принять .tar.gz с GGUF внутри — серверная распаковка, SHA-256 по архиву И по извлечённому GGUF, строгая проверка формата (архитектура/тензоры/quant, gguf-inspection.ts), квота+retention импорта (gguf-import-policy.cjs), preparation и activation — отдельные явные действия (существующий WAITING→UPLOADING→READY→ACCEPTED, gguf-import.service.ts), per-version runtime-теги. **Стык (не дубликат):** epic 2 entry 9 задаёт body-budgets route-policy; здесь — nginx-template owner для /api/models/gguf-imports/ (конкретный location-блок в шаблоне), не route-policy.
+**Approach:** (1) **Фикс E1 (owner зафиксирован = nginx-template):** добавить `location /api/models/gguf-imports/ { client_max_body_size 8g; proxy_request_buffering off; proxy_http_version 1.1; proxy_pass http://api-gateway:4000; ... }` по образцу архивного `location = /api/asset-sources/archive` (:46-56, там 8g + proxy_request_buffering off). (2) **Архив:** принять .tar.gz с GGUF внутри — серверная распаковка, SHA-256 по архиву И по извлечённому GGUF, строгая проверка формата (архитектура/тензоры/quant, gguf-inspection.ts), квота+retention импорта (gguf-import-policy.cjs), preparation и activation — отдельные явные действия (существующий WAITING→UPLOAДING→REAДY→ACCEPTEД, gguf-import.service.ts), per-version runtime-теги. (3) **Фикс E2 (тот же owner = nginx-template, ДРУГОЙ location):** добавить `location /api/tool-builds/uploads/ { client_max_body_size 256m; proxy_pass http://api-gateway:4000; ... }` (256m = лимит UI uploadConstants.ts:1; НЕ 8g — размер source-архива, не weights). E2 ≠ E1: разные location, разные пределы, разные потребители (GGUF-импорт vs Store source-upload). **Стык (не дубликат):** epic 2 entry 9 задаёт body-budgets route-policy; здесь — nginx-template owner для /api/models/gguf-imports/ (E1) и /api/tool-builds/uploads/ (E2) (конкретные location-блоки в шаблоне), не route-policy.
 
 ## Boundaries & Constraints
 
 **Always:**
 - Fiks E1 = location-блок в `frontend/nginx.production.conf.template` (owner = nginx-template), по образцу :46-56 (8g + proxy_request_buffering off + proxy_http_version 1.1).
+- Fiks E2 = location-блок `/api/tool-builds/uploads/` с `client_max_body_size 256m` (тот же owner = nginx-template; 256m = лимит UI uploadConstants.ts:1) — ДРУГОЙ location и ДРУГОЙ предел, чем E1.
 - SHA-256: и по архиву (.tar.gz), и по извлечённому .gguf (оба в receipt).
 - Строгая проверка формата (gguf-inspection.ts: архитектура/тензоры/quant) — повреждённый/чужой архив = отклонён.
 - Preparation и activation — отдельные явные действия (существующий state-machine gguf-import.service.ts), без автоматической активации.
@@ -40,7 +41,8 @@ context:
 - 8g = interim-ceiling nginx-слоя (по образцу :46-56); серверная политика (64GB) остаётся источником лимита — nginx 8g = защита прокси, не продукт-лимит (OQ-1).
 
 **Never:**
-- Не поднимать глобальный `client_max_body_size 50m` (:18) — только конкретный location /api/models/gguf-imports/ (точечный фикс, не глобальный).
+- Не поднимать глобальный `client_max_body_size 50m` (:18) — только конкретные location /api/models/gguf-imports/ (E1) и /api/tool-builds/uploads/ (E2) (точечные фиксы, не глобальный).
+- Не смешивать E1 и E2: один location-блок на каждый маршрут, свой предел (8g vs 256m) — общий блок с 8g для uploads/ или 256m для gguf-imports/ = дефект.
 - Не дублировать body-budgets route-policy epic 2 entry 9 — здесь только nginx-template location (стык, не дубликат).
 - Не активировать модель автоматически после импорта (preparation/activation — раздельно, FR-601).
 - Не принимать архивы с несколькими GGUF/вложенными каталогами без явной политики (один GGUF на архив, OQ-2).
@@ -51,22 +53,26 @@ context:
 | # | Ситуация | Вход | Ожидаемый результат |
 |---|----------|------|---------------------|
 | 1 | GGUF >50m через nginx | POST /api/models/gguf-imports/ файл 2GB | НЕ 413 (location 8g), дошёл до сервиса |
-| 2 | .tar.gz с валидным GGUF | upload архива | Распаковка + SHA-256 архива и GGUF + проверка формата → READY |
+| 2 | .tar.gz с валидным GGUF | upload архива | Распаковка + SHA-256 архива и GGUF + проверка формата → REAДY |
 | 3 | Повреждённый архив | .tar.gz с битым GGUF | Отклонён (строгая проверка формата/SHA) |
 | 4 | Чужой/не-GGUF в архиве | .tar.gz с .txt | Отклонён (проверка формата gguf-inspection) |
 | 5 | Архив > квоты | bytes > maximumBytes | Отклонён (квота gguf-import-policy.cjs) |
-| 6 | Preparation vs activation | импорт завершён | Модель подготовлена (READY), активация — отдельное явное действие (ACCEPTED) |
+| 6 | Preparation vs activation | импорт завершён | Модель подготовлена (REAДY), активация — отдельное явное действие (ACCEPTEД) |
 | 7 | Повторный импорт (idempotency) | тот же request_key | no-op (существующий request_key) |
 | 8 | Прямой .gguf (существующий путь) | upload .gguf | Работает как прежде (ggufIntent :54 не сломан) |
 | 9 | Архив с несколькими GGUF | .tar.gz с 2 .gguf | ОQ-2 (рекомендация: отклонить, один GGUF на архив) |
+| 10 | E2: source-архив 50–256MiB | PUT /api/tool-builds/uploads/:id/content файл 100MB | НЕ 413 (location 256m), дошёл до сервиса |
+| 11 | E2: source-архив >256MiB | PUT /api/tool-builds/uploads/ файл 300MB | 413 на прокси (лимит UI 256MiB — ожидаемо, не баг) |
+| 12 | E1/E2 изоляция | GGUF >50m + source >50m одновременно | оба location работают независимо (свои пределы) |
 
 </frozen-after-approval>
 
 ## Code Map
 
-- `frontend/nginx.production.conf.template:18` — `client_max_body_size 50m` (глобальный, НЕ менять); `:46-56` — `location = /api/asset-sources/archive` (8g + proxy_request_buffering off + proxy_http_version 1.1) — ОБРАЗЕЦ; `:65-71` — `location /api/` (наследует 50m) — рядом добавить новый location.
+- `frontend/nginx.production.conf.template:18` — `client_max_body_size 50m` (глобальный, НЕ менять); `:46-56` — `location = /api/asset-sources/archive` (8g + proxy_request_buffering off + proxy_http_version 1.1) — ОБРАЗЕЦ; `:65-71` — `location /api/` (наследует 50m) — рядом добавить НОВЫЕ location: E1 `/api/models/gguf-imports/` (8g) + E2 `/api/tool-builds/uploads/` (256m).
+- `frontend/src/modules/Store/packaging/hooks/sourceUploadApi.ts:21-29` — PUT `/api/tool-builds/uploads/:id/content` (E2 consumer); `frontend/src/modules/Store/packaging/uploadConstants.ts:1` — 256MiB лимит UI; `hooks/useSourceUpload.ts:23` (проверка «до 256 МиБ»), `:207-215` («Передача прервана…»).
 - `services/catalog-service/src/models/gguf-import/gguf-import.model.ts:45-72` — `ggufIntent` (`.gguf`-только, `endsWith('.gguf')` :54) — расширить на .tar.gz; `:73-82` ggufAcceptance (capability, entry 1 — не трогать).
-- `services/catalog-service/src/models/gguf-import/gguf-import.service.ts` — state-machine WAITING→UPLOADING→READY→ACCEPTED/CANCELLED, SHA-256, advisory locks, quota, expiry, cleanup — точка расширения (распаковка архива).
+- `services/catalog-service/src/models/gguf-import/gguf-import.service.ts` — state-machine WAITING→UPLOAДING→REAДY→ACCEPTEД/CANCELLEД, SHA-256, advisory locks, quota, expiry, cleanup — точка расширения (распаковка архива).
 - `services/catalog-service/src/models/gguf-import/gguf-inspection.ts` — строгая проверка формата (архитектура/тензоры/quant) — переиспользовать для извлечённого GGUF.
 - `services/shared/gguf-import-policy.cjs` — maximumBytes (64GB interim), expiry, cleanup — источник лимитов.
 - `services/catalog-service/src/models/hosting.service.ts` — preparation/activation (entry 4 cancel — стык).
@@ -75,7 +81,8 @@ context:
 ## Tasks & Acceptance
 
 ### Execution
-- [ ] `frontend/nginx.production.conf.template` — добавить `location /api/models/gguf-imports/ { client_max_body_size 8g; proxy_request_buffering off; proxy_http_version 1.1; proxy_pass http://api-gateway:4000; proxy_read_timeout 600s; proxy_send_timeout 600s; proxy_set_header Host $http_host; proxy_set_header X-Forwarded-Proto https; proxy_set_header X-Request-ID $request_id; }` по образцу :46-56 (перед `location /api/` :65, чтобы матчился первым).
+- [ ] `frontend/nginx.production.conf.template` — добавить `location /api/models/gguf-imports/ { client_max_body_size 8g; proxy_request_buffering off; proxy_http_version 1.1; proxy_pass http://api-gateway:4000; proxy_read_timeout 600s; proxy_send_timeout 600s; proxy_set_header Host $http_host; proxy_set_header X-Forwarded-Proto https; proxy_set_header X-Request-IД $request_id; }` по образцу :46-56 (перед `location /api/` :65, чтобы матчился первым).
+- [ ] `frontend/nginx.production.conf.template` — добавить `location /api/tool-builds/uploads/ { client_max_body_size 256m; proxy_http_version 1.1; proxy_pass http://api-gateway:4000; proxy_set_header Host $http_host; proxy_set_header X-Forwarded-Proto https; proxy_set_header X-Request-IД $request_id; }` (E2; 256m = лимит UI; перед `location /api/` :65). ДРУГОЙ location и предел, чем E1.
 - [ ] `gguf-import.model.ts:45-72` `ggufIntent` — принять `.gguf` ИЛИ `.tar.gz` (расширить endsWith-проверку :54 + имя); валидация bytes/expectedSha256 сохраняется.
 - [ ] `gguf-import.service.ts` — серверная распаковка .tar.gz (один GGUF, OQ-2), SHA-256 по архиву и по извлечённому GGUF (оба в receipt), вызов gguf-inspection на извлечённом GGUF; повреждённый/чужой → отклонён.
 - [ ] Квота+retention (gguf-import-policy.cjs) — применяются к архиву (bytes архива) и к извлечённому GGUF.
@@ -84,16 +91,18 @@ context:
 - [ ] Тесты: nginx (локальный прокси-тест: >50m → не 413), приёмка .tar.gz (распаковка+SHA+инспекция), повреждённый архив, чужой файл, квота, idempotency, прямой .gguf (не сломан).
 
 ### Acceptance
-- **Given** GGUF/архив >50m **when** POST /api/models/gguf-imports/ **then** НЕ 413 (nginx location 8g), дошёл до сервиса.
-- **Given** .tar.gz с валидным GGUF **when** импорт **then** распаковка + SHA-256 архива и GGUF + проверка формата → READY.
+- **Given** GGUF/архив >50m **when** POST /api/models/gguf-imports/ **then** НЕ 413 (nginx location 8g, E1), дошёл до сервиса.
+- **Given** source-архив 50–256MiB **when** PUT /api/tool-builds/uploads/:id/content **then** НЕ 413 (nginx location 256m, E2), дошёл до сервиса; >256MiB → 413 (лимит UI, ожидаемо).
+- **Given** .tar.gz с валидным GGUF **when** импорт **then** распаковка + SHA-256 архива и GGUF + проверка формата → REAДY.
 - **Given** повреждённый/чужой архив **when** импорт **then** отклонён (строгая проверка).
-- **Given** preparation завершена **when** activation **then** активация — отдельное явное действие (READY→ACCEPTED).
+- **Given** preparation завершена **when** activation **then** активация — отдельное явное действие (REAДY→ACCEPTEД).
 - **Given** прямой .gguf **when** импорт **then** работает как прежде (ggufIntent :54 не сломан).
 - Корневой сьют — без деградации.
 
-## Design Notes
+## Дesign Notes
 
 - **E1 owner = nginx-template (фиксация стыка):** UX-аудит 2-й линзы (REVIEW-2.md) подтвердил E1 P0 (GGUF 413). Owner фикса зафиксирован здесь (epic 8, FR-601) = nginx-template location-блок. Epic 2 entry 9 (route-policy body budgets) — НЕ дубликат: entry 9 задаёт политику body-budgets на уровне route-policy (сервисный слой), здесь — конкретный location в nginx-шаблоне (прокси-слой). Стык задокументирован, не дублируется.
+- **E2 (P1) — тот же owner, ДРУГОЙ location (G-3, coverage-аудит 2026-11-09):** E2 (source-upload 413, 50–256MiB) был **без владельца** (audit G-3) — owner зафиксирован здесь (тот же nginx-template, та же механика точечного location-фикса). E2 ≠ E1: (a) разные location (`/api/tool-builds/uploads/` vs `/api/models/gguf-imports/`), (b) разные пределы (256m = лимит UI uploadConstants.ts:1 vs 8g = interim weights-ceiling), (c) разные потребители (Store source-упаковка vs GGUF-импорт), (d) E2 НЕ берёт `proxy_request_buffering off` (архив 256MiB — не weights-поток; буферизация допустима — dev-решение, OQ-5). Два location-блока, не один общий.
 - **8g = interim nginx-ceiling, не продукт-лимит:** продукт-лимит = gguf-import-policy.cjs (64GB). nginx 8g = защита прокси (по образцу :46-56 archive 8g). Если продукт-лимит поднимут выше 8g — nginx location поднимут синхронно (OQ-1). Не глобальный 50m (:18) — только точечный location.
 - **proxy_request_buffering off:** как в :48 (archive) — большой upload не буферизуется на диске nginx (streaming в gateway). Обязательное условие для больших weights.
 - **Один GGUF на архив:** FR-601 «GGUF или архив» — архив = обёртка над одним GGUF (приватный формат поставки). Несколько GGUF в архиве — не явная политика (OQ-2: отклонить).
@@ -109,7 +118,7 @@ export PATH=$HOME/.nvm/versions/node/v24.22.0/bin:$PATH
 node --test scripts/test/nginx-gguf-body.test.mjs 2>/dev/null || true
 cd services/catalog-service && npm test -- gguf-import
 ```
-Ожидаемо: nginx location /api/models/gguf-imports/ (8g, >50m не 413); приёмка .tar.gz (распаковка+SHA+инспекция→READY); повреждённый/чужой отклонён; квота; idempotency; прямой .gguf не сломан; корневой сьют без деградации.
+Ожидаемо: nginx location /api/models/gguf-imports/ (8g, >50m не 413, E1); nginx location /api/tool-builds/uploads/ (256m, 100MB не 413, >256m → 413, E2); приёмка .tar.gz (распаковка+SHA+инспекция→READY); повреждённый/чужой отклонён; квота; idempotency; прямой .gguf не сломан; корневой сьют без деградации.
 
 ## Open Questions
 
@@ -117,3 +126,4 @@ cd services/catalog-service && npm test -- gguf-import
 2. **Несколько GGUF в архиве?** Рекомендация: **отклонить** (один GGUF на архив). Обоснование: FR-601 «GGUF или архив» = архив-обёртка над одним weights; несколько — не явная политика.
 3. **Распаковка: tmp или прямая в weights-хранилище?** Рекомендация: tmp-распаковка → инспекция → перенос в weights (атомарно). Обоснование: повреждённый архив не должен оставлять частичный GGUF.
 4. **UI: отдельная кнопка «архив» или один upload с авто-определением?** Рекомендация: один upload, авто-определение по расширению (.gguf/.tar.gz). Обоснование: NFR-1 простота.
+5. **E2: `proxy_request_buffering off` нужен?** Рекомендация: **нет** (в отличие от E1/weights): архив 256MiB — умеренный размер, nginx-буферизация допустима (не weights-поток 8g); если dev выявит проблемы с буфером на 256MiB — добавить off синхронно с E1-паттерном. Обоснование: минимальный фикс (256m) + buffering off — только при необходимости.

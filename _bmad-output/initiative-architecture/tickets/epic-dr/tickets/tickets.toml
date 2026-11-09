@@ -1,5 +1,5 @@
 # Сторис эпика epic-dr. Порядок таблиц = порядок сборки.
-# next_id = 7
+# next_id = 9
 
 [[entry]]
 id = 1
@@ -61,8 +61,30 @@ id = 6
 type = "story"
 title = "DR sweep + e2e-приёмка (P0-S3/MNT/UPD + RPO/RTO, UJ-5)"
 description = "Cleanup only (скоуп на старте по планам/находкам, которые эпик отложил) + финальная e2e-приёмка всей линии DR: сверить доказательства P0-MNT (entry 3), P0-S3 cross-host (entry 4), P0-UPD (entry 5); подтвердить что RPO/RTO измерены репетицией и задокументированы (entry 2 артефакт), не превышают заявленных (R3/C3); UJ-5 работает как записан (quiesced backup → независимый S3 → restore чистого стека на другом хосте → вход/чтение/запись); DR-бандл собирается из текущего compose; новые compose-сервисы эпика 6 (prometheus/alertmanager) — на финальном restore при приёмке пилота (эпик 10), не здесь."
-verify = "Все три P0-приёмки (MNT/S3/UPD) со свидетельствами зелёные; RPO/RTO в задокументированном артефакте ≤ заявленных; UJ-5 как записан; корневой сьют без деградации против baseline; cleanup-список закрыт. Эпик epic-dr = 6/6."
+verify = "Все три P0-приёмки (MNT/S3/UPD) со свидетельствами зелёные; RPO/RTO в задокументированном артефакте ≤ заявленных; UJ-5 как записан; корневой сьют без деградации против baseline; cleanup-список закрыт. Эпик epic-dr = 8/8."
 covers = ["R1", "R3", "R10", "R12"]
-after = [1, 2, 3, 4, 5]
+after = [1, 2, 3, 4, 5, 7, 8]
 hitl = true
 risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Rotation-секретов + edge-сертификата: runbook на каждый секрет + запись последствий + алерт (FR-1004, AD-OP-4, AD-OP-7.3)"
+description = "FR-1004/AD-OP-4: «Секреты ротируемы с задокументированными последствиями» — runbook ротации сегодня без владельца (генерация закрыта: configuration.mjs:210-211 postgres_password/internal_token, :145-182 metrics_token, :230-233 sso_client_secret, :213 model_credential_key; «автоматической ротации нет» — production-update.md:83). Runbook в docs/ на каждый секрет инвентаря (сверить с environment-model.json + compose.production.yml:318-328): internal_token, metrics_token, sso_client_secret, model_credential_key, postgres_password + edge-сертификат (nginx /run/secrets/tls_cert, AD-OP-7.3). На каждый: (1) процедура ротации (пошагово, из текущего production-конфига; postgres_password — с обновлением 4 файлов *_url), (2) запись последствий (что ломается при истечении/ротации: internal_token → гашение всех билетов, стык AD-4; metrics_token → падает scrape; sso_client_secret → token-exchange с IdP; model_credential_key → зашифрованные credentials удалённых моделей не открываются; postgres_password → все PG-соединения; edge-сертификат → HTTPS edge-фронта), (3) как проверить истечение (openssl x509 -checkend для сертификата; для секретов — days-since-генерации по config-каталогу + policy-период ротации). Алерт days-to-expiry edge-сертификата — consumer ep6 entry 13 (alerting, правило cert-expiry AD-OP-7/OP-8) — ссылка в runbook, не дублирование. Инвариант: runbook покрывает 100% инвентаря (тест)."
+verify = "docs/secret-rotation.md существует: секция на каждый из 5 секретов + edge-сертификат, в каждой: процедура ротации + запись последствий + как проверить истечение; инвентарь runbook ⊇ 5 секретов AD-OP-4 + edge-сертификат, дополнительные секреты compose/environment-model (restore_runner_token, chat_s3_*, *_url) — решение зафиксировано (включены или явно исключены с причиной); алерт days-to-expiry — ссылка на ep6 entry 13 (cert-expiry) без дублирования механизма; инвариант-тест: секрет/сертификат из инвентаря без секции в runbook = фэйл; корневой сьют — без деградации."
+covers = ["R10"]
+after = [2]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Stack-watchdog (AD-OP-8) + node_exporter: consumer /ready/dependencies"
+description = "AD-OP-8: на хосте — stack-watchdog (новый systemd unit: периодическая проверка health всех compose-сервисов + самого мониторинга; сбой = алерт + attempt-restart по политике compose) + node_exporter (host-level-метрики). Сегодня: только maintenance timer (deploy/maintenance/ — ратификация), watchdog/node_exporter отсутствуют; /ready/dependencies (gateway app.controller.ts:15-32, 5 upstream'ов) существует, и контракт ep6 entry 9 (health): stack-watchdog (AD-OP-8, эпик 4) = consumer, «удалить, если к концу эпика 4 не подключён» — этот entry = тот consumer (закрывает решение). (1) watchdog: scripts/production/stack-watchdog.mjs + unit'ы neurocenter-stack-watchdog.{service,timer} (User=neurocenter-operator, OnCalendar ~5 min, паттерн neurocenter-maintenance.timer): список сервисов = environment-model.json (data-driven — новые сервисы подхватываются автоматически: на момент эпика 13, после ep6 entry 12 = 15); проверка /ready на каждый сервис + /ready/dependencies (gateway) + мониторинг (prometheus/alertmanager — после ep6 entry 12, до — absent-tolerant); сбой → алерт (alertmanager ep6 entry 13, если развёрнут; до — journal + файл, паттерн delivery ep6 e13) + attempt-restart по политике compose (docker compose restart <svc>, ограниченный по числу попыток, без infinite-loop); (2) node_exporter: compose.production.yml сервис (12→13; целевой состав после ep6 entry 12 = 15 — sync с ep6-планом, OQ-1): prom/node-exporter pinned, backend-сеть, порты наружу НЕ публикуются, read-only-маунты хоста (/proc:/sys:ro, /:ro), mem/cpus/pids, environment-model + drift-тест (13) + release-manifest (AD-OP-2, паттерн postgresImage/monitoringImages) + scrape-target (prometheus.yml — доносит ep6 entry 8/12)."
+verify = "watchdog: упавший сервис → детект в пределах интервала + действие (attempt-restart по политике ИЛИ алерт) — fixture-тест логики офлайн (без живого стека); /ready/dependencies consumer (контракт ep6 entry 9 закрыт: «удалить, если к концу эпика 4 не подключён» = подключён); список сервисов из environment-model (data-driven, 13 на момент entry); unit'ы синтаксически валидны (systemd-analyze verify) + установка по runbook-паттерну maintenance timer; node_exporter: compose production 13 сервисов, drift-тест зелёный (structuralDrift + compose-drift счёт), 9100 не опубликован наружу, metrics scrape-ятся (офлайн-тест конфигурации); compose healthchecks — без регрессии; корневой сьют — без деградации."
+covers = ["R10", "R7"]
+after = [2]
+hitl = false
+risk = "medium"
