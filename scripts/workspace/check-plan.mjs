@@ -115,7 +115,7 @@ function toolingTestFiles(root, { readFile = (name) => fs.readFileSync(path.join
     if (
         !Array.isArray(files) ||
         !files.length ||
-        files.length > 64 ||
+        files.length > 65 || // 64→65 (entry 2.8: +route-policy-completeness); рост списка — только осознанно
         new Set(files).size !== files.length ||
         files.some(
             (file) =>

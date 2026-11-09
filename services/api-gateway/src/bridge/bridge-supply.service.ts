@@ -7,6 +7,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { readDevBridgeRuntime } from './dev-bridge-runtime';
 import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.interfaces';
+import { matchPolicy } from '../proxy/route-policy';
 
 const SHA = /^[a-f0-9]{64}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
@@ -21,10 +22,11 @@ export class BridgeSupplyService {
 
     constructor(config: ConfigService) {
         this.catalogUrl = (config.get<string>('CATALOG_SERVICE_URL') || 'http://localhost:4100').replace(/\/+$/, '');
+        // AD-6: бюджет метаданных конфигурации (128 KiB) — из строки /bridge/config route-политики.
         this.http = axios.create({
             timeout: 15000,
             maxRedirects: 0,
-            maxContentLength: 128 * 1024,
+            maxContentLength: matchPolicy('GET', '/bridge/config').maxResponseBytes!,
             validateStatus: () => true,
         });
         if ((config.get<string>('NODE_ENV') || process.env.NODE_ENV) === 'development') {
@@ -181,12 +183,15 @@ export class BridgeSupplyService {
     }
 
     private async stream(artifact: IBridgeArtifact, signal: AbortSignal, res: Response): Promise<void> {
+        // AD-6: деадлайн 600 s и потолок ответа 1 GiB — из строки /bridge/runtime/:file
+        // route-политики; фактический лимит — точный размер артефакта из проверенной поставки.
+        const policy = matchPolicy('GET', '/bridge/runtime/' + artifact.file);
         let upstream;
         try {
             upstream = await this.http.get(`${this.catalogUrl}/internal/asset-sources/blobs/${artifact.sha256}`, {
                 responseType: 'stream',
-                timeout: 600000,
-                maxContentLength: artifact.bytes,
+                timeout: policy.timeoutMs,
+                maxContentLength: Math.min(artifact.bytes, policy.maxResponseBytes!),
                 signal,
                 headers: this.headers(),
             });
@@ -339,6 +344,11 @@ export async function bridgeRequest(
     res: Response,
     operation: (signal: AbortSignal) => Promise<void>,
 ): Promise<void> {
+    // AD-6: деадлайн bridge-операции (600 s) — из строки route-политики; HEAD обслуживает
+    // GET-обработчик Express, поэтому матчим как GET. Каждая bridge-строка обязана иметь
+    // timeoutMs — при расхождении fail-fast, а не молчаливый дефолт.
+    const deadline = matchPolicy(req.method === 'HEAD' ? 'GET' : req.method, req.path).timeoutMs;
+    if (deadline === undefined) throw new Error('route-policy: bridge-маршрут обязан определить timeoutMs.');
     let timedOut = false;
     const abort = new AbortController(),
         closed = () => {
@@ -350,7 +360,7 @@ export async function bridgeRequest(
     const timer = setTimeout(() => {
         timedOut = true;
         abort.abort();
-    }, 600000);
+    }, deadline);
     req.on('aborted', disconnected);
     res.on('close', closed);
     try {

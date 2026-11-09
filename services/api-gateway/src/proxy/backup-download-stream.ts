@@ -1,6 +1,7 @@
 import type { AxiosInstance } from 'axios';
 import type { Request, Response } from 'express';
 import { pipeline } from 'node:stream/promises';
+import { matchPolicy } from './route-policy';
 
 /** Копия передаётся с backpressure; отмена браузера закрывает только соответствующее чтение каталога. */
 export async function forwardBackupDownload(
@@ -14,6 +15,8 @@ export async function forwardBackupDownload(
     const controller = new AbortController();
     const abort = () => controller.abort();
     res.on('close', abort);
+    // AD-6: деадлайн 30 s и конечный ответный бюджет (ceiling 4 GiB) — из строки route-политики.
+    const policy = matchPolicy(req.method, req.path);
     try {
         const response = await http.request({
             url,
@@ -22,6 +25,8 @@ export async function forwardBackupDownload(
             params: req.query,
             responseType: 'stream',
             signal: controller.signal,
+            timeout: policy.timeoutMs,
+            maxContentLength: policy.maxResponseBytes,
         });
         if (![200, 206].includes(response.status)) {
             response.data.destroy();

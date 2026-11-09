@@ -1,6 +1,7 @@
 import type { AxiosInstance } from 'axios';
 import type { Request, Response } from 'express';
 import { forwardSourceUpload } from './source-upload-stream';
+import { matchPolicy } from './route-policy';
 
 /** The authenticated durable receipt owns limits even after the administrator changes policy. */
 export async function forwardGgufImport(
@@ -12,10 +13,12 @@ export async function forwardGgufImport(
 ): Promise<void> {
     res.setHeader('Connection', 'close');
     res.setHeader('Cache-Control', 'no-store');
+    // AD-6: бюджет квитанции и ответа на загрузку (1 MiB) — из строки route-политики.
+    const policy = matchPolicy(req.method, req.path);
     try {
         const receipt = await http.get(url.replace(/\/content$/, ''), {
             headers,
-            maxContentLength: 1024 * 1024,
+            maxContentLength: policy.maxResponseBytes,
             maxRedirects: 0,
             validateStatus: () => true,
         });
@@ -36,7 +39,9 @@ export async function forwardGgufImport(
             res.status(502).json({ message: 'Каталог не подтвердил лимиты выбранного импорта.' });
             return;
         }
-        await forwardSourceUpload(http, url, headers, req, res, bytes, 1024 * 1024, 'PUT', limits.uploadTimeoutMs);
+        // Динамические лимиты квитанции (bytes, uploadTimeoutMs) передаёт вызывающий;
+        // бюджет ответа на загрузку — из route-политики.
+        await forwardSourceUpload(http, url, headers, req, res, 'PUT', bytes, undefined, limits.uploadTimeoutMs);
     } catch {
         if (!res.destroyed && !res.headersSent)
             res.status(502).json({

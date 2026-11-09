@@ -6,8 +6,8 @@ import type { Request, Response } from 'express';
 import { Transform } from 'node:stream';
 import { sourceUploadContentRoute } from '../../../shared/source-upload-route.cjs';
 import { assetSourceArchiveRoute } from '../../../shared/asset-source-archive-route.cjs';
+import { matchPolicy } from './route-policy';
 
-const defaultMaximum = 256 * 1024 ** 2;
 /** Raw upload refusals can precede body consumption, so each request owns its HTTP connection. */
 export function sourceUploadConnection(req: Request, res: Response, next: () => void): void {
     if (
@@ -20,18 +20,26 @@ export function sourceUploadConnection(req: Request, res: Response, next: () => 
         res.setHeader('Connection', 'close');
     next();
 }
-/** Bounded raw stream preserves backpressure and aborts the catalog transfer when the browser disconnects. */
+/**
+ * Bounded raw stream preserves backpressure and aborts the catalog transfer when the browser disconnects.
+ * AD-6: бюджеты загрузки (тело/ответ/дедлайн) — из route-политики; динамические лимиты
+ * (квитанция GGUF: точный размер и таймаут каталога) передаёт вызывающий.
+ */
 export async function forwardSourceUpload(
     http: AxiosInstance,
     url: string,
     headers: Record<string, string>,
     req: Request,
     res: Response,
-    maximum = defaultMaximum,
-    responseMaximum = 1024 * 1024,
     method: 'PUT' | 'POST' = 'PUT',
-    timeoutMs = 10 * 60 * 1000,
+    maximum?: number,
+    responseMaximum?: number,
+    timeoutMs?: number,
 ): Promise<void> {
+    const policy = matchPolicy(method, req.path);
+    const limit = maximum ?? policy.maxBodyBytes!;
+    const ack = responseMaximum ?? policy.maxResponseBytes!;
+    const deadline = timeoutMs ?? policy.timeoutMs!;
     if (
         String(req.headers['content-type'] || '')
             .split(';')[0]
@@ -42,9 +50,9 @@ export async function forwardSourceUpload(
         res.status(415).json({ message: 'Передайте файл потоком application/octet-stream.' });
         return;
     }
-    const limitLabel = String(maximum / 1024 ** 2) + ' МиБ';
+    const limitLabel = String(limit / 1024 ** 2) + ' МиБ';
     const declared = req.headers['content-length'];
-    if (declared !== undefined && (!/^\d+$/.test(declared) || Number(declared) < 1 || Number(declared) > maximum)) {
+    if (declared !== undefined && (!/^\d+$/.test(declared) || Number(declared) < 1 || Number(declared) > limit)) {
         res.setHeader('Connection', 'close');
         res.status(413).json({ message: 'Файл должен занимать от 1 байта до ' + limitLabel + '.' });
         return;
@@ -56,7 +64,7 @@ export async function forwardSourceUpload(
     const stream = new Transform({
         transform(chunk: Buffer, _encoding, done) {
             bytes += chunk.length;
-            if (bytes > maximum) {
+            if (bytes > limit) {
                 tooLarge = true;
                 done(new Error('upload-byte-limit'));
                 return;
@@ -75,7 +83,7 @@ export async function forwardSourceUpload(
     const timer = setTimeout(() => {
         timedOut = true;
         controller.abort();
-    }, timeoutMs);
+    }, deadline);
     timer.unref();
     try {
         if (req.aborted || res.destroyed) {
@@ -92,9 +100,9 @@ export async function forwardSourceUpload(
                 'content-type': 'application/octet-stream',
                 ...(declared ? { 'content-length': declared } : {}),
             },
-            timeout: timeoutMs,
-            maxBodyLength: maximum,
-            maxContentLength: responseMaximum,
+            timeout: deadline,
+            maxBodyLength: limit,
+            maxContentLength: ack,
             maxRedirects: 0,
             responseType: 'json',
             validateStatus: () => true,

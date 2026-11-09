@@ -1,6 +1,6 @@
 import type { AxiosInstance } from 'axios';
 import type { Request, Response } from 'express';
-import { DISCUSSION_ATTACHMENT_MAX_BYTES } from '../../../shared/discussion-attachment-route.cjs';
+import { matchPolicy } from './route-policy';
 
 /** Bounded private download; never send binary data through JSON response filtering. */
 export async function forwardDiscussionAttachment(
@@ -17,6 +17,8 @@ export async function forwardDiscussionAttachment(
         };
     req.on('aborted', abort);
     res.on('close', closed);
+    // AD-6: деадлайн 30 s и бюджет вложения 10 MiB — из строки route-политики.
+    const policy = matchPolicy(req.method, req.path);
     try {
         if (req.aborted || res.destroyed) return;
         const upstream = await http.request({
@@ -24,8 +26,8 @@ export async function forwardDiscussionAttachment(
             url,
             headers,
             responseType: 'arraybuffer',
-            maxContentLength: DISCUSSION_ATTACHMENT_MAX_BYTES,
-            timeout: 30000,
+            maxContentLength: policy.maxResponseBytes,
+            timeout: policy.timeoutMs,
             maxRedirects: 0,
             validateStatus: () => true,
             signal: controller.signal,
@@ -54,7 +56,7 @@ export async function forwardDiscussionAttachment(
         res.setHeader('Content-Type', String(upstream.headers['content-type'] || 'application/octet-stream'));
         if (req.method === 'HEAD') {
             const length = Number(upstream.headers['content-length']);
-            if (Number.isSafeInteger(length) && length > 0 && length <= DISCUSSION_ATTACHMENT_MAX_BYTES)
+            if (Number.isSafeInteger(length) && length > 0 && length <= policy.maxResponseBytes!)
                 res.setHeader('Content-Length', String(length));
             res.status(200).end();
             return;

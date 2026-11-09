@@ -2,6 +2,7 @@ import type { AxiosInstance } from 'axios';
 import type { Request, Response } from 'express';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { matchPolicy } from './route-policy';
 
 /** No archive buffer in Gateway; cancelled downloads close only their own upstream. */
 export async function forwardToolSupply(
@@ -36,7 +37,10 @@ async function forwardToolDownload(
         abort = () => controller.abort();
     req.on('aborted', abort);
     res.on('close', abort);
-    const timer = setTimeout(abort, 5 * 60 * 1000);
+    // AD-6: бюджеты поставки — из route-политики (supply 4 GiB / asset 16 MiB, деадлайн 300 s;
+    // безограниченный ответный бюджет запрещён).
+    const policy = matchPolicy(req.method, req.path);
+    const timer = setTimeout(abort, policy.timeoutMs!);
     try {
         const response = await http.request({
             url,
@@ -44,8 +48,8 @@ async function forwardToolDownload(
             headers,
             responseType: 'stream',
             signal: controller.signal,
-            timeout: 5 * 60 * 1000,
-            maxContentLength: Infinity,
+            timeout: policy.timeoutMs,
+            maxContentLength: policy.maxResponseBytes,
         });
         const head = req.method === 'HEAD';
         if (head && response.status === 204) {
@@ -67,7 +71,7 @@ async function forwardToolDownload(
         if (
             !Number.isSafeInteger(length) ||
             length < 1 ||
-            length > (document ? 16 * 1024 ** 2 : 4 * 1024 ** 3) ||
+            length > policy.maxResponseBytes! ||
             (document
                 ? typeof contentType !== 'string' || !/^application\/json(?:; charset=utf-8)?$/i.test(contentType)
                 : contentType !== 'application/gzip' ||

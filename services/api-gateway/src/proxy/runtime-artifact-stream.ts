@@ -2,6 +2,7 @@ import type { AxiosInstance } from 'axios';
 import type { Request, Response } from 'express';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { matchPolicy } from './route-policy';
 
 /** Архив не буферизуется в gateway; закрытие клиента завершает только его upstream. */
 export async function forwardRuntimeArtifact(
@@ -14,6 +15,8 @@ export async function forwardRuntimeArtifact(
     const controller = new AbortController();
     const abort = () => controller.abort();
     res.on('close', abort);
+    // AD-6: бюджет артефакта (256 MiB) — из строки route-политики.
+    const policy = matchPolicy(req.method, req.path);
     try {
         const response = await http.get(`${catalogUrl}/internal/device-channel/${suffix}`, {
             responseType: 'stream',
@@ -32,7 +35,7 @@ export async function forwardRuntimeArtifact(
             return;
         }
         const length = Number(response.headers['content-length']);
-        if (!Number.isSafeInteger(length) || length <= 0 || length > 256 * 1024 * 1024) {
+        if (!Number.isSafeInteger(length) || length <= 0 || length > policy.maxResponseBytes!) {
             response.data.destroy();
             res.status(502).json({ message: 'Некорректный размер артефакта.' });
             return;

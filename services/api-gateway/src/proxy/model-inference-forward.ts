@@ -1,6 +1,6 @@
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import type { Request, Response } from 'express';
-import { MODEL_CHAT_GATEWAY_TIMEOUT_MS } from '../../../shared/model-chat-deadline.cjs';
+import { matchPolicy } from './route-policy';
 
 /** The canonical route keeps chat/embed cancellation aligned with inference permissions. */
 export function modelInferenceRoute(method: string, path: string | undefined): boolean {
@@ -30,12 +30,13 @@ export async function forwardModelInference(
     res.on('close', responseClosed);
     try {
         if (!connected()) return;
-        // A historical 8 MiB text answer may expand sixfold when escaped as JSON.
-        const savedChat = /^\/api\/model-chats\//.test(req.path || '');
+        // AD-6: inference-бюджеты (дедлайн 910 s / 610 s, ответ 64 MiB / 8 MiB) — из route-политики;
+        // инвентарь completeness-теста держит совпадение со shared-константами.
+        const policy = matchPolicy(req.method, req.path);
         const response = await http.request({
             ...config,
-            timeout: savedChat ? MODEL_CHAT_GATEWAY_TIMEOUT_MS : 610000,
-            maxContentLength: (savedChat ? 64 : 8) * 1024 * 1024,
+            timeout: policy.timeoutMs,
+            maxContentLength: policy.maxResponseBytes,
             signal: abort.signal,
         });
         return connected() ? response : undefined;

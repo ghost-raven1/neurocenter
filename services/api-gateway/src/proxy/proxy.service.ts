@@ -1,7 +1,6 @@
 import {
     discussionAttachmentUploadRoute,
     discussionAttachmentDownloadRoute,
-    DISCUSSION_ATTACHMENT_MAX_BYTES,
 } from '../../../shared/discussion-attachment-route.cjs';
 import { forwardDiscussionAttachment } from './discussion-attachment-download';
 import {
@@ -14,10 +13,7 @@ import { sourceUploadContentRoute } from '../../../shared/source-upload-route.cj
 import { ggufImportContentRoute } from '../../../shared/gguf-import-route.cjs';
 import { forwardGgufImport } from './gguf-import-stream';
 import { forwardSourceUpload } from './source-upload-stream';
-import {
-    assetSourceArchiveRoute,
-    ASSET_SOURCE_ARCHIVE_MAX_BYTES,
-} from '../../../shared/asset-source-archive-route.cjs';
+import { assetSourceArchiveRoute } from '../../../shared/asset-source-archive-route.cjs';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
@@ -38,6 +34,7 @@ import { forwardModelInference, modelInferenceRoute } from './model-inference-fo
 import { publicAppearance } from '../features/public-appearance';
 import { forwardToolImport } from './tool-import-forward';
 import { TOOL_IMPORT_ROUTE } from '../../../shared/tool-import-deadline.cjs';
+import { CATCH_ALL_ROW, matchPolicy } from './route-policy';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -82,7 +79,8 @@ export class ProxyService {
         this.featureFlagsUrl = (
             configService.get<string>('FEATURE_FLAGS_SERVICE_URL') || 'http://localhost:4400'
         ).replace(/\/+$/, '');
-        this.http = axios.create({ timeout: 30000, validateStatus: () => true });
+        // Базовый клиент: дефолтный деадлайн и ответный бюджет — из default-строки route-policy (AD-6).
+        this.http = axios.create({ timeout: CATCH_ALL_ROW.timeoutMs, validateStatus: () => true });
     }
 
     /**
@@ -274,14 +272,13 @@ export class ProxyService {
                     res.status(411).json({ message: 'Укажите размер прикрепляемого файла.' });
                     return;
                 }
+                // Лимиты тела/ответа/дедлайн загрузок — из route-политики (строка /api/discussions/attachments).
                 await forwardSourceUpload(
                     this.http,
                     `${this.catalogUrl}${discussionUpload}?${query}`,
                     this.buildHeaders(req.headers, auth),
                     req,
                     res,
-                    DISCUSSION_ATTACHMENT_MAX_BYTES,
-                    1024 * 1024,
                     'POST',
                 );
                 return;
@@ -301,18 +298,14 @@ export class ProxyService {
             const uploadRoute =
                 sourceUploadContentRoute(method, path) || snapshotContentRoute(method, path) || archiveRoute;
             if (uploadRoute) {
+                // source/snapshot/archive: лимиты тела/ответа/дедлайн — из route-политики
+                // (строка подмаршрута выбирается тем же роут-матчером, что и загрузка).
                 await forwardSourceUpload(
                     this.http,
                     `${this.catalogUrl}${uploadRoute}`,
                     this.buildHeaders(req.headers, auth),
                     req,
                     res,
-                    archiveRoute
-                        ? ASSET_SOURCE_ARCHIVE_MAX_BYTES
-                        : snapshotContentRoute(method, path)
-                          ? 64 * 1024 ** 2
-                          : undefined,
-                    archiveRoute ? 64 * 1024 ** 2 : undefined,
                 );
                 return;
             }
@@ -361,14 +354,15 @@ export class ProxyService {
                 );
                 return;
             }
+            // AD-6: бюджеты запроса (дедлайн/ответ) — из декларативной route-политики;
+            // дефолт — default-строка catch-all (та же 30 s, что и у базового клиента).
+            const policy = matchPolicy(method, path);
             const upstreamRequest = {
                 method,
-                ...(/^\/api\/model-chats(?:\/|$)/.test(supplyPath || '') ? { maxContentLength: 64 * 1024 * 1024 } : {}),
-                ...(method === 'POST' && supplyPath === '/api/bridge-source/check' ? { timeout: 60000 } : {}),
-                // Source inspection chains external reads; leave time to return before the client's 90 s deadline.
-                ...(method === 'GET' && /^\/api\/tool-builds\/(?:repository|npm)$/.test(supplyPath || '')
-                    ? { timeout: 85000 }
+                ...(policy.timeoutMs !== undefined && policy.timeoutMs !== CATCH_ALL_ROW.timeoutMs
+                    ? { timeout: policy.timeoutMs }
                     : {}),
+                ...(policy.maxResponseBytes !== undefined ? { maxContentLength: policy.maxResponseBytes } : {}),
                 responseType: 'json' as const,
                 url: `${upstreamBase}${coordinatedRagSync ? '/api/rag/sync' : path}`,
                 headers: this.buildHeaders(req.headers, auth),
@@ -561,13 +555,16 @@ export class ProxyService {
 
     /** Закрытие клиента отменяет только его embedding, включая ожидание проверки Bearer. */
     private async deviceEmbedding(req: Request, res: Response): Promise<void> {
+        // AD-6: деадлайн 115 s и ответный бюджет 8 MiB — из строки /api/device-channel/embedding
+        // (инвентарь completeness-теста держит совпадение со значением строки).
+        const policy = matchPolicy('POST', '/api/device-channel/embedding');
         let timedOut = false;
         const abort = new AbortController(),
             disconnected = () => abort.abort();
         const timer = setTimeout(() => {
             timedOut = true;
             abort.abort();
-        }, 115000);
+        }, policy.timeoutMs!);
         const closed = () => {
             if (!res.writableEnded) abort.abort();
         };
@@ -631,8 +628,8 @@ export class ProxyService {
             try {
                 const response = await awaitEmbedding(
                     this.http.post(`${this.catalogUrl}/internal/device-channel/embedding`, req.body, {
-                        timeout: 115000,
-                        maxContentLength: 8 * 1024 * 1024,
+                        timeout: policy.timeoutMs,
+                        maxContentLength: policy.maxResponseBytes,
                         signal: abort.signal,
                         headers: {
                             'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',

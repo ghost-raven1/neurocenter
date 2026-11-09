@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import { pipeline, Transform } from 'node:stream';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import { SNAPSHOT_CHUNK_BYTES } from '../../../shared/project-snapshot.cjs';
+import { matchPolicy } from './route-policy';
 
 /** A chunk is committed by the client only after its exact length and SHA have arrived. */
 export async function forwardSnapshotChunk(
@@ -18,7 +18,9 @@ export async function forwardSnapshotChunk(
             if (!res.writableEnded) controller.abort();
         };
     res.on('close', closed);
-    const timer = setTimeout(() => controller.abort(), 120000);
+    // AD-6: деадлайн 120 s и бюджет блока 64 MiB — из строки route-политики.
+    const policy = matchPolicy(req.method, req.path);
+    const timer = setTimeout(() => controller.abort(), policy.timeoutMs!);
     timer.unref();
     try {
         const upstream = await http.request({
@@ -27,7 +29,7 @@ export async function forwardSnapshotChunk(
             headers,
             responseType: 'stream',
             signal: controller.signal,
-            timeout: 120000,
+            timeout: policy.timeoutMs,
             maxRedirects: 0,
             validateStatus: () => true,
         });
@@ -50,7 +52,7 @@ export async function forwardSnapshotChunk(
             return;
         }
         const size = Number(upstream.headers['content-length']);
-        if (!Number.isSafeInteger(size) || size < 1 || size > SNAPSHOT_CHUNK_BYTES) throw new Error('snapshot-size');
+        if (!Number.isSafeInteger(size) || size < 1 || size > policy.maxResponseBytes!) throw new Error('snapshot-size');
         res.status(200).set({
             'Content-Type': 'application/octet-stream',
             'Content-Length': String(size),

@@ -1,6 +1,6 @@
 import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import type { Request, Response } from 'express';
-import { TOOL_IMPORT_GATEWAY_TIMEOUT_MS } from '../../../shared/tool-import-deadline.cjs';
+import { matchPolicy } from './route-policy';
 
 /** A caller disconnect closes only its import request, so Catalog can stop before publication. */
 export async function forwardToolImport(
@@ -19,9 +19,10 @@ export async function forwardToolImport(
     res.on('close', responseClosed);
     try {
         if (!connected()) return;
+        // AD-6: деадлайн импорта (540 s) — из строки /api/tool-builds/imports route-политики.
         const response = await http.request({
             ...config,
-            timeout: TOOL_IMPORT_GATEWAY_TIMEOUT_MS,
+            timeout: matchPolicy(req.method, req.path).timeoutMs,
             signal: abort.signal,
         });
         return connected() ? response : undefined;

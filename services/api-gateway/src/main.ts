@@ -19,6 +19,7 @@ import { allowBrowserOrigin, browserSecurity, panelOrigin } from './security/bro
 import { sourceUploadConnection } from './proxy/source-upload-stream';
 import { setupApiDocumentation } from './docs/setup-api-documentation';
 import { deviceChannelJson } from './proxy/device-channel-json';
+import { CATCH_ALL_ROW } from './proxy/route-policy';
 
 /**
  * Точка входа api-gateway: HTTP (proxy /api) + socket.io real-time (/socket.io).
@@ -35,7 +36,8 @@ async function bootstrap(): Promise<void> {
     app.use(browserSecurity);
     // Скиллы и RAG-батчи должны проходить через gateway с тем же лимитом, что и в сервисах.
     app.use('/api/device-channel', deviceChannelJson);
-    const jsonParser = express.json({ limit: '50mb' });
+    // AD-6: глобальный лимит JSON-тела — из default-строки route-политики (бывший '50mb').
+    const jsonParser = express.json({ limit: CATCH_ALL_ROW.maxBodyBytes });
     app.use((req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
         if (
             ggufImportContentRoute(req.method, req.path) ||
