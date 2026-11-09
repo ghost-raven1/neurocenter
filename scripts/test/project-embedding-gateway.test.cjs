@@ -75,7 +75,8 @@ for (const suffix of ['embedding/context', 'embedding'])
         assert.equal(f.calls[0][2].headers['x-bridge-actor'], undefined);
         assert.equal(f.events.length, 0);
         if (suffix === 'embedding') {
-            assert.equal(f.calls[0][2].timeout, 115000);
+            // entry 2.9: upstream-дедлайн 110s (лестница 110/115); клиентский таймер остаётся 115s.
+            assert.equal(f.calls[0][2].timeout, 110000);
             assert.equal(f.calls[0][2].maxContentLength, 8 * 1024 * 1024);
         }
     });

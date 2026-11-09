@@ -35,6 +35,7 @@ import { publicAppearance } from '../features/public-appearance';
 import { forwardToolImport } from './tool-import-forward';
 import { TOOL_IMPORT_ROUTE } from '../../../shared/tool-import-deadline.cjs';
 import { CATCH_ALL_ROW, matchPolicy } from './route-policy';
+import { RateLimitStore, TRateLimitScope } from '../rate-limit/rate-limit-store';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -60,10 +61,10 @@ export class ProxyService {
     private readonly ragUrl: string;
     private readonly featureFlagsUrl: string;
     private readonly http: AxiosInstance;
-    private readonly pairLimits = new Map<string, { count: number; until: number }>();
+    private rateLimitStore?: RateLimitStore;
 
     constructor(
-        configService: ConfigService,
+        private readonly configService: ConfigService,
         private readonly authGuard: AuthGuardService,
         private readonly live: LiveService,
     ) {
@@ -81,6 +82,14 @@ export class ProxyService {
         ).replace(/\/+$/, '');
         // Базовый клиент: дефолтный деадлайн и ответный бюджет — из default-строки route-policy (AD-6).
         this.http = axios.create({ timeout: CATCH_ALL_ROW.timeoutMs, validateStatus: () => true });
+    }
+
+    /** PG-счётчики pairing-окон (entry 9, AD-6): ленивый пул, URL — CATALOG_PG_URL без fallback. */
+    private get rateLimit(): RateLimitStore {
+        if (!this.rateLimitStore) {
+            this.rateLimitStore = new RateLimitStore(this.configService.get<string>('CATALOG_PG_URL'));
+        }
+        return this.rateLimitStore;
     }
 
     /**
@@ -453,33 +462,36 @@ export class ProxyService {
             return;
         }
         if (publicPair) {
-            const now = Date.now();
-            for (const [key, value] of this.pairLimits) {
-                if (value.until < now) {
-                    this.pairLimits.delete(key);
-                }
-            }
+            const isStart = suffix === 'pair/start';
             const address = String(req.socket.remoteAddress);
-            const budgets: Array<[string, number]> = suffix.endsWith('start')
-                ? [[address + ':start', 15]]
-                : [[address + ':poll', 6000]];
-            if (suffix.endsWith('poll')) {
-                const code = (req.body as { deviceCode?: unknown } | null)?.deviceCode;
-                if (typeof code !== 'string' || !/^[a-f0-9]{64}$/.test(code)) {
+            // PG-счётчики общие для всех реплик (entry 9, AD-6); 401 за некорректный код —
+            // до записи в окно. Устройства за одним прокси не расходуют чужое per-code окно;
+            // общий адресный предел сохраняется.
+            let windows: Array<[TRateLimitScope, string]>;
+            if (isStart) {
+                windows = [['pair-start', address]];
+            } else {
+                const candidate = (req.body as { deviceCode?: unknown } | null)?.deviceCode;
+                if (typeof candidate !== 'string' || !/^[a-f0-9]{64}$/.test(candidate)) {
                     res.status(401).json({ message: 'Некорректный код подключения.' });
                     return;
                 }
-                // Устройства за одним прокси не расходуют чужое окно ожидания; общий предел сохраняется.
-                budgets.push([address + ':poll:' + createHash('sha256').update(code).digest('hex'), 60]);
+                windows = [
+                    ['pair-poll', address],
+                    ['pair-poll-code', address + ':' + createHash('sha256').update(candidate).digest('hex')],
+                ];
             }
-            for (const [key, maximum] of budgets) {
-                const limit = this.pairLimits.get(key) || { count: 0, until: now + 60000 };
-                limit.count++;
-                this.pairLimits.set(key, limit);
-                if (limit.count > maximum) {
-                    res.status(429).json({ message: 'Слишком много попыток подключения. Повторите через минуту.' });
-                    return;
+            try {
+                for (const [scope, key] of windows) {
+                    if (await this.rateLimit.record(scope, key)) {
+                        res.status(429).json({ message: 'Слишком много попыток подключения. Повторите через минуту.' });
+                        return;
+                    }
                 }
+            } catch {
+                // Fail-closed: PG недоступен — pairing не пускаем (AD-19: фикс. сообщение, без passthrough).
+                res.status(503).json({ message: 'Не удалось проверить частоты подключений. Повторите позже.' });
+                return;
             }
         }
         if (suffix === 'embedding') {
@@ -555,8 +567,9 @@ export class ProxyService {
 
     /** Закрытие клиента отменяет только его embedding, включая ожидание проверки Bearer. */
     private async deviceEmbedding(req: Request, res: Response): Promise<void> {
-        // AD-6: деадлайн 115 s и ответный бюджет 8 MiB — из строки /api/device-channel/embedding
-        // (инвентарь completeness-теста держит совпадение со значением строки).
+        // AD-6: лестница embedding (base 110s + margin 5s) — из строки /api/device-channel/embedding:
+        // client-timer 115s — внешний владелец «истёк», upstream 110s падает первым (race 115==115 закрыт,
+        // entry 9); инвентарь completeness-теста держит совпадение со значениями строки.
         const policy = matchPolicy('POST', '/api/device-channel/embedding');
         let timedOut = false;
         const abort = new AbortController(),
@@ -628,7 +641,7 @@ export class ProxyService {
             try {
                 const response = await awaitEmbedding(
                     this.http.post(`${this.catalogUrl}/internal/device-channel/embedding`, req.body, {
-                        timeout: policy.timeoutMs,
+                        timeout: policy.upstreamTimeoutMs ?? policy.timeoutMs,
                         maxContentLength: policy.maxResponseBytes,
                         signal: abort.signal,
                         headers: {

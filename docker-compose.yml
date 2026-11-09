@@ -99,6 +99,11 @@ services:
       - FEATURE_FLAGS_SERVICE_URL=http://feature-flags-service:4400
       - AUTH_SERVICE_URL=http://oauth2-bridge:22222
       - AUTH_GUARD_ENABLED=true
+      # AD-6 (entry 9): PG-счётчики pairing-окон (rate_limit_windows) — общая с catalog база.
+      - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-4000}:4000"
     volumes:

@@ -88,8 +88,8 @@ test('production compose совпадает с моделью окружения
     );
     assert.equal(
         requiredTotal,
-        38,
-        'начальный набор requiredEnv (D2): изменение набора — только осознанной правкой этого теста',
+        39,
+        'начальный набор requiredEnv (D2): изменение набора — только осознанной правкой этого теста; entry 2.9: +CATALOG_PG_URL_FILE (api-gateway, PG pairing AD-6)',
     );
 });
 

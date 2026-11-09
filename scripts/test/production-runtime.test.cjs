@@ -98,6 +98,9 @@ test('Отключённая проверка TLS запрещает production-
     // AD-5: api-gateway требует независимый секрет хоста mcp-host (отдельный trust-domain).
     assert.throws(() => validateProduction(env, 'api-gateway'), /NEUROCENTER_MCP_HOST_SECRET/);
     env.NEUROCENTER_MCP_HOST_SECRET = 'b'.repeat(64);
+    // AD-6 (entry 2.9): api-gateway требует подключение к каталогной БД — PG-счётчики pairing-окон.
+    assert.throws(() => validateProduction(env, 'api-gateway'), /CATALOG_PG_URL/);
+    env.CATALOG_PG_URL = 'postgresql://runtime:test@postgres:5432/catalog';
     assert.doesNotThrow(() => validateProduction(env, 'api-gateway'));
 });
 for (const value of [

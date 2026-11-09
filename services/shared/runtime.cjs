@@ -125,9 +125,10 @@ function validateProduction(env, service) {
             throw new Error('NEUROCENTER_MCP_HOST_SECRET: разные trust-domain — разные значения');
         }
     }
+    // api-gateway — PG-счётчики pairing-окон (entry 9, AD-6): URL той же базы, что и catalog.
     for (const name of service === 'catalog-service'
         ? ['CATALOG_PG_URL', 'RAG_PG_URL']
-        : ['bootstrap-admin', 'feature-flags-service'].includes(service)
+        : ['api-gateway', 'bootstrap-admin', 'feature-flags-service'].includes(service)
           ? ['CATALOG_PG_URL']
           : service === 'rag-sync-service'
             ? ['RAG_PG_URL', 'RAG_PROVISION_PG_URL']

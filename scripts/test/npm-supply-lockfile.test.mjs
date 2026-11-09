@@ -138,7 +138,8 @@ test('Every lockfile resolved is exactly one of the allowed supply forms (truste
     // Ожидаемое количество ссылок (оба дерева: packages + legacy dependencies).
     // 5437 = 5435 (baseline 326a01f2) + 2 entry 1.2 (js-yaml, argparse) — нормализованы
     // в canonical trusted-форму при мерже 1.9 (были :443-формой с sha1 из registry-quirk).
-    assert.equal(trusted, 5437, 'trusted-ссылок');
+    // 5449 = 5437 + 12 entry 2.9 (pg + 5 зависимостей × 2 дерева, api-gateway, AD-6).
+    assert.equal(trusted, 5449, 'trusted-ссылок');
     assert.equal(platform, 420, 'platform npmjs-ссылок');
     assert.equal(vendor, 1025, 'file: supply/vendor-ссылок');
 });

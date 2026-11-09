@@ -99,6 +99,8 @@ import { PROJECT_QUOTA_USAGE_SCHEMA_CONTRACT } from '../project-quota-usage/proj
 import { assertProjectQuotaUsageSchema } from '../project-quota-usage/project-quota-usage.schema-verification';
 import { PROJECT_DELETION_RECEIPT_SCHEMA_CONTRACT } from '../project-deletion-receipt/project-deletion-receipt.schema-contract';
 import { assertProjectDeletionReceiptSchema } from '../project-deletion-receipt/project-deletion-receipt.schema-verification';
+import { RATE_LIMIT_WINDOWS_SCHEMA_CONTRACT } from '../rate-limit-windows/rate-limit-windows.schema-contract';
+import { assertRateLimitWindowsSchema } from '../rate-limit-windows/rate-limit-windows.schema-verification';
 export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...REMOTE_PROVIDER_SCHEMA_CONTRACT,
     ...GGUF_RUNTIME_SCHEMA_CONTRACT,
@@ -136,6 +138,7 @@ export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...PACKAGE_AGENT_CURRENT_SCHEMA_CONTRACT,
     ...PROJECT_QUOTA_USAGE_SCHEMA_CONTRACT,
     ...PROJECT_DELETION_RECEIPT_SCHEMA_CONTRACT,
+    ...RATE_LIMIT_WINDOWS_SCHEMA_CONTRACT,
     ...SYSTEM_ROLE_SCHEMA_CONTRACT,
     ...DEVICE_CODEX_SCHEMA_CONTRACT,
     ...PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT,
@@ -181,4 +184,5 @@ export async function assertCurrentCatalogSchema(db: Pick<Pool, 'query'>): Promi
     await assertSystemRoleSchema(db);
     await assertProjectQuotaUsageSchema(db);
     await assertProjectDeletionReceiptSchema(db);
+    await assertRateLimitWindowsSchema(db);
 }

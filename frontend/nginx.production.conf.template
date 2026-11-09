@@ -6,6 +6,7 @@ map $uri $log_path {
 }
 log_format neurocenter escape=json '{"time":"$time_iso8601","requestId":"$request_id","method":"$request_method","path":"$log_path","status":$status,"duration":$request_time}';
 limit_req_zone $binary_remote_addr zone=neurocenter_login:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=neurocenter_token_exchange:10m rate=10r/m;
 server {
     listen 8080;
     server_name ${NEUROCENTER_HOST};
@@ -42,6 +43,16 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Request-ID $request_id;
     }
+    # OAuth2-bridge token-exchange: отдельная зона (entry 9, OQ3) — флуд GET /auth/callback
+    # не расходует лимит /auth/login.
+    location = /auth/callback {
+        limit_req zone=neurocenter_token_exchange burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://oauth2-bridge:22222;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
+    }
     location /auth/ {
         proxy_pass http://oauth2-bridge:22222;
         proxy_set_header Host $http_host;
@@ -53,16 +64,26 @@ server {
         proxy_request_buffering off;
         proxy_http_version 1.1;
         proxy_pass http://api-gateway:4000;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
+        # 605s: dedicated-кромка ≥ gateway 600s + margin 5s (entry 9, invariant-тест).
+        proxy_read_timeout 605s;
+        proxy_send_timeout 605s;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Request-ID $request_id;
     }
-    # Persisted chat rounds may use the full 900s server budget plus response delivery.
-    location ~ "^/api/model-chats/[a-f0-9-]{36}/turns(?:/[a-f0-9-]{36}/retry)?$" {
+    # Persisted chat rounds and every model-chat route (turns + attachments + files + retry)
+    # may use the full 900s server budget plus response delivery (entry 9: prefix вместо turns-regex).
+    location ^~ /api/model-chats/ {
         proxy_pass http://api-gateway:4000;
         proxy_read_timeout 915s;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
+    }
+    # Ollama-инференс: gateway-бюджет 610s — общая /api/-кромка (600s) не должна рвать его первой.
+    location ~ "^/api/models/[^/]+/ollama/" {
+        proxy_pass http://api-gateway:4000;
+        proxy_read_timeout 615s;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Request-ID $request_id;

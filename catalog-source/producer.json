@@ -228,8 +228,8 @@
     },
     {
       "path": "scripts/catalog-plugins/prepared-source-snapshot.mjs",
-      "sha256": "68b85e06b7f86cc14a83950d5bb8a05fbead3a179e8c85d10277fd62620c19bc",
-      "bytes": 12672
+      "sha256": "dc62ce644f91bcf0a29e24073e972ae87efb5b563d3b5485b038ae6e21e213c2",
+      "bytes": 12987
     },
     {
       "path": "scripts/catalog-plugins/publish.mjs",
@@ -582,6 +582,11 @@
       "bytes": 368
     },
     {
+      "path": "services/shared/deadline-ladders.mjs",
+      "sha256": "6d49bf2beb149d13f5fc035f3a3a2807ef42497f9049e94a233575767dcca64c",
+      "bytes": 1774
+    },
+    {
       "path": "services/shared/dependency-pins.cjs",
       "sha256": "a15787d61240458808ac21f9dea25117f731bd9447c5e92cac732a0443811027",
       "bytes": 2029
@@ -722,6 +727,16 @@
       "bytes": 1013
     },
     {
+      "path": "services/shared/runtime/contract-version.cjs",
+      "sha256": "9eb55f451b2f415e34a9f8eb7c0d3a8db94701764df3c8bdca80765d27c3e139",
+      "bytes": 1405
+    },
+    {
+      "path": "services/shared/runtime/contract-version.d.cts",
+      "sha256": "f202dd886fc91f331b64f127d124a1782e43cdbe5e08f5d8da6205fe62eea73c",
+      "bytes": 771
+    },
+    {
       "path": "services/shared/runtime/host-target.cjs",
       "sha256": "7664b03766ba10f30dab808dac03de79c3989561dd13621fa606d17b2e292d7f",
       "bytes": 2012
@@ -783,8 +798,8 @@
     },
     {
       "path": "services/shared/tool-import-deadline.cjs",
-      "sha256": "28e3a22167d892a5291d27464ee836ec172faa27f2cfbc8ad01a8d59d9f3fab2",
-      "bytes": 607
+      "sha256": "03c88e3abd30adea1ed36c572514ea29eff2b8d11ea60fe6649a0a0c483ac5df",
+      "bytes": 712
     },
     {
       "path": "services/shared/tool-runtime-source.cjs",

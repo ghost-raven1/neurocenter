@@ -386,7 +386,7 @@
             "capDrop": null,
             "capAdd": null,
             "seccomp": null,
-            "secrets": ["internal_token", "mcp_host_secret", "metrics_token"],
+            "secrets": ["catalog_url", "internal_token", "mcp_host_secret", "metrics_token"],
             "ports": [],
             "volumes": ["artifact-cache:/data/gateway/mcp-host"],
             "env": {
@@ -405,7 +405,8 @@
                 "AUTH_SERVICE_URL": "http://oauth2-bridge:22222",
                 "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400",
                 "BRIDGE_TEMPLATES_DIR": "/app/bridge-dist",
-                "NEUROCENTER_MCP_HOST_DIR": "/data/gateway/mcp-host"
+                "NEUROCENTER_MCP_HOST_DIR": "/data/gateway/mcp-host",
+                "CATALOG_PG_URL_FILE": "/run/secrets/catalog_url"
             },
             "codeRoots": ["services/api-gateway/src"],
             "requiredEnv": {
@@ -414,7 +415,8 @@
                 "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
                 "NEUROCENTER_MCP_HOST_SECRET_FILE": "services/shared/runtime.cjs: validateProduction требует независимый секрет хоста mcp-host (секретный файл _FILE, 32+ байт hex, отличен от внутреннего токена — AD-5); без переменной сервис не стартует",
                 "BRIDGE_TEMPLATES_DIR": "потребляется bridge.controller.ts (api-gateway): в production-образе fallback резолвится в /bridge-dist, которого нет — шаблоны образ несёт в /app/bridge-dist (Dockerfile: COPY bridge-dist/ /app/bridge-dist/); без переменной /api/bridge/* отвечает 404",
-                "NEUROCENTER_MCP_HOST_DIR": "потребляется artifact-cache.ts (api-gateway): корень кэша MCP-артефактов на volume artifact-cache; per-project MCP-artifact cache с LRU-квотой (AD-D2); без переменной кэш уезжает в tmpdir и сгорает при рестарте gateway"
+                "NEUROCENTER_MCP_HOST_DIR": "потребляется artifact-cache.ts (api-gateway): корень кэша MCP-артефактов на volume artifact-cache; per-project MCP-artifact cache с LRU-квотой (AD-D2); без переменной кэш уезжает в tmpdir и сгорает при рестарте gateway",
+                "CATALOG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует строку подключения к каталогной БД (секретный файл _FILE); PG-счётчики pairing-окон rate_limit_windows (AD-6, entry 2.9); без переменной сервис не стартует"
             }
         },
         "frontend": {

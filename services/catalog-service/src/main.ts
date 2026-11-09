@@ -20,8 +20,9 @@ async function bootstrap(): Promise<void> {
     app.enableShutdownHooks();
     app.use(ggufRequestTimeouts(app.getHttpServer()));
     app.use(createObservability({ service: 'catalog-service' }).middleware);
-    // До 5 МиБ UTF-8 после разбора JSON; экранирование может увеличить тело запроса в шесть раз.
-    const jsonParser = express.json({ limit: '35mb' });
+    // Body-бюджет выравнивает цепь nginx 50m → gateway 50mb → catalog 50mb (entry 9, OQ2):
+    // 40MB-запрос проходит всю цепь, а не умирает 413'ом глубоко в catalog (бывший 35mb).
+    const jsonParser = express.json({ limit: '50mb' });
     app.use((req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) => {
         if (
             ggufImportContentRoute(req.method, req.path) ||

@@ -7,7 +7,9 @@ import ragSource from '../../services/shared/opencode-rag-source.cjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Осознанно повышен с 170 (AD-7 shared-сплит): entry 5 даёт 174, entry 6 ещё +4 = 178; ограничение сохраняется.
-export const PREPARED_SOURCE_MAX_FILES = 180;
+// Entry 2.9: +deadline-ladders.mjs (tool-import/model-chat лестницы требуют его в retained-closure) = 181.
+// Мерж 2.11: +runtime/contract-version.{cjs,d.cts} (require из runtime-artifacts.cjs в retained-closure) = 183.
+export const PREPARED_SOURCE_MAX_FILES = 183;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS = Object.freeze(
     [
@@ -141,7 +143,7 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
         ...['project-learning', 'project-learning-memory-sync', 'project-learning-quirks'].flatMap((name) =>
             ['cjs', 'd.cts'].map((extension) => 'services/shared/' + name + '.' + extension),
         ),
-        ...['targets', 'host-target', 'portable-path', 'limits', 'archive'].flatMap((name) =>
+        ...['targets', 'host-target', 'portable-path', 'limits', 'archive', 'contract-version'].flatMap((name) =>
             ['cjs', 'd.cts'].map((extension) => 'services/shared/runtime/' + name + '.' + extension),
         ),
         'services/catalog-service/package.json',
@@ -154,6 +156,7 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
         'services/catalog-service/src/publication/publication-validation.ts',
         'services/shared/tool-supply-paths.cjs',
         'services/shared/tool-supply-paths.d.cts',
+        'services/shared/deadline-ladders.mjs',
         'services/shared/tool-import-deadline.cjs',
         'services/shared/skill-source.mjs',
         'services/shared/python-runtime-pins.cjs',

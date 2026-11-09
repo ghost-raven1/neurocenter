@@ -7,6 +7,10 @@ import {
     DISCUSSION_ATTACHMENT_MAX_BYTES,
 } from '../../../shared/discussion-attachment-route.cjs';
 import { snapshotContentRoute, snapshotDownloadRoute } from '../../../shared/snapshot-content-route.cjs';
+import {
+    EMBEDDING_CLIENT_TIMEOUT_MS,
+    EMBEDDING_UPSTREAM_TIMEOUT_MS,
+} from '../../../shared/model-embedding-deadline.cjs';
 import { SNAPSHOT_CHUNK_BYTES } from '../../../shared/project-snapshot.cjs';
 import { sourceUploadContentRoute } from '../../../shared/source-upload-route.cjs';
 import { ggufImportContentRoute } from '../../../shared/gguf-import-route.cjs';
@@ -34,9 +38,9 @@ import { CEILING } from '../../../shared/runtime-artifacts.cjs';
  * запрещены (проверяется при загрузке модуля и static-тестом
  * scripts/test/route-policy-completeness.test.mjs).
  *
- * Значения — текущие (чистый перенос, entry 9 меняет лестницы/кромки):
+ * Значения — текущие (entry 9: лестницы из base+margins, embedding 110/115s):
  * 30s-default, 60s bridge-source/check, 85s tool-builds inspection, 610s/910s inference,
- * 540s tool-import, 300s tool-supply, 120s snapshot chunk, 115s embedding,
+ * 540s tool-import, 300s tool-supply, 120s snapshot chunk, 110/115s embedding,
  * 64MB model-chats, 8MB inference/embedding, 50mb global body, 600KB device-channel,
  * 10MB discussion attachments, 1MiB/16MiB/256MiB supply, 64MiB chunks, 1GiB bridge.
  */
@@ -48,7 +52,7 @@ const GIB = 1024 ** 3;
 /** Методы маршрута из декораторов; ALL = @All, WS = WebSocket-маркер (бюджеты не применимы). */
 export type TRouteMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS' | 'ALL' | 'WS';
 
-/** Заготовка rate-limit (применение — entry 9: PG rate-limit). */
+/** Rate-limit окна (entry 9: PG-счётчики, multi-replica-safe; fail-closed 503 при PG-сбое). */
 export interface IRouteRateLimit {
     max: number;
     windowMs: number;
@@ -65,6 +69,9 @@ export interface IRouteRow {
     match?: (method: string, path: string) => unknown;
     /** Axios/client-дедлайн маршрута, мс. */
     timeoutMs?: number;
+    /** Дедлайн вызова innermost upstream, мс; должен быть строго меньше timeoutMs
+     *  (client-timer — внешний владелец «истёк», upstream падает первым с margin > 0). */
+    upstreamTimeoutMs?: number;
     /** Лимит входящего тела, байты (express.json / axios maxBodyLength). */
     maxBodyBytes?: number;
     /** Бюджет ответа, байты (axios maxContentLength). AD-6: только конечные значения. */
@@ -256,10 +263,13 @@ export const ROUTE_POLICY: readonly IRouteRow[] = [
         match: (m, p) => m === 'GET' && /^\/api\/device-channel\/jobs\/[a-f0-9-]{36}\/runtime\/[a-f0-9]{64}$/.test(deviceChannelSuffix(p) || ''),
     },
     {
+        // Ladder (embedding, base 110s + margin 5s): upstream gives up at 110s,
+        // client timer owns the 115s deadline — race 115==115 closed (entry 9).
         kind: 'proxy',
         path: '/api/device-channel/embedding',
         allowed: ['POST'],
-        timeoutMs: 115000,
+        timeoutMs: EMBEDDING_CLIENT_TIMEOUT_MS,
+        upstreamTimeoutMs: EMBEDDING_UPSTREAM_TIMEOUT_MS,
         maxResponseBytes: 8 * MIB,
         match: (m, p) => m === 'POST' && deviceChannelSuffix(p) === '/api/device-channel/embedding',
     },
@@ -287,7 +297,7 @@ export const ROUTE_POLICY: readonly IRouteRow[] = [
     },
     {
         // rateLimit — окно pair/start на адрес (полная лестница poll 6000/мин и per-code 60/мин
-        // применяется диспетчером deviceChannel; PG rate-limit — entry 9).
+        // применяется диспетчером deviceChannel; PG-счётчики — entry 9, fail-closed 503).
         kind: 'proxy',
         path: '/api/device-channel/*',
         allowed: ['POST'],
@@ -301,6 +311,7 @@ export const ROUTE_POLICY: readonly IRouteRow[] = [
 const assertValidBudget = (row: IRouteRow): void => {
     for (const [name, value] of Object.entries({
         timeoutMs: row.timeoutMs,
+        upstreamTimeoutMs: row.upstreamTimeoutMs,
         maxBodyBytes: row.maxBodyBytes,
         maxResponseBytes: row.maxResponseBytes,
     })) {
@@ -310,6 +321,13 @@ const assertValidBudget = (row: IRouteRow): void => {
                 `route-policy: ${row.path} ${name} обязан быть конечным положительным числом (AD-6 запрещает Infinity и -1).`,
             );
         }
+    }
+    // Ladder invariant: upstream is innermost, so its deadline must be strictly
+    // smaller than the client deadline it is wrapped by (margin > 0, entry 9).
+    if (row.upstreamTimeoutMs !== undefined && row.timeoutMs !== undefined && row.upstreamTimeoutMs >= row.timeoutMs) {
+        throw new Error(
+            `route-policy: ${row.path} upstreamTimeoutMs обязан быть строго меньше timeoutMs (ladder: внешний > внутренний).`,
+        );
     }
     if (
         row.rateLimit !== undefined &&

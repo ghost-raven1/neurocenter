@@ -10,7 +10,6 @@ const {
     browserSecurity,
     allowBrowserOrigin,
 } = require('../../services/oauth2-bridge/dist/security/browser-security.js');
-const { ProxyService } = require('../../services/api-gateway/dist/proxy/proxy.service.js');
 const { filterResponse } = require('../../services/api-gateway/dist/proxy/access-response.js');
 /** Валидация входа как у каталога (createSessionInput): тест не должен принимать шире продакшена. */
 const sessionText = (value, max) =>
@@ -305,39 +304,8 @@ test('POST-выход отзывает серверный ключ и возвр
     assert.deepEqual(res.body, {});
     assert.ok(res.cleared.includes('bridge_session'));
 });
-function pollGateway() {
-    const proxy = new ProxyService({ get: () => undefined }, { authenticate: async () => null }, {});
-    proxy.http = { post: async () => ({ status: 201, data: { state: 'pending' } }) };
-    return async (code) => {
-        const res = response();
-        await proxy.forward(
-            {
-                method: 'POST',
-                path: '/api/device-channel/pair/poll',
-                headers: {},
-                socket: { remoteAddress: 'test-address' },
-                body: { deviceCode: code },
-            },
-            res,
-        );
-        return res.statusCode;
-    };
-}
-test('Один код ограничен по частоте и не исчерпывает ожидание другого компьютера', async () => {
-    const poll = pollGateway();
-    for (let index = 0; index < 60; index++) {
-        assert.equal(await poll('a'.repeat(64)), 201);
-    }
-    assert.equal(await poll('a'.repeat(64)), 429);
-    assert.equal(await poll('b'.repeat(64)), 201);
-});
-test('Общий лимит сохраняется при переборе разных кодов подключения', async () => {
-    const poll = pollGateway();
-    for (let index = 0; index < 6000; index++) {
-        assert.equal(await poll(index.toString(16).padStart(64, '0')), 201);
-    }
-    assert.equal(await poll('f'.repeat(64)), 429);
-});
+// Семантика PG rate-limit pairing (60/код/мин, 6000/адрес/мин, 15/адрес-старт/мин)
+// покрыта scripts/test/rate-limit-pg.test.mjs (entry 2.9, AD-6).
 test('Список скиллов и RAG не раскрывает чужие данные при старой коллизии имени и ID', () => {
     const claims = {
         email: 'qa@example.test',

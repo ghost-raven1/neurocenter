@@ -36,6 +36,9 @@ const { ROUTE_POLICY, CATCH_ALL_ROW, CATCH_ALL_PATH, matchPolicy, canonicalRoute
 );
 const sharedRequire = createRequire(import.meta.url);
 const { MODEL_CHAT_GATEWAY_TIMEOUT_MS } = sharedRequire('../../services/shared/model-chat-deadline.cjs');
+const { EMBEDDING_UPSTREAM_TIMEOUT_MS, EMBEDDING_CLIENT_TIMEOUT_MS } = sharedRequire(
+    '../../services/shared/model-embedding-deadline.cjs',
+);
 const { TOOL_IMPORT_GATEWAY_TIMEOUT_MS, TOOL_IMPORT_ROUTE } = sharedRequire('../../services/shared/tool-import-deadline.cjs');
 const { DISCUSSION_ATTACHMENT_MAX_BYTES } = sharedRequire('../../services/shared/discussion-attachment-route.cjs');
 const { ASSET_SOURCE_ARCHIVE_MAX_BYTES } = sharedRequire('../../services/shared/asset-source-archive-route.cjs');
@@ -196,7 +199,8 @@ const INVENTORY = [
     { method: 'GET', path: '/api/projects/project-1/backups/backup-1/download', row: '/api/projects/:key/backups/:id/download', expect: { timeoutMs: 30000, maxResponseBytes: CEILING.unpackedBytes } },
     { method: 'GET', path: `/api/device-channel/jobs/${UUID}/runtime/${SHA}`, row: '/api/device-channel/jobs/:id/runtime/:sha', expect: { timeoutMs: 30000, maxResponseBytes: 256 * MIB } },
     // Device-канал (device-channel-json.ts / proxy.service deviceEmbedding).
-    { method: 'POST', path: '/api/device-channel/embedding', row: '/api/device-channel/embedding', expect: { timeoutMs: 115000, maxResponseBytes: 8 * MIB } },
+    // entry 2.9: лестница embedding 110/115 — upstream-дедлайн строже клиентского.
+    { method: 'POST', path: '/api/device-channel/embedding', row: '/api/device-channel/embedding', expect: { timeoutMs: EMBEDDING_CLIENT_TIMEOUT_MS, upstreamTimeoutMs: EMBEDDING_UPSTREAM_TIMEOUT_MS, maxResponseBytes: 8 * MIB } },
     { method: 'POST', path: '/api/device-channel/identity', row: '/api/device-channel/*', expect: { timeoutMs: 30000, maxBodyBytes: 600 * KIB } },
     // Прочие catch-all подмаршруты (generic upstreamRequest).
     { method: 'POST', path: '/api/bridge-source/check', row: '/api/bridge-source/check', expect: { timeoutMs: 60000 } },

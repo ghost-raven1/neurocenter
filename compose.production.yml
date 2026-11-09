@@ -289,8 +289,12 @@ services:
       NEUROCENTER_MCP_HOST_SECRET_FILE: /run/secrets/mcp_host_secret
       # AD-D2: персистентный volume кэша MCP-артефактов (LRU + per-project квота); без volume кэш сгорает при рестарте.
       NEUROCENTER_MCP_HOST_DIR: /data/gateway/mcp-host
-    secrets: [metrics_token, internal_token, mcp_host_secret]
+      # AD-6 (entry 9): PG-счётчики pairing-окон — общий с catalog-базой URL (таблица rate_limit_windows).
+      CATALOG_PG_URL_FILE: /run/secrets/catalog_url
+    secrets: [metrics_token, internal_token, mcp_host_secret, catalog_url]
     volumes: [artifact-cache:/data/gateway/mcp-host]
+    depends_on:
+      postgres: {condition: service_healthy}
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s

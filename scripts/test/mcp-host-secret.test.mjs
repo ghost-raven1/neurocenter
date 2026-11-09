@@ -46,6 +46,8 @@ const productionEnv = (overrides = {}) => ({
     NODE_ENV: 'production',
     PANEL_URL: 'https://panel.example.test',
     NEUROCENTER_INTERNAL_TOKEN: 'a'.repeat(64),
+    // entry 2.9 (AD-6): api-gateway обязан пройти и PG-цикл — URL той же БД, что и catalog.
+    CATALOG_PG_URL: 'postgresql://runtime:test@postgres:5432/catalog',
     ...overrides,
 });
 
