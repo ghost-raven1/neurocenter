@@ -1,0 +1,68 @@
+# Сторис эпика epic-dr. Порядок таблиц = порядок сборки.
+# next_id = 7
+
+[[entry]]
+id = 1
+type = "story"
+title = "DR-бандл: образы релиза в комплекте (AD-OP-2, AD-OP-4)"
+description = "DR-бандл достаточен для cross-host restore без registry (AD-OP-4): сегодня recovery-манифест хранит image ID 7 app + postgres (recovery.mjs:469), но сами образы в комплект не попадают (docker save нигде нет; production-recovery.md:83 «ещё не публикует их в registry автоматически»). Из release-манифеста (pinned image ID) собрать image-bundle: docker save каждого из 7 app-образов + postgres по точному image ID, SHA каждого tar + опись image-bundle (image ID → sha256 tar, commit+release из release-манифеста); верификация: docker load → image ID == manifest. Bundle ключится на релиз (не на backup — образы не меняются между бэкапами), передаётся на S3 как часть DR-набора (свой SHA, retention), на restore — docker load до restoreProduction. Update DR-runbook (production-recovery.md)."
+verify = "Image-bundle из верифицированного release-манифеста: все 7 app + postgres сохранены по точному image ID, опись с SHA; docker load бандла → image ID совпадают с манифестом (тест); bundle поднимается на S3 и читается обратно; restoreProduction на новом проекте с loaded-образами проходит (локальная репетиция, production-recovery-stack). Неизменное поведение backup/verify (без деградации)."
+covers = ["R1", "R3", "R10"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "DR evidence: RPO/RTO + отчёт cross-host restore (верифицируемый артефакт)"
+description = "Единый измеримый артефакт DR-репетиций (P0-S3/MNT/UPD): инструмент standardizes и записывает RPO = now − createdAt последнего внешне проверенного (full SHA readback) комплекта, RTO = от старта restore до healthy приложений; снимает data-time/verify-time/restore-time, host identity обоих хостов, backup ID/SHA, image digests, storage binding. Вывод — machine-verifiable JSON + человекочитаемый отчёт (MD) «RPO/RTO задокументированы» (C3/UJ-5), который потребляет приёмка пилота (эпик 10). Логика record/validate/report тестится офлайн; сами цифры заполняются репетициями (entries 3–5)."
+verify = "dr-evidence инструмент: record (замер времени/identity) + validate (схема, RPO/RTO формулы, отсутствие секретов в артефакте) + report (JSON+MD) — unit-тесты офлайн без docker/S3; отчёт для фиктивного сценария валиден и содержит RPO/RTO, host identity, backup ID/SHA, image digests; в артефакте нет секретов."
+covers = ["R3", "R10"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "P0-MNT: репетиция maintenance-таймера (успешный слот + отказ + повтор)"
+description = "П0-MNT закрыт на целевом production-кандидате: включить systemd-таймер по runbook (deploy/maintenance/neurocenter-maintenance.{service,timer}); политика сохранена главным администратором (409 двух черновиков, запрет остальных ролей); реальный УСПЕШНЫЙ слот: созданный и внешне проверенный (full SHA readback) комплект, допустимое окно, измеренная пауза; реальный ОТКАЗ доставки + ПОВТОР: повтор использует прежний комплект без новой паузы и без двойного успешного слота; измеренные пауза/RPO записаны в DR-evidence (entry 2). SIGKILL/running разбирается оператором (без авто-снятия чужой блокировки)."
+verify = "Свидетельства: timer-run с nextRunAt и policy/CAS/аудит (maintenance.policy.update); созданный + внешне проверенный (SHA readback) комплект в допустимом окне; измеренная пауза ≤ maxPause; отказ → повтор по прежней квитанции (без нового стоп-окна, один успешный слот); RPO/пауза в DR-evidence-отчёте. П0-MNT в readiness помечен пройденным."
+covers = ["R1", "R10", "R12"]
+after = [2]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "P0-S3: репетиция cross-host restore (без исходных дисков)"
+description = "P0-S3 закрыт на независимом S3 + другом физическом хосте: независимый bucket с контрактом S3 (HTTPS-DNS, SigV4, path-style, If-None-Match), retention целых комплектов, ограниченные ключи, отдельно сохранённая квитанция SHA; на рабочем объёме проверены обрыв/retry, SHA и отказ изменённых байтов. При НЕДОСТУПНОМ исходном сервере: на втором хосте скачать комплект + image-bundle (entry 1) + секреты/конфиг/TLS, docker load, restore в новый пустой Compose-проект; настоящий вход (локальный auth как interim — Blitz после пилота, эпик 3), чтение и запись, сверка настроек и артефактов; измерены RPO/RTO + прикладной smoke; crossHostRestoreVerified=true только после этой репетиции (не по upload/readback/локальному Docker-restore)."
+verify = "Второй хост восстановил все БД/томы из комплекта + loaded-образов при недоступном исходном сервере; настоящий вход/чтение/запись прошли; RPO/RTO измерены и записаны в DR-evidence; host identity/backup ID/SHA/image digests сохранены; crossHostRestoreVerified=true. P0-S3 в readiness помечен пройденным."
+covers = ["R1", "R3", "R12"]
+after = [1, 2]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 5
+type = "story"
+title = "P0-UPD: репетиция обновления на копии рабочего объёма (точные образы)"
+description = "P0-UPD закрыт: воспроизводимый набор source/target images + PostgreSQL (точные актуальные образы из верифицированного release-манифеста — не прежние образы исторической 12/12-репетиции), согласованная копия РАБОЧЕГО объёма (не малая синтетика), сохранённые настройки/секреты. Снять baseline данных/настроек/файлов/истории миграций; preflight/apply, повтор (без повторной копии) и контролируемый отказ; при несовместимости — restore согласованного комплекта в новый проект с прежними образами. SHA-квитанция репетиции = точные image ID текущего плана; настройки/данные сохранены, повтор безопасен, отказ останавливает следующие этапы; restore + authenticated smoke (локальный auth как interim — Blitz после пилота) и допустимые сроки в DR-evidence."
+verify = "SHA-квитанция репетиции соответствует точным image ID текущего плана (все 5 признаков rehearsal=true); настройки и данные сохранены, повтор не создаёт копии, отказ останавливает следующие этапы, restore в новый проект + authenticated smoke успешны; измеренные сроки в DR-evidence. P0-UPD в readiness помечен пройденным."
+covers = ["R1", "R10", "R12"]
+after = [2, 4]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "DR sweep + e2e-приёмка (P0-S3/MNT/UPD + RPO/RTO, UJ-5)"
+description = "Cleanup only (скоуп на старте по планам/находкам, которые эпик отложил) + финальная e2e-приёмка всей линии DR: сверить доказательства P0-MNT (entry 3), P0-S3 cross-host (entry 4), P0-UPD (entry 5); подтвердить что RPO/RTO измерены репетицией и задокументированы (entry 2 артефакт), не превышают заявленных (R3/C3); UJ-5 работает как записан (quiesced backup → независимый S3 → restore чистого стека на другом хосте → вход/чтение/запись); DR-бандл собирается из текущего compose; новые compose-сервисы эпика 6 (prometheus/alertmanager) — на финальном restore при приёмке пилота (эпик 10), не здесь."
+verify = "Все три P0-приёмки (MNT/S3/UPD) со свидетельствами зелёные; RPO/RTO в задокументированном артефакте ≤ заявленных; UJ-5 как записан; корневой сьют без деградации против baseline; cleanup-список закрыт. Эпик epic-dr = 6/6."
+covers = ["R1", "R3", "R10", "R12"]
+after = [1, 2, 3, 4, 5]
+hitl = true
+risk = "high"
