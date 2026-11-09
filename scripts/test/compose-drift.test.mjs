@@ -88,7 +88,7 @@ test('production compose совпадает с моделью окружения
     );
     assert.equal(
         requiredTotal,
-        36,
+        37,
         'начальный набор requiredEnv (D2): изменение набора — только осознанной правкой этого теста',
     );
 });

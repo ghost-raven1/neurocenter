@@ -8,7 +8,7 @@ const { CEILING } = require('../../services/shared/runtime-artifacts.cjs');
 
 test('Public host tickets never serialize private research process identity or caller extras', () => {
     const before = process.env.NEUROCENTER_MCP_HOST_SECRET;
-    process.env.NEUROCENTER_MCP_HOST_SECRET = 'qa-ticket-only-secret';
+    process.env.NEUROCENTER_MCP_HOST_SECRET = 'qa'.repeat(16);
     try {
         const claim = {
             artifactSha256: 'a'.repeat(64),
@@ -49,7 +49,7 @@ test('Public host tickets never serialize private research process identity or c
 test('Verify: claim в пределах ceiling проходит, выше ceiling — invalid; политика env на ceiling не влияет', () => {
     const before = process.env.NEUROCENTER_MCP_HOST_SECRET;
     const beforePolicy = process.env.NEUROCENTER_RUNTIME_MAX_COMPRESSED_BYTES;
-    process.env.NEUROCENTER_MCP_HOST_SECRET = 'qa-ticket-only-secret';
+    process.env.NEUROCENTER_MCP_HOST_SECRET = 'qa'.repeat(16); // AD-5: min-length 32
     const session = {
         deviceId: 'device',
         projectId: 'project',

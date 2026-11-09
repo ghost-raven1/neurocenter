@@ -49,12 +49,13 @@ export function validHostedMcpSession(value: unknown): value is IHostedMcpSessio
     );
 }
 
-const secret = () => process.env.NEUROCENTER_MCP_HOST_SECRET || process.env.NEUROCENTER_INTERNAL_TOKEN || '';
+// AD-5: секрет хоста — отдельный trust-domain; fallback на внутренний токен запрещён (без него — отказ).
+const secret = () => process.env.NEUROCENTER_MCP_HOST_SECRET || '';
 export const HOSTED_MCP_TTL_MS = 30 * 86400 * 1000;
 
 export function issueHostedMcpTicket(claim: Omit<IHostedMcpClaim, 'exp'>): string {
     const guard = secret();
-    if (guard.length < 16) {
+    if (guard.length < 32) {
         throw new Error('Секрет хоста MCP не задан.');
     }
     if (!validHostedMcpSession(claim.session))
@@ -78,7 +79,7 @@ export function issueHostedMcpTicket(claim: Omit<IHostedMcpClaim, 'exp'>): strin
 
 export function verifyHostedMcpTicket(ticket: string): IHostedMcpClaim | undefined {
     const guard = secret();
-    if (guard.length < 16 || typeof ticket !== 'string' || ticket.length > 2048) {
+    if (guard.length < 32 || typeof ticket !== 'string' || ticket.length > 2048) {
         return undefined;
     }
     const dot = ticket.lastIndexOf('.');

@@ -33,6 +33,8 @@ test(
             await f.close();
         });
         process.env.NEUROCENTER_MCP_HOST_DIR = path.join(f.temporary, 'host-cache');
+        // AD-5: сервер выпускает билеты только от независимого секрета хоста (без fallback на internal token).
+        process.env.NEUROCENTER_MCP_HOST_SECRET = randomBytes(32).toString('hex');
         const source = path.join(f.temporary, 'host-source');
         await fs.mkdir(source);
         const code = `const r=require('node:readline').createInterface({input:process.stdin});let calls=0;r.on('line',line=>{const q=JSON.parse(line);if(q.id===undefined)return;const result=q.method==='initialize'?{protocolVersion:q.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'qa-mcp',version:'1'}}:q.method==='tools/list'?{tools:[{name:'qa_read',inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:true,destructiveHint:false}}]}:q.method==='tools/call'?{content:[{type:'text',text:'synthetic call '+(++calls)}]}:{};process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,result})+'\\n');});`;
@@ -160,7 +162,7 @@ test(
                 claim = JSON.parse(Buffer.from(raw, 'base64url'));
             delete claim.session;
             const payload = Buffer.from(JSON.stringify(claim)).toString('base64url'),
-                secret = process.env.NEUROCENTER_MCP_HOST_SECRET || process.env.NEUROCENTER_INTERNAL_TOKEN;
+                secret = process.env.NEUROCENTER_MCP_HOST_SECRET;
             const legacy = payload + '.' + createHmac('sha256', secret).update(payload).digest('base64url');
             const response = await fetch(base + '/api/mcp-host/m/' + legacy, {
                 method: 'POST',

@@ -95,6 +95,9 @@ test('Отключённая проверка TLS запрещает production-
     ])
         assert.throws(() => validateProduction(env, service), /TLS/, service);
     delete env.NODE_TLS_REJECT_UNAUTHORIZED;
+    // AD-5: api-gateway требует независимый секрет хоста mcp-host (отдельный trust-domain).
+    assert.throws(() => validateProduction(env, 'api-gateway'), /NEUROCENTER_MCP_HOST_SECRET/);
+    env.NEUROCENTER_MCP_HOST_SECRET = 'b'.repeat(64);
     assert.doesNotThrow(() => validateProduction(env, 'api-gateway'));
 });
 for (const value of [

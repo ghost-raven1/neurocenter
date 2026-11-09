@@ -1,5 +1,10 @@
 # Query, cookies и Authorization не попадают в access log.
-log_format neurocenter escape=json '{"time":"$time_iso8601","requestId":"$request_id","method":"$request_method","path":"$uri","status":$status,"duration":$request_time}';
+# AD-5: билет mcp-host — секретный материал; в access log путь m/:ticket пишется маскированным.
+map $uri $log_path {
+    ~^/api/mcp-host/m/.+ /api/mcp-host/m/[REDACTED];
+    default $uri;
+}
+log_format neurocenter escape=json '{"time":"$time_iso8601","requestId":"$request_id","method":"$request_method","path":"$log_path","status":$status,"duration":$request_time}';
 limit_req_zone $binary_remote_addr zone=neurocenter_login:10m rate=10r/m;
 server {
     listen 8080;

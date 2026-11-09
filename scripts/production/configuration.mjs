@@ -209,6 +209,8 @@ export async function configureProduction(input, destination) {
     };
     await secret('postgres_password', () => randomBytes(32).toString('hex'));
     await secret('internal_token', () => randomBytes(32).toString('hex'));
+    // AD-5: секрет хоста mcp-host генерируется независимо от internal_token (отдельный trust-domain).
+    await secret('mcp_host_secret', () => randomBytes(32).toString('hex'));
     await ensureMetricsToken(directory);
     await ensureModelCredentialKey(directory);
     for (const [name, role, database] of [

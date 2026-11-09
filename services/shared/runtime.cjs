@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -12,6 +13,7 @@ const secretNames = [
     'NEUROCENTER_MODEL_CREDENTIAL_KEY',
     'NEUROCENTER_METRICS_TOKEN',
     'NEUROCENTER_INTERNAL_TOKEN',
+    'NEUROCENTER_MCP_HOST_SECRET',
     'SSO_CLIENT_SECRET',
     'CATALOG_PG_URL',
     'RAG_PG_URL',
@@ -111,6 +113,17 @@ function validateProduction(env, service) {
     const panel = service === 'bootstrap-admin' ? null : httpsUrl(required(env, 'PANEL_URL'), 'PANEL_URL', true);
     if (service !== 'bootstrap-admin' && !/^[a-f0-9]{64,128}$/.test(required(env, 'NEUROCENTER_INTERNAL_TOKEN'))) {
         throw new Error('NEUROCENTER_INTERNAL_TOKEN: нужны 32 или более случайных байта в hex');
+    }
+    if (service === 'api-gateway') {
+        // AD-5: секрет хоста mcp-host — отдельный trust-domain, обязан быть задан и отличаться от внутреннего токена.
+        const host = required(env, 'NEUROCENTER_MCP_HOST_SECRET');
+        if (!/^[a-f0-9]{64,128}$/.test(host)) {
+            throw new Error('NEUROCENTER_MCP_HOST_SECRET: нужны 32 или более случайных байта в hex');
+        }
+        const digest = (value) => crypto.createHash('sha256').update(value).digest();
+        if (crypto.timingSafeEqual(digest(host), digest(env.NEUROCENTER_INTERNAL_TOKEN))) {
+            throw new Error('NEUROCENTER_MCP_HOST_SECRET: разные trust-domain — разные значения');
+        }
     }
     for (const name of service === 'catalog-service'
         ? ['CATALOG_PG_URL', 'RAG_PG_URL']

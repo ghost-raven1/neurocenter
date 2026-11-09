@@ -385,7 +385,7 @@
             "capDrop": null,
             "capAdd": null,
             "seccomp": null,
-            "secrets": ["internal_token", "metrics_token"],
+            "secrets": ["internal_token", "mcp_host_secret", "metrics_token"],
             "ports": [],
             "volumes": [],
             "env": {
@@ -394,6 +394,7 @@
                 "PANEL_URL": "${PANEL_URL:?Заполните PANEL_URL}",
                 "NEUROCENTER_INTERNAL_TOKEN_FILE": "/run/secrets/internal_token",
                 "NEUROCENTER_METRICS_TOKEN_FILE": "/run/secrets/metrics_token",
+                "NEUROCENTER_MCP_HOST_SECRET_FILE": "/run/secrets/mcp_host_secret",
                 "PORT": "4000",
                 "API_PUBLIC_URL": "${API_PUBLIC_URL:-}",
                 "NEUROCENTER_TLS_PROXY_ADDRESSES": "${NEUROCENTER_TLS_PROXY_ADDRESSES:-}",
@@ -409,6 +410,7 @@
                 "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
                 "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
                 "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
+                "NEUROCENTER_MCP_HOST_SECRET_FILE": "services/shared/runtime.cjs: validateProduction требует независимый секрет хоста mcp-host (секретный файл _FILE, 32+ байт hex, отличен от внутреннего токена — AD-5); без переменной сервис не стартует",
                 "BRIDGE_TEMPLATES_DIR": "потребляется bridge.controller.ts (api-gateway): в production-образе fallback резолвится в /bridge-dist, которого нет — шаблоны образ несёт в /app/bridge-dist (Dockerfile: COPY bridge-dist/ /app/bridge-dist/); без переменной /api/bridge/* отвечает 404"
             }
         },
