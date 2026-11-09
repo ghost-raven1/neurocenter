@@ -31,6 +31,7 @@ const entries = [
     ['maintenance-database', 'TEST_ADMIN_PG_URL'],
     ['retention-prune-db', 'TEST_ADMIN_PG_URL'],
     ['schema-locks-ddl-invariant-db', 'TEST_ADMIN_PG_URL'],
+    ['snapshot-gc-fallback-db', 'TEST_ADMIN_PG_URL'],
     ['install-plan-database', 'INSTALLATION_TEST_PG_URL'],
     ['installation-reliability', 'INSTALLATION_TEST_PG_URL'],
     ['dependency-installation', 'DEPENDENCY_INSTALLATION_PG_URL'],

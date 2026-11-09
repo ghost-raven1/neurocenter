@@ -3,6 +3,7 @@ import {
     ConflictException,
     ForbiddenException,
     Injectable,
+    Logger,
     ServiceUnavailableException,
     type OnModuleDestroy,
     type OnModuleInit,
@@ -21,8 +22,12 @@ import { SnapshotRepository, snapshotUuid, snapshotCreateInput } from './snapsho
 import { SnapshotStorage } from './snapshot-storage';
 import { SnapshotSigner } from './snapshot-signature';
 import { SnapshotCommands } from './snapshot-commands';
+import { SnapshotGarbageCollector } from './snapshot-gc';
 import { SNAPSHOT_CHUNK_BYTES } from '../../../shared/project-snapshot.cjs';
 import type { ISnapshotCreate, ISnapshotRow } from './snapshot-interfaces';
+
+/** AD-D3 fallback period: one in-process GC attempt per hour (OQ-1 of story-s3-snapshot-gc). */
+const GC_FALLBACK_INTERVAL_MS = 60 * 60 * 1000;
 
 /** The HTTP service schedules work; full LanceDB verification runs outside this process. */
 @Injectable()
@@ -34,8 +39,11 @@ export class SnapshotService implements OnModuleInit, OnModuleDestroy {
     readonly repository = new SnapshotRepository(this.pool);
     readonly signer = new SnapshotSigner();
     readonly commands: SnapshotCommands;
+    private readonly logger = new Logger('SnapshotService');
     private store?: SnapshotStorage;
     private transfers = 0;
+    private gcFallbackTimer?: NodeJS.Timeout;
+    private gcRunning = false;
     constructor(
         private readonly catalog: CatalogService,
         private readonly devices: DeviceStore,
@@ -46,12 +54,59 @@ export class SnapshotService implements OnModuleInit, OnModuleDestroy {
     async onModuleInit(): Promise<void> {
         await this.catalog.ensureSchema();
         await this.devices.ready();
+        this.gcFallbackTimer = setInterval(() => {
+            void this.gcFallbackTick();
+        }, GC_FALLBACK_INTERVAL_MS);
+        this.gcFallbackTimer.unref();
     }
     async onModuleDestroy(): Promise<void> {
+        if (this.gcFallbackTimer) clearInterval(this.gcFallbackTimer);
         await this.pool.end();
     }
     storage(): SnapshotStorage {
         return (this.store ??= new SnapshotStorage(this.pool));
+    }
+    /** A live verifier is the one that heartbeats within the shared liveness window. */
+    private async verifierLive(): Promise<boolean> {
+        return !!(
+            await this.pool.query(
+                "SELECT 1 FROM project_snapshot_verifiers WHERE sdk_version='0.29.0' AND last_seen>now()-interval '60 seconds' AND ($1::text IS NULL OR image_digest=$1) LIMIT 1",
+                [process.env.SNAPSHOT_VERIFIER_IMAGE_DIGEST ?? null],
+            )
+        ).rowCount;
+    }
+    /**
+     * AD-D3 in-process GC fallback: when no live verifier is present, reclaim expired DELETING
+     * snapshots through the same ratified two-phase collector. The verifier-triggered endpoint
+     * remains the primary path; the collector's advisory lock keeps concurrent runs idempotent.
+     */
+    async gcFallbackTick(): Promise<void> {
+        if (this.gcRunning) return;
+        this.gcRunning = true;
+        try {
+            if (await this.verifierLive()) return;
+            const due = (
+                await this.pool.query(
+                    "SELECT 1 FROM project_snapshots WHERE status='DELETING' AND delete_after<=now() LIMIT 1",
+                )
+            ).rowCount;
+            if (!due) return;
+            const result = await new SnapshotGarbageCollector(this).collect();
+            if (result.processed || result.deleted)
+                this.logger.log(
+                    'Snapshot GC fallback reclaimed ' +
+                        result.processed +
+                        ' blob reference(s) and ' +
+                        result.deleted +
+                        ' snapshot(s).',
+                );
+        } catch (error) {
+            this.logger.warn(
+                'Snapshot GC fallback tick failed: ' + String((error as { message?: string })?.message || error),
+            );
+        } finally {
+            this.gcRunning = false;
+        }
     }
     actor(req: Request): IAccessActor {
         assertInternal(req.headers['x-neurocenter-internal']);
@@ -79,13 +134,7 @@ export class SnapshotService implements OnModuleInit, OnModuleDestroy {
         } catch {
             reason = 'Настройте хранилище и приватный ключ подписи снимков.';
         }
-        const live = (
-            await this.pool.query(
-                "SELECT 1 FROM project_snapshot_verifiers WHERE sdk_version='0.29.0' AND last_seen>now()-interval '60 seconds' AND ($1::text IS NULL OR image_digest=$1) LIMIT 1",
-                [process.env.SNAPSHOT_VERIFIER_IMAGE_DIGEST ?? null],
-            )
-        ).rowCount;
-        if (!reason && !live) reason = 'Исполнитель проверки снимков не на связи.';
+        if (!reason && !(await this.verifierLive())) reason = 'Исполнитель проверки снимков не на связи.';
         return {
             available: reason === null,
             reason,
