@@ -34,6 +34,7 @@ import {
 } from './storeDetails';
 import { StoreBundleContent } from './StoreBundleContent';
 import { storeCardRevision, storeCardSource } from './storeCardPresentation';
+import { buildProvenance, type IProvenance } from './storeProvenance';
 import { SkillVersionViewer } from './SkillVersionViewer';
 import { skillGenerationKey } from './skillHistory';
 import './StoreDetailsModal.less';
@@ -96,6 +97,12 @@ interface IHistoryState {
     value: IAiPluginVersion[] | null;
     error: string | null;
 }
+/** Провенанс активной версии (FR-203): версия + SHA + источник + время + издатель. */
+interface IProvenanceState {
+    key: string;
+    value: IProvenance | null;
+    error: string | null;
+}
 
 /** Полная инструкция, метаданные и действительная история выбранного инструмента. */
 const StoreDetailsModal: FC<IProps> = ({
@@ -123,6 +130,8 @@ const StoreDetailsModal: FC<IProps> = ({
     const [copying, setCopying] = useState(false);
     const [history, setHistory] = useState<IHistoryState>({ key: '', value: null, error: null });
     const [historyReload, setHistoryReload] = useState(0);
+    const [provenance, setProvenance] = useState<IProvenanceState>({ key: '', value: null, error: null });
+    const [provenanceReload, setProvenanceReload] = useState(0);
     const [historical, setHistorical] = useState<{ key: string; version: number } | null>(null);
     const detail = state.key === identity ? state.value : null;
     const loadError = state.key === identity ? state.error : null;
@@ -197,6 +206,51 @@ const StoreDetailsModal: FC<IProps> = ({
             current = false;
         };
     }, [identity, detail, activeTab, historyReload]);
+
+    // Провенанс активной версии: два существующих GET (/versions + /package) — без нового API (OQ2).
+    useEffect(() => {
+        if (!viewApp || detail?.kind !== 'bundle' || activeTab !== 'provenance') {
+            return;
+        }
+        const activeVersion = detail.plugin.version;
+        let current = true;
+        setProvenance({ key: identity, value: null, error: null });
+        void Promise.all([
+            bffApi.listAiPluginVersions(viewApp.id),
+            bffApi.getAiPluginPackage(viewApp.id, activeVersion),
+        ])
+            .then(([versions, pkg]) => {
+                if (!current) {
+                    return;
+                }
+                const row = versions.find((entry) => entry.version === activeVersion);
+                if (!row) {
+                    throw new Error('Активная версия отсутствует в истории. Обновите данные каталога.');
+                }
+                setProvenance({
+                    key: identity,
+                    value: buildProvenance(
+                        row,
+                        pkg,
+                        { origin: detail.plugin.origin, revision: detail.plugin.revision },
+                        activeVersion,
+                    ),
+                    error: null,
+                });
+            })
+            .catch((error) => {
+                if (current) {
+                    setProvenance({
+                        key: identity,
+                        value: null,
+                        error: errorMessage(error, 'Не удалось загрузить провенанс. Проверьте подключение и повторите попытку.'),
+                    });
+                }
+            });
+        return () => {
+            current = false;
+        };
+    }, [identity, detail, activeTab, provenanceReload]);
 
     const copy = async (value: string): Promise<void> => {
         setCopying(true);
@@ -487,6 +541,89 @@ const StoreDetailsModal: FC<IProps> = ({
         );
     };
 
+    const renderProvenance = (): JSX.Element | null => {
+        if (!detail || detail.kind !== 'bundle') {
+            return null;
+        }
+        const data = provenance.key === identity ? provenance.value : null;
+        const error = provenance.key === identity ? provenance.error : null;
+        if (!data && !error) {
+            return (
+                <div className="store-details__loading" role="status">
+                    <Spin tip="Загружаем провенанс…" />
+                </div>
+            );
+        }
+        if (error) {
+            return (
+                <Alert
+                    type="error"
+                    showIcon
+                    message={error}
+                    action={<Button onClick={() => setProvenanceReload((value) => value + 1)}>Повторить</Button>}
+                />
+            );
+        }
+        const provenanceData = data as IProvenance;
+        return (
+            <section aria-label="Провенанс артефакта">
+                <Descriptions column={columns} layout="vertical" colon={false} size="small">
+                    <Descriptions.Item label="Версия">{provenanceData.version}</Descriptions.Item>
+                    <Descriptions.Item label="SHA-256 пакета (manifest)" span={columns}>
+                        <Space>
+                            <Text code className="store-details__path">
+                                {provenanceData.sha256}
+                            </Text>
+                            <Button
+                                size="small"
+                                icon={<CopyOutlined />}
+                                loading={copying}
+                                onClick={() => {
+                                    void copy(provenanceData.sha256);
+                                }}
+                            >
+                                Копировать SHA
+                            </Button>
+                        </Space>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Источник (origin)" span={columns}>
+                        {provenanceData.origin ? (
+                            <Text code className="store-details__path">
+                                {provenanceData.origin}
+                            </Text>
+                        ) : (
+                            <Text type="secondary">Не указан</Text>
+                        )}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Ревизия источника">
+                        {provenanceData.revision ? (
+                            <Text code className="store-details__path">
+                                {provenanceData.revision}
+                            </Text>
+                        ) : (
+                            <Text type="secondary">Не указана</Text>
+                        )}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="Опубликовано">{formatDetailDate(provenanceData.createdAt)}</Descriptions.Item>
+                    <Descriptions.Item label="Издание">
+                        {provenanceData.author || 'Автор не указан'}
+                    </Descriptions.Item>
+                    {provenanceData.status && (
+                        <Descriptions.Item label="Статус">
+                            <Tag color={provenanceData.status === 'retired' ? 'orange' : 'green'}>
+                                {provenanceData.status === 'retired' ? 'Retired' : 'Active'}
+                            </Tag>
+                        </Descriptions.Item>
+                    )}
+                </Descriptions>
+                <Paragraph type="secondary">
+                    SHA — manifest self-verified пакета, выданный сервером; источник, время и издатель — из истории
+                    версий. Клиент не пересчитывает хэши.
+                </Paragraph>
+            </section>
+        );
+    };
+
     const version = detail?.kind === 'skill' ? detail.skill.meta.version : (detail?.plugin.version ?? viewApp?.version);
     const description = detail?.kind === 'skill' ? detail.skill.meta.description : detail?.plugin.description;
     const tags = detail?.kind === 'skill' ? detail.skill.meta.tags : detail?.plugin.tags;
@@ -646,6 +783,9 @@ const StoreDetailsModal: FC<IProps> = ({
                                 children: renderContent(),
                             },
                             { key: 'metadata', label: 'Данные и связи', children: renderMetadata() },
+                            ...(detail.kind === 'bundle'
+                                ? [{ key: 'provenance', label: 'Провенанс', children: renderProvenance() }]
+                                : []),
                             { key: 'history', label: 'Версии', children: renderHistory() },
                         ]}
                     />

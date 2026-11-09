@@ -7,6 +7,7 @@ import {
     ForbiddenException,
     Get,
     GoneException,
+    InternalServerErrorException,
     NotFoundException,
     Optional,
     Param,
@@ -36,6 +37,7 @@ import {
 } from './dto';
 import { resolveFsRootPath } from './local-assets';
 import { IBackupRunResult } from './backup';
+import { verifyPackage } from './bundle-package';
 import { CatalogService } from './catalog.service';
 import { pagination } from './pagination';
 import { validateProjectRetention, validateProjectSettings } from './project-validation';
@@ -728,14 +730,21 @@ export class CatalogController {
 
     /**
      * Self-verified delivery-пакет бандла: per-file sha256 + manifest.sha256 (version — опц., иначе head).
+     * Перед отдачей сервер пересчитывает SHA-опись: битый пакет не уходит потребителю (FR-201).
      *
      * @param id - id.
      * @param version - опц., версия (?version=N).
      * @returns {Promise<unknown>}
      */
     @Get('ai-plugins/:id/package')
-    public getAiPluginPackage(@Param('id') id: string, @Query('version') version?: string) {
-        return this.catalog.getAiPluginPackage(id, version === undefined ? undefined : Number(version));
+    public async getAiPluginPackage(@Param('id') id: string, @Query('version') version?: string): Promise<unknown> {
+        const pkg = await this.catalog.getAiPluginPackage(id, version === undefined ? undefined : Number(version));
+        if (!verifyPackage(pkg)) {
+            throw new InternalServerErrorException(
+                'SHA-опись пакета не подтверждена: per-file или manifest-хэш расходятся. Пакет не выдан; сообщите администратору с ID и версией инструмента.',
+            );
+        }
+        return pkg;
     }
 
     /** Старый импорт серверной папки не создаёт карточки без проверенной source envelope. */
