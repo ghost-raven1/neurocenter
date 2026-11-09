@@ -1,13 +1,13 @@
-import {KINDS,identifier,object,text,pin,sha,positive,safePath,https,repository,releaseUrl,stringList,canonicalJson} from './validation.mjs';
+import {KINDS,identifier,object,text,pin,semver,sha,positive,safePath,https,repository,releaseUrl,stringList,canonicalJson} from './validation.mjs';
+import {ARTIFACT_CEILING,CONTRACT_VERSION,PACKAGE_FORMAT_RANGE,BRIDGE_PROTOCOL_RANGE} from './ceiling.mjs';
 import {validateModelDelivery,validateBridgeDelivery} from './native-delivery.mjs';
 import {assertPortableCardDependencies,nativePins} from './dependencies.mjs';
 import {validateAgentDelivery} from './agent.mjs';
 
 const toolFields=['name','kind','description','version','compatibility','tags','origin','revision','config','files','dependencies'];
 const targets=['darwin-arm64','darwin-x64','linux-arm64-glibc','linux-x64-glibc','linux-arm64-musl','linux-x64-musl','win32-arm64','win32-x64'];
+/** AD-1 interim default policy (256 MiB / 1 GiB / 20000); documented for reference only — the contract validates against ARTIFACT_CEILING, never against environment values (AD-2/AD-12). */
 const limitDefaults={compressedBytes:256*1024**2,unpackedBytes:1024**3,filesCount:20000};
-function limitEnv(name,def){const raw=process.env[name];if(raw===undefined||raw==='')return def;if(!/^[1-9][0-9]*$/.test(raw))throw new Error('Invalid limit '+name);const v=Number(raw);if(!Number.isSafeInteger(v))throw new Error('Limit '+name+' too large');return v;}
-const limits={compressedBytes:limitEnv('NEUROCENTER_RUNTIME_MAX_COMPRESSED_BYTES',limitDefaults.compressedBytes),unpackedBytes:limitEnv('NEUROCENTER_RUNTIME_MAX_UNPACKED_BYTES',limitDefaults.unpackedBytes),filesCount:limitEnv('NEUROCENTER_RUNTIME_MAX_FILES',limitDefaults.filesCount)};
 
 function source(value) {
   if(value?.type==='git') {
@@ -26,7 +26,13 @@ function source(value) {
   }else throw new Error('Unsupported asset source');
 }
 
-function tool(asset) {
+/** AD-2: descriptor-carried limits — optional at read (already published bytes), mandatory at produce; every value within [1..ceiling]. */
+function artifactLimits(item,produce) {
+  if(item.limits===undefined){if(produce)throw new Error('Runtime artifact limits required');return;}
+  const limits=object(item.limits,['compressedBytes','unpackedBytes','filesCount','cacheBytes'],'Artifact limits');
+  for(const key of Object.keys(ARTIFACT_CEILING)){positive(limits[key],'Artifact limits '+key);if(limits[key]>ARTIFACT_CEILING[key])throw new Error('Artifact limits '+key+' exceed ceiling');}
+}
+function tool(asset,produce) {
   const card=object(asset.card,toolFields,'Tool publication');
   if(card.kind!==asset.kind||card.version!==undefined&&card.version!==1)throw new Error('Tool kind or initial version mismatch');
   text(card.name,'Name',128);text(card.description,'Description',2000);pin(card.revision,'Publication revision');
@@ -40,9 +46,10 @@ function tool(asset) {
   const seen=new Set(),hashes=new Map();
   for(const artifact of asset.delivery.artifacts) {
     object(artifact,['url','descriptor'],'Runtime artifact');if(artifact.url!==undefined)releaseUrl(artifact.url);
-    const item=object(artifact.descriptor,['target','sha256','compressedBytes','unpackedBytes','filesCount','entrypoint','executable'],'Runtime descriptor');
+    const item=object(artifact.descriptor,['target','sha256','compressedBytes','unpackedBytes','filesCount','limits','entrypoint','executable'],'Runtime descriptor');
     if(!targets.includes(item.target)||seen.has(item.target))throw new Error('Invalid or duplicate runtime target');seen.add(item.target);
-    sha(item.sha256);safePath(item.entrypoint);['compressedBytes','unpackedBytes','filesCount'].forEach(key=>{positive(item[key],key);if(item[key]>limits[key])throw new Error('Runtime artifact exceeds '+key+' limit');});
+    sha(item.sha256);safePath(item.entrypoint);['compressedBytes','unpackedBytes','filesCount'].forEach(key=>{positive(item[key],key);if(item[key]>ARTIFACT_CEILING[key])throw new Error('Runtime artifact exceeds '+key+' ceiling');});
+    artifactLimits(item,produce);
     const previous=hashes.get(item.sha256);
     if(previous&&['compressedBytes','unpackedBytes','filesCount'].some(key=>previous[key]!==item[key]))throw new Error('One runtime SHA has contradictory inventory sizes');
     hashes.set(item.sha256,item);
@@ -73,15 +80,21 @@ function skill(asset) {
 }
 
 /** Envelope validation is shared by producers and importers; app domain validators remain mandatory at persistence boundaries. */
-export function validateAsset(value) {
-  const asset=object(value,['schemaVersion','id','kind','version','source','license','compatibility','card','delivery','dependencies','recipe'],'Asset');
+/** mode 'read' (default) stays backward-compatible with already published bytes; mode 'produce' makes contractVersion and descriptor limits mandatory (AD-2/AD-13). */
+export function validateAsset(value, {mode='read'}={}) {
+  const produce=mode==='produce';
+  const asset=object(value,['schemaVersion','id','kind','version','source','license','compatibility','contractVersion','card','delivery','dependencies','recipe'],'Asset');
   if(asset.schemaVersion!==1||!identifier(asset.id)||!KINDS.includes(asset.kind))throw new Error('Unsupported asset schema, ID or kind');
   pin(asset.version,'Asset version');source(asset.source);
   object(asset.license,['spdx','url'],'License');text(asset.license.spdx,'SPDX identifier',128);if(asset.license.url!==undefined)https(asset.license.url,'License URL');
+  if(asset.contractVersion!==undefined)semver(asset.contractVersion,'Contract version');
+  if(produce&&asset.contractVersion!==CONTRACT_VERSION)throw new Error('Contract version '+CONTRACT_VERSION+' required');
   object(asset.compatibility,['packageFormat','bridgeProtocol'],'Compatibility');
-  if(asset.compatibility.packageFormat!==undefined&&asset.compatibility.packageFormat!==5||asset.compatibility.bridgeProtocol!==undefined&&asset.compatibility.bridgeProtocol!==2)throw new Error('Unsupported package format or bridge protocol');
-  if(['mcp','plugin','skill'].includes(asset.kind)&&asset.compatibility.packageFormat!==5)throw new Error('Package format 5 required');
-  if(asset.kind==='bridge'&&asset.compatibility.bridgeProtocol!==2)throw new Error('Bridge protocol 2 required');
+  const packageFormat=asset.compatibility.packageFormat,bridgeProtocol=asset.compatibility.bridgeProtocol;
+  if(packageFormat!==undefined&&(!Number.isInteger(packageFormat)||packageFormat<PACKAGE_FORMAT_RANGE.min||packageFormat>PACKAGE_FORMAT_RANGE.max))throw new Error('Unsupported package format');
+  if(bridgeProtocol!==undefined&&(!Number.isInteger(bridgeProtocol)||bridgeProtocol<BRIDGE_PROTOCOL_RANGE.min||bridgeProtocol>BRIDGE_PROTOCOL_RANGE.max))throw new Error('Unsupported bridge protocol');
+  if(['mcp','plugin','skill'].includes(asset.kind)&&packageFormat!==PACKAGE_FORMAT_RANGE.min)throw new Error('Package format '+PACKAGE_FORMAT_RANGE.min+' required');
+  if(asset.kind==='bridge'&&bridgeProtocol!==BRIDGE_PROTOCOL_RANGE.min)throw new Error('Bridge protocol '+BRIDGE_PROTOCOL_RANGE.min+' required');
   if(asset.dependencies!==undefined) {
     if(!Array.isArray(asset.dependencies)||asset.dependencies.length>20)throw new Error('Invalid dependencies');
     const ids=new Set();for(const dependency of asset.dependencies) {
@@ -91,7 +104,7 @@ export function validateAsset(value) {
     }
   }
   if(asset.recipe!==undefined) {object(asset.recipe,['path','sha256'],'Recipe');safePath(asset.recipe.path);sha(asset.recipe.sha256);}
-  if(['mcp','plugin'].includes(asset.kind))tool(asset);
+  if(['mcp','plugin'].includes(asset.kind))tool(asset,produce);
   else if(asset.kind==='skill')skill(asset);
   else if(asset.kind==='model')validateModelDelivery(asset);
   else if(asset.kind==='agent')validateAgentDelivery(asset);

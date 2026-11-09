@@ -21,6 +21,12 @@ export function pin(value,label) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/.test(value) || mutable.test(value)) throw new Error(`${label}: immutable version required`);
   return value;
 }
+export const SEMVER=/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/;
+export function semver(value,label) {
+  text(value,label,128);
+  if (!SEMVER.test(value)) throw new Error(`${label}: strict semver required`);
+  return value;
+}
 export function sha(value,label='SHA-256') {if(typeof value!=='string'||!SHA.test(value)) throw new Error(`${label}: invalid digest`);return value;}
 export function identifier(value) {return typeof value==='string'&&ID.test(value);}
 export function positive(value,label) {if(!Number.isSafeInteger(value)||value<1)throw new Error(`${label}: positive integer required`);return value;}

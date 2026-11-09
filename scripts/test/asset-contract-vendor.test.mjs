@@ -107,21 +107,30 @@ test('Vendored contract retains exact reviewed upstream bytes and no runtime dep
     const source = await json(path.join(vendor, 'SOURCE.json')),
         pkg = await json(path.join(vendor, 'package.json'));
     assert.equal(source.commit, sourceCommit);
-    assert.equal(source.files.length, 14);
+    assert.equal(source.files.length, 15);
     assert.equal(source.repository, 'https://github.com/ghost-raven1/neurocenter-assets');
     assert.equal(pkg.name, '@neurocenter/asset-contract');
-    assert.equal(pkg.version, '1.2.1');
+    assert.equal(pkg.version, '1.2.2');
+    // Entry 1 (epic-trust-device-catalog): the in-tree amendment is documented; unamended base files keep upstream bytes.
+    assert.equal(source.amendment.type, 'in-tree');
+    assert.equal(source.amendment.baseCommit, sourceCommit);
+    assert.ok(source.amendment.reason.length > 0);
     assert.equal(pkg.license, 'UNLICENSED');
     for (const kind of ['dependencies', 'optionalDependencies', 'peerDependencies'])
         assert.equal(Object.keys(pkg[kind] || {}).length, 0);
     for (const hook of ['preinstall', 'install', 'postinstall', 'prepare'])
         assert.equal(pkg.scripts?.[hook], undefined);
-    let bytes = 0;
+    let bytes = 0,
+        amended = 0;
     for (const record of source.files) {
         const contents = await fs.readFile(path.join(vendor, record.path));
         bytes += contents.length;
         assert.equal(contents.length, record.bytes);
         assert.equal(digest(contents), record.sha256);
+        if (record.amended) {
+            amended++;
+            continue; // Amended bytes are local; gitBlobSha1 (when present) records the upstream base provenance.
+        }
         assert.equal(
             createHash('sha1')
                 .update('blob ' + contents.length)
@@ -131,9 +140,10 @@ test('Vendored contract retains exact reviewed upstream bytes and no runtime dep
             record.gitBlobSha1,
         );
     }
-    assert.equal(bytes, 62394);
+    assert.equal(amended, 8);
+    assert.equal(bytes, 67916);
     const sums = (await fs.readFile(path.join(vendor, 'SHA256SUMS'), 'utf8')).trim().split('\n');
-    assert.equal(sums.length, 16);
+    assert.equal(sums.length, 17);
     for (const line of sums) {
         const [sha, name] = line.split('  ');
         assert.equal(digest(await fs.readFile(path.join(vendor, name))), sha);
@@ -180,6 +190,8 @@ test(
         assert.deepEqual(left.names, right.names);
         assert.ok(left.names.includes('assertIndexEvolution'));
         assert.ok(left.names.includes('toBridgeRelease'));
+        assert.ok(left.names.includes('ARTIFACT_CEILING'));
+        assert.ok(left.names.includes('CONTRACT_VERSION'));
         assert.equal(left.digest, digest('cold probe'));
         assert.equal(right.digest, left.digest);
         assert.equal(left.assets, 0);

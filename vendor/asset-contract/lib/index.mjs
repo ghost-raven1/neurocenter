@@ -1,3 +1,4 @@
+export {ARTIFACT_CEILING,CONTRACT_VERSION,PACKAGE_FORMAT_RANGE,BRIDGE_PROTOCOL_RANGE} from './ceiling.mjs';
 export {assetDigest} from './validation.mjs';
 export {validateAsset,serializeAsset,toToolPublication,toSkillCreate,toModelRecord,toBridgeRelease,toAgentRecord} from './asset.mjs';
 export {validateIndex,assertIndexEvolution,loadRepository,selectAssets} from './repository.mjs';

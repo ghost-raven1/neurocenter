@@ -2,7 +2,9 @@
 
 Root, Catalog и сборка Gateway используют локальный пакет `vendor/asset-contract`. Установка этого контракта больше не обращается к репозиторию или хранилищу ассетов. Остальные зависимости npm и ОС устанавливаются штатно; полная автономность от Интернета этим не подразумевается.
 
-Включены 14 неизменённых файлов `@neurocenter/asset-contract` 1.2.1 — 61 664 байта, без runtime-зависимостей. Происхождение и Git blob SHA закреплены в [SOURCE.json](../vendor/asset-contract/SOURCE.json), лицензия сохранена в [NOTICE.md](../vendor/asset-contract/NOTICE.md), опись — `SHA256SUMS`. Пакет не содержит каталога, recipes, скиллов, промптов, runtime-архивов и весов моделей.
+Включены 15 файлов `@neurocenter/asset-contract` 1.2.2 — 67 916 байт, без runtime-зависимостей. Происхождение и Git blob SHA закреплены в [SOURCE.json](../vendor/asset-contract/SOURCE.json), лицензия сохранена в [NOTICE.md](../vendor/asset-contract/NOTICE.md), опись — `SHA256SUMS`. Пакет не содержит каталога, recipes, скиллов, промптов, runtime-архивов и весов моделей.
+
+Версия 1.2.2 — in-tree поправка к базовому upstream-коммиту e1255b4e (epic-trust-device-catalog, entry 1, AD-2/AD-12/AD-13/AD-16): обязательное при публикации поле `limits` дескриптора, `contractVersion`, `status` index-entry и диапазоны `[min,max]` для `packageFormat`/`bridgeProtocol`, ceiling-константы в `lib/ceiling.mjs`; env-путь `NEUROCENTER_RUNTIME_MAX_*` удалён. Изменённые файлы помечены `amended: true` в `SOURCE.json`; неизменённые файлы сохраняют upstream-байты и blob SHA.
 
 Закрепление библиотеки и закрепление описей ассетов имеют разных владельцев. `SOURCE.json` задаёт версию кода проверки, а `services/shared/asset-source.lock.json` — проверяемый источник компонентов. Обновление источника не требует скачивать библиотеку заново и не переключает назначения проектов.
 

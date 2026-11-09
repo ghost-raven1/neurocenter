@@ -10,8 +10,9 @@ export function validateIndex(value) {
   if(value.schemaVersion!==1||!Array.isArray(value.assets)||value.assets.length>1000)throw new Error('Unsupported asset index');
   const seen=new Set(),paths=new Set(),groups=new Map();
   for(const entry of value.assets) {
-    object(entry,['id','kind','version','path','sha256','current'],'Index entry');
+    object(entry,['id','kind','version','path','sha256','current','status'],'Index entry');
     if(!identifier(entry.id)||!KINDS.includes(entry.kind)||typeof entry.current!=='boolean')throw new Error('Invalid indexed asset or current flag');
+    if(entry.status!==undefined&&entry.status!=='active'&&entry.status!=='retired')throw new Error('Invalid index status; active or retired required');
     pin(entry.version,'Indexed version');sha(entry.sha256);safePath(entry.path);
     const key=entry.id+':'+entry.version;
     if(seen.has(key))throw new Error('Duplicate indexed asset version');
@@ -23,7 +24,7 @@ export function validateIndex(value) {
   if([...groups.values()].some(group=>group.current!==1))throw new Error('Each indexed asset requires exactly one current version');
   return value;
 }
-/** Retain published version identities across releases; a head change never rewrites an immutable version. */
+/** Retain published version identities across releases; a head change never rewrites an immutable version. AD-16: retirement is irreversible. */
 export function assertIndexEvolution(previous,next) {
   validateIndex(previous);validateIndex(next);
   const current=new Map(next.assets.map(entry=>[entry.id+':'+entry.version,entry]));
@@ -31,6 +32,7 @@ export function assertIndexEvolution(previous,next) {
     const found=current.get(entry.id+':'+entry.version);
     if(!found)throw new Error('Published asset versions cannot disappear from the index');
     if(found.sha256!==entry.sha256||found.kind!==entry.kind)throw new Error('Published asset version bytes or kind changed');
+    if((entry.status??"active")==='retired'&&(found.status??"active")!=='retired')throw new Error('Retired index version cannot return to active');
   }
 }
 async function checkedBytes(root,relative,limit) {

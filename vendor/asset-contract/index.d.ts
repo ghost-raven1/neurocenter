@@ -1,7 +1,19 @@
 export type AssetKind = 'mcp' | 'plugin' | 'skill' | 'model' | 'bridge' | 'agent';
+/** AD-12: single source of artifact-section ceilings; compile-time constants, never environment values. */
+export interface ArtifactLimits {
+  compressedBytes: number; unpackedBytes: number; filesCount: number; cacheBytes: number;
+}
+export const ARTIFACT_CEILING: ArtifactLimits;
+/** AD-13: semver of the contract build; new publications must carry exactly this version. */
+export const CONTRACT_VERSION: string;
+/** AD-13: capability families widened from floor checks to [min,max] ranges. */
+export const PACKAGE_FORMAT_RANGE: { min: number; max: number };
+export const BRIDGE_PROTOCOL_RANGE: { min: number; max: number };
 export interface RuntimeArtifact {
   target: 'darwin-arm64'|'darwin-x64'|'linux-arm64-glibc'|'linux-x64-glibc'|'linux-arm64-musl'|'linux-x64-musl'|'win32-arm64'|'win32-x64';
   sha256: string; compressedBytes: number; unpackedBytes: number; filesCount: number; entrypoint: string; executable?: boolean;
+  /** AD-2: server-issued policy carried by the verified descriptor; mandatory at produce, optional at read, values within [1..ARTIFACT_CEILING]. */
+  limits?: ArtifactLimits;
 }
 export interface Dependency { id: string; version: string; sha256: string }
 export type AssetSource = {type:'git';repository:string;commit:string;path?:string}
@@ -11,8 +23,10 @@ export type AssetSource = {type:'git';repository:string;commit:string;path?:stri
 export interface AssetBase {
   schemaVersion: 1; id: string; kind: AssetKind; version: string; source: AssetSource;
   license: {spdx:string;url?:string};
-  /** Consumer capability family; native inline packages may serialize as v4, runtime packages as v5. */
-  compatibility: {packageFormat?:5;bridgeProtocol?:2};
+  /** Consumer capability family; native inline packages may serialize as v4, runtime packages as v5. Ranges: PACKAGE_FORMAT_RANGE / BRIDGE_PROTOCOL_RANGE. */
+  compatibility: {packageFormat?:number;bridgeProtocol?:number};
+  /** AD-13: semver of the contract that produced this descriptor; optional at read, mandatory at produce. */
+  contractVersion?: string;
   dependencies?: Dependency[]; recipe?: {path:string;sha256:string};
 }
 /** Native publication; existing app validator is required before storing or building package format 5. */
@@ -40,16 +54,18 @@ export interface AgentAsset extends AssetBase {
   kind:'agent';card:{id:string;slug:string;name:string;definition:AgentDefinition};delivery:{type:'inline'};
 }
 export type AssetDescriptor=ToolAsset|SkillAsset|ModelAsset|BridgeAsset|AgentAsset;
-export interface IndexEntry {id:string;kind:AssetKind;version:string;path:string;sha256:string;current:boolean}
+export interface IndexEntry {id:string;kind:AssetKind;version:string;path:string;sha256:string;current:boolean;
+  /** AD-16: version status; missing at read means active, retired is irreversible. */
+  status?: 'active'|'retired'}
 export interface AssetIndex {schemaVersion:1;assets:IndexEntry[]}
 export interface ResolvedAsset {asset:AssetDescriptor;sha256:string;path:string;current:boolean}
 export interface LoadedRepository {index:AssetIndex;indexSha256:string;assets:ResolvedAsset[]}
 /** SHA-256 of exact bytes, including any trailing newline. Dependencies and index use this same digest. */
 export function assetDigest(bytes:Uint8Array|string):string;
 export function serializeAsset(value:AssetDescriptor):string;
-export function validateAsset(value:unknown):AssetDescriptor;
+export function validateAsset(value:unknown,options?:{mode?:'read'|'produce'}):AssetDescriptor;
 export function validateIndex(value:unknown):AssetIndex;
-/** Previously published id/version bytes cannot change or disappear; changing the explicit current version is allowed. */
+/** Previously published id/version bytes cannot change or disappear; changing the explicit current version is allowed; AD-16: retired cannot return to active. */
 export function assertIndexEvolution(previous:AssetIndex,next:AssetIndex):void;
 export function loadRepository(directory:string):Promise<LoadedRepository>;
 /** IDs select current versions. Exact historical dependencies stay versioned; multiple versions never implicitly replace a source head. */

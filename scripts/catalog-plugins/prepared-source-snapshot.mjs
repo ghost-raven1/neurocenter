@@ -25,6 +25,7 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
             ...[
                 'agent',
                 'asset',
+                'ceiling',
                 'dependencies',
                 'download',
                 'index',

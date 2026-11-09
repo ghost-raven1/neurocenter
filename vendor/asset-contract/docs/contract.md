@@ -4,6 +4,16 @@ The single maintained format reference is [Asset contract v1](../skills/neurocen
 
 The shared runtime implementation is exported from `@neurocenter/asset-contract`. Types are in [`index.d.ts`](../index.d.ts).
 
+## Contract 1.2.2
+
+Four additive extensions for the runtime-trust architecture (AD-2, AD-12, AD-13, AD-16); already published bytes without the new fields remain valid at read, while `validateAsset(value, {mode: 'produce'})` makes them mandatory:
+
+- **`limits` (AD-2)** — `RuntimeArtifact.limits: {compressedBytes, unpackedBytes, filesCount, cacheBytes}`. The verified descriptor is the client's only source of server limits; every value must be within `[1..ARTIFACT_CEILING]` (fail-closed). Declared artifact sizes are validated against the ceiling, never against environment values.
+- **`contractVersion` (AD-13)** — strict semver on `AssetBase`; new publications must carry exactly `CONTRACT_VERSION` (`1.2.2`) of the producing contract build.
+- **`status` (AD-16)** — `IndexEntry.status: 'active' | 'retired'`; missing at read means `active`. `assertIndexEvolution` rejects `retired → active`: retirement is irreversible and retired versions are never removed from the index.
+- **`[min,max]` capability ranges (AD-13)** — `compatibility.packageFormat` / `compatibility.bridgeProtocol` are validated against `PACKAGE_FORMAT_RANGE` (`{min: 5, max: 5}`) and `BRIDGE_PROTOCOL_RANGE` (`{min: 2, max: 2}`) instead of floor equality.
+- **Ceiling constants (AD-12)** — `ARTIFACT_CEILING` (`1 GiB / 4 GiB / 100000 / 8 GiB cache`, AD-1 interim) is the single source of ceilings in the pinned contract, exported from `lib/ceiling.mjs`. The `NEUROCENTER_RUNTIME_MAX_*` environment path is removed: any ceiling change is a new contract release plus re-pin plus bump test.
+
 ## Verified local content
 
 A local ZIP or canonical source snapshot uses `source: {type: "archive", sha256, bytes}`. Its hash covers the exact snapshot bytes; the envelope contains no server paths, credentials, device IDs, or invented repository URL.
