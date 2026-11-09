@@ -1,0 +1,179 @@
+# Сторис эпика epic-project (Проект как единица: шаблон, знания, модели, чат — C4).
+# Порядок таблиц = порядок сборки. baseline = main @ 4097fdc3 (базовый код 3433b1d1).
+# next_id = 17
+
+[[entry]]
+id = 1
+type = "story"
+title = "FR-608: открытое множество capability модели + содержательная проба"
+description = "Сейчас capability — ЗАКРЫТОЕ множество: TModelCapability = 'embedding'|'vision'|'chat' (model.interfaces.ts:1), валидация отклоняет другое (model-validation.ts:55-56 'Выберите назначение модели: embedding, vision или chat.'), GGUF-приёмка принимает только chat/embedding (gguf-import.model.ts:79), agent-tools фильтрует capability!=='embedding' (agent-tools.service.ts:141). FR-608 требует ОТКРЫТОГО множества (chat/text, vision, multimodal, embedding, rerank и прочие), capability — часть карточки и точного указания модели, «проверить модель» = содержательная проба заявленной capability (карточка ≠ работающая обработка). Сменить TModelCapability на открытый slug-тип + валидацию формата; задокументированный набор известных capability (chat, embedding, vision, multimodal, rerank) остаётся справочным, но не блокирующим; расширить GGUF-приёмку (ggufAcceptance :79) и agent-tools-фильтр под открытый набор; содержательная проба capability (ollama-client.ts:149-153 — сейчас частичная) по заявленному назначению. UI: capability-чипы карточки без закрытого списка."
+verify = "TModelCapability — открытый slug-тип (model.interfaces.ts:1); валидация принимает произвольный корректный slug и отклоняет мусор (model-validation.ts:55-56 переписана); GGUF-приёмка принимает capability вне {chat,embedding} (gguf-import.model.ts:79); «проверить модель» выполняет содержательную пробу заявленной capability (тест: проба chat/rerank/embedding); capability-чипы карточки рендерят произвольный slug; корневой сьют — без деградации."
+covers = ["R6"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "FR-604: in-use guard снятия назначения — живой чат/агент/embedding"
+description = "Сейчас unassign (models.repository.ts:367-397) блокирует ТОЛЬКО embedding-pin: проверка project_embedding_settings (:373-380, 'Модель используется текущим индексом проекта…'). Живой чат/агент, использующий модель, НЕ проверяется (grep in-use по models/ = 0). FR-604 требует точный project model set с in-use guard (живой чат/агент/embedding) и снятием назначения. Расширить unassign-guard: (1) embedding-pin (существующий), (2) живой проектный чат (project_chat_rooms.model_id — room с назначенной моделью), (3) активные model_chat/агентские сессии, где модель = действующая. Guard = fail-closed с actionable-сообщением (следующий шаг: остановить диалог/сменить модель). Не трогать assign (:334-365)."
+verify = "unassign модели, назначенной в живом проектном чате (project_chat_rooms.model_id) → ConflictException с actionable-сообщением (тест); unassign модели в активном model_chat/агентском сессии → ConflictException (тест); unassign embedding-pin (существующий guard :373-380) не деградирует; unassign свободной модели → успех; assign (:334-365) не изменён; корневой сьют — без деградации."
+covers = ["R7"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "FR-601: GGUF-импорт из архива (.tar.gz) + фикс E1 nginx 413 (owner: nginx-template)"
+description = "Два gap FR-601: (a) 'GGUF или архив' — сейчас принимается ТОЛЬКО один .gguf (ggufIntent gguf-import.model.ts:45-72, endsWith('.gguf') :54); архив (.tar.gz) не поддерживается. (b) E1 P0 (UX-аудит 2-й линзы, REVIEW-2.md): nginx client_max_body_size 50m (frontend/nginx.production.conf.template:18, location /api/ :65-71 наследует 50m) vs политика импорта до 64GB (shared/gguf-import-policy.cjs) → любой реальный GGUF/архив получает 413 на прокси. FIKS E1 (owner зафиксирован = nginx-template): добавить location /api/models/gguf-imports/ { client_max_body_size 8g; proxy_request_buffering off; proxy_http_version 1.1; proxy_pass http://api-gateway:4000; ... } по образцу архивного location = /api/asset-sources/archive :46-56 (8g). Архив: принять .tar.gz с GGUF внутри (распаковка на сервере, SHA-256 по архиву + по извлечённому GGUF, строгая проверка формата/архитектуры/тензоров/quant, квота+retention импорта, preparation/activation — отдельные явные действия, пер-version runtime-теги). Стык (не дубликат): epic 2 entry 9 задаёт body-budgets route-policy; здесь — nginx-template owner для /api/models/gguf-imports/."
+verify = "НГинкс: location /api/models/gguf-imports/ с client_max_body_size 8g + proxy_request_buffering off (nginx.production.conf.template, по образцу :46-56); POST /api/models/gguf-imports/ с файлом >50m → НЕ 413 (тест); приёмка .tar.gz с GGUF → распаковка + SHA-256 архива и GGUF + проверка формата (тест); приёмка повреждённого/чужого архива → отклонён (строгая проверка); preparation и activation — отдельные явные действия; per-version runtime-теги; квота+retention импорта; корневой сьют — без деградации."
+covers = ["R8"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "FR-602: hosting-модель — action cancel"
+description = "Сейчас hosting-действия = ['start','stop','check'] (hosting.service.ts), prepare-intents gguf-runtime.service.ts = RESERVED/CREATE_SENT/CREATED. Нет явного 'cancel' (FR-602: prepare/start/check/stop/cancel/recovery с прогрессом и ресурсными лимитами). Добавить action 'cancel': отменить in-flight prepare/start (снять advisory-лок, вернуть состояние, зачистить частичный GGUF/бандл, idempotent по request_key), не дублируя recovery (interruptStale — отдельный путь восстановления). Cancel = контролируемый отказ (fail-closed) с receipt-статусом."
+verify = "actions hosting включают 'cancel' (hosting.service.ts); cancel in-flight prepare/start → лок снят, состояние возвращено, частичный артефакт зачищен (тест); повторный cancel = no-op (idempotent, request_key); cancel не ломает recovery (interruptStale — отдельный путь); start/stop/check не деградируют; корневой сьют — без деградации."
+covers = ["R8"]
+after = []
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 5
+type = "story"
+title = "FR-102: шаблон проекта — schema + API (lifecycle, главный админ)"
+description = "Сейчас ПОНЯТИЯ ШАБЛОНА НЕТ (grep projecttemplate/project_template/templateproject по catalog-service + frontend = 0). Проект создаётся POST /api/projects {name, externalResourceId, retention, quotas, fsRootPath} (catalog.controller.ts:112-131) без предзаполнения. FR-102/C4: проект создаётся из шаблона — предзаполненный каталог (агенты/скиллы/модели), знания, роли и права; lifecycle шаблона (создание, хранение, версионирование, правка) — главный админ. Эта история: schema (project_templates + версии, key+version/heads/history pattern как learning) + API (create/save-version/edit/archive, main-admin only) + провенанс (SHA/версия/квитанция, R9). Шаблон = ССЫЛКИ: каталог (agent/skill/model ids), знания (learning candidate ids), роли/права. НЕ создаёт проект (entry 6)."
+verify = "Существуют project_templates + версии (key+version/heads/history) (migration 53+); API create/save-version/edit/archive доступно только главному админу (тест RBAC: level<4 → 403); шаблон хранит ссылки (catalog/knowledge/roles) без копирования данных; версия шаблона имеет SHA + провенанс (R9); edit/archive — idempotent (request_key); корневой сьют — без деградации."
+covers = ["R4"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "FR-102: создание проекта из шаблона (catalog+knowledge+roles) + UI"
+description = "Entry 5 даёт шаблоны. Эта история — создание проекта из шаблона: расширение POST /api/projects (catalog.controller.ts:112-131) на templateId (+ version) → при создании применить предзаполнение: (1) каталог — assign агентов/скиллов/моделей из шаблона (project_models assign pattern models.repository.ts:334-365, project_assets), (2) знания — перенести candidate-ссылки шаблона в learning проекта (как исходные, НЕ одобренные — проходят цикл FR-501 до контекста), (3) роли/права — назначить members/roles из шаблона. Итог: проект из шаблона = предзаполнен, но знания НЕ в контексте до одобрения (FR-502). UI: CreateProjectModal (frontend/src/modules/Projects/components/CreateProjectModal.tsx — сейчас только name/externalResourceId/retention/quotas/fsRoot) получает выбор шаблона + предпросмотр предзаполнения."
+verify = "POST /api/projects {templateId} создаёт проект с предзаполненным каталогом (агенты/скиллы/модели assigned) + знаниями-кандидатами + ролями (тест e2e на fixture-шаблоне); знания из шаблона НЕ в активном контексте до одобрения (learning context() — только approved); UI CreateProjectModal: выбор шаблона + предпросмотр (файл); создание без templateId (существующий путь) не деградирует; корневой сьют — без деградации."
+covers = ["R4", "R6"]
+after = [5]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "FR-103: жизненный цикл проекта в UI (archive/lock) + верификация защищённого RAG-purge"
+description = "Server-side FR-103 есть: projects.state = ACTIVE|ARCHIVED|LOCKED (catalog/dto.ts:22), PATCH state (catalog.controller.ts:133-148), DELETE (catalog.controller.ts:151-168), ручной retire RAG (retired-rag.service.ts 489 строк, freeze+DROP, automaticPurge:false :113, preview→purge→receipt; retired-rag.controller.ts:14-57). Gap = UI: ProjectDetail.tsx НЕ имеет переходов состояния (grep ARCHIVED/LOCKED/PATCH по ProjectDetail = 0) и не показывает state. Эта история: (1) UI жизненного цикла — показать state (StatusTag: ACTIVE/ARCHIVED/LOCKED из common StatusTag/constants.ts) + действия archive/lock/unlock (main-admin) с actionable-ошибками (NFR-3); (2) верификация защищённого RAG-purge — что ручной purge (preview→подтверждение→receipt) доступен и защищён (retention/hold/preview/подтверждение), автоматический purge — только триггер удаления проекта (entry epic-data 11). Не reimplementировать cascade (epic-data entry 11)."
+verify = "ProjectDetail показывает state проекта (StatusTag ACTIVE/ARCHIVED/LOCKED) (тест UI); действия archive/lock/unlock (main-admin, level>=3/4) работают через PATCH state (catalog.controller.ts:133-148) с actionable-ошибками (тест); ручной RAG-purge (retired-rag preview→подтверждение→receipt) доступен и защищён (retention/hold), автоматический purge НЕ активируется вне удаления проекта (тест); StatusTag — единственный способ показать статус (DESIGN.md rule 1); корневой сьют — без деградации."
+covers = ["R6", "R7"]
+after = []
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "FR-104: restore снимка в новый проект (с верификацией)"
+description = "Сейчас snapshot-восстановление = activate/rollback head ВНУТРИ проекта (snapshot-commands.ts:46-79, CAS expectedHeadId/expectedHeadRevision) + release-profile capsule+signature (:174-317) + device upload lancedb-snapshot/v1 (snapshot.service.ts). restore/ каталог = host-level web-restore (P0-UPD), НЕ snapshot→новый-проект. Gap FR-104: 'restore в новый проект (с верификацией)' — ПУТЬ ОТСУТСТВУЕТ (grep createProject/fromSnapshot по snapshots/ = 0). Эта история: действие 'создать проект из снимка' — верифицированный снимок (signature/capsule, snapshot-verifier) → создать НОВЫЙ проект с данными снимка (БД/файлы/знания/чат) + квитанцией (receipt, NFR-4). CAS-проверка перед активацией (существующая). Не менять activate/rollback (внутри проекта)."
+verify = "Существует действие 'создать проект из снимка' (snapshot.controller.ts — новый endpoint); верифицированный снимок (signature OK) → создаётся новый проект с данными снимка + квитанция (тест e2e); невалидный/чужой снимок → отклонён (верификация); CAS-проверка перед активацией (expectedHeadId/expectedHeadRevision) не деградирует; activate/rollback внутри проекта (:46-79) не изменены; корневой сьют — без деградации."
+covers = ["R3"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "FR-501: политика подтверждений — порог 1..N + независимость доказательств"
+description = "Цикл FR-501 есть (learning.service.ts: recordExperience/proposeHypothesis/checkHypothesis/proposeCandidate/candidateAction approve|reject|revoke|activate; LLM-analysis origin 'llm'; learning-schema.ts experiences/hypotheses/checks/candidates key+version/heads/history/requests, immutable triggers). Gap: политика подтверждений — порог числа НЕЗАВИСИМЫХ подтверждений (1..N, настраивается админом проекта) + 'повтор одного доказательства и несколько пересказов одной моделью не увеличивают счётчик' (grep confirm/threshold/порог/независим по learning/ = 0). Действующее человеческое одобрение активации сохраняется. Эта история: per-project confirmation policy (порог 1..N, admin-project configurable) + dedup независимости: повтор одного доказательства (same source/check) и пересказы одной моделью (same origin/model) НЕ увеличивают счётчик независимых подтверждений. Кандидат активируется при достижении порога независимых подтверждений ИЛИ действующим человеческим одобрением."
+verify = "Per-project confirmation policy (порог 1..N) настраивается админом проекта (level>=3) (тест); повтор одного доказательства (same check/source) НЕ увеличивает счётчик независимых подтверждений (тест); несколько пересказов одной моделью (same origin) НЕ увеличивают счётчик (тест); кандидат активируется при пороге независимых подтверждений ИЛИ действующим человеческим одобрением (тест); действующее человеческое одобрение активации сохраняется (revoke/approve — learning.service.ts); корневой сьют — без деградации."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "FR-504: точечный перенос опыта/знания между проектами (с провенансом)"
+description = "Сейчас переноса НЕТ (grep transfer/перенос по learning/ = 0). FR-504: точечный перенос — явный выбор отдельных единиц опыта/знания (НЕ bulk-копия всей базы) между проектами с провенансом (источник = исходный проект); в целевом проекте единица проходит цикл FR-501 — до одобрения админом целевого проекта НЕ попадает в контекст. Эта история: API/действие переноса отдельных единиц (experience/knowledge candidate id) из проекта A в проект B с провенансом (source_project_id + source_version + SHA, R9/NFR-4); в проекте B единица = исходный кандидат (НЕ approved) → проходит цикл FR-501 (entry 9: порог/независимость) → в контекст только после одобрения админом B. Точечный (по выбранным id), не bulk."
+verify = "Существует действие точечного переноса отдельных единиц (experience/knowledge) между проектами (тест); провенанс записан: source_project_id + source_version + SHA (R9); в целевом проекте единица = кандидат (НЕ approved), в контекст (learning context() — только approved) НЕ попадает до одобрения админом целевого проекта (тест); bulk-копия всей базы НЕ поддерживается (только по выбранным id); правки исходного проекта после переноса не влияют на копию (snapshot версии); корневой сьют — без деградации."
+covers = ["R9", "R12"]
+after = [9]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "FR-401: режимы диалога — сохранение в диалоге + UI-переключатель"
+description = "Сейчас режимов НЕТ: project_chat_rooms (project-chat.schema.ts:2-10) не имеет поля mode; групповая дискуссия (люди+агенты) есть в model-chat/chat-discussion.runner.ts (DISCUSSION_LIMITS calls=5/depth=1/contributions=3/120s, фазы, флаги group_chat/group_discussions); исследование — явный запуск (chat.controller.ts:32-67); @агенты — chat-group.*. FR-401 режимы: обычный @; совместная дискуссия людей+агентов; автономные раунды. 'Режим сохраняется в диалоге'. Эта история (часть 1): schema — добавить mode в project_chat_rooms (mention|discussion|autonomous, дефолт mention) + персистентность + API (PATCH mode) + UI-переключатель режима в проектном диалоге. НЕ реализует автономный движок (entry 12)."
+verify = "project_chat_rooms имеет колонку mode (mention|discussion|autonomous, дефолт mention) (migration 53+); режим сохраняется в диалоге (PATCH mode, персистентность между сессиями) (тест); UI-переключатель режима в проектном диалоге (файл); режим discussion запускает существующую групповую дискуссию (chat-discussion.runner.ts) без деградации; @агенты (обычный режим) не деградирует; корневой сьют — без деградации."
+covers = ["R6"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 12
+type = "story"
+title = "FR-401: автономные раунды — бюджет, пауза/остановка/вмешательство, идемпотентность"
+description = "Entry 11 даёт mode. Эта история (часть 2) — движок автономных раундов: запускаются явным сообщением пользователя в чате ИЛИ запросом агентов; лимит раундов/бюджет (tokens/вызовы/время); пауза/остановка/вмешательство; КЛЮЧЕВОЕ — 'шаг, уже потребивший бюджет, не повторяется после перезапуска' (идемпотентность по request_key/phase checkpoint — pattern chat-discussion.runner.ts checkpoint :79-87 + model_chat_turns request_id/lease). Бюджет — enforced (NFR-6, R11): перерасход невозможен. Референс-движок — chat-discussion.runner.ts (bounded, checkpoint, phases, deadline). Бюджет-учёт через model-token-quotas/model-rate-limits (существующие)."
+verify = "Автономные раунды запускаются явным сообщением пользователя ИЛИ запросом агентов (тест); лимит раундов/бюджет enforced (перерасход → остановка, NFR-6) (тест); пауза/остановка/вмешательство работают (тест); шаг, уже потребивший бюджет, НЕ повторяется после перезапуска (идемпотентность request_key/phase checkpoint — повторный запуск = no-op для потребившего шага) (тест); бюджет-учёт через model-token-quotas/model-rate-limits; корневой сьют — без деградации."
+covers = ["R5"]
+after = [11]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 13
+type = "story"
+title = "FR-311: знания и опыт — поисковые корпуса (индексация с провенансом версии)"
+description = "Сейчас 2 из 4 корпусов FR-311 есть: (1) код проекта — RAG develop-index (rag-sync-service: file chunks file_path/lines/language/kind/role/quirk_type/tags/content_hash/embedding, delta sync, rag-search.ts) с провенансом file+hash; (2) публичные чаты — chat-search/ (явный job, consent, modelId+pin, 1–32 chunks, exact cosine, live JOIN revisions/tombstones). Gap: (3) одобренные знания (FR-502) и (4) опыт (FR-501) НЕ индексированы/не ищутся (одобренные знания — только в chat-контексте через heads, learning.repository.ts:350-370). Эта история: индексировать одобренные знания (approved heads) + опыт (записи цикла FR-501) как поисковые корпуса (embeddings, per-project nc_rag_<sha>, провенанс = версия записи знания/опыта, R9/NFR-4). Синхронизация с изменениями (reindex/sync — FR-606 pattern)."
+verify = "Одобренные знания (approved heads, learning.repository.ts:350-370) индексированы как корпус (embeddings, per-project) (тест); опыт (записи FR-501: experiences/checks) индексирован как корпус (тест); провенанс результата = версия записи знания/опыта (R9); индекс синхронизирован с изменениями (reindex/sync при новых approved/опыте) (тест: поиск по протухшему индексу = дефект); корпуса (1) код и (2) публичные чаты не деградируют; корневой сьют — без деградации."
+covers = ["R9", "R12"]
+after = [9]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 14
+type = "story"
+title = "FR-311: единый семантический поиск агента по 4 корпусам (с провенансом + freshness-guard)"
+description = "Сейчас agent-tools (agent-tools.service.ts:178-413) имеет rag_search/rag_read (корпус кода через ModelChatProjectContext) + public_chat_search (публичные чаты через ChatSearchService) — но это РАЗДЕЛЬНЫЕ инструменты, и 2 корпуса (знания/опыт) добавлены в entry 13. FR-311: у каждого агента — семантический поиск по 4 корпусам (код, публичные чаты, одобренные знания, опыт); 'актуальный' = индекс синхронизирован (поиск по протухшему = дефект); результаты несут провенанс (файл+commit, сообщение+комната, версия записи знания/опыта, NFR-4); граница: приватные диалоги и личный диалог с агентом — НЕ корпус (FR-403). Эта история: единый search-инструмент агента, охватывающий 4 корпуса, с per-hit провенансом + freshness-guard (проверка актуальности индекса перед поиском — протухший = отказ/флаг, не тише)."
+verify = "Единый search-инструмент агента охватывает 4 корпуса (код/публичные чаты/знания/опыт) (тест); per-hit провенанс: файл+commit (код), сообщение+комната (чаты), версия записи (знания/опыт) (R9, тест); freshness-guard: поиск по протухшему индексу = отказ/флаг (не тихий stale-результат) (тест); приватные диалоги и личный диалог с агентом НЕ являются корпусом (FR-403) (тест); rag_search/rag_read/public_chat_search (существующие) не деградируют; корневой сьют — без деградации."
+covers = ["R9"]
+after = [13]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 15
+type = "spike"
+title = "Q9: Colibri spike — GO/NO-GO по frontier-MoE как второму inference-бэкенду"
+description = "Q9 (PRD:209, initiative:99, .memlog.md:38-39): Colibri = candidate ВТОРОГО локального runtime (hierarchical frontier-MoE: hot-эксперты GPU CUDA/Vulkan, warm RAM, cold NVMe-stream; чистый C; OpenAI/Anthropic-совместимый API; читает GGUF as-is; --model-dir, без auto-download). Роль = НЕ замена Ollama, а второй локальный бэкенд для frontier-MoE. Stык M-6/AD-D2 (write-owner model-weights): colibri = кандидат GGUF-пути. Spike (research, hitl=false): прогнать 1–2 frontier-MoE модели на пилотном железе, OpenAI-совместимый API в compose, измерить vs Ollama (latency/throughput/VRAM/RAM/стоимость). EXIT-CRITERION = вердикт GO/NO-GO (принять / параллельно / отклонить) → влияет на data-spine AD-D2 (write-owner model-weights). Не писать production-код — только spike-стенд + отчёт-вердикт."
+verify = "Spike-стенд поднимает 1–2 frontier-MoE модели через colibri (OpenAI-совместимый API в compose) на пилотном железе; измерения vs Ollama (latency/throughput/VRAM/RAM) зафиксированы; отчёт-вердикт GO/NO-GO (принять/параллельно/отклонить) + рекомендации по AD-D2 (write-owner model-weights) написаны; production-код НЕ изменён (spike изолирован); вердикт задокументирован в _bmad-output (влияние на AD-D2)."
+covers = ["R1"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 16
+type = "story"
+title = "Sweep + C4 e2e-приёмка (проект: шаблон → знания → модели → чат → поиск)"
+description = "Финальная история эпика 8: (1) sweep — вычистить мёртвые флаги/временные артефакты, проверить drift (environment-model.json + compose, pattern 1.12 D2: новый compose-сервис → environment-model + drift-тесты + compose-заголовок), закрыть OQ предыдущих историй, проверить reindex non-empty-index guard (FR-606: смена модели непустого индекса = только явная миграция); (2) C4 e2e-приёмка (R4) — сквозной: создать проект из шаблона (entry 5/6) → знания из шаблона проходят цикл FR-501 (entry 9) → модели (capability FR-608 entry 1, in-use guard FR-604 entry 2, GGUF-архив entry 3) → чат (режимы FR-401 entry 11/12, комнаты/приватность FR-402/403, вложения FR-404) → поиск агента по 4 корпусам (FR-311 entry 13/14) с провенансом; (3) решение по FR-607 [P2] (см. Design Notes 1) — defer с обоснованием. HITL: финальная e2e-приёмка."
+verify = "Sweep: drift 0 (environment-model↔compose), мёртвые флаги/артефакты вычищены, reindex non-empty-index guard (FR-606) подтверждён; C4 e2e: проект из шаблона → знания (цикл FR-501, только approved в контекст) → модели (capability/in-use/GGUF-архив) → чат (режимы/комнаты/приватность/вложения) → поиск агента по 4 корпусам с провенансом + freshness-guard — весь сквозной сценарий зелёный (тест e2e); FR-607 [P2] — решение (defer) задокументировано с обоснованием; корневой сьют — без деградации."
+covers = ["R4", "R6", "R9", "R12"]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+hitl = true
+risk = "high"
