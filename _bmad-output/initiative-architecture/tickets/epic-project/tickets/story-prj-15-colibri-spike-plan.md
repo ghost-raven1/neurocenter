@@ -1,6 +1,6 @@
 ---
 title: 'Q9: Colibri spike — GO/NO-GO по frontier-MoE как второму inference-бэкенду'
-type: 'spike'
+type: 'feature'
 ticket: '15'
 created: '2026-11-09'
 status: ready-for-dev
