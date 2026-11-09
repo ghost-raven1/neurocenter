@@ -43,6 +43,11 @@ async function fixture() {
         path.join(repository, 'scripts/workspace/project-config.mjs'),
         path.join(root, 'scripts/workspace/project-config.mjs'),
     );
+    await mkdir(path.join(root, 'scripts/supply'), { recursive: true });
+    await copyFile(
+        path.join(repository, 'scripts/supply/registry.mjs'),
+        path.join(root, 'scripts/supply/registry.mjs'),
+    );
     const responses = {};
     for (const variant of variants) {
         const name = `opencode-${variant}`;

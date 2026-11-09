@@ -4,17 +4,7 @@ import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { opencodeVersion } from './opencode-platforms.mjs';
-
-const targets = [
-    'darwin-arm64',
-    'darwin-x64',
-    'linux-arm64',
-    'linux-x64',
-    'linux-arm64-musl',
-    'linux-x64-musl',
-    'windows-arm64',
-    'windows-x64',
-];
+import { BRIDGE_TARGETS } from '../services/shared/runtime/targets.cjs';
 const sha = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 const archiveName = (target, version) => `neurocenter-asset-sync-${target}-${version}.tgz`;
 const triplet = (name) => [name, name + '.json', name + '.sha256'];
@@ -30,7 +20,7 @@ export function validateBridgeRuntimeRelease(value) {
         value.release !== `bridge-v${value.version}` ||
         !Array.isArray(value.artifacts) ||
         !value.artifacts.length ||
-        value.artifacts.length > targets.length
+        value.artifacts.length > BRIDGE_TARGETS.length
     ) {
         throw new Error('Некорректная закреплённая опись автономного моста.');
     }
@@ -39,7 +29,7 @@ export function validateBridgeRuntimeRelease(value) {
         const metadata = artifact?.metadata;
         if (
             !object(metadata) ||
-            !targets.includes(metadata.target) ||
+            !BRIDGE_TARGETS.includes(metadata.target) ||
             seen.has(metadata.target) ||
             metadata.version !== value.version ||
             metadata.buildId !== value.buildId ||

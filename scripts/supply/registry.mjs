@@ -19,7 +19,6 @@ import { fileURLToPath } from 'node:url';
 
 export const TRUSTED_REGISTRY = 'https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/';
 export const NPMJS_REGISTRY = 'https://registry.npmjs.org/';
-export const TRUSTED_HOST = 'artifactory.dev.ppod.cbr.ru';
 
 export const root = fileURLToPath(new URL('../../', import.meta.url));
 

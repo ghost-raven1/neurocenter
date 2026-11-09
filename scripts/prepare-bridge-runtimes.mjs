@@ -13,21 +13,11 @@ import {
 } from './bridge-runtime-artifacts.mjs';
 import { serializeAsset, validateAsset } from '@neurocenter/asset-contract';
 import { getHostTarget } from '../services/shared/runtime/host-target.cjs';
-import { toBridgeTarget } from '../services/shared/runtime/targets.cjs';
+import { BRIDGE_TARGETS, toBridgeTarget } from '../services/shared/runtime/targets.cjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bridge = path.join(root, 'mcp/neurocenter-asset-sync');
 const output = path.join(root, 'bridge-dist/runtime');
-const supported = [
-    'darwin-arm64',
-    'darwin-x64',
-    'linux-arm64',
-    'linux-x64',
-    'linux-arm64-musl',
-    'linux-x64-musl',
-    'windows-arm64',
-    'windows-x64',
-];
 const host = toBridgeTarget(getHostTarget({ mode: 'throw' }));
 const nativeNodeSupported = Number(process.versions.node.split('.')[0]) === 24;
 
@@ -169,8 +159,8 @@ async function main() {
     const targets = [
         ...new Set(selected === undefined ? [host, 'linux-x64'] : selected.split(',').map((value) => value.trim())),
     ].sort();
-    if (!targets.length || targets.some((target) => !supported.includes(target))) {
-        throw new Error(`Неизвестные цели моста: ${targets.join(', ')}. Поддерживаются: ${supported.join(', ')}.`);
+    if (!targets.length || targets.some((target) => !BRIDGE_TARGETS.includes(target))) {
+        throw new Error(`Неизвестные цели моста: ${targets.join(', ')}. Поддерживаются: ${BRIDGE_TARGETS.join(', ')}.`);
     }
     if (await exportedAsset(targets, manifest.version, build.buildId)) {
         return;
