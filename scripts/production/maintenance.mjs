@@ -3,7 +3,20 @@ import { readFile, writeFile, mkdir, rename, lstat, readdir, rm, open, realpath 
 import { randomUUID, createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { composeClient, containers, docker, repositoryRoot, saveDiagnostic } from './compose-client.mjs';
+import {
+    composeClient,
+    composeConfiguration,
+    containers,
+    docker,
+    repositoryRoot,
+    saveDiagnostic,
+} from './compose-client.mjs';
+import {
+    loadRetentionTable,
+    runRetentionPrune,
+    runtimeArtifactRemoveScript,
+    skillVersionsPruneScript,
+} from './retention-prune.mjs';
 import { backupProduction } from './recovery.mjs';
 import { verifyBackup } from './recovery-manifest.mjs';
 import { uploadExternalBackup, externalBackupConfiguration } from './external-backup.mjs';
@@ -70,6 +83,8 @@ export async function maintenanceTick({
     upload,
     resolveStorage = externalBackupConfiguration,
     prune = async () => {},
+    /** Retention prune (AD-D3): только после подтверждённой внешней копии; не роняет тик. */
+    retention = async () => ({ resources: [] }),
     now = () => new Date(),
     requireBackupEnabled = () => requireFeaturesEnabled(['project_backups']),
 }) {
@@ -140,7 +155,20 @@ export async function maintenanceTick({
         } catch {
             retentionWarning = true;
         }
-        return { ok: true, runId, backupId: receipt.backupId, verifiedAt: receipt.verifiedAt, retentionWarning };
+        let retentionReport;
+        try {
+            retentionReport = await retention(runId);
+        } catch (error) {
+            retentionReport = { error: String(error?.message || error).slice(0, 512) };
+        }
+        return {
+            ok: true,
+            runId,
+            backupId: receipt.backupId,
+            verifiedAt: receipt.verifiedAt,
+            retentionWarning,
+            retention: retentionReport,
+        };
     } catch (error) {
         await fail(runId, safeError(phase, error)).catch(() => undefined);
         throw error;
@@ -360,7 +388,7 @@ export async function runMaintenance({ directory, projectName = 'neurocenter-pro
     }
     const flags = owned.find((item) => item.Config.Labels['com.docker.compose.service'] === 'feature-flags-service');
     if (!flags?.State.Running) throw new Error('Сервис флагов недоступен: новая резервная копия не начата.');
-    const query = (text) =>
+    const psql = (database) => (text) =>
         docker(
             [
                 'exec',
@@ -372,12 +400,44 @@ export async function runMaintenance({ directory, projectName = 'neurocenter-pro
                 '-U',
                 'nc_owner',
                 '-d',
-                'catalog',
+                database,
                 '-v',
                 'ON_ERROR_STOP=1',
             ],
             { input: text },
         );
+    const query = psql('catalog');
+    const queryRag = psql('rag');
+    const config = await composeConfiguration(client);
+    const catalogService = owned.find((item) => item.Config.Labels['com.docker.compose.service'] === 'catalog-service');
+    const skillsService = owned.find((item) => item.Config.Labels['com.docker.compose.service'] === 'skills-service');
+    // FS-адаптеры retention prune (AD-D3): docker exec в контейнер-владельца тома; пути из Compose-профиля.
+    const artifactsDirectory = config.services['catalog-service']?.environment?.RUNTIME_ARTIFACT_DIR;
+    const skillsRoot = config.services['skills-service']?.environment?.SKILLS_STORAGE_PATH;
+    if (!artifactsDirectory || !skillsRoot) {
+        throw new Error('В production-профиле не заданы RUNTIME_ARTIFACT_DIR/SKILLS_STORAGE_PATH');
+    }
+    const artifactStore = {
+        remove: async (spec) =>
+            JSON.parse(
+                await docker(
+                    ['exec', '-i', catalogService.Id, 'node', '-e', runtimeArtifactRemoveScript(artifactsDirectory)],
+                    { input: JSON.stringify(spec) },
+                ),
+            ),
+    };
+    const skillsStore = {
+        prune: async (value) =>
+            JSON.parse(
+                await docker([
+                    'exec',
+                    skillsService.Id,
+                    'node',
+                    '-e',
+                    skillVersionsPruneScript(path.join(skillsRoot, value.path), value.rollingN),
+                ]),
+            ),
+    };
     const ledger = await runnerLedger(directory, backupRoot);
     return maintenanceTick({
         ...createMaintenanceStore(query),
@@ -385,6 +445,39 @@ export async function runMaintenance({ directory, projectName = 'neurocenter-pro
         readLedger: ledger.read,
         writeLedger: ledger.write,
         prune: ledger.prune,
+        retention: async (runId) => {
+            let report;
+            try {
+                const resources = await loadRetentionTable(
+                    path.join(repositoryRoot, 'deploy/production/retention.json'),
+                );
+                report = await runRetentionPrune({
+                    resources,
+                    catalogQuery: query,
+                    ragQuery: queryRag,
+                    artifactStore,
+                    skillsStore,
+                    log: (message) => console.error('Retention prune: ' + message),
+                });
+            } catch (error) {
+                report = { error: String(error?.message || error).slice(0, 512) };
+            }
+            // Счётчики per ресурс фиксируются в maintenance_runs (best-effort: без БД отчёт остаётся в выводе тика).
+            try {
+                await query(
+                    "UPDATE maintenance_runs SET receipt = coalesce(receipt, '{}'::jsonb) || " +
+                        quote(
+                            JSON.stringify({ retention: report.error ? { error: report.error } : report.resources }),
+                        ) +
+                        '::jsonb WHERE id = ' +
+                        quote(runId) +
+                        '::uuid;',
+                );
+            } catch {
+                // БД недоступна: отчёт остаётся в выводе тика
+            }
+            return report;
+        },
         backup: async ({ maxPauseMs, beforePause }) => {
             return backupProduction({
                 directory,

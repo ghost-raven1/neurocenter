@@ -187,6 +187,46 @@ test('Ошибка локальной очистки сохраняет подт
     assert.equal((await maintenanceTick(f.options)).retentionWarning, true);
     assert.ok(f.calls.includes('finish'));
 });
+test('Retention prune вызывается после подтверждённой копии; отчёт и runId — в результате тика', async () => {
+    const f = fixture();
+    const report = { resources: [{ resource: 'security_events', deleted: 3 }] };
+    f.options.retention = async (runId) => {
+        f.calls.push(['retention', runId]);
+        return report;
+    };
+    const result = await maintenanceTick(f.options);
+    assert.equal(result.ok, true);
+    assert.equal(result.retentionWarning, false);
+    assert.deepEqual(result.retention, report);
+    const retentionIndex = f.calls.findIndex((item) => Array.isArray(item) && item[0] === 'retention');
+    assert.deepEqual(f.calls[retentionIndex], ['retention', result.runId]);
+    assert.ok(retentionIndex > f.calls.indexOf('finish'));
+});
+test('Сбой retention не роняет тик: ошибка в result.retention, внешняя копия подтверждена', async () => {
+    const f = fixture();
+    f.options.retention = async () => {
+        throw new Error('retention store down');
+    };
+    const result = await maintenanceTick(f.options);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.retention, { error: 'retention store down' });
+    assert.ok(f.calls.includes('finish'));
+    assert.ok(f.calls.includes('upload'));
+});
+test('Вне-оконный тик и несбывшийся claim не запускают retention', async () => {
+    for (const options of [{ now: () => new Date('2026-10-18T00:00:00Z') }, { claim: async () => false }]) {
+        const f = fixture();
+        let retentionCalls = 0;
+        Object.assign(f.options, options);
+        f.options.retention = async () => {
+            retentionCalls += 1;
+        };
+        const result = await maintenanceTick(f.options);
+        assert.equal(result.skipped, true);
+        assert.equal(result.retention, undefined);
+        assert.equal(retentionCalls, 0);
+    }
+});
 
 test('Смена endpoint, bucket, region или storageId повторяет передачу до подтверждения нового места', async () => {
     for (const [key, value] of [
