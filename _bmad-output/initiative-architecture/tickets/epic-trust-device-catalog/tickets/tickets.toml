@@ -1,0 +1,156 @@
+# Сторис эпика epic-trust-device-catalog. Порядок таблиц = порядок сборки.
+# next_id = 15
+
+[[entry]]
+id = 1
+type = "story"
+title = "Контракт: bump AD-2/12/13/16 — limits + contractVersion + status + [min,max] (AD-2, AD-12, AD-13, AD-16)"
+description = "Один bump пин-контракта @neurocenter/asset-contract, расширяющий контракт: (1) RuntimeArtifact.limits = {compressedBytes, unpackedBytes, filesCount, cacheBytes} — обязательное поле дескриптора (AD-2); (2) contractVersion (semver) в AssetBase и index-entry (AD-13); (3) status: 'active'|'retired' в index-entry/версию, retired необратим (AD-16); (4) packageFormat/bridgeProtocol расширяются с floor (===5/===2) до диапазона [min,max] (AD-13). Ceiling-константы артефакт-секции (interim 1 GiB / 4 GiB / 100000 / 8 GiB cache, AD-1) живут в контракте как константы. Source: in-tree поправка vendor/asset-contract (закрытый контур, без сети) + регенерация SHA256SUMS + SOURCE.json как provenance-метаданные (базовый внешний commit e1255b4e + локальная поправка задокументирована); альтернатива push в github.com/ghost-raven1/neurocenter-assets + re-pin — OQ (HITL/сеть). Re-pin каскадом: node scripts/assets/catalog-source-pin.mjs --write (catalog-source/producer.json → manifest.json → services/shared/bundled-catalog.lock.json). Любое изменение ceiling в будущем = новый релиз контракта + re-pin + bump-тест."
+verify = "Контракт 1.2.2: validateAsset принимает обязательный limits и contractVersion (отсутствие = invalid); validateIndex принимает status; assertIndexEvolution запрещает retired→active и изменение байтов опубликованной версии; packageFormat/bridgeProtocol валидируются как [min,max]; SHA256SUMS/SOURCE.json пересчитаны и согласованы; pin-каскад пересчитан (тест); корневой сьют — без деградации против baseline."
+covers = ["R9"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Единый источник ceiling: re-export из контракта + identity-тест (AD-12)"
+description = "Ceiling-константы существуют ровно в одном месте — в pinned asset-контракте (entry 1). shared-модуль (services/shared) ре-экспортирует их из контракта; все сервисы и bridge-клиент импортируют re-export'ом shared-модуля (не локальные константы). Фикс реального рассогласования: connect принимает ≤2 GiB (mcp-host.controller.ts:116) при verify ≤256 MiB из env (ticket.ts:126) — обе точки читают один ceiling-набор. Identity-тест: значения, видимые bridge-клиентом и server-verify, обязаны совпадать (один модуль, один набор байтов). Клиент применяет min(политика из дескриптора.limits, ceiling); env-лимиты клиента не участвуют в ceiling (полная миграция env-пути — entry 5/6). Default-политика (256 MiB / 1 GiB / 20000 / 2 GiB cache) остаётся interim-политикой AD-1 и не поднимает ceiling."
+verify = "Ceiling-константы только в контракте + re-export'ом shared (grep: локальных ceiling-литералов в сервисных бинариях нет); identity-тест: bridge-клиент и server-verify видят идентичные значения; connect/verify согласованы (рассогласование 2 GiB vs 256 MiB закрыто); корневой сьют — без деградации."
+covers = ["R12"]
+after = [1]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Route shadowing: catch-all после явных роутов + регрессионный тест (AD-14)"
+description = "Закрыть CRIT-дефект: catch-all прокси ProxyController (@Controller('api') + @All('{*path}', proxy.controller.ts:10,21) — первый в списке ProxyModule, proxy.module.ts:16) молча поглощает явные роуты McpHostController (/api/mcp-host/connect, /api/mcp-host/m/:ticket) — mcp-host мёртвый код в production. Фикс: порядок регистрации — catch-all регистрируется ПОСЛЕ всех явных контроллеров ProxyModule (mcp-host, research-mcp, system-role-mcp). Shadowing-тест = регрессионный: каждый явный роут каждого контроллера ProxyModule достижим через СОБРАННЫЙ app (не per-controller изолированно, как mcp-host-access-http.test.mjs — он не ловит shadowing); роут, поглощённый catch-all = фэйл сьюта. Note: /api/bridge/* НЕ в тени (BridgeController — root-контроллер AppModule, регистрируется раньше ProxyModule); /internal/* вне префикса 'api' — тоже не в тени. Жертвы shadowing — все контроллеры ProxyModule после ProxyController."
+verify = "Порядок: явные контроллеры ProxyModule регистрируются до ProxyController (тест порядка); shadowing-тест на собранном app: /api/mcp-host/connect и /api/mcp-host/m/:ticket (и все явные роуты ProxyModule) достижимы, не поглощены catch-all; регрессия порядка регистрации = фэйл сьюта; корневой сьют — без деградации."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Independent host-секрет без fallback + маскирование m/:ticket в nginx-логах (AD-5)"
+description = "NEUROCENTER_MCP_HOST_SECRET обязателен для mcp-host; fallback на NEUROCENTER_INTERNAL_TOKEN удалён (ticket.ts:52 — сейчас fallback АКТИВЕН: в production host-секрет не генерируется, configuration.mjs:210-211 создаёт только postgres_password+internal_token). Отсутствие секрета = fail-fast на старте (не deferred-проверка на каждый issue/verify), минимальная длина ≥ 32 байт (сейчас ≥16). Production setup генерирует оба секрета независимо (configuration.mjs + compose secrets + environment-model api-gateway). Билет — секретный материал: access-логи proxy (nginx $uri, nginx.production.conf.template:2) маскируют /api/mcp-host/m/:ticket (сейчас 30-дневные билеты пишутся в json-file логи при каждом запросе)."
+verify = "Fallback на INTERNAL_TOKEN отсутствует (grep ticket.ts); отсутствие MCP_HOST_SECRET в production → fail-fast на старте (тест validateProduction); <32 байт → fail-fast; production setup генерирует оба секрета независимо (разные значения); nginx-логи маскируют m/:ticket (билет в access-log не читается, тест)."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Verify билета: claim ≤ ceiling + связка claim↔descriptor + descriptorSha256 (AD-3, AD-2)"
+description = "verifyHostedMcpTicket (ticket.ts:79-148) расширяется: HMAC + exp + форма + claim ≤ ceiling (ceiling — единый источник, entry 2) + связка claim.artifactSha256 с верифицированным дескриптором. Hosted-билет несёт server-issued descriptorSha256 — клиент сверяет descriptor-текст именно с ним (self-referential hash из самого пакета запрещён). Текущая админ-политика в verify не участвует (лимиты = admission-контроль при публикации). Миграционный коммит: env-лимиты клиента (NEUROCENTER_RUNTIME_MAX_*) полностью удаляются — параллельный env-путь не существует даже на переход; клиент применяет min(descriptor.limits, ceiling). limits — обязательное поле: отсутствует/некорректно = invalid descriptor, bridge не устанавливает (fail-closed — «нет limits → env/ceiling» запрещено). Версия фиксируется при issuance: head резолвится сервером и фиксируется в дескрипторе и claim; version=undefined (head) в прямом каталожном пути запрещён — 404 actionable «перезапроси дескриптор»."
+verify = "verify: claim ≤ ceiling (ceiling из единого источника); claim.artifactSha256 сверяется с descriptorSha256 (self-referential hash отвергнут); descriptor без limits → invalid (fail-closed); env-лимиты клиента удалены (grep); min(descriptor.limits, ceiling) применяется; version=undefined → actionable 404; корневой сьют — без деградации."
+covers = ["R12"]
+after = [2, 3, 4]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Отзыв билетов: TTL 24h + единый кэш re-check ≤60s + bridge re-issue + пул-квоты + pids/non-root (AD-4)"
+description = "TTL билета 24h (было 30d, ticket.ts:53); bridge ре-выпускает билет при reconnect (connect — лёгкий, ре-подпись HMAC) и САМ обновляет свой OpenCode-конфиг (installation-planner.ts:213-222 — сейчас «Билет живёт до истечения: обновление и восстановление не переподключают канал»). Gateway проверяет привязку device↔project и активность устройства (authorize-session, host.ts:342-364) lookup'ом с кэшем ≤60s; ЕДИНЫЙ кэш для connect-lookup и per-op re-check (сейчас полная DB-транзакция на каждую операцию — mcp-host-access.ts:201); lookup error/timeout → 503, соединение отклоняется — fail-closed, stale-while-error запрещён. Окно отзыва ≤ TTL кэша (60s); per-ticket denylist не вводится. Глобальный пул (default 4, host.ts:40 — закрыть NaN-дыру) ограничен per-project/per-device квотами + cap активных каналов на hostKey; child-MCP-процесс — pids_limit + non-root (compose api-gateway: сейчас ни того ни другого, только shared x-service no-new-privileges; owned-stdio.ts:25-31 spawn detached). Live re-check на соединение И на каждую операцию (ListTools/CallTool)."
+verify = "TTL билета 24h (тест); bridge re-выпускает билет при reconnect и обновляет свой конфиг (тест); единый кэш re-check ≤60s (connect и per-op — один кэш; без кэша — полная DB-транзакция); lookup error → 503 fail-closed (no stale-while-error); отзыв (отвязка/деактивация) гасит билет ≤60s; per-project/per-device квоты + cap на hostKey (тест); pids_limit + non-root у child-MCP (compose-проверка); NaN в NEUROCENTER_MCP_HOST_MAX не даёт неограниченного пула (fail-fast, entry AD-9 стык); корневой сьют — без деградации."
+covers = ["R12"]
+after = [3, 5]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Retire версии: необратимый отзыв + запись в аудит + server-гейты (AD-16, FR-204)"
+description = "Retire конкретной версии каталога (контракт status:'retired' из entry 1). Server-гейты: retired версия не разрешается для новых назначений (project_assets), не стартует в mcp-host (artifact open() + authorize-session), не проходит ticket-verify (AD-3). Уже запущенные сессии гаснут при следующем re-check (entry 6, окно ≤ TTL кэша). Версия остаётся в каталоге (провенанс сохраняется — FR-204); retired необратим (assertIndexEvolution: retired→active запрещено). Запись в транзакционный аудит (security_events, security-events.ts:12 securityEvent). Скоуп: mcp/plugin (ai_plugins / ai_plugin_versions) — FR-204; расширение на все kinds (skill/model/agent/bridge) — OQ. Сейчас version-level retire ОТСУТСТВУЕТ (archived_at = asset-level только, plugin-repository.ts:486)."
+verify = "Retire версии: новые назначения запрещены (тест); mcp-host artifact open() + authorize-session отклоняют retired (тест); ticket-verify не проходит для retired (AD-3); запущенная сессия гаснет при следующем re-check (≤60s); retired необратим (повторный retire/restore → ошибка); запись в security_events (тест); версия остаётся в каталоге с провенансом; корневой сьют — без деградации."
+covers = ["R9"]
+after = [1, 6]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Route-политика: декларативная таблица + completeness-тест + default-бюджеты (AD-6)"
+description = "Gateway владеет таблицей роут-политики (данные: route → {timeoutMs, maxBodyBytes, maxResponseBytes, allowed, rateLimit?}); прокси — чистый механизм, её применяющий. Таблица покрывает ВСЕ маршруты gateway (специфичные: AppController /ready,/ready/dependencies,/health; BridgeController 11 роутов ['bridge','api/bridge']; McpHost 2; ResearchMcp 2; SystemRoleMcp 2; OpenCodeCliSupply 1; + default-маршрут). Default-маршрут имеет explicit бюджеты — maxResponseBytes: ∞ (сейчас maxContentLength: -1, вся память) запрещён. Completeness-тест: любой роут без строки политики = фэйл (default-deny на уровне конфигурации). Completeness-тест роут-таблицы и shadowing-тест (entry 3) — РАЗНЫЕ тесты, оба обязательны (таблица без dispatch-теста не ловит регрессию порядка регистрации)."
+verify = "Таблица роут-политики — декларативные данные (не закодированы в диспетчерской логике прокси); покрывает все маршруты + default; default-маршрут — explicit бюджеты (∞ запрещён); completeness-тест: роут без строки политики = фэйл; прокси применяет таблицу (timeout/maxBody/maxResponse/allowed/rateLimit); shadowing-тест (entry 3) и completeness — разные; корневой сьют — без деградации."
+covers = ["R12"]
+after = [3]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Лестницы дедлайнов + nginx-кромка + body-бюджеты + PG rate-limit (AD-6)"
+description = "Все лестницы выводятся из base + margins (порядок и margin зафиксированы invariant-тестами): tool-import 480/540/550 (tool-import-deadline.cjs), model-chat 900/910/915/920 (model-chat-deadline.json), embedding (proxy.service.ts:570,634 — сейчас 115s==115s race). Нginx-кромка: outermost не рвёт раньше innermost (сейчас сломано: nginx /api/ 600s, nginx.production.conf.template:67, рвёт маршруты, не покрытые специфичными location'ами — model-chat attachments при gateway 910s; location turns 915s не покрывает все model-chat-маршруты). Margin > 0 обязателен для каждой пары (embedding 115s==115s = race, исправить). Body-бюджеты не растут к центру: nginx ≤ gateway ≤ upstream (сейчас nginx 50m → gateway 50mb → catalog 35mb: 40MB запрос умирает глубоко внутри; archive-исключение 8g). Rate-limit счётчики (pairing, login) — в shared storage (PG): in-memory per-replica запрещён (proxy.service.ts:66 pairLimits — сейчас in-memory Map; multi-replica = N раз слабее). OAuth2-bridge token-exchange — rate-limit."
+verify = "Лестницы (tool-import, model-chat, embedding) выводятся из base+margins; invariant-тест: порядок и margin>0 для каждой пары (embedding race 115s==115s исправлен); nginx-кромка: outermost не раньше innermost (model-chat attachments не рвётся 600s); body-бюджеты nginx ≤ gateway ≤ upstream (40MB проходит, не умирает глубоко); rate-limit pairing/login в PG (не in-memory per-replica); oauth2 token-exchange rate-limit; корневой сьют — без деградации."
+covers = ["R12"]
+after = [8]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Error-body-политика: фиксированные сообщения + нормализация proxy (AD-19)"
+description = "Body внешних ошибок = фиксированный набор (code + user-safe текст); passthrough error.message запрещён (исключение: validated domain-ошибки с явным allowlist). Сейчас ~16 мест error.message-passthrough; axios errors с внутренними hostname:port транслируются клиенту (proxy.service.ts:412-419 catch). Proxy нормализует upstream-ошибки: внутренний hostname/порт/маршрут в body клиенту не уходит. Shadowing-инцидент (entry 3) даёт actionable диагностику (какой роут, какой роут-паттерн его поглотил) — не generic «не разрешил подключение» (роут-таблица entry 8). SDK-сообщения (spawn ENOENT и т.п.) не транслируются клиенту. Детали — в server-логи (секреты маскированы, AD-9)."
+verify = "Фиксированные error-body (code + user-safe); passthrough error.message удалён (grep, allowlist domain-ошибок задокументирован); proxy нормализует upstream-ошибки (внутренний hostname:port в body клиенту не уходит, тест); shadowing-инцидент — actionable (роут + паттерн, тест); SDK-ошибки не транслируются; детали в server-логах с маскировкой; корневой сьют — без деградации."
+covers = ["R12"]
+after = [9]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Ceiling-version handshake: graceful negotiation contractVersion (AD-13)"
+description = "Контракт (entry 1) несёт contractVersion в AssetBase и index-entry; capability клиента (device-handshake protocolVersion, уже несёт runtimeArtifactTarget) несёт maxContractVersion + maxPackageFormat. Дескриптор, ticket claim и offline-manifest несут версию контракта. asset.contractVersion > client.maxContractVersion (или packageFormat вне [min,max]) → GRACEFUL actionable-ошибка «обнови bridge/контракт до X» (не throw, не generic limit-error). Forward-совместимость capability: новые capability-поля факультативны — server игнорирует неизвестные поля device-report (новый bridge + старый сервер работает); client требует только известный минимум (старый bridge + новый сервер → actionable-ошибка обновления, а не reject)."
+verify = "Дескриптор/ticket-claim/offline-manifest несут contractVersion; asset.contractVersion > client.maxContractVersion → graceful actionable «обнови до X» (тест, не throw); packageFormat вне [min,max] → graceful; новый bridge + старый сервер — работает (server игнорирует неизвестные capability-поля, тест); старый bridge + новый сервер → actionable-ошибка обновления (не reject, тест); корневой сьют — без деградации."
+covers = ["R12"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 12
+type = "story"
+title = "UJ-2: SHA-версии + провенанс-карточка + одобренный комплект (FR-201, FR-202, FR-203)"
+description = "UJ-2 работает как записан: (FR-201) инструменты упаковываются из доверенных источников (npm/публичный GitHub/архив/ready-runtime) с SHA-описью (bundle-package.ts buildPackage: per-file sha256 + manifest.sha256 уже есть); (FR-203) у каждого артефакта провенанс — версия, SHA, источник, время, издатель; проверяется из карточки (сейчас карточка catalogCards.ts:12-13 = origin+revision только; НЕТ SHA/manifest/publisher на карточке — FR-203 gap); (FR-202) версии immutable; назначение в проект — только одобренный точный комплект с зависимостями (project_assets pin_shape). Провенанс-карточка: версия + SHA (manifest.sha256) + источник + время (createdAt) + издатель (publisher/author). Immutable: опубликованная версия не изменяется (assertIndexEvolution, entry 1); retire (entry 7) сохраняет провенанс."
+verify = "Упаковка из 4 доверенных источников с SHA-описью (FR-201); карточка показывает версию + SHA (manifest.sha256) + источник + время + издатель и проверяется из UI (FR-203); версии immutable (изменение опубликованной → отказ, тест); назначение — только одобренный точный комплект с зависимостями (FR-202); провенанс сохраняется после retire (entry 7); корневой сьют — без деградации."
+covers = ["R9", "R12"]
+after = [7]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only: скоуп устанавливается на старте по планам и review-находкам, которые эпик отложил (dead code после contract-bump и route-переупорядочивания, осиротевшие комментарии/доки, дубли). Скоуп, вытесненный из другой сторис, — новая сторис, не сюда."
+verify = "Поведение не изменилось: корневой сьют — без деградации против baseline; список cleanup закрыт."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 14
+type = "story"
+title = "TRUST-01: приёмка устройственного канала и каталога (e2e)"
+description = "Полная линия на production-стеке: (1) mcp-host жив: shadowing закрыт, connect → билет, канал m/:ticket отвечает, билет в nginx-логах маскирован; (2) билет верифицируется: HMAC + exp + claim ≤ ceiling + claim↔descriptor (descriptorSha256), retired не проходит; (3) отзыв: TTL 24h, re-check ≤60s, re-issue при reconnect, пул-квоты, pids/non-root; (4) retire версии необратим с аудитами; (5) gateway: таблица роут-политики + completeness + лестницы + body-бюджеты + error-body; (6) контрактная версия + ceiling — единый источник (identity); (7) UJ-2: карточка + immutable-версия + SHA + одобренный комплект. Кандидат заморожен (commit)."
+verify = "На production-стеке: mcp-host жив (connect→билет→канал 200, shadowing закрыт); билет верифицируется (claim ≤ ceiling, claim↔descriptor, retired отклонён); отзыв ≤60s, re-issue при reconnect; retire необратим + аудит; route-таблица + completeness + лестницы + body + error-body зелёные; ceiling identity (client=server); UJ-2 карточка с SHA + одобренный комплект; кандидат заморожен (commit SHA)."
+covers = ["R9", "R12"]
+after = [13]
+hitl = true
+risk = "high"
