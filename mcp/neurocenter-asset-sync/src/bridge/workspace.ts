@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readState, writeState, type IWorkspace } from './state.js';
 import { BRIDGE_VERSION, BRIDGE_PROTOCOL, BRIDGE_CAPABILITIES, bridgeBuildId } from './protocol.js';
-import { runtimeArtifactTarget, TARGETS } from '../features/runtime-artifacts/model.js';
+import { CONTRACT_VERSION, runtimeArtifactTarget, TARGETS } from '../features/runtime-artifacts/model.js';
 import { previousDeviceCompletions } from './completions.js';
 import { localRagStatus } from '../lib/lancedb.js';
 import { workspaceBindingReport } from './workspace-instance.js';
@@ -117,6 +117,9 @@ export async function bridgePresenceReport() {
         bridgeVersion: BRIDGE_VERSION,
         buildId: await bridgeBuildId(),
         protocolVersion: BRIDGE_PROTOCOL,
+        // AD-13: capability для negotiation — версия контракта этого моста и максимальный формат пакета (v5).
+        maxContractVersion: CONTRACT_VERSION,
+        maxPackageFormat: 5,
     };
 }
 export async function workspaceReport() {

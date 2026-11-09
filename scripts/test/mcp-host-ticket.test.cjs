@@ -134,3 +134,54 @@ test('Verify: claim в пределах ceiling проходит, выше ceili
         else process.env.NEUROCENTER_MCP_HOST_SECRET = before;
     }
 });
+
+/** AD-13: claim несёт издательскую contractVersion; stateless-verify сверяет только ФОРМУ (strict semver). */
+test('AD-13: claim.contractVersion round-trips; absent stays absent; invalid semver — invalid claim', () => {
+    const before = process.env.NEUROCENTER_MCP_HOST_SECRET;
+    process.env.NEUROCENTER_MCP_HOST_SECRET = 'qa'.repeat(16);
+    const base = {
+        artifactSha256: 'e'.repeat(64),
+        descriptorSha256: 'e'.repeat(64),
+        entrypoint: 'server.mjs',
+        executable: false,
+        name: 'QA',
+        compressedBytes: 12,
+        session: {
+            deviceId: 'device',
+            projectId: 'project',
+            assetId: 'asset',
+            version: 1,
+            manifest: 'f'.repeat(64),
+        },
+    };
+    try {
+        // Presence: сериализуется в payload и возвращается из verify.
+        const ticket = issueHostedMcpTicket({ ...base, contractVersion: '1.2.2' });
+        assert.equal(JSON.parse(Buffer.from(ticket.split('.')[0], 'base64url')).contractVersion, '1.2.2');
+        assert.deepEqual(verifyHostedMcpTicket(ticket), {
+            ...base,
+            contractVersion: '1.2.2',
+            exp: JSON.parse(Buffer.from(ticket.split('.')[0], 'base64url')).exp,
+        });
+        // Absence: поле не появляется в claim назначения без contractVersion (post-bump-ассеты только).
+        const plain = issueHostedMcpTicket({ ...base });
+        assert.deepEqual(verifyHostedMcpTicket(plain), {
+            ...base,
+            exp: JSON.parse(Buffer.from(plain.split('.')[0], 'base64url')).exp,
+        });
+        // Issue не выпускает билет с некорректной версией контракта.
+        assert.throws(() => issueHostedMcpTicket({ ...base, contractVersion: '1.2' }), /контракт/);
+        assert.throws(() => issueHostedMcpTicket({ ...base, contractVersion: '1.2.3-rc.1' }), /контракт/);
+        // Подложка с валидным HMAC, но не-semver contractVersion — invalid (401 на канале).
+        const payload = Buffer.from(
+            JSON.stringify({ ...base, contractVersion: 'abc', exp: Date.now() + 3600 * 1000 }),
+        ).toString('base64url');
+        const forged =
+            payload + '.' +
+            createHmac('sha256', process.env.NEUROCENTER_MCP_HOST_SECRET).update(payload).digest('base64url');
+        assert.equal(verifyHostedMcpTicket(forged), undefined);
+    } finally {
+        if (before === undefined) delete process.env.NEUROCENTER_MCP_HOST_SECRET;
+        else process.env.NEUROCENTER_MCP_HOST_SECRET = before;
+    }
+});

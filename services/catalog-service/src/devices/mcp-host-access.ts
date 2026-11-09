@@ -6,7 +6,7 @@ import { verifyPackage } from '../catalog/bundle-package';
 import { projectAssetColumns, checkedProjectPackage, type IProjectPinRow } from '../catalog/project-asset-pins';
 import { ROLES, type IAccessClaims } from '../access/access.model';
 import { hasDeviceJobPermission } from './device-job-access';
-import { assertManagedBridge, managedBinding } from './device-compatibility';
+import { assertContractBridge, assertManagedBridge, managedBinding } from './device-compatibility';
 import { normalizeRuntimeArtifacts, runtimeDescriptorDigest } from '../../../shared/runtime-artifacts.cjs';
 import { runtimeArtifactTarget } from './runtime-host-target';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
@@ -88,13 +88,18 @@ async function deviceProject(db: PoolClient, id: string, projectId: string): Pro
     managedBinding(device.report, projectId);
     return device;
 }
+interface IApprovedHostPackage {
+    package: IPackage;
+    /** Издательская версия контракта из закреплённого дескриптора; отсутствует у назначений до AD-13. */
+    contractVersion?: string;
+}
 async function approvedPackage(
     db: PoolClient,
     projectId: string,
     assetId: string,
     version: number,
     manifest: string,
-): Promise<IPackage> {
+): Promise<IApprovedHostPackage> {
     const row = (
         await db.query<IProjectPinRow>(
             `SELECT ${projectAssetColumns} FROM project_assets
@@ -116,7 +121,8 @@ async function approvedPackage(
         (config.env && Object.keys(config.env).length)
     )
         throw new ConflictException('Этот MCP требует локальных параметров или не разрешён для хостинга площадки.');
-    return pkg;
+    const raw = row.pin_snapshot?.card?.contractVersion;
+    return { package: pkg, ...(typeof raw === 'string' ? { contractVersion: raw } : {}) };
 }
 async function hostArtifact(db: PoolClient, pkg: IPackage, expectedSha?: string) {
     const artifact = normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts).find(
@@ -177,14 +183,21 @@ export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, va
     return transaction(store, async (db) => {
         await deviceProject(db, device.id, body.projectId as string);
         await requireFeaturesEnabled(['tool_installation']);
-        const pkg = await approvedPackage(
+        const approved = await approvedPackage(
                 db,
                 body.projectId as string,
                 body.pkg!.plugin.id,
                 body.pkg!.plugin.version,
                 body.pkg!.manifest.sha256,
             ),
+            pkg = approved.package,
             artifact = await hostArtifact(db, pkg);
+        // AD-13: сверка версии контракта и capability-диапазонов — здесь, на устройстве; рассогласование — 409 actionable.
+        assertContractBridge(device.report, {
+            contractVersion: approved.contractVersion,
+            packageFormat: pkg.schemaVersion,
+            bridgeProtocol: 2,
+        });
         // AD-3: сервер выдаёт sha256 канонического descriptor-текста одобренного пакета.
         const descriptorSha256 = runtimeDescriptorDigest(normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts));
         const session: IHostedMcpSession = {
@@ -200,6 +213,7 @@ export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, va
             session,
             artifact: { ...artifact, executable: artifact.executable ?? false },
             descriptorSha256,
+            ...(approved.contractVersion ? { contractVersion: approved.contractVersion } : {}),
         };
     });
 }
@@ -208,9 +222,9 @@ export async function authorizeHostedMcpSession(store: DeviceStore, value: unkno
     const input = hostedMcpSessionInput(value);
     return transaction(store, async (db) => {
         await deviceProject(db, input.deviceId, input.projectId);
-        const pkg = await approvedPackage(db, input.projectId, input.assetId, input.version, input.manifest);
-        await hostArtifact(db, pkg, input.artifactSha256);
-        if (pkg.config?.extra?.researchMcp) await requireFeaturesEnabled(['research_tools', 'tool_catalog']);
+        const approved = await approvedPackage(db, input.projectId, input.assetId, input.version, input.manifest);
+        await hostArtifact(db, approved.package, input.artifactSha256);
+        if (approved.package.config?.extra?.researchMcp) await requireFeaturesEnabled(['research_tools', 'tool_catalog']);
         return { ok: true };
     });
 }

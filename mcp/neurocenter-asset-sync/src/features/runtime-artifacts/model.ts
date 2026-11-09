@@ -13,7 +13,8 @@ const shared = createRequire(import.meta.url)(
     fileURLToPath(moduleUrl),
 ) as typeof import('../../../../../services/shared/runtime-artifacts.cjs');
 export const { TARGETS, CEILING, portablePath, validateRuntimeArtifactEntrypoints, runtimeDescriptorDigest } = shared;
-export type { IRuntimeArtifact as RuntimeArtifact, IRuntimeArtifactEntry as RuntimeArtifactEntry };
+export type RuntimeArtifact = IRuntimeArtifact;
+export type RuntimeArtifactEntry = IRuntimeArtifactEntry;
 /**
  * AD-2: env-лимиты клиента удалены — клиентская политика = константа ceiling контракта.
  * LIMITS (env-снимок) остаётся только для серверной admission-политики (AD-1) и не реэкспортируется сюда.
@@ -30,6 +31,21 @@ export const inspectRuntimeArchive = (
         ...options,
         limits: { unpackedBytes: descriptor.unpackedBytes, filesCount: descriptor.filesCount },
     });
+
+// AD-13: версия контракта — тот же pinned источник, что и на сервере; строгий semver без зависимостей.
+const contractVersionUrl = new URL(
+    import.meta.url.endsWith('.ts')
+        ? '../../../../../services/shared/runtime/contract-version.cjs'
+        : '../../shared/runtime/contract-version.cjs',
+    import.meta.url,
+);
+export const {
+    CONTRACT_VERSION,
+    isContractVersion,
+    compareContractVersions,
+} = createRequire(import.meta.url)(
+    fileURLToPath(contractVersionUrl),
+) as typeof import('../../../../../services/shared/runtime/contract-version.cjs');
 
 // Детекция цели хоста — канон runtime/host-target.cjs (AD-7); injectable report сохраняется для тестов.
 const hostTargetModuleUrl = new URL(

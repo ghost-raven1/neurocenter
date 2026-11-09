@@ -10,6 +10,7 @@
     "scripts/test/bridge-templates-resolution.test.mjs",
     "scripts/test/ceiling-identity.test.mjs",
     "scripts/test/compose-drift.test.mjs",
+    "scripts/test/contract-version-handshake.test.mjs",
     "scripts/test/coverage-completion.test.mjs",
     "scripts/test/coverage-focused.test.mjs",
     "scripts/test/coverage-inventory.test.mjs",

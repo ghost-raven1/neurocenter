@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { CEILING } from '../../../../shared/runtime-artifacts.cjs';
+import { isContractVersion } from '../../../../shared/runtime/contract-version.cjs';
 
 /** Билет хоста без хранения в БД: HMAC от заявлений. Срок ограничен, замену выдает новая установка. */
 export interface IHostedMcpClaim {
@@ -12,6 +13,8 @@ export interface IHostedMcpClaim {
     compressedBytes: number;
     unpackedBytes?: number;
     filesCount?: number;
+    /** AD-13: издательская версия контракта назначения; присутствует, если у ассета она закреплена. */
+    contractVersion?: string;
     session?: IHostedMcpSession;
     /** Internal research requests use a private, short-lived child; never serialized into public tickets. */
     researchSessionId?: string;
@@ -72,9 +75,13 @@ export function issueHostedMcpTicket(claim: Omit<IHostedMcpClaim, 'exp'>): strin
         unpackedBytes,
         filesCount,
         session,
+        contractVersion,
     } = claim;
     if (typeof descriptorSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(descriptorSha256))
         throw new Error('Нужен server-issued descriptorSha256 одобренного пакета.');
+    if (contractVersion !== undefined && !isContractVersion(contractVersion)) {
+        throw new Error('Некорректная версия контракта назначения MCP.');
+    }
     const payload = Buffer.from(
         JSON.stringify({
             artifactSha256,
@@ -87,6 +94,7 @@ export function issueHostedMcpTicket(claim: Omit<IHostedMcpClaim, 'exp'>): strin
             filesCount,
             session,
             exp: Date.now() + HOSTED_MCP_TTL_MS,
+            ...(contractVersion !== undefined ? { contractVersion } : {}),
         }),
     ).toString('base64url');
     return payload + '.' + createHmac('sha256', guard).update(payload).digest('base64url');
@@ -133,6 +141,7 @@ export function verifyHostedMcpTicket(ticket: string): IHostedMcpClaim | undefin
         unpackedBytes,
         filesCount,
         session,
+        contractVersion,
     } = claim;
     if (
         typeof artifactSha256 !== 'string' ||
@@ -159,6 +168,8 @@ export function verifyHostedMcpTicket(ticket: string): IHostedMcpClaim | undefin
             (!Number.isSafeInteger(unpackedBytes) || unpackedBytes < 1 || unpackedBytes > CEILING.unpackedBytes)) ||
         (filesCount !== undefined &&
             (!Number.isSafeInteger(filesCount) || filesCount < 1 || filesCount > CEILING.filesCount)) ||
+        // AD-13: claim несёт ФОРМУ версии контракта (stateless-verify не видит ассет); семантика сверяется при issuance.
+        (contractVersion !== undefined && !isContractVersion(contractVersion)) ||
         !validHostedMcpSession(session)
     ) {
         return undefined;
@@ -174,5 +185,6 @@ export function verifyHostedMcpTicket(ticket: string): IHostedMcpClaim | undefin
         session,
         ...(unpackedBytes !== undefined ? { unpackedBytes } : {}),
         ...(filesCount !== undefined ? { filesCount } : {}),
+        ...(contractVersion !== undefined ? { contractVersion } : {}),
     };
 }

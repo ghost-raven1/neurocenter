@@ -17,6 +17,8 @@ export interface IRuntimeArtifact {
      * Клиент применяет min(descriptor.limits, ceiling); отсутствие limits на клиенте — fail-closed.
      */
     limits?: IArtifactLimits;
+    /** AD-13: версия контракта, изданная с артефактом; обязательна при публикации, опциональна при чтении. */
+    contractVersion?: string;
 }
 export interface IRuntimeArtifactEntry {
     path: string;

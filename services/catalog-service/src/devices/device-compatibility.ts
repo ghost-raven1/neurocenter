@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { compareContractVersions, isContractVersion } from '../../../shared/runtime/contract-version.cjs';
 
 /** Старый клиент не получает задания с неподдерживаемым подтверждением результата. */
 export function assertManagedBridge(report: Record<string, unknown> | undefined): void {
@@ -58,6 +59,56 @@ export function assertInstallationInspectionBridge(report: Record<string, unknow
         throw new ConflictException(
             'Обновите локальный MCP до версии 0.6 или новее для проверки файлов установленных инструментов.',
         );
+    }
+}
+
+/**
+ * AD-13: ceiling-версия контракта и диапазоны capability сверяются при разрешении установки.
+ * Рассогласование — 409 с actionable-текстом обновления (не 500, не reject); некорректная
+ * contractVersion у ассета не ломает установку — сверка по ней пропускается (fail-open).
+ */
+export function assertContractBridge(
+    report: Record<string, unknown> | undefined,
+    asset: { contractVersion?: unknown; packageFormat?: unknown; bridgeProtocol?: unknown },
+): void {
+    const required =
+        typeof asset.contractVersion === 'string' && isContractVersion(asset.contractVersion)
+            ? asset.contractVersion
+            : undefined;
+    if (required !== undefined) {
+        const clientMax = report?.maxContractVersion;
+        if (typeof clientMax !== 'string' || !isContractVersion(clientMax)) {
+            throw new ConflictException(
+                'Обновите локальный MCP на странице «Начало работы»: инструмент требует новую версию контракта площадки.',
+            );
+        }
+        if (compareContractVersions(required, clientMax) > 0) {
+            throw new ConflictException(
+                `Обновите локальный MCP на странице «Начало работы»: инструмент требует контракт площадки ${required}.`,
+            );
+        }
+    }
+    const format = asset.packageFormat;
+    if (Number.isSafeInteger(format) && Number(format) >= 1) {
+        // Клиентские мосты понимают бинарные форматы с v3; потолок — capability maxPackageFormat (отсутствует у старых — 5).
+        const rawMax = report?.maxPackageFormat;
+        const max = Number.isSafeInteger(rawMax) && Number(rawMax) >= 1 ? Number(rawMax) : 5;
+        if (Number(format) < 3 || Number(format) > max) {
+            throw new ConflictException(
+                'Обновите локальный MCP на странице «Начало работы»: пакет использует неподдерживаемый формат бинарных ресурсов.',
+            );
+        }
+    }
+    const protocol = asset.bridgeProtocol;
+    if (Number.isSafeInteger(protocol) && Number(protocol) >= 1) {
+        // Единственный протокол моста — 2; потолок — protocolVersion отчёта (отсутствует у очень старых — 2).
+        const rawMax = report?.protocolVersion;
+        const max = Number.isSafeInteger(rawMax) && Number(rawMax) >= 1 ? Number(rawMax) : 2;
+        if (Number(protocol) < 2 || Number(protocol) > max) {
+            throw new ConflictException(
+                'Обновите локальный MCP на странице «Начало работы»: инструмент требует новую версию протокола локального моста.',
+            );
+        }
     }
 }
 

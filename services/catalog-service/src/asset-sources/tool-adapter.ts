@@ -13,6 +13,7 @@ import { PluginRepository, toPlugin } from '../publication/plugin-repository';
 import { publicationHash, validatePublication } from '../publication/publication-validation';
 import { nativeCardHash } from '../publication/native-hash';
 import type { IImportItem, INativeAssetPin, ISourceReceipt } from './import-interfaces';
+import { isContractVersion } from '../../../shared/runtime/contract-version.cjs';
 
 export const assetKey = (value: ResolvedAsset): string => value.asset.id + '@' + value.asset.version;
 /** Native pins берутся из exact source tuple, включая historical source revision. */
@@ -273,6 +274,22 @@ export class ToolAssetAdapter {
         if (!item.native || item.action === 'conflict') {
             throw new ConflictException('План не разрешает публикацию.');
         }
+        // AD-13: издательская contractVersion закрепляется в metadata точной опубликованной версии
+        // (без миграции колонок); запись атомарна — тот же borrowed transaction, что и commit версии.
+        const contractVersion = isContractVersion(item.resolved.asset.contractVersion)
+            ? item.resolved.asset.contractVersion
+            : undefined;
+        const done = async (card: IAiPlugin): Promise<void> => {
+            await committed(card);
+            if (contractVersion) {
+                await client.query(
+                    `UPDATE ai_plugin_versions
+             SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+             WHERE ai_plugin_id=$1 AND version=$2`,
+                    [card.id, card.version, JSON.stringify({ contractVersion })],
+                );
+            }
+        };
         if (item.action === 'unchanged' && item.preserveHead) {
             const previous = await repository.version(item.native.id, item.native.version),
                 head = await repository.get(item.native.id);
@@ -292,7 +309,7 @@ export class ToolAssetAdapter {
             if (this.pin(card).hash !== item.native.hash) {
                 throw new ConflictException('Снимок зависимости изменился.');
             }
-            await committed(card);
+            await done(card);
             return;
         }
         if (item.expected) {
@@ -302,7 +319,7 @@ export class ToolAssetAdapter {
                 throw new ConflictException('Карточка изменилась после предварительного просмотра.');
             }
             if (item.action === 'unchanged') {
-                await committed(current);
+                await done(current);
                 return;
             }
             if (item.action === 'snapshot') {
@@ -313,7 +330,7 @@ export class ToolAssetAdapter {
                     item.native.version,
                     item.expected.hash,
                     client,
-                    committed,
+                    done,
                 );
                 return;
             }
@@ -329,12 +346,12 @@ export class ToolAssetAdapter {
             if (!saved) {
                 throw new ConflictException('Карточка удалена во время импорта.');
             }
-            await committed(saved);
+            await done(saved);
         } else {
             await repository.create(
                 { ...publication, publicationKey: item.requestKey },
                 actor,
-                async (_lease, card) => committed(card),
+                async (_lease, card) => done(card),
                 client,
                 true,
                 item.native.id,

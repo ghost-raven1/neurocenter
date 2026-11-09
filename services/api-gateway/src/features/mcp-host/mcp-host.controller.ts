@@ -20,6 +20,7 @@ import { AuthGuardService } from '../../auth/auth-guard.service';
 import { McpHostService } from './host';
 import { issueHostedMcpTicket, verifyHostedMcpTicket, validHostedMcpSession } from './ticket';
 import { CEILING } from '../../../../shared/runtime-artifacts.cjs';
+import { isContractVersion } from '../../../../shared/runtime/contract-version.cjs';
 
 /**
  * Хост управляемых MCP-серверов: подключение проходит по устройству, далее OpenCode ходит по билету.
@@ -94,7 +95,15 @@ export class McpHostController {
             artifact?: unknown;
             session?: unknown;
             descriptorSha256?: unknown;
+            contractVersion?: unknown;
         };
+        // AD-13: каталог возвращает издательскую версию контракта назначения; при наличии — строгий semver.
+        if (
+            data.contractVersion !== undefined &&
+            !(typeof data.contractVersion === 'string' && isContractVersion(data.contractVersion))
+        ) {
+            throw new BadGatewayException('Сервис хоста MCP ответил некорректно. Повторите позже.');
+        }
         const artifact = data.artifact as
             | {
                   sha256?: unknown;
@@ -137,6 +146,7 @@ export class McpHostController {
             entrypoint: artifact.entrypoint,
             executable: artifact.executable,
             compressedBytes: artifact.compressedBytes as number,
+            ...(typeof data.contractVersion === 'string' ? { contractVersion: data.contractVersion } : {}),
             session: data.session,
             ...(Number.isSafeInteger(artifact.unpackedBytes)
                 ? { unpackedBytes: artifact.unpackedBytes as number }

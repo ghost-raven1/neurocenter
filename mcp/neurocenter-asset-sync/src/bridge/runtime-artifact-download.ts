@@ -32,7 +32,7 @@ export async function downloadJobRuntimeArtifact(
         !Number.isSafeInteger(artifact.compressedBytes) ||
         artifact.compressedBytes <= 0 ||
         compressedLimit === undefined ||
-        artifact.limits.compressedBytes > CEILING.compressedBytes ||
+        (artifact.limits !== undefined && artifact.limits.compressedBytes > CEILING.compressedBytes) ||
         artifact.compressedBytes > compressedLimit
     ) {
         throw new Error('Артефакт доступен только в одобренном задании этого подключения.');

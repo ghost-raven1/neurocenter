@@ -5,6 +5,7 @@ const { TARGETS } = require('./runtime/targets.cjs');
 const { portablePath } = require('./runtime/portable-path.cjs');
 const { LIMIT_DEFAULTS, CEILING, getLimits } = require('./runtime/limits.cjs');
 const { inspectRuntimeArchive: archiveInspect } = require('./runtime/archive.cjs');
+const { isContractVersion } = require('./runtime/contract-version.cjs');
 /**
  * Лимиты комплектов настраиваются окружением процесса; дефолты совпадают с контрактом поставки.
  * Снимок ленивый (AD-7): окружение читается на каждый доступ, а не при импорте модуля.
@@ -63,6 +64,7 @@ function normalizeRuntimeArtifacts(value, policy = getLimits()) {
                             'entrypoint',
                             'executable',
                             'limits',
+                            'contractVersion',
                         ].includes(key),
                 ) ||
                 !TARGETS.includes(item.target) ||
@@ -71,6 +73,8 @@ function normalizeRuntimeArtifacts(value, policy = getLimits()) {
                 !portablePath(item.entrypoint) ||
                 (item.executable !== undefined && typeof item.executable !== 'boolean') ||
                 (item.limits !== undefined && !validArtifactLimits(item.limits)) ||
+                // AD-13: contractVersion артефакта опционален (издательский) — при наличии строгий semver.
+                (item.contractVersion !== undefined && !isContractVersion(item.contractVersion)) ||
                 !['compressedBytes', 'unpackedBytes', 'filesCount'].every(
                     (key) => Number.isSafeInteger(item[key]) && item[key] > 0 && item[key] <= policy[key],
                 )

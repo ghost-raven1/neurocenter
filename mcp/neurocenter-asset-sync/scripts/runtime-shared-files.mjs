@@ -16,6 +16,7 @@ export const BRIDGE_SHARED_RUNTIME_FILES = Object.freeze([
     'runtime/host-target.cjs',
     'runtime/portable-path.cjs',
     'runtime/limits.cjs',
+    'runtime/contract-version.cjs',
     'runtime/archive.cjs',
     'rag-index-contract.cjs',
     'rag-ui-contract.cjs',

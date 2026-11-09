@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { normalizeOpenCodeInstallSupply } from '../../../shared/opencode-cli-install.cjs';
+import { isContractVersion } from '../../../shared/runtime/contract-version.cjs';
 import { TARGETS, type TRuntimeTarget } from '../../../shared/runtime/targets.cjs';
 
 export interface IBridgePresence {
@@ -10,6 +11,9 @@ export interface IBridgePresence {
     buildId: string;
     protocolVersion: number;
     runtimeArtifactTarget?: string;
+    /** AD-13: capability клиента — версии контракта и максимального формата пакета (отсутствуют у старых мостов). */
+    maxContractVersion?: string;
+    maxPackageFormat?: number;
 }
 
 /** A degraded client can refresh identity without replacing its last complete workspace snapshot. */
@@ -17,7 +21,16 @@ export function bridgePresence(value: unknown): Record<string, unknown> {
     const checked = workspaceReport(value),
         required = ['platform', 'arch', 'runtimeVersion', 'bridgeVersion', 'buildId'];
     if (
-        Object.keys(checked).some((key) => ![...required, 'protocolVersion', 'runtimeArtifactTarget'].includes(key)) ||
+        Object.keys(checked).some(
+            (key) =>
+                ![
+                    ...required,
+                    'protocolVersion',
+                    'runtimeArtifactTarget',
+                    'maxContractVersion',
+                    'maxPackageFormat',
+                ].includes(key),
+        ) ||
         required.some(
             (key) => typeof checked[key] !== 'string' || !checked[key] || String(checked[key]).length > 256,
         ) ||
@@ -70,10 +83,17 @@ export function workspaceReport(value: unknown): Record<string, unknown> {
             return fail();
         }
     }
-    for (const field of ['protocolVersion', 'previousDeviceCompletions']) {
+    for (const field of ['protocolVersion', 'previousDeviceCompletions', 'maxPackageFormat']) {
         if (report[field] !== undefined && (!Number.isSafeInteger(report[field]) || Number(report[field]) < 0)) {
             return fail();
         }
+    }
+    if (report.maxPackageFormat !== undefined && Number(report.maxPackageFormat) < 1) {
+        return fail();
+    }
+    // AD-13: версия контракта capability — строгий semver; отсутствие поля = старый мост (forward-compat).
+    if (report.maxContractVersion !== undefined && !isContractVersion(report.maxContractVersion)) {
+        return fail();
     }
     if (report.ragSupported !== undefined && typeof report.ragSupported !== 'boolean') {
         return fail();

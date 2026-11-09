@@ -10,6 +10,8 @@ import { atomicText } from '../../bridge/atomic-file.js';
 import { enforcePrivateWindowsAcl } from '../local-configuration/private-store.js';
 import {
     CEILING,
+    compareContractVersions,
+    CONTRACT_VERSION,
     inspectRuntimeArchive,
     normalizeRuntimeArtifacts,
     portablePath,
@@ -253,6 +255,12 @@ function selected(pkg: IPackage): RuntimeArtifact | undefined {
             'У готового комплекта нет обязательного поля limits. Пакет не устанавливается; запросите актуальную версию.',
         );
     }
+    // AD-13: сверка версии контракта при установке — до сети и до записи; рассогласование — actionable-отказ, а не тихая деградация.
+    if (descriptor.contractVersion && compareContractVersions(descriptor.contractVersion, CONTRACT_VERSION) > 0) {
+        throw new Error(
+            `Инструмент требует контракт площадки ${descriptor.contractVersion} или новее. Обновите локальный MCP на странице «Начало работы».`,
+        );
+    }
     return descriptor;
 }
 
@@ -432,6 +440,12 @@ export async function ensureRuntimeArtifact(
             }
         }
         // AD-2: usage-бюджет = min(descriptor.limits.cacheBytes, ceiling); env-лимитов у клиента нет.
+        // limits гарантирован selected() (fail-closed выше); повторная проверка — для строгого типа.
+        if (!artifact.limits) {
+            throw new Error(
+                'У готового комплекта нет обязательного поля limits. Пакет не устанавливается; запросите актуальную версию.',
+            );
+        }
         await usage(root, Math.min(artifact.limits.cacheBytes, CEILING.cacheBytes));
         const required = artifact.compressedBytes + artifact.unpackedBytes + artifact.filesCount * 400 + 4096;
         const disk = await fs.statfs(root, { bigint: true });

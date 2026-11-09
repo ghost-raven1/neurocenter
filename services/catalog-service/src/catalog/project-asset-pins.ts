@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { buildPackage, type IPackage } from './bundle-package';
 import type { IAiPlugin, IProjectAsset } from './dto';
 import { normalizeDependencyPins } from '../../../shared/dependency-pins.cjs';
+import { isContractVersion } from '../../../shared/runtime/contract-version.cjs';
 import { assertInstallablePackage } from '../devices/installation-set';
 import { toPlugin } from '../publication/plugin-repository';
 import { readSkillPackage } from '../publication/skill-package';
@@ -76,6 +77,7 @@ export async function captureProjectAsset(
     if (head.archived_at) throw new ConflictException('Инструмент в архиве и не добавляется в новые назначения.');
     if (head.kind !== kind) throw new ConflictException('Тип карточки не совпадает с выбранным инструментом.');
     let plugin = toPlugin(head);
+    let contractVersion: unknown;
     if (version !== undefined && version !== plugin.version) {
         const old = (
             await db.query('SELECT * FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2', [id, version])
@@ -91,10 +93,22 @@ export async function captureProjectAsset(
             dependencies: normalizeDependencyPins(old.metadata?.dependencies),
         };
         if (plugin.kind !== kind) throw new ConflictException('Историческая версия имеет другой тип.');
+        contractVersion = old.metadata?.contractVersion;
+    } else {
+        // AD-13: издательская версия контракта хранится в metadata закреплённой версии, не в колонках ai_plugins.
+        contractVersion = (
+            await db.query<{ metadata: { contractVersion?: unknown } | null }>(
+                'SELECT metadata FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2',
+                [id, plugin.version],
+            )
+        ).rows[0]?.metadata?.contractVersion;
     }
     const pkg = pluginDeliveryPackage(plugin);
     assertInstallablePackage(pkg);
-    return { card: plugin as unknown as Record<string, unknown>, package: pkg };
+    const card = plugin as unknown as Record<string, unknown>;
+    // В снапшот попадает только строгий semver; handshake читает card.contractVersion (fail-open при его отсутствии).
+    if (isContractVersion(contractVersion)) card.contractVersion = contractVersion;
+    return { card, package: pkg };
 }
 
 /** Проверка сохранённых байтов обязательна и при чтении, и при каждом разрешении установки. */
