@@ -75,6 +75,7 @@ const expectedFiles = [
     'scripts/test/docker-build-progress.test.mjs',
     'scripts/test/tls-global-disable.test.mjs',
     'scripts/test/verifier-tls.test.mjs',
+    'scripts/test/mcp-host-route-shadowing.test.mjs',
 ].sort();
 const exists = (file) =>
     fs.access(file).then(

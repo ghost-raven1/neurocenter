@@ -11,9 +11,14 @@ import { SystemRoleMcpGatewayController } from '../features/system-role-mcp/syst
 
 /**
  * Модуль: auth-guard + проксирование /api/* на каталожный microservice.
+ *
+ * AD-14: порядок важен — catch-all `api/{*path}` (ProxyController) обязан регистрироваться
+ * ПОСЛЕ всех явных контроллеров: Express матчит роуты по порядку, и catch-all первым
+ * поглощает /api/mcp-host/* (mcp-host превращается в мёртвый код). Регрессионный тест:
+ * scripts/test/mcp-host-route-shadowing.test.mjs.
  */
 @Module({
-    controllers: [ProxyController, McpHostController, ResearchMcpController, SystemRoleMcpGatewayController],
+    controllers: [McpHostController, ResearchMcpController, SystemRoleMcpGatewayController, ProxyController],
     providers: [
         ProxyService,
         AuthGuardService,
