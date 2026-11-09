@@ -44,6 +44,7 @@
     "scripts/test/qa-cli.test.mjs",
     "scripts/test/qa-native.test.mjs",
     "scripts/test/qa-postgres.test.mjs",
+    "scripts/test/release-candidate-e2e.test.mjs",
     "scripts/test/release-manifest.test.mjs",
     "scripts/test/run-manifest.test.mjs",
     "scripts/test/shared-declaration-drift.test.mjs",
