@@ -3,7 +3,7 @@ title: 'REL-01: приёмка замороженного кандидата (e2
 type: 'feature'
 ticket: '13'
 created: '2026-11-06'
-status: ready-for-dev
+status: in-progress
 baseline_revision: 'a946a7b2'
 route: 'full'
 route_source: 'auto'
