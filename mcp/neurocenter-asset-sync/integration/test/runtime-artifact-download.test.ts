@@ -21,6 +21,13 @@ const descriptor = (bytes: Buffer): RuntimeArtifact => ({
     unpackedBytes: 1,
     filesCount: 1,
     entrypoint: 'index.mjs',
+    // AD-2: limits — обязательное поле дескриптора (pre-flight fail-closed); значения = свой размер, в [1..CEILING].
+    limits: {
+        compressedBytes: bytes.length,
+        unpackedBytes: 1,
+        filesCount: 1,
+        cacheBytes: bytes.length + 4096,
+    },
 });
 async function setup(server: http.Server | net.Server) {
     servers.push(server);
