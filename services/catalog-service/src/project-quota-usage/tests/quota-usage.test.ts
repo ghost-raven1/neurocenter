@@ -35,9 +35,10 @@ describe('parseQuotaUsageInput', () => {
 });
 
 /** Мини-ledger project_quota_usage + receipts на месте PostgreSQL. */
-function ledgerFixture(projectExists = true) {
+function ledgerFixture(projectExists = true, projectQuota: unknown = null) {
     const state = {
         projectExists,
+        projectQuota,
         usage: {} as Record<string, string>,
         receipts: new Map<string, string>(),
         calls: [] as string[],
@@ -50,6 +51,9 @@ function ledgerFixture(projectExists = true) {
         }
         if (s.startsWith('SELECT 1 FROM projects')) {
             return { rows: state.projectExists ? [{}] : [], rowCount: state.projectExists ? 1 : 0 };
+        }
+        if (s.startsWith('SELECT quota FROM projects')) {
+            return { rows: state.projectExists ? [{ quota: state.projectQuota }] : [], rowCount: state.projectExists ? 1 : 0 };
         }
         if (s.startsWith('INSERT INTO project_quota_usage_requests')) {
             const [dimension, key, delta] = args as [string, string, number];
@@ -66,6 +70,10 @@ function ledgerFixture(projectExists = true) {
             const rows = value === undefined ? [] : [{ used_bytes: value }];
             return { rows, rowCount: rows.length };
         }
+        if (s.startsWith('SELECT dimension,used_bytes FROM project_quota_usage')) {
+            const rows = Object.entries(state.usage).map(([dimension, used_bytes]) => ({ dimension, used_bytes }));
+            return { rows, rowCount: rows.length };
+        }
         if (s.startsWith('INSERT INTO project_quota_usage')) {
             const [, dimension, delta] = args as [string, string, number];
             const current = state.usage[dimension] === undefined ? 0n : BigInt(state.usage[dimension]);
@@ -75,7 +83,7 @@ function ledgerFixture(projectExists = true) {
         }
         throw new Error('Непредвиденный SQL: ' + s);
     };
-    const pool = { connect: async () => ({ query, release: vi.fn() }) };
+    const pool = { query, connect: async () => ({ query, release: vi.fn() }) };
     const service = new ProjectQuotaUsageService({ pool } as never);
     return { state, service };
 }
@@ -136,6 +144,28 @@ describe('ProjectQuotaUsageService.record', () => {
     });
 });
 
+describe('ProjectQuotaUsageService.snapshot', () => {
+    it('возвращает счётчики и лимиты проектов.quota', async () => {
+        const { service } = ledgerFixture(true, JSON.stringify({ currentBytesLimit: 50 }));
+        const result = await service.snapshot('project-1');
+        expect(result.limits).toEqual({ current: 50, retention: 0, staging: 0 });
+        expect(result.used).toEqual({ current: 0, retention: 0, staging: 0 });
+    });
+
+    it('счётчики берёт из accounting, отсутствие лимита — 0 (безлимит)', async () => {
+        const { state, service } = ledgerFixture();
+        state.usage.current = '42';
+        const result = await service.snapshot('project-1');
+        expect(result.used.current).toBe(42);
+        expect(result.limits.current).toBe(0);
+    });
+
+    it('неизвестный проект — 404', async () => {
+        const { service } = ledgerFixture(false);
+        await expect(service.snapshot('ghost')).rejects.toThrowError(/Проект не найден/);
+    });
+});
+
 describe('ProjectQuotaUsageController (internal API)', () => {
     const token = 'internal-test-token';
 
@@ -179,5 +209,22 @@ describe('ProjectQuotaUsageController (internal API)', () => {
         await expect(
             controller.quotaUsage(request(token), 'project-1', { dimension: 'nope', deltaBytes: 1, request_key: 'k' }),
         ).rejects.toThrowError(/Измерение квоты/);
+    });
+
+    it('GET snapshot: с internal-токеном возвращает used и limits', async () => {
+        const { service } = ledgerFixture(true, JSON.stringify({ currentBytesLimit: 100 }));
+        const controller = new ProjectQuotaUsageController(service);
+        await expect(controller.quotaUsageSnapshot(request(token), 'project-1')).resolves.toEqual({
+            used: { current: 0, retention: 0, staging: 0 },
+            limits: { current: 100, retention: 0, staging: 0 },
+        });
+    });
+
+    it('GET snapshot без токена — 403', async () => {
+        const { service } = ledgerFixture();
+        const controller = new ProjectQuotaUsageController(service);
+        await expect(controller.quotaUsageSnapshot(request(undefined), 'project-1')).rejects.toBeInstanceOf(
+            ForbiddenException,
+        );
     });
 });

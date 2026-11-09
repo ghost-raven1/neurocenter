@@ -286,7 +286,10 @@ services:
       BRIDGE_TEMPLATES_DIR: /app/bridge-dist
       # AD-5: независимый секрет хоста mcp-host (отдельный trust-domain, без fallback на internal_token).
       NEUROCENTER_MCP_HOST_SECRET_FILE: /run/secrets/mcp_host_secret
+      # AD-D2: персистентный volume кэша MCP-артефактов (LRU + per-project квота); без volume кэш сгорает при рестарте.
+      NEUROCENTER_MCP_HOST_DIR: /data/gateway/mcp-host
     secrets: [metrics_token, internal_token, mcp_host_secret]
+    volumes: [artifact-cache:/data/gateway/mcp-host]
     healthcheck:
       test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
@@ -341,3 +344,4 @@ volumes:
   help-content:
   runtime-artifacts:
   backups:
+  artifact-cache:

@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ModelsService } from '../models/models.service';
+import { normalizeProjectQuota } from '../catalog/project-quota';
 import {
     parseQuotaUsageInput,
     recordProjectQuotaUsage,
@@ -54,5 +55,31 @@ export class ProjectQuotaUsageService {
     /** Срез счётчиков: current/retention/staging; пустой проект — нули. */
     async usage(projectId: string): Promise<Record<TQuotaDimension, number>> {
         return readProjectQuotaUsage(this.models.pool, projectId);
+    }
+
+    /**
+     * Снимок для internal-потребителей (AD-D2): фактические счётчики и лимиты
+     * проектов.quota. Отсутствие счётчика — ноль, отсутствие лимита — 0 (безлимит по AD-D4).
+     *
+     * @param {string} projectId - id проекта.
+     * @returns {Promise<{used: Record<TQuotaDimension, number>; limits: Record<TQuotaDimension, number>}>}
+     */
+    async snapshot(projectId: string): Promise<{
+        used: Record<TQuotaDimension, number>;
+        limits: Record<TQuotaDimension, number>;
+    }> {
+        const found = await this.models.pool.query('SELECT quota FROM projects WHERE id=$1', [projectId]);
+        if (!found.rowCount) {
+            throw new NotFoundException('Проект не найден в каталоге.');
+        }
+        const quota = normalizeProjectQuota((found.rows[0] as { quota?: unknown }).quota);
+        return {
+            used: await readProjectQuotaUsage(this.models.pool, projectId),
+            limits: {
+                current: quota.currentBytesLimit,
+                retention: quota.retentionBytesLimit,
+                staging: quota.stagingBytesLimit,
+            },
+        };
     }
 }
