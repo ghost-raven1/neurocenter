@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { LIMITS } from '../../../../shared/runtime-artifacts.cjs';
+import { CEILING } from '../../../../shared/runtime-artifacts.cjs';
 
 /** Билет хоста без хранения в БД: HMAC от заявлений. Срок ограничен, замену выдает новая установка. */
 export interface IHostedMcpClaim {
@@ -123,13 +123,13 @@ export function verifyHostedMcpTicket(ticket: string): IHostedMcpClaim | undefin
         typeof compressedBytes !== 'number' ||
         !Number.isSafeInteger(compressedBytes) ||
         compressedBytes < 1 ||
-        compressedBytes > LIMITS.compressedBytes ||
+        compressedBytes > CEILING.compressedBytes ||
         typeof exp !== 'number' ||
         exp < Date.now() ||
         (unpackedBytes !== undefined &&
-            (!Number.isSafeInteger(unpackedBytes) || unpackedBytes < 1 || unpackedBytes > LIMITS.unpackedBytes)) ||
+            (!Number.isSafeInteger(unpackedBytes) || unpackedBytes < 1 || unpackedBytes > CEILING.unpackedBytes)) ||
         (filesCount !== undefined &&
-            (!Number.isSafeInteger(filesCount) || filesCount < 1 || filesCount > LIMITS.filesCount)) ||
+            (!Number.isSafeInteger(filesCount) || filesCount < 1 || filesCount > CEILING.filesCount)) ||
         !validHostedMcpSession(session)
     ) {
         return undefined;

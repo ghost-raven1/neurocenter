@@ -2,7 +2,7 @@
 // Фасад (AD-7): канон целей, переносимых путей и лимитов — в подпапке runtime/; плоский путь и экспорты не меняются.
 const { TARGETS } = require('./runtime/targets.cjs');
 const { portablePath } = require('./runtime/portable-path.cjs');
-const { LIMIT_DEFAULTS, getLimits } = require('./runtime/limits.cjs');
+const { LIMIT_DEFAULTS, CEILING, getLimits } = require('./runtime/limits.cjs');
 const { inspectRuntimeArchive: archiveInspect } = require('./runtime/archive.cjs');
 /**
  * Лимиты комплектов настраиваются окружением процесса; дефолты совпадают с контрактом поставки.
@@ -81,6 +81,7 @@ module.exports = {
     TARGETS,
     LIMIT_DEFAULTS,
     LIMITS,
+    CEILING,
     portablePath,
     normalizeRuntimeArtifacts,
     validateRuntimeArtifactEntrypoints,

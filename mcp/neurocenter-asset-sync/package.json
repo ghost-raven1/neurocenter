@@ -13,7 +13,7 @@
   "scripts": {
     "test": "vitest run",
     "build": "node scripts/build.mjs",
-    "postbuild": "node ../../../scripts/workspace/dist-freshness.mjs --write mcp/neurocenter-asset-sync",
+    "postbuild": "node ../../scripts/workspace/dist-freshness.mjs --write mcp/neurocenter-asset-sync",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src integration scripts --no-error-on-unmatched-pattern --max-warnings=0",
     "start": "node dist/index.js",

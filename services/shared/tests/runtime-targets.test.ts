@@ -12,6 +12,7 @@ test('Фасад identity-реэкспортирует канонические 
     assert.equal(facade.TARGETS, canonical.TARGETS);
     assert.equal(facade.portablePath, portablePath);
     assert.deepEqual(Object.keys(facade).sort(), [
+        'CEILING',
         'LIMITS',
         'LIMIT_DEFAULTS',
         'TARGETS',

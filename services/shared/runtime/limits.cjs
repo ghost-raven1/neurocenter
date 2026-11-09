@@ -1,5 +1,11 @@
 'use strict';
 /** Канон лимитов комплектов (AD-7): окружение читается только на момент вызова, при импорте — нет. */
+const { ARTIFACT_CEILING } = require('@neurocenter/asset-contract');
+/**
+ * AD-12: ceiling-константы существуют ровно в одном месте — в pinned asset-контракте.
+ * Здесь только re-export (не локальные литералы); изменение ceiling = новый релиз контракта + re-pin.
+ */
+const CEILING = Object.freeze(ARTIFACT_CEILING);
 const LIMIT_DEFAULTS = Object.freeze({
     compressedBytes: 256 * 1024 ** 2,
     unpackedBytes: 1024 ** 3,
@@ -26,4 +32,4 @@ function getLimits() {
     for (const [key, name] of Object.entries(LIMIT_ENV)) value[key] = limitValue(name, LIMIT_DEFAULTS[key]);
     return Object.freeze(value);
 }
-module.exports = { LIMIT_DEFAULTS, getLimits };
+module.exports = { LIMIT_DEFAULTS, CEILING, getLimits };

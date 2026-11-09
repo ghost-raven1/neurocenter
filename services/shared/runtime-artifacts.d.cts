@@ -20,6 +20,11 @@ export const LIMIT_DEFAULTS: { compressedBytes: number; unpackedBytes: number; f
  * Снимок ленивый (AD-7): окружение читается на каждый доступ, а не при импорте модуля.
  */
 export const LIMITS: { compressedBytes: number; unpackedBytes: number; filesCount: number; cacheBytes: number };
+/**
+ * AD-12: ceiling-константы — re-export из pinned asset-контракта (через runtime/limits.cjs),
+ * не значения окружения и не локальные литералы; ceiling > LIMIT_DEFAULTS в каждой секции (invariant AD-1).
+ */
+export const CEILING: { compressedBytes: number; unpackedBytes: number; filesCount: number; cacheBytes: number };
 export function portablePath(value: unknown): boolean;
 export function normalizeRuntimeArtifacts(value: unknown): IRuntimeArtifact[];
 /** Плагин допускает только импортируемую JS-точку входа. */

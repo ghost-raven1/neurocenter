@@ -15,6 +15,7 @@ const shared = createRequire(import.meta.url)(
 export const {
     TARGETS,
     LIMITS,
+    CEILING,
     portablePath,
     normalizeRuntimeArtifacts,
     validateRuntimeArtifactEntrypoints,

@@ -19,6 +19,7 @@ import type { Request, Response } from 'express';
 import { AuthGuardService } from '../../auth/auth-guard.service';
 import { McpHostService } from './host';
 import { issueHostedMcpTicket, verifyHostedMcpTicket, validHostedMcpSession } from './ticket';
+import { CEILING } from '../../../../shared/runtime-artifacts.cjs';
 
 /**
  * Хост управляемых MCP-серверов: подключение проходит по устройству, далее OpenCode ходит по билету.
@@ -113,7 +114,7 @@ export class McpHostController {
             typeof artifact.executable !== 'boolean' ||
             !Number.isSafeInteger(artifact.compressedBytes as number) ||
             (artifact.compressedBytes as number) < 1 ||
-            (artifact.compressedBytes as number) > 2 * 1024 * 1024 * 1024 ||
+            (artifact.compressedBytes as number) > CEILING.compressedBytes ||
             !validHostedMcpSession(data.session) ||
             data.session.deviceId !== auth.deviceId ||
             data.session.projectId !== input.projectId ||

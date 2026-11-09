@@ -109,6 +109,7 @@ test('Поверхность фасада стабильна: лимитные �
         const assert = require('node:assert/strict');
         const facade = require(${JSON.stringify(facadePath)});
         assert.deepEqual(Object.keys(facade).sort(), [
+            'CEILING',
             'LIMITS',
             'LIMIT_DEFAULTS',
             'TARGETS',
