@@ -10,6 +10,7 @@ import { assetBase, assetKey, sameValue } from './installation-receipt.js';
 import { commitChanges, withProjectFiles } from './installation-files.js';
 import { packageDependencies, packageRef, sortedRefs, verifyInstallSet, type IInstallSet } from './install-set.js';
 import { validateChanges } from './installation-journal.js';
+import { requestHostedMcpConnection } from '../features/mcp-host/connect.js';
 import {
     localChangeFiles,
     localChangeDigest,
@@ -101,7 +102,12 @@ export async function prepareLocalChange(
             }
         }
         for (const member of frozen.packages) {
-            await planInstall(plan, member, { repair: true, runtimeRepairPreview: runtimeRepairs.has(member) });
+            // AD-4: восстановление ре-выпускает билет хоста (connect лёгкий) и обновляет OpenCode-конфиг.
+            await planInstall(plan, member, {
+                repair: true,
+                runtimeRepairPreview: runtimeRepairs.has(member),
+                hostedMcp: (p) => requestHostedMcpConnection(projectId, p),
+            });
         }
         await ledger.install(packageRef(pkg), frozen.manifest, frozen.packages);
         const changes = plan.changes();

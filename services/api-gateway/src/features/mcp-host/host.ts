@@ -7,7 +7,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import type { Request, Response } from 'express';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
-import type { IHostedMcpClaim } from './ticket';
+import type { IHostedMcpClaim, IHostedMcpSession } from './ticket';
 import { materializeArtifact } from './artifact-cache';
 import { validHostedMcpSession } from './ticket';
 
@@ -37,10 +37,55 @@ export function hostedMcpEnvironment(env: NodeJS.ProcessEnv = process.env): Reco
     return result;
 }
 
-const MAX_HOSTS = Math.max(1, Number(process.env.NEUROCENTER_MCP_HOST_MAX || 4));
 const IDLE_TTL_MS = 30 * 60 * 1000;
 const START_TIMEOUT_MS = 20000;
 const TOOL_OUTPUT_LIMIT = 8 * 1024 * 1024;
+/** AD-4: окно отзыва привязки = TTL кэша re-check; больше 60s не разрастается по построению. */
+export const AUTHZ_CACHE_TTL_CAP_MS = 60 * 1000;
+
+/** AD-4/AD-9: квоты пула хостов. Недопустимое значение — fail-fast на старте (не неограниченный пул). */
+export interface IMcpHostLimits {
+    /** Глобальный пул child-MCP (default 4). */
+    maxHosts: number;
+    /** Активные хосты одного проекта (default 8). */
+    maxPerProject: number;
+    /** Активные хосты одного устройства (default 2). */
+    maxPerDevice: number;
+    /** Активные каналы (OpenCode-клиенты) на один hostKey (default 4). */
+    maxChannelsPerHost: number;
+    /** TTL единого кэша device↔project re-check, ms (default 60000, максимум 60000 — AD-4). */
+    authzCacheTtlMs: number;
+}
+const AUTHZ_CACHE_MAX_ENTRIES = 1024;
+export function parseMcpHostLimits(env: NodeJS.ProcessEnv = process.env): IMcpHostLimits {
+    const positive = (name: string, fallback: number): number => {
+        const raw = env[name];
+        if (raw === undefined || raw === '') return fallback;
+        const value = Number(raw);
+        if (!Number.isSafeInteger(value) || value < 1) {
+            throw new Error(name + ' обязателен целым числом не меньше 1.');
+        }
+        return value;
+    };
+    let authzCacheTtlMs = AUTHZ_CACHE_TTL_CAP_MS;
+    const ttlRaw = env.NEUROCENTER_MCP_HOST_AUTHZ_TTL_MS;
+    if (ttlRaw !== undefined && ttlRaw !== '') {
+        const ttl = Number(ttlRaw);
+        if (!Number.isSafeInteger(ttl) || ttl < 1 || ttl > AUTHZ_CACHE_TTL_CAP_MS) {
+            throw new Error(
+                'NEUROCENTER_MCP_HOST_AUTHZ_TTL_MS обязателен целым числом 1..' + AUTHZ_CACHE_TTL_CAP_MS + '.',
+            );
+        }
+        authzCacheTtlMs = ttl;
+    }
+    return {
+        maxHosts: positive('NEUROCENTER_MCP_HOST_MAX', 4),
+        maxPerProject: positive('NEUROCENTER_MCP_HOST_MAX_PER_PROJECT', 8),
+        maxPerDevice: positive('NEUROCENTER_MCP_HOST_MAX_PER_DEVICE', 2),
+        maxChannelsPerHost: positive('NEUROCENTER_MCP_HOST_MAX_CHANNELS', 4),
+        authzCacheTtlMs,
+    };
+}
 
 interface IHostSession {
     claim: IHostedMcpClaim;
@@ -52,12 +97,15 @@ interface IHostSession {
 
 class McpHostService {
     private readonly hosts = new Map<string, IHostSession>();
-    private readonly starting = new Map<string, Promise<IHostSession>>();
+    private readonly starting = new Map<string, { claim: IHostedMcpClaim; task: Promise<IHostSession> }>();
     private readonly idleTimer: ReturnType<typeof setInterval>;
+    /** AD-4: ЕДИНЫЙ кэш connect-lookup и per-op re-check: ключ — каноническая сессия, TTL ≤60s. */
+    private readonly authzCache = new Map<string, number>();
 
     constructor(
         private readonly catalogUrl: string,
         private readonly internalToken: string,
+        private readonly limits: IMcpHostLimits = parseMcpHostLimits(),
     ) {
         this.idleTimer = setInterval(() => {
             this.reap();
@@ -75,23 +123,51 @@ class McpHostService {
         ]);
     }
 
-    private async adopt(claim: IHostedMcpClaim, signal?: AbortSignal): Promise<IHostSession> {
+    /** AD-4: квоты пула считаются по активным хостам (hosts) и запускающимся (starting). */
+    private poolCounts(): { total: number; projects: Map<string, number>; devices: Map<string, number> } {
+        const projects = new Map<string, number>();
+        const devices = new Map<string, number>();
+        const count = (claim: IHostedMcpClaim) => {
+            const session = claim.session;
+            if (!session) return;
+            projects.set(session.projectId, (projects.get(session.projectId) ?? 0) + 1);
+            devices.set(session.deviceId, (devices.get(session.deviceId) ?? 0) + 1);
+        };
+        for (const session of this.hosts.values()) count(session.claim);
+        for (const inflight of this.starting.values()) count(inflight.claim);
+        return { total: this.hosts.size + this.starting.size, projects, devices };
+    }
+
+    /** AD-4: получение хоста с проверкой квот пула (глобальный/per-project/per-device) и cap каналов. */
+    async adopt(claim: IHostedMcpClaim, signal?: AbortSignal): Promise<IHostSession> {
         const key = this.hostKey(claim);
         let session = this.hosts.get(key);
         if (!session) {
             const starting = this.starting.get(key);
             if (starting) {
-                session = await starting;
+                session = await starting.task;
             } else {
                 this.reap();
-                if (this.hosts.size + this.starting.size >= MAX_HOSTS) {
+                const counts = this.poolCounts();
+                if (counts.total >= this.limits.maxHosts) {
                     throw httpError(503, 'Лимит хостов MCP площадки исчерпан. Вернитесь позже.');
+                }
+                if (claim.session) {
+                    if ((counts.projects.get(claim.session.projectId) ?? 0) >= this.limits.maxPerProject) {
+                        throw httpError(503, 'Лимит хостов MCP проекта исчерпан. Закройте лишние каналы и повторите.');
+                    }
+                    if ((counts.devices.get(claim.session.deviceId) ?? 0) >= this.limits.maxPerDevice) {
+                        throw httpError(
+                            503,
+                            'Лимит хостов MCP этого компьютера исчерпан. Закройте лишние каналы и повторите.',
+                        );
+                    }
                 }
                 const task = this.spawn(
                     claim,
                     claim.operationSessionId || claim.researchSessionId ? signal : undefined,
                 ).finally(() => this.starting.delete(key));
-                this.starting.set(key, task);
+                this.starting.set(key, { claim, task });
                 session = await task;
                 this.hosts.set(key, session);
             }
@@ -104,12 +180,17 @@ class McpHostService {
         ) {
             throw httpError(503, 'Комплект хоста конфликтует. Повторите подключение.');
         }
+        // AD-4: cap активных каналов на hostKey — общий child не принимает канал сверх лимита.
+        if (session.listeners >= this.limits.maxChannelsPerHost) {
+            throw httpError(503, 'Лимит каналов на этот MCP исчерпан. Закройте лишние окна и повторите.');
+        }
         session.lastUsed = Date.now();
         session.listeners += 1;
         return session;
     }
 
-    private release(_claim: IHostedMcpClaim, session: IHostSession): void {
+    /** AD-4: освобождение канала (slot cap'а hostKey); сам хост живёт до idle-reap. */
+    release(_claim: IHostedMcpClaim, session: IHostSession): void {
         session.listeners = Math.max(0, session.listeners - 1);
         session.lastUsed = Date.now();
     }
@@ -169,7 +250,7 @@ class McpHostService {
         if (!claim.operationSessionId) return;
         const key = this.hostKey(claim),
             starting = this.starting.get(key);
-        if (starting) await starting.catch(() => undefined);
+        if (starting) await starting.task.catch(() => undefined);
         const session = this.hosts.get(key);
         this.hosts.delete(key);
         if (session) {
@@ -255,7 +336,7 @@ class McpHostService {
     /** Shutdown waits for owned startup attempts, then closes every child and its stdio transport. */
     async onModuleDestroy(): Promise<void> {
         clearInterval(this.idleTimer);
-        await Promise.allSettled([...this.starting.values()]);
+        await Promise.allSettled([...this.starting.values()].map((inflight) => inflight.task));
         const sessions = [...this.hosts.values()];
         this.hosts.clear();
         for (const session of sessions) if (session.deadline) clearTimeout(session.deadline);
@@ -309,9 +390,6 @@ class McpHostService {
                 return result;
             });
             const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-            transport.onclose = () => {
-                this.release(claim, session);
-            };
             await server.connect(transport);
             await transport.handleRequest(
                 req as unknown as IncomingMessage,
@@ -336,18 +414,54 @@ class McpHostService {
                     /* Канал уже закрыт. */
                 }
             }
+        } finally {
+            // Stateless-транспорт не вызывает onclose после обычного запроса: канал освобождается по завершении запроса.
+            this.release(claim, session);
         }
     }
 
-    private async authorizeSession(claim: IHostedMcpClaim, signal?: AbortSignal): Promise<void> {
-        if (!validHostedMcpSession(claim.session)) throw httpError(401, 'Соединение MCP нужно установить заново.');
+    /** AD-4: ключ канонической сессии — одна и та же запись кэша для connect-lookup и per-op re-check. */
+    private authzKey(session: IHostedMcpSession, artifactSha256: string): string {
+        return JSON.stringify([
+            session.deviceId,
+            session.projectId,
+            session.assetId,
+            session.version,
+            session.manifest,
+            artifactSha256,
+        ]);
+    }
+
+    /** Ограниченный кэш: при записи чистим протухшее; при переполнении сбрасываем целиком (fail-closed не страдает). */
+    private pruneAuthzCache(now: number): void {
+        if (this.authzCache.size <= AUTHZ_CACHE_MAX_ENTRIES) {
+            for (const [key, at] of this.authzCache) {
+                if (now - at >= this.limits.authzCacheTtlMs) this.authzCache.delete(key);
+            }
+            return;
+        }
+        this.authzCache.clear();
+    }
+
+    /**
+     * AD-4: re-check привязки device↔project через ЕДИНЫЙ кэш (connect-lookup + per-op ListTools/CallTool).
+     * Кэш свежий (≤TTL) — без DB-транзакции в каталоге; lookup error/timeout — 503 fail-closed,
+     * stale-while-error запрещён: протухший кэш не возвращает старый результат.
+     */
+    async authorizeSession(claim: IHostedMcpClaim, signal?: AbortSignal): Promise<void> {
+        const session = claim.session;
+        if (!validHostedMcpSession(session)) throw httpError(401, 'Соединение MCP нужно установить заново.');
+        const key = this.authzKey(session, claim.artifactSha256);
+        const now = Date.now();
+        const cachedAt = this.authzCache.get(key);
+        if (cachedAt !== undefined && now - cachedAt < this.limits.authzCacheTtlMs) return;
         try {
             const response = await fetch(this.catalogUrl.replace(/\/+$/, '') + '/internal/mcp-host/authorize-session', {
                 method: 'POST',
                 redirect: 'error',
                 signal: AbortSignal.any([AbortSignal.timeout(10000), ...(signal ? [signal] : [])]),
                 headers: { 'content-type': 'application/json', 'x-neurocenter-internal': this.internalToken },
-                body: JSON.stringify({ ...claim.session, artifactSha256: claim.artifactSha256 }),
+                body: JSON.stringify({ ...session, artifactSha256: claim.artifactSha256 }),
             });
             if (!response.ok) {
                 await response.body?.cancel();
@@ -357,6 +471,8 @@ class McpHostService {
                 );
             }
             await response.body?.cancel();
+            this.pruneAuthzCache(now);
+            this.authzCache.set(key, now);
         } catch (error) {
             if ((error as { status?: number }).status) throw error;
             throw httpError(503, 'Не удалось подтвердить доступ к MCP.');

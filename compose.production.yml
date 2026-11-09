@@ -273,6 +273,10 @@ services:
     build: {context: ., dockerfile: services/api-gateway/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}", NPM_REGISTRY_AUTH_B64: "${NPM_REGISTRY_AUTH_B64:-}", NEUROCENTER_TLS_DISABLE: "${NEUROCENTER_TLS_DISABLE:-0}", NEUROCENTER_NPM_STRICT_SSL: "${NEUROCENTER_NPM_STRICT_SSL:-true}"}}
     mem_limit: 512m
     cpus: 1
+    # AD-4: child-MCP — недоверенный «одобренный» артефакт: форк-бомба не роняет gateway (pids_limit),
+    # процесс не root (USER в Dockerfile) и без привилегий (cap_drop).
+    pids_limit: 128
+    cap_drop: [ALL]
     environment:
       <<: *runtime
       PORT: 4000

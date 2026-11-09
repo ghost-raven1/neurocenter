@@ -471,3 +471,43 @@ test('productionEnvConstraints с недопустимым именем, зна�
     });
     await assert.rejects(f3.report(), /productionEnvConstraints — ожидается объект/);
 });
+
+test('AD-4: api-gateway hardening — pids_limit + cap_drop в compose и модели, non-root USER в Dockerfile', async (t) => {
+    const f = await fixture(t);
+    const { services, drift } = await f.report();
+    assert.equal(services['api-gateway'].pidsLimit, 128, 'api-gateway обязан держать pids_limit (форк-бомба child-MCP)');
+    assert.ok(
+        Number.isSafeInteger(services['api-gateway'].pidsLimit) && services['api-gateway'].pidsLimit >= 1,
+        'pids_limit обязан быть целым положительным',
+    );
+    assert.deepEqual(
+        services['api-gateway'].capDrop,
+        ['ALL'],
+        'api-gateway обязан работать без привилегий (cap_drop ALL)',
+    );
+    assert.deepEqual(drift, [], 'compose и модель обязаны совпадать по pidsLimit/capDrop');
+
+    const dockerfile = await fs.readFile(path.join(root, 'services/api-gateway/Dockerfile'), 'utf8');
+    const userLines = [...dockerfile.matchAll(/^USER\s+(\S+)\s*$/gm)].map((match) => match[1]);
+    assert.ok(userLines.length >= 1, 'Dockerfile api-gateway обязан завершаться USER (non-root)');
+    const active = userLines[userLines.length - 1];
+    assert.ok(!['root', '0'].includes(active), 'Dockerfile api-gateway не обязан заканчиваться USER root');
+    assert.match(dockerfile, /useradd[^|]*--uid\s+1000\b/, 'non-root пользователь обязан создаваться с явным uid 1000');
+    assert.match(dockerfile, /chown[^|]*\/app/, 'каталог /app обязан передаваться в owner non-root пользователя');
+    assert.match(dockerfile, /mkdir -p \/data\/gateway\/mcp-host/, 'корень кэша комплектов обязан быть создан для volume');
+    assert.match(dockerfile, /chown[^|]*\/data\/gateway/, 'volume-каталог кэша обязан быть в owner non-root');
+
+    // Drift ловится: расхождение pidsLimit/capDrop между моделью и compose — нарушение.
+    const mutated = await fixture(t, {
+        mutateModel: (model) => {
+            model.services['api-gateway'].pidsLimit = 999;
+            model.services['api-gateway'].capDrop = null;
+        },
+    });
+    const { drift: mutatedDrift } = await mutated.report();
+    assert.deepEqual(
+        mutatedDrift.map((entry) => entry.field).sort(),
+        ['capDrop', 'pidsLimit'],
+        'дрейф pids_limit/cap_drop обязан фиксироваться по полям',
+    );
+});

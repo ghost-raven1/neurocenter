@@ -36,6 +36,8 @@ test(
         process.env.NEUROCENTER_MCP_HOST_DIR = path.join(f.temporary, 'host-cache');
         // AD-5: сервер выпускает билеты только от независимого секрета хоста (без fallback на internal token).
         process.env.NEUROCENTER_MCP_HOST_SECRET = randomBytes(32).toString('hex');
+        // AD-4: окно отзыва = TTL единого кэша re-check; в тесте окно сужаем (в production ≤60s).
+        process.env.NEUROCENTER_MCP_HOST_AUTHZ_TTL_MS = '150';
         const source = path.join(f.temporary, 'host-source');
         await fs.mkdir(source);
         const code = `const r=require('node:readline').createInterface({input:process.stdin});let calls=0;r.on('line',line=>{const q=JSON.parse(line);if(q.id===undefined)return;const result=q.method==='initialize'?{protocolVersion:q.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'qa-mcp',version:'1'}}:q.method==='tools/list'?{tools:[{name:'qa_read',inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:true,destructiveHint:false}}]}:q.method==='tools/call'?{content:[{type:'text',text:'synthetic call '+(++calls)}]}:{};process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,result})+'\\n');});`;
@@ -107,6 +109,8 @@ test(
             });
             return { status: response.status, data: await response.json() };
         };
+        // AD-4: даём единому кэшу re-check протухнуть (TTL 150 ms), чтобы отзыв гарантированно подействовал.
+        const settle = () => new Promise((resolve) => setTimeout(resolve, 250));
         await t.test('self-signed substitution and foreign project never receive a ticket', async () => {
             const forged = buildPackage({ ...pkg.plugin, version: 2 }, [], '', pkg.config);
             assert.equal((await connect(forged)).status, 403);
@@ -172,6 +176,7 @@ test(
         });
         await t.test('project role revocation blocks a previously issued signed ticket', async () => {
             await f.pool.query('DELETE FROM project_members WHERE principal_name=$1', [f.actors.developer.email]);
+            await settle();
             await assert.rejects(client.callTool({ name: 'qa_read', arguments: {} }, undefined, { timeout: 15000 }));
             await f.pool.query(
                 'INSERT INTO project_members(project_id,user_id,principal_name,display_name,role) VALUES($1,$2,$2,$2,$3)',
@@ -186,6 +191,7 @@ test(
         });
         await t.test('repinning the assigned package invalidates the old ticket without executing a tool', async () => {
             await pin(buildPackage({ ...pkg.plugin, version: 2 }, [], '', pkg.config));
+            await settle();
             await assert.rejects(client.callTool({ name: 'qa_read', arguments: {} }, undefined, { timeout: 15000 }));
             await pin();
             assert.match(
@@ -211,6 +217,7 @@ test(
         });
         await t.test('device revocation blocks the existing SDK channel', async () => {
             await f.pool.query('UPDATE bridge_devices SET revoked=true WHERE id=$1', [deviceId]);
+            await settle();
             await assert.rejects(client.listTools(undefined, { timeout: 15000 }));
             assert.equal((await connect()).status, 401);
         });

@@ -56,7 +56,8 @@ export function validHostedMcpSession(value: unknown): value is IHostedMcpSessio
 
 // AD-5: секрет хоста — отдельный trust-domain; fallback на внутренний токен запрещён (без него — отказ).
 const secret = () => process.env.NEUROCENTER_MCP_HOST_SECRET || '';
-export const HOSTED_MCP_TTL_MS = 30 * 86400 * 1000;
+// AD-4: билет живёт 24h; отзыв закрывает единый кэш re-check (≤60s) + re-issue при reconnect.
+export const HOSTED_MCP_TTL_MS = 24 * 3600 * 1000;
 
 export function issueHostedMcpTicket(claim: Omit<IHostedMcpClaim, 'exp'>): string {
     const guard = secret();

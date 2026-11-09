@@ -216,12 +216,18 @@ export async function planInstall(
                     isHostedMcpUrl(previousValue.url) &&
                     [hub(), apiHub()].includes(new URL(previousValue.url).origin);
                 if (previousIsHosted) {
-                    // Билет живёт до истечения: обновление и восстановление не переподключают канал.
-                    value = {
-                        type: 'remote',
-                        enabled: true,
-                        url: new URL(new URL(previousValue.url as string).pathname, apiHub()).href,
-                    };
+                    // AD-4: билет живёт 24h. При reconnect/обновлении/восстановлении мост ре-выпускает
+                    // билет (connect — лёгкий, ре-подпись HMAC) и сам обновляет OpenCode-конфиг.
+                    if (options.hostedMcp) {
+                        const channelPath = await options.hostedMcp(pkg);
+                        value = { type: 'remote', enabled: true, url: new URL(channelPath, apiHub()).href };
+                    } else {
+                        value = {
+                            type: 'remote',
+                            enabled: true,
+                            url: new URL(new URL(previousValue.url as string).pathname, apiHub()).href,
+                        };
+                    }
                 } else if (useHosted) {
                     // Комплекс исполняет площадка: билет выдаётся здесь, локальный процесс не поднимается.
                     const channelPath = await options.hostedMcp!(pkg);

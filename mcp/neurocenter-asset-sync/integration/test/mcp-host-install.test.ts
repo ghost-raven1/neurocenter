@@ -48,6 +48,9 @@ const hubDescriptorSha256 = (raw: string, mode: 'match' | 'mismatch' | 'missing'
     return mode === 'mismatch' ? (digest === 'f'.repeat(64) ? 'e'.repeat(64) : 'f'.repeat(64)) : digest;
 };
 
+/** AD-4: каждый connect выпускает свежий билет — повторный connect обязан дать новый URL канала. */
+const ticketFor = (connect: number): string => (connect === 1 ? TICKET : `${TICKET}-${connect}`);
+
 const startHub = (
     options: { connectStatus?: number; channelStatus?: number; connectDescriptor?: 'match' | 'mismatch' | 'missing' } = {},
 ): Promise<IMockHub> =>
@@ -67,7 +70,7 @@ const startHub = (
                         const descriptorSha256 = hubDescriptorSha256(body, options.connectDescriptor ?? 'match');
                         res.end(
                             JSON.stringify({
-                                path: `/api/mcp-host/m/${TICKET}`,
+                                path: `/api/mcp-host/m/${ticketFor(seen.connect)}`,
                                 ...(descriptorSha256 !== undefined ? { descriptorSha256 } : {}),
                             }),
                         );
@@ -76,7 +79,7 @@ const startHub = (
                     res.end(JSON.stringify({ message: 'refused' }));
                     return;
                 }
-                if (req.method === 'POST' && req.url === `/api/mcp-host/m/${TICKET}`) {
+                if (req.method === 'POST' && req.url?.startsWith('/api/mcp-host/m/')) {
                     seen.channel += 1;
                     const status = options.channelStatus ?? 200;
                     if (status !== 200) {
@@ -201,7 +204,7 @@ describe('Управляемый MCP на хосте площадки', () => {
         expect((await inspectInstallation('test-project', pkg)).status).toBe('synced');
     });
 
-    it('Повторная установка не переподключает живой канал', async () => {
+    it('Повторная установка (reconnect) ре-выпускает билет и обновляет канал (AD-4)', async () => {
         const hub = await startHub();
         servers.push(hub);
         const f = await hostedFixture(`http://127.0.0.1:${hub.port}`);
@@ -210,9 +213,30 @@ describe('Управляемый MCP на хосте площадки', () => {
         verify(pkg);
         await install('test-project', pkg, noOp, noOp);
         await install('test-project', pkg, noOp, noOp);
-        expect(hub.seen.connect).toBe(1);
+        expect(hub.seen.connect).toBe(2);
         const receipt = JSON.parse(await fs.readFile(path.join(f.root, receiptPath(pkg)), 'utf8'));
-        expect(receipt.config.value.url).toBe(`http://127.0.0.1:${hub.port}/api/mcp-host/m/${TICKET}`);
+        expect(receipt.config.value.url).toBe(`http://127.0.0.1:${hub.port}/api/mcp-host/m/${ticketFor(2)}`);
+        const config = JSON.parse(await fs.readFile(path.join(f.root, 'opencode.json'), 'utf8'));
+        expect(config.mcp['neurocenter-hosted-mcp'].url).toBe(
+            `http://127.0.0.1:${hub.port}/api/mcp-host/m/${ticketFor(2)}`,
+        );
+    });
+
+    it('Обновление версии ре-выпускает билет (AD-4)', async () => {
+        const hub = await startHub();
+        servers.push(hub);
+        const f = await hostedFixture(`http://127.0.0.1:${hub.port}`);
+        const { descriptor } = artifactFixture(undefined, runtimeArtifactTarget());
+        const first = pkgFor(descriptor, 1, true);
+        verify(first);
+        await install('test-project', first, noOp, noOp);
+        const next = pkgFor(descriptor, 2, true);
+        verify(next);
+        await install('test-project', next, noOp, noOp);
+        expect(hub.seen.connect).toBe(2);
+        const receipt = JSON.parse(await fs.readFile(path.join(f.root, receiptPath(next)), 'utf8'));
+        expect(receipt.version).toBe(2);
+        expect(receipt.config.value.url).toBe(`http://127.0.0.1:${hub.port}/api/mcp-host/m/${ticketFor(2)}`);
     });
 
     it('Локальная установка мигрирует на хост при появлении флага', async () => {
@@ -289,7 +313,7 @@ describe('Управляемый MCP на хосте площадки', () => {
         await expect(fs.stat(path.join(f.root, receiptPath(pkg)))).rejects.toThrow();
     });
 
-    it('Восстановление повторяет сохранённый канал, не запрашивая новый билет', async () => {
+    it('Восстановление ре-выпускает билет и обновляет конфигурацию (AD-4)', async () => {
         const hub = await startHub();
         servers.push(hub);
         const f = await hostedFixture(`http://127.0.0.1:${hub.port}`);
@@ -303,12 +327,13 @@ describe('Управляемый MCP на хосте площадки', () => {
             repair: true,
             hostedMcp: async () => {
                 requested += 1;
-                return '/api/mcp-host/m/other';
+                return '/api/mcp-host/m/reissued';
             },
         });
-        expect(requested).toBe(0);
+        expect(requested).toBe(1);
         const text = await second.read('opencode.json');
-        expect(text).toContain(`http://127.0.0.1:${hub.port}/api/mcp-host/m/${TICKET}`);
+        expect(text).toContain(`http://127.0.0.1:${hub.port}/api/mcp-host/m/reissued`);
+        expect(text).not.toContain(`/api/mcp-host/m/${TICKET}"`);
     });
 
     it('Билет с чужого хоста и битый канал отклоняются распознавателем', () => {

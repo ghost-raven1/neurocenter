@@ -49,6 +49,14 @@ RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; the
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 RUN rm -rf /openapi /scripts/openapi
 
+# AD-4: non-root — child-MCP («одобренный» недоверенный артефакт) не работает root.
+# Каталог кэша комплектов заранее в owner: первый mount именованного volume наследует права.
+RUN groupadd --gid 1000 neurocenter \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin neurocenter \
+    && mkdir -p /data/gateway/mcp-host \
+    && chown -R neurocenter:neurocenter /app /data/gateway
+USER neurocenter
+
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=api-gateway
 
