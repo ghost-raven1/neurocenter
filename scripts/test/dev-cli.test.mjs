@@ -63,6 +63,7 @@ async function fixture(t, mode = 'ready') {
         'workspace/dev-service-health.mjs',
         'workspace/dev-listener-origin.mjs',
         'workspace/check-plan.mjs',
+        'workspace/isolated-build-source.mjs',
         'workspace/node24-cli.mjs',
         'dev-mcp/safe-file.mjs',
         'dev-mcp/constants.mjs',

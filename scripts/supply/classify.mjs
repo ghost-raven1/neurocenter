@@ -10,7 +10,7 @@
 //   pending     — нет нигде, актуальна (resolved → file: supply/vendor, статус pending)
 import fs from 'node:fs';
 import path from 'node:path';
-import { LOCKFILES, root, scanLockfilePairs, TRUSTED_REGISTRY } from './registry.mjs';
+import { LOCKFILES, root } from './registry.mjs';
 
 const snapshot = JSON.parse(fs.readFileSync(path.join(root, 'scripts/supply/registry-availability.json'), 'utf8'));
 

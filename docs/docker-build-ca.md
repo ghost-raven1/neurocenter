@@ -23,6 +23,8 @@ node scripts/docker-build.mjs compose build
 node scripts/production/setup.mjs build --directory /srv/neurocenter/config
 ```
 
+Production-сборка — fail-closed и не зависит от флага проекта: проверка TLS strict, чистое git-дерево, метка релиза из production-`.env`. Перед сборкой mtime build-контекста нормализуется к timestamp commit (SOURCE_DATE_EPOCH, `normalizeBuildContext`) — слои зависят только от исходников и закреплённых базовых образов, а результат записывается как проверенный release-манифест `neurocenter-release-v1` ([подробно](production-setup.md)).
+
 Путь может содержать пробелы; в shell заключите значение в кавычки. Если отдельная переменная не задана, используется явно установленный `NODE_EXTRA_CA_CERTS`. Поддерживаются PEM-пакеты до 1 МиБ/256 CA. Ссылки, файлы с приватными ключами, посторонним текстом и сертификатами без признака CA отклоняются до Docker.
 
 Если корпоративный CA уже включён в обычный системный PEM-пакет Linux, можно указать существующий `/etc/ssl/certs/ca-certificates.crt`: все сертификаты в нём должны быть CA. Менять глобальные настройки Node/npm на компьютере не требуется.

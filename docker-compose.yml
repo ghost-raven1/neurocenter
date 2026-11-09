@@ -1,3 +1,7 @@
+# Состав осознанный: dev-стек — 9 сервисов (model-runtime, frontend, oauth2-bridge, api-gateway,
+# catalog-service, feature-flags-service, skills-service, postgres, rag-sync-service).
+# Production (compose.production.yml) — те же 9 + capacity-collector, database-init (one-shot),
+# bootstrap-admin (one-shot): production-сервисов, отсутствующих в dev, нет.
 services:
   # Runtime starts empty; model installation uses imported asset supply.
   model-runtime:

@@ -520,8 +520,10 @@ async function backupOperation(
                         // Ошибка возврата приложений не должна замаскировать причину сбоя бэкапа.
                         if (backupError) {
                             backupError.message += '\nНе удалось вернуть приложения в работу: ' + error.message;
+                            // eslint-disable-next-line no-unsafe-finally -- Restore failure must not mask the backup error.
                             throw backupError;
                         }
+                        // eslint-disable-next-line no-unsafe-finally -- Restore failure must not mask the backup error.
                         throw error;
                     }
                 }
