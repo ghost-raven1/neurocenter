@@ -46,6 +46,7 @@ risk: high
 - Open question: Q1 — состав пилота (какие проекты/команда, реальные данные, сколько людей и агентов); owner: пользователь; gate до старта пилота.
 - Open question: Q3 — инструмент измерения удобства: 5-pt опрос + лог тупиков. [ASSUMPTION]
 - Open question: Q7 — baseline-цифры Success Metrics фиксируются при старте пилота. [ASSUMPTION]
+- Decision (Sofia/PO, 2026-11-09): UI-polish + UX-спека — ПЕРВЫЙ entry epic-pilot (до приёмки, при breakdown волны 2). Обоснование: приёмочные метрики пилота = UX-метрики (PRD NFR-1 «Простота»: completion-rate, число шагов ядра; NFR-3 «Нет тупиковых сценариев»: тупики = 0 незакрытых) — GO с неполированным UI по контракту невозможен. В entry: UX-спека (DESIGN.md + EXPERIENCE.md, bmad-ux), аудит user paths (error/empty-states), Playwright-e2e критических путей, фикс-лист из walkthrough'а dev-стека (факты собираются с 2026-11-09, dev-стек эпика 1 гейт (б)). Gap-фикс: в 9 эпиках не было явной записи про UI-polish.
 - Decision (пользователь, 2026-11-06): epic-identity (Blitz IdP) перенесён в конец очереди сборки (после пилота) — пилот идёт на локальной версии. Открытый вопрос: локальный auth-режим пилота — поддержанная конфигурация, не dev-обход (AD-OP-5, entry 1.4); если требует отдельной работы до пилота — выносится в микро-эпик (решение с пользователем).
 - Waits on epic-dr because: P0-S3/MNT/UPD и RPO/RTO.
 - Waits on epic-res-obs because: P0-RES.
