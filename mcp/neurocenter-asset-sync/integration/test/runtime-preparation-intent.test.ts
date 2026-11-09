@@ -20,6 +20,7 @@ import { runtimeArtifactTarget } from '../../src/features/runtime-artifacts/mode
 import { resolvePreparedRuntimeArtifact } from '../../src/features/runtime-artifacts/cache.js';
 import { prepareJobRuntimeArtifacts } from '../../src/bridge/job-runtime-artifacts.js';
 import { RuntimeArtifactCapacityError } from '../../src/features/runtime-artifacts/capacity-error.js';
+import { RuntimeArtifactIntegrityError } from '../../src/features/runtime-artifacts/integrity-error.js';
 
 const roots: string[] = [];
 async function fixture(origin = 'http://127.0.0.1:5173') {
@@ -244,6 +245,14 @@ describe('Безопасная причина отказа подготовки 
             error: { name: 'RuntimeArtifactCapacityError', code: 'runtime-cache-full', message: secret },
             message: undefined,
         },
+        {
+            name: 'поддельный integrity-объект вместо локального класса',
+            error: Object.assign(new Error(secret), {
+                name: 'RuntimeArtifactIntegrityError',
+                code: 'runtime-artifact-sha-mismatch',
+            }),
+            message: undefined,
+        },
     ])('$name: сохраняет и доставляет только безопасную квитанцию один раз', async (scenario) => {
         const received: Array<{ url: string | undefined; body: unknown }> = [];
         const server = http.createServer((req, res) => {
@@ -288,6 +297,81 @@ describe('Безопасная причина отказа подготовки 
         }
     });
 
+    it('SHA-mismatch: квитанция несёт код целостности с дайджестами, без текста ошибки', async () => {
+        const received: Array<{ url: string | undefined; body: unknown }> = [];
+        const server = http.createServer((req, res) => {
+            void (async () => {
+                const chunks: Buffer[] = [];
+                for await (const chunk of req) chunks.push(Buffer.from(chunk));
+                received.push({ url: req.url, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) });
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end('{"ok":true}');
+            })().catch(() => {
+                res.writeHead(400);
+                res.end();
+            });
+        });
+        await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+        try {
+            const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+                f = await fixture(origin);
+            vi.stubEnv('NEUROCENTER_API_URL', origin);
+            const error = new RuntimeArtifactIntegrityError(
+                'runtime-artifact-sha-mismatch',
+                'b'.repeat(64),
+                'c'.repeat(64),
+                secret,
+            );
+            await expect(
+                withRuntimePreparationIntent(f.completion, async () => {
+                    throw error;
+                }),
+            ).rejects.toBe(error);
+            const expected = {
+                ...f.completion,
+                message:
+                    'Готовый комплект не совпал с одобренной контрольной суммой. Установка не выполнена; файлы проекта не изменены.',
+                result: {
+                    ...f.completion.result,
+                    artifactIntegrity: { expected: 'b'.repeat(64), computed: 'c'.repeat(64) },
+                },
+            };
+            expect(await pendingCompletions()).toEqual([expected]);
+            await expect(fs.access(f.file)).rejects.toMatchObject({ code: 'ENOENT' });
+            await recoverRuntimePreparations();
+            await deliverCompletions();
+            await deliverCompletions();
+            expect(received).toEqual([{ url: `/api/device-channel/jobs/${f.job.id}/complete`, body: expected }]);
+            expect(JSON.stringify(received)).not.toContain(secret);
+            expect(await pendingCompletions()).toEqual([]);
+        } finally {
+            server.closeAllConnections();
+            await new Promise<void>((resolve) => server.close(() => resolve()));
+        }
+    });
+    it('SHA-mismatch в repair (apply-local-change): серверная сверка не получает код', async () => {
+        const f = await fixture(),
+            changePlanId = randomUUID();
+        const completion = runtimePreparationCompletion(
+            {
+                ...f.job,
+                kind: 'apply-local-change',
+                payload: { ...f.job.payload, changePlanId, expectedChangeDigest: 'b'.repeat(64) },
+            },
+            f.deviceId,
+        );
+        const error = new RuntimeArtifactIntegrityError('runtime-artifact-sha-mismatch', 'b'.repeat(64), 'c'.repeat(64), secret);
+        await expect(
+            withRuntimePreparationIntent(completion, async () => {
+                throw error;
+            }),
+        ).rejects.toBe(error);
+        // saveCompletion схлопывает changePlan-квитанцию до разрешённых полей: код остаётся локальным.
+        expect(await pendingCompletions()).toEqual([
+            { ...completion, message: 'Локальное действие не выполнено; предыдущее состояние сохранено.' },
+        ]);
+        await expect(fs.access(f.file)).rejects.toMatchObject({ code: 'ENOENT' });
+    });
     it('Repair сохраняет прежнюю нормализацию сообщения и точную идентичность changePlan', async () => {
         const f = await fixture(),
             changePlanId = randomUUID();

@@ -12,6 +12,7 @@ import {
 import { canonicalV4, verify, type IPackage } from '../../src/bridge/package.js';
 import { hash, stateDir } from '../../src/bridge/state.js';
 import { install } from '../../src/bridge/installer.js';
+import { RuntimeArtifactIntegrityError } from '../../src/features/runtime-artifacts/integrity-error.js';
 import { inspectInstallation } from '../../src/bridge/installation-inspection.js';
 import { workspaceFixture } from './bridge-fixture.js';
 import { receiptPath } from '../../src/bridge/installation-receipt.js';
@@ -111,6 +112,24 @@ describe('Готовые платформенные комплекты без у
             expect(await fs.readdir(path.join(stateDir(), 'runtime-artifacts'))).toEqual([]);
         },
     );
+    it('Bit-flip: SHA-мismatch даёт integrity-код с одобренным и фактическим дайджестом', async () => {
+        await fixture();
+        const { archive, descriptor } = artifactFixture(undefined, runtimeArtifactTarget());
+        const bytes = Buffer.from(archive);
+        bytes[0]! ^= 1;
+        let error: unknown;
+        try {
+            await ensureRuntimeArtifact(pkgFor(descriptor), { download: async () => Readable.from([bytes]) });
+        } catch (cause) {
+            error = cause;
+        }
+        expect(error).toBeInstanceOf(RuntimeArtifactIntegrityError);
+        const integrity = error as RuntimeArtifactIntegrityError;
+        expect(integrity.code).toBe('runtime-artifact-sha-mismatch');
+        expect(integrity.expected).toBe(descriptor.sha256);
+        expect(integrity.computed).not.toBe(descriptor.sha256);
+        expect(await fs.readdir(path.join(stateDir(), 'runtime-artifacts'))).toEqual([]);
+    });
     it.each(['../outside', '/absolute', 'a\\b', 'CON.txt', 'а/../б', 'a:stream', 'a.', 'a\u0001b'])(
         'Запрещает опасный путь %s до публикации кэша',
         async (filename) => {

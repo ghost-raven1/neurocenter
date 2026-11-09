@@ -37,6 +37,7 @@ import { HOSTED_RAG_KIND, assertHostedRagResult } from './hosted-rag-jobs';
 import { validModelScan } from '../../../shared/opencode-model-scan.cjs';
 import { OPENCODE_PROVIDER_JOBS, normalizeProviderReport } from '../../../shared/opencode-providers.cjs';
 import { continueRagInstallationInspection } from './rag-install-inspection';
+import { securityEvent } from '../access/security-events';
 
 export interface IDeviceCompletion {
     lease: string;
@@ -595,6 +596,34 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
                               : job.kind === 'install' && automaticInspection
                                 ? 'OpenCodeRAG установлен. Проверяем файлы; модель и индекс ещё не проверены.'
                                 : input.message);
+        // AD-D5: SHA-mismatch, докладанный клиентом (OQ-3: б), фиксируется атомарно с результатом задания.
+        if (job.kind === 'install' && input.state === 'failed') {
+            const integrity = input.result.artifactIntegrity as Record<string, string> | null | undefined;
+            if (integrity !== undefined) {
+                if (
+                    !integrity ||
+                    typeof integrity !== 'object' ||
+                    Array.isArray(integrity) ||
+                    Object.keys(integrity).sort().join(',') !== 'computed,expected' ||
+                    !/^[a-f0-9]{64}$/.test(String(integrity.expected)) ||
+                    !/^[a-f0-9]{64}$/.test(String(integrity.computed))
+                ) {
+                    throw new BadRequestException('Отчёт о целостности комплекта не соответствует одобренной проверке.');
+                }
+                await securityEvent(client, {
+                    actor: deviceId,
+                    action: 'installation.artifact.integrity',
+                    resourceId: job.id,
+                    before: {
+                        assetId: input.result.assetId,
+                        version: input.result.version,
+                        manifest: input.result.manifest,
+                        expected: integrity.expected,
+                    },
+                    after: { state: 'failed', computed: integrity.computed },
+                });
+            }
+        }
         await client.query(
             'UPDATE bridge_jobs SET state=$2,percent=$3,message=$4,result=$5,updated_at=now() WHERE id=$1',
             [id, input.state, percent, message, input.result],

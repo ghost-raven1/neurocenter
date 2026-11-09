@@ -67,6 +67,27 @@ flowchart LR
 - **Prevents:** partial-write без recover-паттерна; новый store «изобретает» свой способ; получатель артефакта не может проверить целостность
 - **Rule:** четыре канонических паттерна — **все уже в коде, ратифицируются как единственный выбор** для любого нового durable-store: (1) **tmp+rename+fsync** (runtime-artifacts `.`-partial — ратификация); (2) **2-фазные writes + recover-таблица** (snapshot `blob_writes` — ратификация); (3) **lease-токены с recheck** (upload-leases 500ms, bridge job leases — ратификация); (4) **idempotency через unique-индексы + row-lock** (`bridge_job_requests` UNIQUE(email,request_key) + `FOR UPDATE` при enqueue — ратификация; против double-booking). Новый store без зафиксированного паттерна = фэйл. **`forwardRuntimeArtifact` (gateway-стрим): SHA-256 в response-header + client-верификация** (сейчас: стрим по длине 256MiB-чека, верификации у получателя нет — fix; sha256 уже несётся в дескрипторе — стык с AD-2 runtime-trust).
 
+**Ратификация (entry 5.12, main @ 273b9118): таблица «операция → паттерн» — единый источник.**
+
+| Операция | Паттерн | Реализация (file:line) |
+|---|---|---|
+| Импорт одобренного runtime-архива (каталог) | 1: tmp+link+fsync | `services/catalog-service/src/runtime-artifacts/runtime-artifacts.ts:61-135` — `.`-partial :68, SHA при копировании :74-94, `output.sync()` :98, `fs.link` (не перезаписывает) :105, dirsync :112-122 |
+| Повторное чтение runtime-архива | 1 (+ SHA recheck) | `runtime-artifacts.ts:159-203` — `open()`: SHA-256 файла + inode/mtime-стабильность до стрима (источник достоверен) |
+| Source upload | 1 | `services/catalog-service/src/source-upload/source-upload.files.ts:67-108` — `.partial` :67, `file.sync()` :99, `fs.rename` :105, dirsync :108 |
+| GGUF import | 1 | `services/catalog-service/src/models/gguf-import/gguf-import.files.ts:61-99` — `.partial` :61, `handle.sync()` :91, `fs.rename` :96, dirsync :99 |
+| Backup (pg_dump) | 1 | `services/catalog-service/src/catalog/backup.ts:173-186` — `.partial` :176-177, публикация `link`-без-перезаписи :183-185 |
+| Snapshot blob-writes | 2: 2-фазные + recover | `services/catalog-service/src/snapshots/snapshot-storage.ts:418` — `recoverWrite()`, `project_snapshot_blob_writes` :221-332 |
+| Snapshot GC (blob-удаление) | 2 | `services/catalog-service/src/snapshots/snapshot-gc.ts:7-150` — 2-фазный `DELETING` + security event :140 |
+| Bridge job lease | 3: lease-токен + recheck | `services/catalog-service/src/devices/device-jobs.ts:638-641` — выдача lease + `lease_until` 3 min; `:782` — recheck `lease + lease_until>now()` в каждом authorize |
+| GGUF runtime (Ollama) | 3 | `services/catalog-service/src/models/gguf-runtime/gguf-runtime.service.ts:208-214` — `pg_try_advisory_lock` на dedicated lease-соединении; `:196-206` — recheck/abort при потере аренды; unlock :306-314 |
+| Upload lease (recheck при копировании) | 3 | `services/catalog-service/src/source-upload/source-upload.files.ts:83` — digest-recheck каждые 500 ms |
+| Gateway artifact stream (lease-перехват) | 3 | `services/api-gateway/src/proxy/runtime-artifact-stream.ts:27` — `x-neurocenter-job-lease` форвардится каталогу; gateway не хранит состояние задания |
+| Device job request (idempotency) | 4: unique + row-lock | `services/catalog-service/src/devices/device-job-requests.ts:23-41` — `findDeviceJobRequest` (сверка receipt); `:47-61` — `saveDeviceJobRequest`, UNIQUE(email,request_key) + `ON CONFLICT DO NOTHING` :55 |
+
+**SHA-фикс `forwardRuntimeArtifact` (entry 5.12, решение OQ-3 = б — client-верификация):** gateway-стрим не буферизуется и **SHA не считает** — SHA известна клиенту из одобренного дескриптора/URL `:sha256` (`device.controller.ts:236-254` валидирует `/^[a-f0-9]{64}$/`), поэтому «SHA-256 в response-header» трактуется как «SHA доступна клиенту + клиент верифицирует»: (1) клиент считает SHA-256 принятого потока и сравнивает с одобренным до публикации — `mcp/neurocenter-asset-sync/src/features/runtime-artifacts/cache.ts:470-501` (mismatch → `RuntimeArtifactIntegrityError`, файл не активируется); (2) gateway сохраняет length-чеки (256MiB-бюджет route-policy, `received>length` — `runtime-artifact-stream.ts:38,52`) и `content-length` (протокольный инвариант клиентского budget-check, `runtime-artifact-download.ts:73`) — trailer не используется (требует chunked без content-length = смена device-протокола); (3) OQ-4: device докладывает mismatch в квитанции подготовки (`runtime-preparation-intent.ts` — `artifactIntegrity{expected,computed}`, код `runtime-artifact-sha-mismatch`), catalog атомарно пишет `security_events` (action `installation.artifact.integrity`) в транзакции завершения задания (`device-completion.ts`); повторный ACK — без повторного события; (4) backward-compat (OQ-2): старым клиентам ничего не требуется — сервер не добавил обязательных элементов, верификация — опция нового клиента на переходный период.
+
+**Инвариант (OQ-5 = review-чеклист, не grep):** новый durable-store (любая запись в shared volume) принимается на review только если зафиксированы: (1) соответствие операции одному из 4 паттернов таблицы выше — иначе фэйл; (2) file:line конкретного механизма (tmp/recover/lease/unique); (3) тест crash/recovery-пути (SIGKILL / обрыв / повторный ACK).
+
 ## Known Defects (вне AD — фиксируются для реализации)
 
 - **`projects.quota` декларативна** — ноль enforcement (fix AD-D4).
@@ -74,7 +95,6 @@ flowchart LR
 - **Project deletion = только FK-cascade по БД** (project-deletion.ts) — fix AD-D3 (каскад с receipt).
 - **`security_events` двойной DDL + общий миграционный лок** — fix AD-D1.
 - **Backup lock file — ручное освобождение после краха** — fix AD-D3 (TTL/heartbeat).
-- **`forwardRuntimeArtifact` без SHA-верификации у получателя** — fix AD-D5.
 - **Ghost DB `skills` в dev** — fix AD-D1 (удаление).
 - **`bridge_devices.report->bindings` — client-reported JSONB** — устройство само заявляет bindings; при компрометации токена может заявить чужие. Mitigation = trust-модель (token = owner-зона bridge — AD-4 runtime-trust); аудит device.bind/revoke (AD-O7).
 

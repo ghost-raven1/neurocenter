@@ -7,6 +7,7 @@ import { readState, stateDir, type ICredentials } from './state.js';
 import { sortedRefs, type IInstallSet } from './install-set.js';
 import type { IPackage } from './package.js';
 import { RuntimeArtifactCapacityError } from '../features/runtime-artifacts/capacity-error.js';
+import { RuntimeArtifactIntegrityError } from '../features/runtime-artifacts/integrity-error.js';
 
 interface IIntent {
     schemaVersion: 1;
@@ -68,8 +69,17 @@ function validate(item: IIntent): void {
                     'unchanged',
                     'changePlanId',
                     'digest',
+                    'artifactIntegrity',
                 ].includes(key),
         ) ||
+        // AD-D5: код SHA-mismatch для серверного security event; только пара одобренных дайджестов.
+        (r.artifactIntegrity !== undefined &&
+            (!r.artifactIntegrity ||
+                typeof r.artifactIntegrity !== 'object' ||
+                Array.isArray(r.artifactIntegrity) ||
+                Object.keys(r.artifactIntegrity).sort().join(',') !== 'computed,expected' ||
+                !hash.test(String((r.artifactIntegrity as { expected?: unknown }).expected)) ||
+                !hash.test(String((r.artifactIntegrity as { computed?: unknown }).computed)))) ||
         !text(r.projectId) ||
         !text(r.assetId) ||
         !Number.isSafeInteger(r.version) ||
@@ -162,7 +172,8 @@ export async function withRuntimePreparationIntent(
     try {
         await prepare();
     } catch (error) {
-        let message = completion.message;
+        let message = completion.message,
+            result = completion.result;
         // Public receipts explain only known local capacity codes, never the original error text.
         if (error instanceof RuntimeArtifactCapacityError) {
             if (error.code === 'runtime-cache-full')
@@ -171,8 +182,16 @@ export async function withRuntimePreparationIntent(
             else if (error.code === 'disk-full')
                 message =
                     'На диске недостаточно свободного места для готового комплекта. Освободите место и повторите действие. Файлы проекта не изменены.';
+        } else if (error instanceof RuntimeArtifactIntegrityError) {
+            // AD-D5: квитанция несёт код целостности (OQ-4: device докладывает, catalog фиксирует event).
+            message =
+                'Готовый комплект не совпал с одобренной контрольной суммой. Установка не выполнена; файлы проекта не изменены.';
+            result = {
+                ...completion.result,
+                artifactIntegrity: { expected: error.expected, computed: error.computed },
+            };
         }
-        await saveCompletion({ ...completion, message });
+        await saveCompletion({ ...completion, message, result });
         await remove(file);
         throw error;
     }

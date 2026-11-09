@@ -20,6 +20,7 @@ import {
     type RuntimeArtifactEntry,
 } from './model.js';
 import { RuntimeArtifactCapacityError } from './capacity-error.js';
+import { RuntimeArtifactIntegrityError } from './integrity-error.js';
 
 export interface IRuntimeArtifactResolution {
     target: string;
@@ -487,8 +488,18 @@ export async function ensureRuntimeArtifact(
                     },
                 }),
             );
-            if (bytes !== artifact.compressedBytes || digest.digest('hex') !== artifact.sha256) {
+            if (bytes !== artifact.compressedBytes) {
                 throw new Error('Архив повреждён или загрузка прервана. Прежняя установка сохранена.');
+            }
+            // AD-D5: client-верификация SHA-256 принятого потока против одобренного дескриптора (OQ-3: б).
+            const computed = digest.digest('hex');
+            if (computed !== artifact.sha256) {
+                throw new RuntimeArtifactIntegrityError(
+                    'runtime-artifact-sha-mismatch',
+                    artifact.sha256,
+                    computed,
+                    'Готовый комплект не прошёл проверку контрольной суммы. Прежняя установка сохранена.',
+                );
             }
             await output.sync();
         } finally {
