@@ -11,6 +11,7 @@ import { OperationRepository } from '../operations/operation-repository';
 import type { IOperationCreate, IOperationReadScope, IOperationStatePatch } from '../operations/operation.interfaces';
 import { validateProjectSettings } from './project-validation';
 import { normalizeProjectQuota } from './project-quota';
+import { readProjectQuotaUsage } from '../project-quota-usage/quota-usage-core';
 import { ProjectSettingsRepository, type IProjectSettingsPatch } from './project-settings-repository';
 import { deleteProjectWithAudit } from './project-deletion';
 import type { IProjectRow } from './project-row';
@@ -186,7 +187,22 @@ export class CatalogDb {
             [idOrName],
         );
         const row = res.rows[0] as IProjectRow | undefined;
-        return row ? toDetail(row) : null;
+        return row ? this.withQuotaUsage(toDetail(row)) : null;
+    }
+
+    /** Quota-ответ = лимиты из projects.quota + фактический used из персистентного accounting. */
+    private async withQuotaUsage(detail: IProjectDetail): Promise<IProjectDetail> {
+        detail.quota = { ...detail.quota, ...(await this.quotaUsage(detail.id)) };
+        return detail;
+    }
+
+    private async quotaUsage(projectId: string): Promise<Pick<IQuota, 'currentBytesUsed' | 'retentionBytesUsed' | 'stagingBytesUsed'>> {
+        const used = await readProjectQuotaUsage(this.pool, projectId);
+        return {
+            currentBytesUsed: used.current,
+            retentionBytesUsed: used.retention,
+            stagingBytesUsed: used.staging,
+        };
     }
 
     /**
@@ -239,7 +255,7 @@ export class CatalogDb {
         actor = 'system:administration',
     ): Promise<IProjectDetail | null> {
         const saved = await this.projectSettings.update(idOrName, body, actor);
-        return saved ? toDetail(saved) : null;
+        return saved ? this.withQuotaUsage(toDetail(saved)) : null;
     }
 
     /**

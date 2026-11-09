@@ -133,6 +133,8 @@ import { DeviceEmbeddingService } from '../models/device-embedding.service';
 import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
 import { SnapshotCommandsController } from './snapshot-commands.controller';
+import { ProjectQuotaUsageController } from '../project-quota-usage/quota-usage.controller';
+import { ProjectQuotaUsageService } from '../project-quota-usage/quota-usage.service';
 import { SkillDependenciesController } from '../publication/skill-dependencies.controller';
 import { SkillAuditController } from '../publication/skill-audit.controller';
 
@@ -196,6 +198,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         MaintenanceController,
         CatalogController,
         SnapshotCommandsController,
+        ProjectQuotaUsageController,
         SkillDependenciesController,
         SkillAuditController,
         AccessController,
@@ -278,6 +281,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         MaintenanceService,
         RuntimeArtifacts,
         CatalogService,
+        ProjectQuotaUsageService,
         AccessDb,
         ProjectBackupService,
         DeviceStore,

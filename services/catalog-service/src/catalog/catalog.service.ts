@@ -194,6 +194,8 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      *  - логический размер / «текущие данные» (использовано) — данные панели
      *    проекта (`.opencode`: rag-индекс, скиллы, плагины, MCP-конфиг, по fs_root_path);
      *  - «резервная копия» (использовано) — оценка размера develop-индекса в PG.
+     * Поля quota.*.BytesUsed — персистентный accounting (project_quota_usage),
+     * живые замеры не подменяют его: model is honest (AD-D4).
      *
      * @param {string} idOrName - id или имя проекта.
      * @returns {Promise<IProjectDetail>}
@@ -206,8 +208,6 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
         }
         // Internal identity/ACL reads do not depend on optional RAG or filesystem measurements.
         if (options.includeLiveSizes !== false) await this.applyLiveSizes(found);
-        found.quota.currentBytesUsed = found.logicalBytes;
-        found.quota.retentionBytesUsed = found.retainedBytes;
         return found;
     }
 

@@ -12,6 +12,7 @@ import { readIndexManifest, requireUsableVectors, sealIndex } from './rag-index-
 import { buildUpsert, type IUpsertRow } from './rag-rows';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
 import { mapRagQuotaError } from './quota/rag-quota';
+import { deliverRagQuotaUsage } from './quota/project-quota-usage';
 
 export interface IRagGeneration {
     id: string;
@@ -118,6 +119,34 @@ export async function generationSourceHash(
     return { hash: hash.digest('hex'), rows: count, bytes };
 }
 
+/**
+ * Точная сумма `neurocenter_rag_row_bytes(c)` по всем строкам поколения
+ * (метод измерения совпадает с триггером `rag_storage_budget`).
+ */
+export async function generationRowBytes(db: TQueryable, project: string, generation: string): Promise<bigint> {
+    const result = await db.query(
+        `SELECT coalesce(sum(neurocenter_rag_row_bytes(c)),0)::bigint AS b
+         FROM rag_chunks c WHERE c.project_key=$1 AND c.generation_id=$2`,
+        [project, generation],
+    );
+    return BigInt(result.rows[0]?.b ?? 0);
+}
+
+/** Точная сумма `neurocenter_rag_row_bytes(c)` по строкам батча (по id). */
+export async function batchRowBytes(
+    db: TQueryable,
+    project: string,
+    generation: string,
+    rows: readonly IUpsertRow[],
+): Promise<bigint> {
+    const result = await db.query(
+        `SELECT coalesce(sum(neurocenter_rag_row_bytes(c)),0)::bigint AS b
+         FROM rag_chunks c WHERE c.project_key=$1 AND c.generation_id=$2 AND c.id = ANY($3)`,
+        [project, generation, rows.map((row) => row.id)],
+    );
+    return BigInt(result.rows[0]?.b ?? 0);
+}
+
 /** Кандидаты содержат замороженные тексты. Единственный active pointer принадлежит каталогу. */
 export class RagGenerations {
     constructor(private readonly pool: Pool) {}
@@ -194,7 +223,13 @@ export class RagGenerations {
                 FROM rag_chunks WHERE project_key=$1 AND generation_id=$2`,
                 [project, sourceGeneration, id],
             );
+            const createdBytes = await generationRowBytes(client, project, id);
             await client.query('COMMIT');
+            if (createdBytes > 0n) {
+                await deliverRagQuotaUsage([
+                    { projectId: project, deltaBytes: Number(createdBytes), requestKey: `gen-create:${id}` },
+                ]);
+            }
             return this.get(project, id);
         } catch (error) {
             await client.query('ROLLBACK').catch(() => undefined);
@@ -254,14 +289,27 @@ export class RagGenerations {
                         await client.query('ROLLBACK');
                         return await this.get(project, id, owner);
                     }
+                    const batchBefore = await batchRowBytes(client, project, id, values);
                     const prepared = values.map((value) => ({ ...value, syncHash: rowFingerprint(value) })),
                         write = buildUpsert(project, id, prepared);
                     await client.query(write.sql, write.params);
+                    const batchAfter = await batchRowBytes(client, project, id, values);
                     await client.query(
                         `UPDATE rag_generations SET processed_rows=processed_rows+$2,updated_at=now() WHERE id=$1`,
                         [id, values.length],
                     );
                     await client.query('COMMIT');
+                    const batchDelta = batchAfter - batchBefore;
+                    if (batchDelta !== 0n) {
+                        const batchKey =
+                            'gen-build:' +
+                            id +
+                            ':' +
+                            createHash('sha256').update(values.map((value) => value.id).join(',')).digest('hex');
+                        await deliverRagQuotaUsage([
+                            { projectId: project, deltaBytes: Number(batchDelta), requestKey: batchKey },
+                        ]);
+                    }
                 } catch (error) {
                     await client.query('ROLLBACK').catch(() => undefined);
                     throw error;
@@ -367,12 +415,18 @@ export class RagGenerations {
                 "UPDATE rag_generations SET state='cancelled',updated_at=now() WHERE id=$1 AND project_key=$2 AND state IN ('building','failed','ready') RETURNING *",
                 [id, project],
             );
+            const cancelledBytes = result.rows.length ? await generationRowBytes(client, project, id) : 0n;
             if (result.rows.length) {
                 await client.query('DELETE FROM rag_chunks WHERE project_key=$1 AND generation_id=$2', [project, id]);
             }
             const index = 'rag_gen_' + createHash('sha256').update(id).digest('hex').slice(0, 24);
             await client.query(`DROP INDEX IF EXISTS ${index}`);
             await client.query('COMMIT');
+            if (cancelledBytes > 0n) {
+                await deliverRagQuotaUsage([
+                    { projectId: project, deltaBytes: -Number(cancelledBytes), requestKey: `gen-cancel:${id}` },
+                ]);
+            }
             return this.get(project, id);
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {

@@ -91,6 +91,8 @@ import { PACKAGE_AGENT_SCHEMA_SQL, PACKAGE_BUILD_RUNTIME_SCHEMA_SQL } from '../p
 import { PACKAGE_AGENT_SCHEMA_ASSERT_SQL } from '../package-build/package-agent.schema-verification';
 import { PACKAGE_BUILD_SLOTS_SCHEMA_SQL } from '../package-build/package-build-slots.schema';
 import { PACKAGE_BUILD_SLOTS_SCHEMA_ASSERT_SQL } from '../package-build/package-build-slots.schema-verification';
+import { PROJECT_QUOTA_USAGE_SCHEMA_SQL } from '../project-quota-usage/project-quota-usage.schema';
+import { PROJECT_QUOTA_USAGE_SCHEMA_ASSERT_SQL } from '../project-quota-usage/project-quota-usage.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
@@ -303,5 +305,10 @@ export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
         version: 52,
         name: 'concurrent-tool-build-run-slots',
         sql: PACKAGE_BUILD_SLOTS_SCHEMA_SQL + '\n' + PACKAGE_BUILD_SLOTS_SCHEMA_ASSERT_SQL,
+    },
+    {
+        version: 53,
+        name: 'project-quota-usage-accounting',
+        sql: PROJECT_QUOTA_USAGE_SCHEMA_SQL + '\n' + PROJECT_QUOTA_USAGE_SCHEMA_ASSERT_SQL,
     },
 ];

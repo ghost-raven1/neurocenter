@@ -95,6 +95,8 @@ import {
     assertPackageAgentSchema,
     PACKAGE_AGENT_CURRENT_SCHEMA_CONTRACT,
 } from '../package-build/package-agent.schema-verification';
+import { PROJECT_QUOTA_USAGE_SCHEMA_CONTRACT } from '../project-quota-usage/project-quota-usage.schema-contract';
+import { assertProjectQuotaUsageSchema } from '../project-quota-usage/project-quota-usage.schema-verification';
 export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...REMOTE_PROVIDER_SCHEMA_CONTRACT,
     ...GGUF_RUNTIME_SCHEMA_CONTRACT,
@@ -130,6 +132,7 @@ export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...MODEL_RATE_LIMITS_SCHEMA_CONTRACT,
     ...CHAT_ACTIVITY_SCHEMA_CONTRACT,
     ...PACKAGE_AGENT_CURRENT_SCHEMA_CONTRACT,
+    ...PROJECT_QUOTA_USAGE_SCHEMA_CONTRACT,
     ...SYSTEM_ROLE_SCHEMA_CONTRACT,
     ...DEVICE_CODEX_SCHEMA_CONTRACT,
     ...PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT,
@@ -173,4 +176,5 @@ export async function assertCurrentCatalogSchema(db: Pick<Pool, 'query'>): Promi
     await assertChatActivitySchema(db);
     await assertPackageAgentSchema(db);
     await assertSystemRoleSchema(db);
+    await assertProjectQuotaUsageSchema(db);
 }

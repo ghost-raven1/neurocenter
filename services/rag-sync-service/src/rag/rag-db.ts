@@ -1,5 +1,5 @@
 import { createPool } from '../database/pool';
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { BadRequestException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import {
     setupRagQuota,
@@ -18,6 +18,7 @@ import {
     type IPlatformQuotaPolicy,
 } from './quota/platform-quota';
 import { PLATFORM_QUOTA_MIGRATION, PLATFORM_QUOTA_CACHE_MIGRATION } from '../database/migration-definitions';
+import { deliverRagQuotaUsage } from './quota/project-quota-usage';
 import { RAG_WRITE_LOCK } from './quota/rag-quota-schema';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
 import { normalizeChunkRow, rowFingerprint } from '../../../shared/rag-index-contract.cjs';
@@ -308,6 +309,8 @@ export class RagDb {
             if (!write.snapshot?.complete) {
                 await invalidateIndexSeal(client, projectKey, generation);
             }
+            const affectedIds = this.affectedDeltaIds(deletes, normalized);
+            const beforeRowBytes = await this.deltaRowBytes(client, projectKey, generation, affectedIds);
 
             if (deletes.length > 0) {
                 const delRes = await client.query(
@@ -324,6 +327,7 @@ export class RagDb {
                 const insRes = await client.query(sql, params);
                 upserted += insRes.rowCount ?? batch.length;
             }
+            const afterRowBytes = await this.deltaRowBytes(client, projectKey, generation, affectedIds);
 
             if (write.snapshot?.complete) {
                 await sealIndex(client, projectKey, generation, write);
@@ -345,6 +349,16 @@ export class RagDb {
                 );
             }
             await client.query('COMMIT');
+            const deltaBytes = afterRowBytes - beforeRowBytes;
+            if (deltaBytes !== 0n) {
+                await deliverRagQuotaUsage([
+                    {
+                        projectId: projectKey,
+                        deltaBytes: Number(deltaBytes),
+                        requestKey: intent ? `intent:${intent.id}` : `initial:${generation}`,
+                    },
+                ]);
+            }
             return result;
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {
@@ -376,6 +390,32 @@ export class RagDb {
                 releaseCapacity();
             }
         }
+    }
+
+    /** Множество row-id, затронутых дельтой (upsert + delete). */
+    private affectedDeltaIds(deletes: string[], rows: IUpsertRow[]): Set<string> {
+        const ids = new Set<string>(deletes);
+        for (const row of rows) ids.add(row.id);
+        return ids;
+    }
+
+    /**
+     * Точная сумма `neurocenter_rag_row_bytes(c)` по затронутым строкам
+     * (метод измерения совпадает с триггером `rag_storage_budget`).
+     */
+    private async deltaRowBytes(
+        client: PoolClient,
+        projectKey: string,
+        generation: string,
+        ids: Set<string>,
+    ): Promise<bigint> {
+        if (ids.size === 0) return 0n;
+        const result = await client.query(
+            `SELECT coalesce(sum(neurocenter_rag_row_bytes(c)),0)::bigint AS b
+             FROM rag_chunks c WHERE c.project_key=$1 AND c.generation_id=$2 AND c.id = ANY($3)`,
+            [projectKey, generation, [...ids]],
+        );
+        return BigInt(result.rows[0]?.b ?? 0);
     }
 
     /**

@@ -32,6 +32,7 @@ import {
 } from './skill-dependency-reservation';
 import { safeSkillDirectoryPath, skillDirectoryState, type ISkillDirectoryChange } from './skill-directory-change';
 import { assertSkillDurability } from './skill-durability';
+import { skillQuotaUsageRecords, type TDeliverSkillQuotaUsage } from './quota-usage';
 
 /** Журнал файла в корне использует компонент `имя.md`, каталоги — своё имя. */
 const skillScope = (skillPath: string): string =>
@@ -49,6 +50,7 @@ export class FsSkillsStorage implements ISkillsStorage {
         baseDir: string,
         private readonly reserveDependencies?: TReserveSkillDependencies,
         private readonly deliverAudit?: TDeliverSkillAudit,
+        private readonly deliverQuota?: TDeliverSkillQuotaUsage,
     ) {
         this.baseDir = path.resolve(baseDir);
         this.auditOutbox = new SkillAuditOutbox(this.baseDir, deliverAudit);
@@ -447,6 +449,15 @@ export class FsSkillsStorage implements ISkillsStorage {
                 (entries) => this.reserveRecoveryVersions(entries),
                 events,
             );
+            if (this.deliverQuota) {
+                const records = skillQuotaUsageRecords(
+                    real.map((item) => ({
+                        entry: item.entry,
+                        metaProjectId: item.change.next?.meta.projectId ?? null,
+                    })),
+                );
+                await this.deliverQuota(records);
+            }
         } finally {
             release();
         }
