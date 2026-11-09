@@ -1,0 +1,170 @@
+# epic: epic-res-obs
+# title: Ресурсы и наблюдаемость (P0-RES)
+# covers: R1, R7, R9, R10, R11
+# baseline_revision: 4097fdc35bd78dbebf44bec1b026b46663a005e2
+# next_id = 16
+
+[[entry]]
+id = 1
+type = "story"
+title = "Hardening: non-root USER во всех 7 app-образах (AD-OP-6)"
+description = "AD-OP-6(1): H3 — root во всех 7 app-контейнерах (ни одного USER в Dockerfile'ах). (1) USER <non-root> в 7 app-Dockerfile (6 Node-сервисов + frontend; nginx: порты 8080/8443 > 1024, master может быть non-root; template без привилегированных портов); (2) writable-пути принадлежат service-user (catalog: /data/projects, /app/backups, /app/runtime-artifacts, /data/models; skills: /app/data/skills; rag-sync: /data/projects до :ro-фикса epic-data entry 4; tmp-каталоги); (3) cap-audit: cap_drop/no-new-privileges уже есть — сверить, что bwrap-упаковка catalog не ломается; (4) внешние образы (ollama, pgvector) вне скоупа — зафиксировано. Проверка: UID ≠ 0 в каждом app-контейнере на живом стеке."
+verify = "docker exec в каждом из 7 app-контейнеров: текущий UID ≠ 0; production-стек стартует и все healthchecks green; корневой сьют — без деградации против baseline."
+covers = ["R11"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Ресурсная таблица: pids_limit + user в модели, инварианты и drift (AD-OP-6)"
+description = "AD-OP-6(2)(3) + AD-OP-1: (1) compose: pids_limit в якорь x-service (baseline; сейчас pids только у 3 из 12 — model 512, capacity 32, ff 128 ратификация) + per-service overrides + database-init/bootstrap-admin получают mem/pids-лимиты (сейчас вообще без лимитов); (2) environment-model.json: поле user (entry 1) + pidsLimit у всех сервисов + structuralDrift сверяет user/pids (environment-model.mjs); (3) инвариант-тест: каждый long-running сервис — pidsLimit задан, каждый app-сервис — non-root (user в модели), mem_limit задан (postgres 1g ратификация); (4) ресурсная таблица = модель (единый машино-читаемый источник) + проецирующая секция в docs. OQ: baseline pids в якоре (рекомендация 256), значения pids для postgres/catalog/skills/rag/bridge/gateway/frontend."
+verify = "x-service anchor несёт pids_limit; database-init/bootstrap-admin имеют mem/pids; environment-model.json: user + pidsLimit у всех 12 сервисов; drift-тест зелёный (user/pids сверяются); инвариант: 0 сервисов root, 0 long-running без pidsLimit."
+covers = ["R11", "R10"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Quota enforcement: enforcement-точки projects.quota (AD-D4)"
+description = "AD-D4: любое quota-поле в API/DB обязано иметь enforcement-точку (файл) и тест; квотная модель (persistent used-bytes accounting + schema + API) — epic-data entry 1, здесь — только enforcement (сравнение с лимитом до записи). Enforcement-точки: (1) RAG-пакетная запись (rag-sync): до записи used+оценка ≤ retentionBytesLimit (оценка — паттерн max(16MiB, 6×JSON) capacity.cjs); (2) сохранение/создание skill (skills-service): до записи used+оценка ≤ currentBytesLimit; (3) staging-измерение (in-flight uploads/импорты) — список точек = OQ; artifact-cache — enforcement = eviction (epic-data entry 2), здесь только boundary-тест. Отказ: явное сообщение (паттерн CapacityError 507/503), quota-rejection-метрика, safe-лог; limit=0 ⇒ unlimited (enforcement не применяется). Инвариант-тест: 6 полей quota → каждое либо enforcement-точка+тест, либо явно «не enforce'ится» (тогда — удалить из API, AD-D4). after epic-level: epic-data entry 1 (accounting API)."
+verify = "Проект с retentionBytesLimit: RAG-запись, выводящая used+оценка сверх лимита → отказ с явной причиной, данные не повреждены, used не изменился; limit=0 → unlimited (запись проходит); skills-аналог для currentBytesLimit; отказ → quota-rejection-метрика + safe-лог; инвариант-тест: 6 полей покрыты (точка+тест или явное исключение)."
+covers = ["R11"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Двухуровневые лимиты: enforcement-точки + инварианты (AD-1/9/12)"
+description = "AD-1: модель = ceiling (константа, единый источник — epic 2 entry 2) + policy (DB runtime_limit_settings, default ≤ policy ≤ ceiling). Здесь: (1) таблица «секция → enforcement-точка (файл) + тест» как единый источник (модуль) — текущие: textKnowledge (chat-project-context.ts:52), ggufImport (gguf-import.service.ts:450); (2) completeness-тест: каждая секция RUNTIME_LIMIT_CEILINGS (data-driven — новые секции epic 2/5 подхватываются автоматически, без хардкода списка) имеет enforcement-точку + тест; секция без точки = фэйл; (3) инвариант ceiling > default: вырожденные секции (textKnowledge.fileBytes ceiling=default=128KiB, GGUF 8/32 TiB при default 64/256 GiB — Deferred по AD-1) — задокументированный allowlist, НОВОЕ вырождение = фэйл; (4) env-значение политики > default = fail-fast на старте (через config-модуль entry 5). AD-12: ceiling-значения только из re-export'а единого источника (локальных ceiling-литералов в сервисных бинариях = фэйл)."
+verify = "Таблица секций покрывает 100% RUNTIME_LIMIT_CEILINGS (invariant-тест); completeness: новая секция без enforcement-точки = фэйл сьюта; вырожденная (ceiling=default) новая секция = фэйл, allowlisted Deferred — флаг; env > default → fail-fast на старте; grep: ceiling-литералы только в shared-ре-экспорте."
+covers = ["R11"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Config-модуль: числовые env fail-fast + owner env-лимитов (AD-9)"
+description = "AD-9: каждый сервис читает окружение только через свой config-модуль (typed schema имён, единая валидация, fail-fast с агрегированным отчётом на старте); ВСЕ числовые env — validated positive safe-integer на старте (NaN/invalid = fail-fast) — реальная дыра: NEUROCENTER_MCP_HOST_MAX=abc → Math.max(1, NaN) → неограниченный пул (host.ts:40); единственный owner валидации env-лимитов = config-модуль сервиса (shared-модули лимитов env не читают сами: configuredGgufImportPolicy() вызывается с явным env, gguf-import-policy.cjs:39; сейчас runtime-limits.service.ts:50 вызывает с дефолтным process.env); значения секретов в отчёте/логах всегда маскированы (названия — да, значения — нет). Числовые env: BACKUP_MAX_TOTAL_BYTES/BACKUP_MAX_FILE_BYTES/BACKUP_MIN_FREE_BYTES, RAG_DEFAULT_QUOTA_BYTES/RAG_MAX_QUOTA_BYTES, MODEL_CHAT_CONTEXT_WINDOW_TOKENS, NEUROCENTER_MCP_HOST_MAX, PORT'ы. Скоуп: 6 app-сервисов + setup-CLI."
+verify = "MCP_HOST_MAX=abc → сервис не стартует (fail-fast с именем переменной); каждый числовой env из списка валидируется config-модулем (тест на сервис); NaN-дыра host.ts закрыта (regression-тест); configuredGgufImportPolicy вызывается только с явным env (grep); значения секретов в отчёте старта отсутствуют (тест)."
+covers = ["R11", "R7"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Единая лог-схема: shared/logging.cjs + correlation id (AD-O1/O2)"
+description = "AD-O1: новый shared-модуль logging.cjs: JSON lines в stdout, схема ts (RFC3339 UTC) / level / service / requestId / msg / err (структурированная: name, code, cause.code — AD-O8). Запрещены raw console.log/error и прямой Nest Logger в src сервисов — drift-тест (поиск console.(log|error) в src сервисов = фэйл; CLI/setup-скрипты — за скобками, профиль не production-рантайм). AD-O2: requestId ОБЯЗАТЕЛЕН в каждом сервис-логе и во всех внутренних вызовах: заголовок X-Request-ID (nginx $request_id уже шлёт — ратификация, template :38-70) + middleware в 6 сервисах (заголовок отсутствует → генерация UUID4); прокидывается во ВСЕ внутренние HTTP-вызовы (catalog↔rag/skills/gateway, outbox-доставки); фоновые работы (backup-тик, queue, job-leases) — jobId в том же поле requestId. Тест: лог-строка сервиса без requestId = фэйл. Retention: поднять max-file json-file для gateway/catalog (сейчас 10m×3 ≈ 30 МБ — OQ: 50m×10); долговременная видимость — не через retention (AD-O5)."
+verify = "shared/logging.cjs (+.d.cts, PREPARED_SOURCE_INPUTS) существует: все 6 сервисов пишут JSON lines со схемой; лог-строка без requestId = фэйл-тест; X-Request-ID из nginx сквозит nginx→gateway→сервис (e2e-тест); внутренний вызов без заголовка → UUID4 (тест); drift: console.(log|error) в src сервисов = 0 (allowlist CLI)."
+covers = ["R10", "R7"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Redaction: allowlist error-полей + nginx m/:ticket (AD-O8)"
+description = "AD-O8: в логи попадают только allowlist-поля ошибки: name, code, cause.code; passthrough error.message в логи запрещён (несёт URL/секреты) — фиксы: auth-guard.service.ts:112, proxy.service.ts:413-415 + инвентарь ВСЕХ console.error(error.message)/Logger(..., error.message) в src (drift-тест: err.message в логах = фэйл). Диагностика — через requestId → error-store/полный стек в safe-представлении (entry 10). Nginx: маскирование /api/mcp-host/m/:ticket в access-лог: map с regex → $masked_uri в log_format (owner механизма = этот AD; инвариант AD-5 runtime-trust ссылается, не дублирует; сегодня $uri пишется в каждый запрос — ticket-билет в json-file логах). Клиенту — только фиксированные сообщения (AD-19, не дублируется)."
+verify = "Grep-инвентарь: 0 passthrough error.message в src сервисов (drift-тест); access-лог: /api/mcp-host/m/<ticket> → маска (тест на живом nginx), другие пути не тронуты; auth-guard/proxy ошибки логятся только allowlist-полями (regression-тест)."
+covers = ["R10"]
+after = [6]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Метрики: канонический набор + auth-failure + machine-metrics + completeness (AD-O3/18)"
+description = "AD-O3: механизм ручного renderer (observability.cjs, Bearer metrics_token, timingSafeEqual, fail-closed) — ратификация. Канонический набор на каждый из 6 app-сервисов: http (requests_total фиксированные groups + duration-histogram + in-flight — ратификация), process (uptime/RSS/heap/CPU — ратификация), capacity (только CAPACITY_REQUIRED=true: catalog, skills, rag-sync — ратификация), work-queue (где есть очередь — rag), auth-failure counter — НОВЫЙ (leading-индикатор: рост отказов auth до 5xx — gateway + oauth2-bridge). Фикс known-defect: feature-flags-service:4400 в scrape targets prometheus.yml. Completeness-тест: явный список 6 app-сервисов = scrape targets + канонический набор; новый сервис без строк в targets и без метрик = фэйл; знаменатель НЕ включает capacity-collector (snapshot.json), frontend/nginx, postgres, prometheus/alertmanager. AD-18: machine-metrics (RAM/CPU хоста) в capacity snapshot: collector читает /proc/meminfo+/proc/stat (не маскируются docker'ом) → поле machine в snapshot + validateSnapshot compat (старые снапшоты валидны, новые обязаны machine) + renderCapacityMetrics (gauges). Метки — только фиксированные groups (ратификация)."
+verify = "prometheus.yml: 6/6 сервисов в targets (ff:4400 исправлен); completeness-тест зелёный, новый сервис без targets = фэйл; /metrics каждого сервиса отдаёт канонический набор (тест по сервису); auth-failure counter растёт при отказах auth (тест); snapshot: machine {ram, cpu} у нового коллектора, 6-ресурсный старый снапшот проходит validateSnapshot (compat); capacity-метрики с machine-gauges."
+covers = ["R10"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Health: /ready — единственная семантика, /health удалён, бюджеты-константы (AD-O4)"
+description = "AD-O4: одна семантика: healthcheck compose и внешний мониторинг = /ready (503 + checks — ратификация). (1) /health УДАЛЯЕТСЯ из 6 сервисов (app.controller.ts) и nginx (template :27 static 200) — liveness = «контейнер жив» (docker restart policy), endpoint информации не несёт; (2) бюджеты checkReadiness 2500 мс / httpReady 2000 мс / limit тела 16 КБ — именованные константы в shared/readiness.cjs (один источник) + invariant-тест: бюджеты не расходятся по сервисам (хардкод бюджетов в src сервисов = фэйл); (3) /ready/dependencies (gateway app.controller.ts:15-32, 5 upstream'ов): потребители — stack-watchdog (AD-OP-8, эпик 4) и admin UI — решение: оставить + задокументировать consumers; если к концу эпика 4 не подключён — удалить (OQ); (4) задокументировать: capacity-метрики не рендерятся у gateway/bridge/ff (CAPACITY_REQUIRED=false — осознанно)."
+verify = "0 вхождений /health в src сервисов и nginx template (grep); compose healthchecks — только /ready (без изменений, работают); бюджеты — именованные константы shared (один источник, invariant-тест: хардкод в сервисах = фэйл); /ready/dependencies: решения зафиксировано (документ consumers); capability-документ: CAPACITY_REQUIRED=false у gateway/bridge/ff."
+covers = ["R10"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Error visibility: crash-политика + PG error-store + API (AD-O5)"
+description = "AD-O5: (1) crash-политика в 6 сервисах (main.ts — сейчас process handlers отсутствуют): uncaughtException/unhandledRejection → structured-лог (AD-O1, level=error, safe-поля) + запись в error-store (best-effort, flush-before-exit) + контроллируемый exit (контейнер перезапускается docker-политикой; «захватить и жить дальше» запрещено); порядок: лог → error-store → exit. (2) error_events в catalog DB (service, ts, level, requestId, message-safe, stack-hint усечённый) — миграция (следующая свободная версия ledger; max сейчас 52, epic-data entry 1 занимает v53 — нумерация резолвится на impl) + DDL в schema-contract (invariant-тест, паттерн эпика 1 entry 11) + retention 90d: строка в retention-таблице (epic-data entry 7) + prune в maintenance tick (mechanism epic-data entry 8); write-path: catalog — прямой; rag-sync/oauth2-bridge/skills — через outbox/HTTP-канал в catalog (паттерн skills-service ратификация). (3) API: GET errors (admin, фильтры service/requestId/period) + error-метрики (count/critical за период — для алерта entry 13). (4) Задокументированный residual: PG-down = error-store недоступен (видимость = json-file-логи + статус контейнера); revisit: local spool. after epic-level: epic-data entry 7/8 (retention-таблица и tick)."
+verify = "kill -9 не в счёт: симуляция uncaughtException (тест) → structured-лог + строка error_events + процесс завершён; error_events: DDL в contract (invariant-тест зелёный), миграция в ledger; retention: fixture старше 90d прунится в tick, свежие нет; API: фильтры service/requestId/period (тест); сервис без прямого PG-write (fixture: skills) → запись через outbox-канал (тест); error-метрики отражают свежие события."
+covers = ["R7"]
+after = [6]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Error visibility: admin UI Error-модуль + frontend-репортинг (AD-O5)"
+description = "AD-O5(3): (1) admin UI: Error-модуль в frontend/src/modules/ (рядом с Audit — паттерн модулей: redux + presentation): список error_events (entry 10 API), фильтры service/requestId/period, только safe-поля (message-safe, stack-hint, requestId → переход в Audit-историю по correlation); (2) frontend-репортинг: ErrorBoundary + window.onerror/unhandledrejection → POST в gateway (rate-limited; только safe-поля: компонент/сообщение-фикс/stack-hint; URL-параметры, cookies, payload — НЕ отправляются) → gateway → error-store (через catalog); (3) message-safe = фиксированное сообщение, без passthrough (AD-O8/AD-19 — тот же принцип для client-facing body)."
+verify = "UI: Error-модуль показывает события (fixture), фильтры работают, safe-поля (тест e2e-frontend); симуляция ошибки в UI (ErrorBoundary + unhandledrejection fixture) → запись в error_events через gateway (тест); payload/URL-параметры в записи отсутствуют (тест); rate-limit: всплеск репортов → 429 (тест)."
+covers = ["R7"]
+after = [10]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 12
+type = "story"
+title = "prometheus + alertmanager: compose-сервисы 12→14 + модель + manifest (AD-O6/OP-2)"
+description = "AD-O6: prometheus + alertmanager — compose-сервисы в backend-сети (порты наружу НЕ публикуются; scrape через metrics_token — /run/secrets). (1) compose.production.yml: + 2 сервиса (12→14): prometheus (конфиг deploy/production/monitoring/, state volume, mem/cpus/pids), alertmanager (конфиг alertmanager.yml entry 13, state volume) + шапка: осознанный состав dev 9 / prod 14 — комментарий в compose.production.yml и docker-compose.yml (паттерн 1.12 D2); (2) environment-model.json: + 2 сервиса (image, networks, memLimit/cpus/pidsLimit, volumes, env) + drift-тест: structuralDrift + compose-drift.test.mjs 12→14 + сверка dev↔prod состава (документ); (3) release manifest (AD-OP-2): digest-pinned образы prometheus/alertmanager (новое поле манифеста, паттерн postgresImage) — OQ: доступность образов в закрытом контуре (локальный registry/provisioning оператором; рекомендация: пин digest'ов на impl + проверка pull'а на приёмке entry 15); (4) dev-состав: prometheus в dev НЕ добавляется (dev 9 — OQ, рекомендация: нет; мониторинг принимается на production-стеке)."
+verify = "compose production: 14 сервисов, prometheus+alertmanager в backend-сети без публикуемых портов; environment-model: 14 сервисов, drift-тест зелёный (structuralDrift + счёт 12→14); шапки compose зафиксированы (dev 9 / prod 14); release manifest: digests monitoring-образов верифицируются (тест); образы pull'ятся/доступны в контуре (приёмка)."
+covers = ["R10"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Alerting: alertmanager.yml + правила + доставляющий канал (AD-O6/OP-7/OP-8)"
+description = "AD-O6: alertmanager — ≥1 канал (выбор оператора, в config-каталоге). (1) alertmanager.yml (НОВЫЙ): route + receiver — OQ/HITL: канал в закрытом контуре (webhook/email); рекомендация: local webhook → receiver на хосте (небольшой node-скрипт + systemd unit User=neurocenter-operator: алерт → /var/log/neurocenter/alerts.jsonl + journald) — «файл Prometheus rules не является доставленным alert» (readiness); (2) правила: 9 neurocenter-alerts.yml — ратификация как базис + новые: stack-down (count(up{job=\"neurocenter\"})==0 → critical), error-store (рост/присутствие critical — метрики entry 10), cert-expiry (AD-OP-7, days-to-expiry edge-сертификата — OQ механизма: host-receiver считает из config-каталога; blackbox-exporter — Deferred); (3) completeness: все 6 сервисов в scrape targets (fix entry 8) — NeurocenterServiceUnavailable реально срабатывает. HITL: выбор канала + приёмка «вызвать → доставлено → снято» на реальных условиях."
+verify = "alertmanager.yml валиден (alertmanager --web.config.file --check); канал сконфигурирован (HITL); вызов каждого базового условия (disk < 1GiB, queue > 8, service down, stale-backup) → alert доставлен в канал (файл/journal со временем) → снятие при восстановлении (resolve); новые правила (stack-down, error-store, cert-expiry) отрабатывают на fixture; файл rules БЕЗ канала = не считается доставленным (критерий зафиксирован)."
+covers = ["R10", "R7"]
+after = [8, 10, 12]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 14
+type = "story"
+title = "Аудит: FR-903 admin-мутации + новые security_events (AD-O7)"
+description = "AD-O7: store = security_events (единая таблица, DDL-owner catalog — эпик 1 entry 11) + operations (транзакционный аудит длинных операций — FR-903, ратификация) + единая история (audit-history.ts, пагинация — ратификация). (1) Фэйл-тест: ЛЮБАЯ admin-мутация без записи (operations ИЛИ security_events) = фэйл — тест обходит мутационные роуты и проверяет запись в store; инвентарь admin-мутаций → каждая покрыта; (2) новые обязательные события: device.revoke (device-store.ts:261 — сейчас securityEvent НЕ пишется; device.pair/bind — есть: install-plans.ts:182, device-enqueue.ts:159 — верифицировать ратификацию), login/session (успех + отказ — oauth2-bridge сейчас 0 security events), auth-решения gateway (ticket verify успех/отказ — mcp-host.controller.ts:140); (3) писатели без прямого PG-доступа (oauth2-bridge, api-gateway) — доставка через outbox/HTTP-канал в catalog (паттерн skills-service ратификация: skill-audit-outbox.ts:14-36); (4) UI: Audit-модуль (ратификация) — новые события в единой истории; OQ: presentation security-событий (новое представление или существующее)."
+verify = "Fail-тест: каждая admin-мутация (обход мутационных роутов) → запись в operations/security_events (0 пропусков); device.revoke → securityEvent (regression-тест); login успех/отказ → события (oauth2-bridge, тест); ticket verify успех/отказ → события gateway (тест); outbox-доставка: kill catalog на время → события не теряются (retry, тест); единая история: новые события видны с пагинацией (тест)."
+covers = ["R9"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 15
+type = "story"
+title = "Sweep + RES-01: e2e-приёмка P0-RES (readiness)"
+description = "Финальный проход эпика: (1) sweep: grep-инвентарь по правилам эпика (console.* в src; error.message в логах; quota-поля без enforcement; секции лимитов без точки; /health; сервисы вне scrape targets; root-контейнеры; сервисы без pids/user в модели; /ready без budgets из shared) — каждый hit: fix или явный exception; (2) RES-01 (HITL) на развёрнутом production-стеке по сценарию readiness P0-RES (S26): (а) лимиты — quota enforcement (запись сверх лимита → явный отказ, прежние данные целы), двухуровневые (смена policy применяется), hardening (живой стек: UID≠0, pids_limit — контролируемый fork-стресс: контейнер умирает, хост не затронут); (б) нагрузка — конкурирующие тяжёлые операции, рост WAL, нехватка диска → ранние 503/507 без повреждения + причина в UI/операторской диагностике; (в) scrape — 6/6 сервисов up=1 (включая ff:4400); (г) алерты — disk/queue/service/stale-backup условия → доставлено + снято; (д) логи — correlation id сквозной nginx→gateway→сервис, без ticket/error.message; (е) ошибки — crash сервиса → error_events + admin UI; (ж) аудит — admin-мутация → в единой истории (fail-тест green); (з) health — /ready семантика. Протокол + артефакты в tickets/epic-res-obs/. Закрытие readiness-критерия: «Применённые ограничения хранилища, проверка конкурирующих writers/WAL/заполнения и нагрузки; настоящий scrape и доставленные уведомления»."
+verify = "Чеклист RES-01 (8 блоков) на live-стеке: все green, протокол с артефактами (логи/скриншоты/метрики); sweep: 0 необъявленных hits; readiness P0-RES строка: «Чего недостаёт» закрыто свидетельством; любой red = баг-тикет, не «потолерировать»."
+covers = ["R1", "R7", "R9", "R10", "R11"]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+hitl = true
+risk = "high"
