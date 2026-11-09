@@ -70,6 +70,7 @@ import { RestoreService } from '../restore/restore.service';
 import { SourceUploadController } from '../source-upload/source-upload.controller';
 import { RetiredRagController } from '../retired-rag/retired-rag.controller';
 import { RetiredRagService } from '../retired-rag/retired-rag.service';
+import { ProjectDeletionCascadeService } from '../project-deletion/project-deletion-cascade.service';
 import { SourceUploadService } from '../source-upload/source-upload.service';
 import { HostedRagGrantService } from '../models/hosted-rag-grant.service';
 import { ModelBundleRuntime } from '../models/model-bundle-runtime';
@@ -260,6 +261,11 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         LegacyRetirementService,
         SnapshotService,
         RetiredRagService,
+        {
+            provide: ProjectDeletionCascadeService,
+            inject: [RetiredRagService],
+            useFactory: (retiredRag: RetiredRagService) => new ProjectDeletionCascadeService(retiredRag),
+        },
         RestoreService,
         {
             provide: OperationActionStore,

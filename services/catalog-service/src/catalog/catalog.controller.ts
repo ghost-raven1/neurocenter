@@ -43,6 +43,7 @@ import { AccessDb } from '../access/access-db';
 import { canReadCommon, IAccessActor, normalizeEmail, projectLevel } from '../access/access.model';
 import { MEMBER_ROLE_OPTIONS, T_DEFAULT_MEMBER_ROLE, roleCan } from './rbac';
 import type { IOperationReadScope } from '../operations/operation.interfaces';
+import { ProjectDeletionCascadeService } from '../project-deletion/project-deletion-cascade.service';
 
 /**
  * PostgreSQL-backed проекты, назначения, версии инструментов и история обслуживания.
@@ -59,6 +60,7 @@ export class CatalogController {
         private readonly catalog: CatalogService,
         private readonly access: AccessDb,
         @Optional() private readonly operationActions?: OperationActionsService,
+        @Optional() private readonly deletionCascade?: ProjectDeletionCascadeService,
     ) {}
     /**
      * Список проектов.
@@ -158,7 +160,13 @@ export class CatalogController {
         if (!roleCan(myRole, 'delete')) {
             throw new ForbiddenException('Недостаточно прав: требуется роль «Админ проекта»');
         }
-        return this.catalog.deleteProject(id, principal ?? undefined);
+        const result = await this.catalog.deleteProject(id, principal ?? undefined);
+        // Entry 5.11 (AD-D3): логическое удаление уже зафиксировано — физический
+        // каскад (RAG/S3/скиллы/дампы + квитанция) идёт фоном и не роняет ответ.
+        if (this.deletionCascade) {
+            void this.deletionCascade.run(result.id, principal ?? 'admin').catch(() => undefined);
+        }
+        return result;
     }
 
     /**

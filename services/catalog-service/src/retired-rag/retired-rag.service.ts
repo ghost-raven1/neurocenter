@@ -115,6 +115,7 @@ export class RetiredRagService implements OnModuleInit, OnModuleDestroy {
                         database: databases.get(row.project_id) ?? null,
                         blockers: await this.blockers(this.pool, row),
                         job: purges.has(row.id) ? publicPurge(purges.get(row.id)!) : null,
+                        deletedResources: row.deleted_resources ?? {},
                     })),
             ),
         };
@@ -314,6 +315,64 @@ export class RetiredRagService implements OnModuleInit, OnModuleDestroy {
         }
         this.launch(id);
         return this.get(id);
+    }
+    /**
+     * Entry 5.11 (AD-D3): идемпотентный авто-пург RAG-базы проекта после подтверждённого удаления.
+     * request_key = id строки retirement (детерминирован), повтор не создаёт дубль задания.
+     * Возвращает состояние домена: absent (базы нет), deleted (пург завершён),
+     * pending (задание в работе / RAG недоступен — повторит recovery) или failed.
+     */
+    async cascadePurge(
+        projectId: string,
+        actor: string,
+    ): Promise<{ state: 'absent' | 'deleted' | 'pending' | 'failed'; jobId?: string; detail?: string }> {
+        const row = (
+            await this.pool.query<IRetirement>('SELECT * FROM project_retirements WHERE project_id=$1', [projectId])
+        ).rows[0];
+        if (!row) return { state: 'absent', detail: 'сохранённая база не зафиксирована' };
+        const existing = (
+            await this.pool.query<IPurgeRow>('SELECT * FROM retired_rag_purges WHERE request_key=$1', [row.id])
+        ).rows[0];
+        if (existing) {
+            if (existing.state === 'succeeded') return { state: 'deleted', jobId: existing.id };
+            if (existing.state === 'failed') {
+                try {
+                    await this.retry(existing.id, { digest: existing.digest }, actor);
+                    return { state: 'pending', jobId: existing.id };
+                } catch (error) {
+                    return { state: 'failed', jobId: existing.id, detail: (error as Error).message };
+                }
+            }
+            return { state: 'pending', jobId: existing.id };
+        }
+        let inventory: Array<{ projectId: string; state: string; present: boolean }>;
+        try {
+            inventory = await this.rag<Array<{ projectId: string; state: string; present: boolean }>>('inventory');
+        } catch {
+            return { state: 'pending', detail: 'инвентарь RAG недоступен; повтор при восстановлении' };
+        }
+        const database = inventory.find((item) => item.projectId === projectId);
+        if (!database || !database.present || database.state === 'purged')
+            return { state: 'absent', detail: 'RAG-база проекта отсутствует' };
+        let preview: { id: string; digest: string };
+        try {
+            preview = await this.preview(row.id, actor);
+        } catch (error) {
+            const status = error instanceof HttpException ? error.getStatus() : 503;
+            if (status === 404) return { state: 'absent', detail: 'RAG-база уже удалена' };
+            if (status === 409) return { state: 'failed', detail: 'конфликт плана RAG' };
+            return { state: 'pending', detail: 'RAG недоступен; повтор при восстановлении' };
+        }
+        try {
+            const job = await this.purge(
+                row.id,
+                { requestKey: row.id, previewId: preview.id, digest: preview.digest },
+                actor,
+            );
+            return { state: 'pending', jobId: job.id };
+        } catch (error) {
+            return { state: 'failed', detail: (error as Error).message };
+        }
     }
     /** Вызывается RAG непосредственно перед DDL; роль, удержание и все refs читаются повторно. */
     async authorize(id: string, input: unknown) {

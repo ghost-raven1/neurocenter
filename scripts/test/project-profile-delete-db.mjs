@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { mkdir, writeFile } from 'node:fs/promises';
+import http from 'node:http';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ownedTestPostgresAdmin } from './owned-postgres.fixture.mjs';
@@ -21,7 +23,12 @@ const candidate = path.resolve(
 const reportPath = path.resolve(
     process.env.PROJECT_AUDIT_FIXES_REPORT || path.join(root, 'output/project-audit-fixes-20261019/postgres.json'),
 );
-const previous = new Map(['NODE_ENV', 'SSO_DISABLE', 'CATALOG_PG_URL'].map((key) => [key, process.env[key]]));
+const previous = new Map(
+    ['NODE_ENV', 'SSO_DISABLE', 'CATALOG_PG_URL', 'RAG_SERVICE_URL', 'SKILLS_SERVICE_URL'].map((key) => [
+        key,
+        process.env[key],
+    ]),
+);
 const databases = async () =>
     (await admin.query('SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname')).rows.map(
         (row) => row.datname,
@@ -35,6 +42,10 @@ let created = false,
     access,
     controller,
     hosting,
+    cascade,
+    retiredRag,
+    skillsServer,
+    cascadeBackupDir,
     fatal;
 const check = async (name, action) => {
     try {
@@ -209,10 +220,11 @@ try {
             JSON.stringify({ currentBytesLimit: 1024, currentBytesUsed: null, retentionBytesLimit: 2048 }),
         ]);
         const saved = await controller.updateProject(p.id, { quotas: { stagingBytesLimit: 4096 } }, request);
+        // Entry 5.1: *BytesUsed — живой замер из per-project accounting (пустой ledger = 0),
+        // сохранённый null больше не отражается в ответе.
         assert.deepEqual(saved.quota, {
             ...quotaDefaults,
             currentBytesLimit: 1024,
-            currentBytesUsed: null,
             retentionBytesLimit: 2048,
             stagingBytesLimit: 4096,
         });
@@ -388,6 +400,76 @@ try {
             1,
         );
     });
+
+    // Entry 5.11 (AD-D3): физический каскад + по-доменная квитанция для удалённого проекта.
+    const { RetiredRagService } = require(path.join(candidate, 'retired-rag/retired-rag.service.js'));
+    const { ProjectDeletionCascadeService } = require(
+        path.join(candidate, 'project-deletion/project-deletion-cascade.service.js'),
+    );
+    retiredRag = new RetiredRagService(service, access, { ready: async () => {} });
+    cascadeBackupDir = path.join(await mkdtemp(path.join(os.tmpdir(), 'nc-cascade-dumps-')), 'backups');
+    // skills-service симулируется 404: каталог скиллов удалённого проекта отсутствует.
+    skillsServer = http.createServer((request, response) => {
+        response.writeHead(404, { 'content-type': 'application/json' });
+        response.end('{"error":"project skills catalog not found"}');
+    });
+    await new Promise((resolve) => skillsServer.listen(0, '127.0.0.1', resolve));
+    const skillsUrl = 'http://127.0.0.1:' + skillsServer.address().port;
+    process.env.RAG_SERVICE_URL = 'http://127.0.0.1:9'; // RAG намеренно недоступен: домен останется pending
+    cascade = new ProjectDeletionCascadeService(retiredRag, { pool, skillsUrl, backupDir: cascadeBackupDir });
+
+    const cascadeProject = await project('Физический каскад');
+    const dumpDir = path.join(
+        cascadeBackupDir,
+        'projects',
+        createHash('sha256').update(cascadeProject.id).digest('hex').slice(0, 32),
+    );
+    await mkdir(dumpDir, { recursive: true });
+    await writeFile(path.join(dumpDir, 'dump.sql'), '-- fixture dump\n');
+    await pool.query(
+        'INSERT INTO project_backups(id, project_id, file_name, database_name, size_bytes) VALUES($1, $2, $3, $4, $5)',
+        ['fixture-dump', cascadeProject.id, 'fixture.sql', 'fixture-db', 1024],
+    );
+    await service.deleteProject(cascadeProject.id, actor);
+
+    let firstReceipt;
+    await check('Каскад пишет по-доменную квитанцию: дампы удалены, RAG pending без сервиса', async () => {
+        firstReceipt = await cascade.run(cascadeProject.id, actor);
+        assert.equal(firstReceipt.rag.state, 'pending');
+        assert.equal(firstReceipt.chat.state, 'absent');
+        assert.equal(firstReceipt.snapshots.state, 'absent');
+        assert.equal(firstReceipt.skills.state, 'absent');
+        assert.deepEqual(firstReceipt.dumps, {
+            state: 'deleted',
+            at: firstReceipt.dumps.at,
+            files: 1,
+            directory: true,
+        });
+        const stored = (
+            await pool.query('SELECT deleted_resources, origin FROM project_retirements WHERE project_id=$1', [
+                cascadeProject.id,
+            ])
+        ).rows[0];
+        assert.equal(stored.origin, 'deletion');
+        assert.deepEqual(stored.deleted_resources, firstReceipt);
+        assert.equal(
+            await count('SELECT count(*)::int AS n FROM project_backups WHERE project_id=$1', [cascadeProject.id]),
+            0,
+        );
+        await assert.rejects(stat(dumpDir), { code: 'ENOENT' });
+    });
+    await check('Повтор каскада идемпотентен: терминальные домены не перезаписываются', async () => {
+        const second = await cascade.run(cascadeProject.id, actor);
+        for (const domain of ['chat', 'snapshots', 'skills', 'dumps'])
+            assert.deepEqual(second[domain], firstReceipt[domain]);
+        assert.equal(second.rag.state, 'pending');
+        const stored = (
+            await pool.query('SELECT deleted_resources FROM project_retirements WHERE project_id=$1', [
+                cascadeProject.id,
+            ])
+        ).rows[0];
+        assert.deepEqual(stored.deleted_resources, second);
+    });
 } catch (error) {
     fatal = error;
 } finally {
@@ -396,6 +478,18 @@ try {
     } catch (error) {
         fatal ??= error;
     }
+    try {
+        skillsServer?.closeAllConnections();
+        await skillsServer?.close();
+    } catch {
+        // Синтетический skills-сервис уже закрыт.
+    }
+    try {
+        await retiredRag?.onModuleDestroy();
+    } catch (error) {
+        fatal ??= error;
+    }
+    if (cascadeBackupDir) await rm(cascadeBackupDir, { recursive: true, force: true }).catch(() => {});
     await Promise.allSettled([service?.onModuleDestroy(), access?.onModuleDestroy(), pool?.end()]);
     if (created)
         try {
@@ -414,7 +508,7 @@ try {
     }
     const report = {
         candidate,
-        level: 'Compiled CatalogController/AccessDb/CatalogService/ModelHostingService + own PostgreSQL; trusted request headers and synthetic model runtime, no Nest HTTP startup',
+        level: 'Compiled CatalogController/AccessDb/CatalogService/ModelHostingService/ProjectDeletionCascadeService/RetiredRagService (entry 5.11) + own PostgreSQL; trusted request headers, synthetic model runtime and 404 skills endpoint, no Nest HTTP startup',
         workingDataMutated: false,
         database,
         ownDatabaseDropped: dropped,

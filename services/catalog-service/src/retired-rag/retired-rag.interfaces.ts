@@ -7,6 +7,8 @@ export interface IRetirement {
     retention_revision: number;
     retention_reason: string;
     origin: string;
+    /** Entry 5.11 (AD-D3): per-domain physical deletion receipt (rag/chat/snapshots/skills/dumps). */
+    deleted_resources?: Record<string, unknown> | null;
 }
 
 export interface IRetiredFacts {
