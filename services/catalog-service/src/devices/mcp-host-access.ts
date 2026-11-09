@@ -111,6 +111,19 @@ async function approvedPackage(
     const pkg = checkedProjectPackage(row);
     if (pkg.plugin.kind !== 'mcp' || pkg.plugin.version !== version || pkg.manifest.sha256 !== manifest)
         throw mismatch();
+    // AD-16: retired-версия не стартует в mcp-host — и при новом authorize, и в live re-check
+    // (authorizeHostedMcpSession), билет уже запущенной сессии гаснет при следующем re-check.
+    const versionStatus = (
+        await db.query<{ status: string }>('SELECT status FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2', [
+            assetId,
+            version,
+        ])
+    ).rows[0];
+    if (!versionStatus) throw mismatch();
+    if (versionStatus.status === 'retired')
+        throw new ForbiddenException(
+            'Версия MCP отозвана площадкой. Установите актуальную версию и повторите подключение.',
+        );
     const config = pkg.config;
     if (
         !config ||

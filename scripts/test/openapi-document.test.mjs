@@ -299,10 +299,10 @@ test('Unknown route expressions and duplicate public operations fail rather than
 });
 
 test('Actual document covers the independently audited public surface without private routes', () => {
-    assert.equal(Object.keys(actual.paths).length, 332);
+    assert.equal(Object.keys(actual.paths).length, 334);
     assert.equal(
         Object.values(actual.paths).reduce((sum, item) => sum + Object.keys(item).length, 0),
-        406,
+        408,
     );
     for (const representative of [
         '/api/projects',

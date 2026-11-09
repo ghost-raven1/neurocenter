@@ -50,6 +50,21 @@ export class ModelsController {
         return { ok: true };
     }
 
+    /**
+     * AD-16: необратимый отзыв ревизии модели (main-admin). Ревизия остаётся в истории,
+     * отозванная текущая версия не назначается в проекты; запись в security_events.
+     */
+    @Post('models/:id/versions/:v/retire')
+    async retireVersion(
+        @Param('id') id: string,
+        @Param('v') v: string,
+        @Req() req: Request,
+    ): Promise<{ ok: boolean }> {
+        const actor = await this.models.requireMain(req);
+        await this.models.retireModelVersion(id, Number(v), actor);
+        return { ok: true };
+    }
+
     @Post('projects/:id/models')
     async assign(@Param('id') id: string, @Body() body: unknown, @Req() req: Request): Promise<{ ok: boolean }> {
         const actor = await this.models.actor(req);

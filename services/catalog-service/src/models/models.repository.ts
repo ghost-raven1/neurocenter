@@ -347,6 +347,18 @@ export class ModelsRepository {
             if (!card.rows.length) {
                 throw new NotFoundException('Модель уже удалена из общего каталога. Обновите список.');
             }
+            // AD-16: отозванная (retired) текущая версия модели не назначается в проекты.
+            const headStatus = (
+                await client.query<{ status: string }>(
+                    'SELECT v.status FROM model_catalog_versions v JOIN model_catalog c ON c.id=v.model_id WHERE c.id=$1 AND v.revision=c.revision',
+                    [modelId],
+                )
+            ).rows[0];
+            if (headStatus?.status === 'retired') {
+                throw new ConflictException(
+                    'Текущая версия модели отозвана и не назначается в проекты.',
+                );
+            }
             const result = await client.query<IAssignmentRow>(
                 `INSERT INTO project_models(project_id,model_id,added_by) VALUES($1,$2,$3)
                 ON CONFLICT(project_id,model_id) DO NOTHING RETURNING *`,
@@ -393,6 +405,46 @@ export class ModelsRepository {
                 after: null,
             });
             return true;
+        });
+    }
+
+    /**
+     * AD-16/FR-204: необратимый отзыв ревизии модели. Immutable-снимок ревизии
+     * сохраняется (провенанс), retired→active запрещено, повторный retire — ошибка.
+     */
+    retireModelVersion(id: string, revision: number, actor: string): Promise<void> {
+        return this.transaction(async (client) => {
+            if (!Number.isSafeInteger(revision) || revision < 1) {
+                throw new NotFoundException('Ревизия модели не найдена.');
+            }
+            await client.query("SELECT pg_advisory_xact_lock(hashtextextended('asset-management:model:'||$1,0))", [
+                id,
+            ]);
+            const card = await client.query('SELECT id,name FROM model_catalog WHERE id=$1 FOR UPDATE', [id]);
+            if (!card.rows.length) {
+                throw new NotFoundException('Модель отсутствует в каталоге.');
+            }
+            const found = await client.query<{ name: string; status: string }>(
+                'SELECT name,status FROM model_catalog_versions WHERE model_id=$1 AND revision=$2 FOR UPDATE',
+                [id, revision],
+            );
+            if (!found.rows.length) {
+                throw new NotFoundException('Ревизия модели не найдена.');
+            }
+            if (found.rows[0].status === 'retired') {
+                throw new ConflictException('Ревизия модели уже отозвана. Отзыв необратим: ревизия остаётся в истории.');
+            }
+            await client.query('UPDATE model_catalog_versions SET status=\'retired\' WHERE model_id=$1 AND revision=$2', [
+                id,
+                revision,
+            ]);
+            await securityEvent(client, {
+                actor,
+                action: 'model.version.retire',
+                resourceId: `${id}:${revision}`,
+                before: { name: found.rows[0].name, revision, status: 'active' },
+                after: { name: found.rows[0].name, revision, status: 'retired' },
+            });
         });
     }
 

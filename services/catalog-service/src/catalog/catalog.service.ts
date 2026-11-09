@@ -600,6 +600,22 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     }
 
     /**
+     * AD-16: необратимый отзыв версии бандла (main-admin) с записью в security_events.
+     *
+     * @param idOrName - id или имя плагина.
+     * @param version - номер версии.
+     * @returns {Promise<IAiPluginVersion>} отозванная версия со статусом retired.
+     */
+    async retireAiPluginVersion(idOrName: string, version: number, author: string): Promise<IAiPluginVersion> {
+        const plugin = await this.getAiPlugin(idOrName);
+        const retired = await this.db.retireAiPluginVersion(plugin.id, version, author);
+        if (!retired) {
+            throw new NotFoundException(`ai_plugin version not found: ${version}`);
+        }
+        return retired;
+    }
+
+    /**
      * Удалить MCP/плагин (404 при отсутствии).
      *
      * @param idOrName - id или имя.

@@ -97,6 +97,8 @@ import { PROJECT_DELETION_RECEIPT_SCHEMA_SQL } from '../project-deletion-receipt
 import { PROJECT_DELETION_RECEIPT_SCHEMA_ASSERT_SQL } from '../project-deletion-receipt/project-deletion-receipt.schema-verification';
 import { RATE_LIMIT_WINDOWS_SCHEMA_SQL } from '../rate-limit-windows/rate-limit-windows.schema';
 import { RATE_LIMIT_WINDOWS_SCHEMA_ASSERT_SQL } from '../rate-limit-windows/rate-limit-windows.schema-verification';
+import { VERSION_RETIREMENT_SCHEMA_SQL } from '../version-retirement/version-retirement.schema';
+import { VERSION_RETIREMENT_SCHEMA_ASSERT_SQL } from '../version-retirement/version-retirement.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
@@ -324,5 +326,10 @@ export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
         version: 55,
         name: 'shared-pairing-rate-limit-windows',
         sql: RATE_LIMIT_WINDOWS_SCHEMA_SQL + '\n' + RATE_LIMIT_WINDOWS_SCHEMA_ASSERT_SQL,
+    },
+    {
+        version: 56,
+        name: 'version-retirement-status',
+        sql: VERSION_RETIREMENT_SCHEMA_SQL + '\n' + VERSION_RETIREMENT_SCHEMA_ASSERT_SQL,
     },
 ];

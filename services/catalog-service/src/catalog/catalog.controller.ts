@@ -729,6 +729,21 @@ export class CatalogController {
     }
 
     /**
+     * AD-16: необратимый отзыв версии бандла (main-admin). Версия остаётся в каталоге
+     * (строка + байты, провенанс), retired-версия не назначается и не стартует в mcp-host;
+     * повторный retire — ошибка; запись в security_events.
+     *
+     * @param id - id.
+     * @param v - номер версии.
+     * @returns {Promise<unknown>}
+     */
+    @Post('ai-plugins/:id/versions/:v/retire')
+    public retireAiPluginVersion(@Param('id') id: string, @Param('v') v: string, @Req() req: IHttpRequest) {
+        this.assertMainAdmin(req);
+        return this.catalog.retireAiPluginVersion(id, Number(v), this.actor(req).email);
+    }
+
+    /**
      * Self-verified delivery-пакет бандла: per-file sha256 + manifest.sha256 (version — опц., иначе head).
      * Перед отдачей сервер пересчитывает SHA-опись: битый пакет не уходит потребителю (FR-201).
      *

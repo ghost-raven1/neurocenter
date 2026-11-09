@@ -432,6 +432,43 @@ export class PluginRepository {
         });
     }
 
+    /**
+     * AD-16/FR-204: необратимый отзыв конкретной версии. Строка версии и байты артефакта
+     * сохраняются (провенанс), retired→active запрещено, повторный retire — ошибка.
+     */
+    async retireVersion(id: string, version: number, actor: string): Promise<IAiPluginVersion | null> {
+        if (!Number.isSafeInteger(version) || version < 1) {
+            throw new BadRequestException('Некорректный номер версии.');
+        }
+        return this.transaction(async (client) => {
+            const current = await client.query('SELECT * FROM ai_plugins WHERE id=$1 FOR UPDATE', [id]);
+            const found = await client.query(
+                'SELECT * FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2 FOR UPDATE',
+                [id, version],
+            );
+            if (!current.rows[0] || !found.rows[0]) {
+                return null;
+            }
+            if (found.rows[0].status === 'retired') {
+                throw new ConflictException('Версия уже отозвана. Отзыв необратим: версия остаётся в каталоге.');
+            }
+            await client.query('UPDATE ai_plugin_versions SET status=\'retired\' WHERE ai_plugin_id=$1 AND version=$2', [
+                id,
+                version,
+            ]);
+            const plugin = toPlugin(current.rows[0]);
+            const saved = toVersion({ ...found.rows[0], status: 'retired' });
+            await securityEvent(client, {
+                actor,
+                action: 'plugin.version.retire',
+                resourceId: `${plugin.id}:${version}`,
+                before: { ...auditSummary(plugin), version, status: 'active' },
+                after: { ...auditSummary(plugin), version, status: 'retired' },
+            });
+            return saved;
+        });
+    }
+
     /** Старый HTTP DELETE использует тот же архив и не обходит проверку project refs. */
     async delete(idOrName: string, actor: string): Promise<boolean> {
         return this.transaction(async (client) => {
@@ -644,6 +681,7 @@ function toVersion(row: Record<string, unknown>): IAiPluginVersion {
         author: String(row.author),
         note: String(row.note),
         createdAt: String(row.created_at),
+        status: row.status === 'retired' ? 'retired' : 'active',
         metadata: row.metadata as IAiPluginVersion['metadata'],
     };
 }

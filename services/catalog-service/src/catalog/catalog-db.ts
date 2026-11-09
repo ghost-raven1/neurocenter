@@ -339,6 +339,10 @@ export class CatalogDb {
     public activateAiPluginVersion(pluginId: string, version: number, author = 'import'): Promise<IAiPlugin | null> {
         return this.plugins.activate(pluginId, version, author);
     }
+    /** AD-16: необратимый отзыв версии (строка и байты сохраняются); null — карточка/версия отсутствует. */
+    public retireAiPluginVersion(pluginId: string, version: number, author: string): Promise<IAiPluginVersion | null> {
+        return this.plugins.retireVersion(pluginId, version, author);
+    }
     public deleteAiPlugin(idOrName: string, actor: string): Promise<boolean> {
         return this.plugins.delete(idOrName, actor);
     }

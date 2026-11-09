@@ -225,6 +225,8 @@ export interface IAiPluginVersion {
     author: string;
     note: string;
     createdAt: string;
+    /** AD-16: status версии каталога; retired — необратимый отзыв (FR-204). */
+    status: 'active' | 'retired';
     metadata?: Pick<
         IAiPlugin,
         'kind' | 'description' | 'compatibility' | 'tags' | 'origin' | 'revision' | 'dependencies'

@@ -101,6 +101,8 @@ import { PROJECT_DELETION_RECEIPT_SCHEMA_CONTRACT } from '../project-deletion-re
 import { assertProjectDeletionReceiptSchema } from '../project-deletion-receipt/project-deletion-receipt.schema-verification';
 import { RATE_LIMIT_WINDOWS_SCHEMA_CONTRACT } from '../rate-limit-windows/rate-limit-windows.schema-contract';
 import { assertRateLimitWindowsSchema } from '../rate-limit-windows/rate-limit-windows.schema-verification';
+import { VERSION_RETIREMENT_SCHEMA_CONTRACT } from '../version-retirement/version-retirement.schema-contract';
+import { assertVersionRetirementSchema } from '../version-retirement/version-retirement.schema-verification';
 export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...REMOTE_PROVIDER_SCHEMA_CONTRACT,
     ...GGUF_RUNTIME_SCHEMA_CONTRACT,
@@ -142,6 +144,7 @@ export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...SYSTEM_ROLE_SCHEMA_CONTRACT,
     ...DEVICE_CODEX_SCHEMA_CONTRACT,
     ...PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT,
+    ...VERSION_RETIREMENT_SCHEMA_CONTRACT,
 ];
 /** Runtime readiness checks every managed generation; historical migration assertions stay frozen. */
 export async function assertCurrentCatalogSchema(db: Pick<Pool, 'query'>): Promise<void> {
@@ -185,4 +188,5 @@ export async function assertCurrentCatalogSchema(db: Pick<Pool, 'query'>): Promi
     await assertProjectQuotaUsageSchema(db);
     await assertProjectDeletionReceiptSchema(db);
     await assertRateLimitWindowsSchema(db);
+    await assertVersionRetirementSchema(db);
 }

@@ -173,6 +173,11 @@ export class ModelsService implements OnModuleInit, OnApplicationShutdown {
         validateModelId(modelId);
         return this.repository.unassign(projectId, modelId, actor);
     }
+    /** AD-16: необратимый отзыв ревизии модели (main-admin); запись в security_events. */
+    retireModelVersion(id: string, revision: number, actor: string): Promise<void> {
+        validateModelId(id);
+        return this.repository.retireModelVersion(id, revision, actor);
+    }
 
     private projectIds(claims: IAccessClaims, activeRole: string, minimumLevel = 1): string[] {
         return claims.projects

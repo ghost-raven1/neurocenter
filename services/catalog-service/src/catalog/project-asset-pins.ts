@@ -83,6 +83,9 @@ export async function captureProjectAsset(
             await db.query('SELECT * FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2', [id, version])
         ).rows[0];
         if (!old) throw new NotFoundException('Выбранная версия инструмента отсутствует в истории.');
+        // AD-16: отозванная (retired) версия не назначается в новые проекты.
+        if (old.status === 'retired')
+            throw new ConflictException('Версия инструмента отозвана и не назначается в проекты.');
         plugin = {
             ...plugin,
             ...old.metadata,
@@ -96,12 +99,16 @@ export async function captureProjectAsset(
         contractVersion = old.metadata?.contractVersion;
     } else {
         // AD-13: издательская версия контракта хранится в metadata закреплённой версии, не в колонках ai_plugins.
-        contractVersion = (
-            await db.query<{ metadata: { contractVersion?: unknown } | null }>(
-                'SELECT metadata FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2',
+        const headVersion = (
+            await db.query<{ metadata: { contractVersion?: unknown } | null; status: string }>(
+                'SELECT metadata,status FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2',
                 [id, plugin.version],
             )
-        ).rows[0]?.metadata?.contractVersion;
+        ).rows[0];
+        // AD-16: отозванный (retired) head не назначается в новые проекты.
+        if (headVersion?.status === 'retired')
+            throw new ConflictException('Версия инструмента отозвана и не назначается в проекты.');
+        contractVersion = headVersion?.metadata?.contractVersion;
     }
     const pkg = pluginDeliveryPackage(plugin);
     assertInstallablePackage(pkg);

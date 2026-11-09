@@ -27,9 +27,10 @@ test(
     { skip: !process.env.CATALOG_TEST_PG_URL, timeout: 120000 },
     async (t) => {
         const f = await startSkillPackagingFixture({ adminUrl: process.env.CATALOG_TEST_PG_URL });
-        let app, client;
+        let app, client, client2;
         t.after(async () => {
             await client?.close();
+            await client2?.close();
             await app?.close();
             await f.close();
         });
@@ -50,8 +51,20 @@ test(
             entrypoint: 'server.cjs',
         });
         await f.catalog.get(RuntimeArtifacts).importArchive(archive, descriptor);
+        // AD-16: закреплённый пакет обязан соответствовать версии каталога, поэтому хост-карточка
+        // создаётся через API (строка ai_plugin_versions существует и проверяется гейтом отзыва).
+        const card = await f.request('main', '/api/ai-plugins', {
+            method: 'POST',
+            status: 201,
+            body: {
+                name: 'Hosted QA',
+                kind: 'mcp',
+                description: 'QA hosted MCP card',
+                config: { transport: 'stdio', args: [], extra: { hostedMcp: true, runtimeArtifacts: [descriptor] } },
+            },
+        });
         const pkg = buildPackage(
-            { id: 'hosted-http-' + randomUUID(), kind: 'mcp', name: 'Hosted QA', version: 1 },
+            { id: card.id, kind: 'mcp', name: 'Hosted QA', version: 1 },
             [],
             '',
             { transport: 'stdio', args: [], extra: { hostedMcp: true, runtimeArtifacts: [descriptor] } },
@@ -214,6 +227,72 @@ test(
             });
             assert.equal(response.status, 401);
             await response.body.cancel();
+        });
+        await t.test('AD-16: retiring the assigned version kills the live session, new connects and new assignments', async () => {
+            const card2 = await f.request('main', '/api/ai-plugins', {
+                method: 'POST',
+                status: 201,
+                body: {
+                    name: 'Retire QA',
+                    kind: 'mcp',
+                    description: 'QA retired MCP card',
+                    config: { transport: 'stdio', args: [], extra: { hostedMcp: true, runtimeArtifacts: [descriptor] } },
+                },
+            });
+            const pkg2 = buildPackage(
+                { id: card2.id, kind: 'mcp', name: 'Retire QA', version: 1 },
+                [],
+                '',
+                { transport: 'stdio', args: [], extra: { hostedMcp: true, runtimeArtifacts: [descriptor] } },
+            );
+            await pin(pkg2);
+            // Роль-гейт: не «Главный админ» не отзывает (403 до изменения состояния).
+            await f.request('developer', `/api/ai-plugins/${card2.id}/versions/1/retire`, {
+                method: 'POST',
+                status: 403,
+            });
+            // Живая сессия на отзываемой версии: connect + SDK-канал ДО отзыва.
+            const connected2 = await connect(pkg2);
+            assert.equal(connected2.status, 200, JSON.stringify(connected2.data));
+            const channel2 = connected2.data.path;
+            client2 = new Client({ name: 'qa-client-2', version: '1' }, { capabilities: {} });
+            await client2.connect(new StreamableHTTPClientTransport(new URL(base + channel2)), { timeout: 15000 });
+            assert.match(
+                (await client2.callTool({ name: 'qa_read', arguments: {} }, undefined, { timeout: 15000 })).content[0]
+                    .text,
+                /synthetic call \d+/,
+            );
+            // Отзыв: 201 (NestJS-дефолт для POST, как у activate); повтор — 409 (необратимо).
+            await f.request('main', `/api/ai-plugins/${card2.id}/versions/1/retire`, { method: 'POST', status: 201 });
+            await f.request('main', `/api/ai-plugins/${card2.id}/versions/1/retire`, { method: 'POST', status: 409 });
+            // Статус виден в списке версий; байты сохраняются (провенанс FR-204).
+            const versions = await f.request('main', `/api/ai-plugins/${card2.id}/versions`);
+            assert.equal(versions.length, 1);
+            assert.equal(versions[0].status, 'retired');
+            const pkg2after = await f.request('main', `/api/ai-plugins/${card2.id}/package?version=1`);
+            assert.equal(pkg2after.plugin.version, 1);
+            // Аудит: ровно одна запись security_events.
+            const events = (
+                await f.pool.query(
+                    "SELECT actor,resource_id FROM security_events WHERE action='plugin.version.retire'",
+                )
+            ).rows;
+            assert.equal(events.length, 1);
+            assert.equal(events[0].actor, f.actors.main.email);
+            assert.equal(events[0].resource_id, card2.id + ':1');
+            // Новый connect отозванной версии — 403.
+            assert.equal((await connect(pkg2)).status, 403);
+            // Живая сессия: билет сгорает при следующем re-check (после протухания TTL кэша).
+            await settle();
+            await assert.rejects(client2.callTool({ name: 'qa_read', arguments: {} }, undefined, { timeout: 15000 }));
+            // Новое назначение отозванной карточки (в другой проект, где она ещё не назначена) — 409.
+            const newProject = 'prj-retire-new-' + randomUUID().slice(0, 8);
+            await f.pool.query('INSERT INTO projects(id,name) VALUES($1,$2)', [newProject, 'Retire QA New Project']);
+            await f.request('main', `/api/projects/${newProject}/assets`, {
+                method: 'POST',
+                status: 409,
+                body: { assetId: card2.id, assetKind: 'mcp' },
+            });
         });
         await t.test('device revocation blocks the existing SDK channel', async () => {
             await f.pool.query('UPDATE bridge_devices SET revoked=true WHERE id=$1', [deviceId]);
