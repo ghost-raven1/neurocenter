@@ -9,7 +9,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 // Осознанно повышен с 170 (AD-7 shared-сплит): entry 5 даёт 174, entry 6 ещё +4 = 178; ограничение сохраняется.
 // Entry 2.9: +deadline-ladders.mjs (tool-import/model-chat лестницы требуют его в retained-closure) = 181.
 // Мерж 2.11: +runtime/contract-version.{cjs,d.cts} (require из runtime-artifacts.cjs в retained-closure) = 183.
-export const PREPARED_SOURCE_MAX_FILES = 183;
+// Story 12.2: +see-image.mjs и компонент opencode-see-image (13 файлов) = 197.
+export const PREPARED_SOURCE_MAX_FILES = 197;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS = Object.freeze(
     [
@@ -72,6 +73,7 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
         'scripts/catalog-plugins/plugins/git-context.mjs',
         'scripts/catalog-plugins/plugins/project-context.mjs',
         'scripts/catalog-plugins/recipes/fetch-mcp.mjs',
+        'scripts/catalog-plugins/recipes/see-image.mjs',
         'scripts/catalog-plugins/recipes/opencode-rag.mjs',
         'scripts/catalog-plugins/recipes/opencode-rag-plugin.mjs',
         'scripts/catalog-plugins/recipes/opencode-snip.mjs',
@@ -182,6 +184,23 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
             'source/README.md',
             'source/pnpm-lock.yaml',
         ].map((name) => 'catalog-source/components/fetch-mcp/' + name),
+        ...[
+            'SOURCE.json',
+            'NOTICE.md',
+            ...[
+                'LICENSE',
+                'README.md',
+                'bun.lock',
+                'auto.ts',
+                'core.ts',
+                'index.ts',
+                'lib.ts',
+                'package-lock.json',
+                'package.json',
+                'v1.ts',
+                'v2.ts',
+            ].map((name) => 'source/' + name),
+        ].map((name) => 'catalog-source/components/opencode-see-image/' + name),
         ...[
             'SOURCE.json',
             'NOTICE.md',

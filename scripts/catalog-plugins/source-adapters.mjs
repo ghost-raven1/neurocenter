@@ -26,6 +26,7 @@ import ragSource from '../../services/shared/opencode-rag-source.cjs';
 import codexSource from '../../services/shared/codex-connector-source.cjs';
 import { prepareCodexBridge } from './recipes/codex-bridge.mjs';
 import { prepareBundledFetch } from './recipes/fetch-mcp.mjs';
+import { prepareBundledSeeImage } from './recipes/see-image.mjs';
 import { assertPortableSourceResources } from './source-resource-validation.mjs';
 
 const require = createRequire(new URL('../../services/catalog-service/package.json', import.meta.url));
@@ -49,6 +50,7 @@ export function validateAdditionalSource(source) {
             !exact(source, ['type', 'adapter']) ||
             ![
                 'fetch-mcp',
+                'opencode-see-image',
                 'opencode-rag',
                 'opencode-rag-plugin',
                 'opencode-snip',
@@ -484,6 +486,7 @@ export async function prepareAdditionalSource(recipe, context) {
     if (source.type === 'runtime') return prepareRuntimeSource(recipe, context, { extractRelease });
     if (source.type === 'prepared') {
         if (source.adapter === 'fetch-mcp') return prepareBundledFetch(recipe, context, { prepareProject });
+        if (source.adapter === 'opencode-see-image') return prepareBundledSeeImage(recipe, context, { prepareProject });
         if (source.adapter === 'opencode-rag') return prepareOpenCodeRag(context);
         if (source.adapter === 'opencode-rag-plugin') return prepareOpenCodeRagPlugin(context);
         if (source.adapter === 'opencode-snip') return prepareOpenCodeSnip(context);

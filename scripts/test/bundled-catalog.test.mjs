@@ -32,14 +32,14 @@ async function fixture(t) {
     }
     return directory;
 }
-test('Git bundle separates 21 ready inline assets from 13 current source plans and carries no runtime binaries or model weights', async () => {
+test('Git bundle separates 21 ready inline assets from 14 current source plans and carries no runtime binaries or model weights', async () => {
     const bundle = await bundleReader.readBundledCatalog(),
         source = new sourceReader.AssetSourceClient(bundle.pin, { contract, fetch: forbidden, offline: true });
     const index = await source.index(),
         selected = await source.select(index.assets.filter((entry) => entry.current).map((entry) => entry.id));
     assert.equal(selected.assets.length, 21);
     assert.ok(selected.assets.every((record) => ['agent', 'skill'].includes(record.asset.kind)));
-    assert.equal(bundle.plans.length, 13);
+    assert.equal(bundle.plans.length, 14);
     assert.equal(bundle.plans.filter((plan) => plan.kind === 'model').length, 2);
     assert.equal(bundle.pin.commit, 'sha256:' + bundle.pin.index.sha256);
     assert.equal(bundle.pin.repository, 'app-bundled');
@@ -112,7 +112,7 @@ test('Default offline sync from a fresh Git source publishes only metadata/inlin
     assert.equal(report.downloaded, 0);
     assert.equal(report.files, 0);
     assert.equal(report.assets.length, 21);
-    assert.equal(report.sourcePlans.length, 13);
+    assert.equal(report.sourcePlans.length, 14);
     assert.ok(report.sourcePlans.every((plan) => plan.state !== 'ready'));
     assert.ok(report.sourceCommit.startsWith('sha256:'));
     assert.equal(
@@ -200,7 +200,7 @@ test('The Docker public-source layout can verify the server bundle and retain it
     }
     await fs.rm(path.join(directory, 'scripts'), { recursive: true });
     const bundle = await bundleReader.readBundledCatalog(directory);
-    assert.equal(bundle.plans.length, 13);
+    assert.equal(bundle.plans.length, 14);
     assert.equal((await capturePreparedSource(tools)).files.length, PREPARED_SOURCE_INPUTS.length);
 });
 test('Every retained producer input is covered by an actual Docker COPY into its public /tools path', async () => {
@@ -252,6 +252,18 @@ test('Vendored runtime closures match their pins and ordinary registry dependenc
         assert.equal(codex.provenance.upstreamFiles.find((file) => file.path === 'source/' + name)?.sha256, sha);
     assert.ok(codex.files.has('source/connection/connection.ts'));
     assert.ok(codex.files.has('source/constants.ts'));
+    const seeImage = await bundleReader.readBundledComponent('opencode-see-image');
+    assert.equal(seeImage.provenance.commit, '091becb8159b031423b01737c80c0891e11d803b');
+    const seeImageLock = JSON.parse(seeImage.files.get('source/package-lock.json'));
+    assert.equal(seeImageLock.lockfileVersion, 3);
+    for (const item of Object.values(seeImageLock.packages)) {
+        if (!item.resolved) continue;
+        // prepared-project-сборка разрешает зависимости только из официального npm registry.
+        assert.ok(item.resolved.startsWith('https://registry.npmjs.org/'), 'unexpected resolved: ' + item.resolved);
+    }
+    assert.ok(seeImage.files.has('source/index.ts'));
+    assert.ok(seeImage.files.has('source/v1.ts'));
+    assert.ok(seeImage.files.has('source/v2.ts'));
 });
 test('Expected source CLI accepts explicit SHA content identities while legacy Git input remains exact', () => {
     const bundle = { repository: 'app-bundled', commit: 'sha256:' + 'a'.repeat(64), revision: 'b'.repeat(64) };
