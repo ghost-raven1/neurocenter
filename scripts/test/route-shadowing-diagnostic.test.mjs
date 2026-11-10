@@ -67,6 +67,25 @@ test('Без инцидента: не-явный /api/* и proxy-подмарш�
     }
 });
 
+test('Без инцидента: /api/-URL без зарегистрированного /api/-варианта (OQ3-нормализация канона — не инцидент)', () => {
+    // /api/health, /api/ready, /api/ready/dependencies, /api/internal/*, /api/docs, /api/socket.io:
+    // канонический паттерн матчит явную строку таблицы, но /api/-URL-вариант у роута не
+    // зарегистрирован (AppController / /internal/* / postCreate) — URL легитимно в домене
+    // catch-all (pre-2.10: проксирование в catalog), 500 route-configuration-error — нет.
+    for (const [method, p] of [
+        ['GET', '/api/health'],
+        ['GET', '/api/ready'],
+        ['GET', '/api/ready/dependencies'],
+        ['POST', '/api/internal/research-mcp/list'],
+        ['GET', '/api/docs'],
+        ['WS', '/api/socket.io'],
+    ]) {
+        const { result, lines } = captureLog(() => shadowingIncident(method, p));
+        assert.equal(result, undefined, `${method} ${p} не обязан считаться инцидентом`);
+        assert.deepEqual(lines, [], `${method} ${p} не обязан писать shadowing-лог`);
+    }
+});
+
 const makeRes = () => ({
     headersSent: false,
     destroyed: false,
@@ -119,4 +138,20 @@ test('SHADOWED_ROUTE: клиент получает фиксированный a
         ),
         'инцидент обязан остаться в server-логе',
     );
+});
+
+test('Без инцидента: GET /api/health — не 500 route-configuration-error, обычный proxy-flow', async () => {
+    // Фикс false positive (2.13 K3.1): /api/-вариант у /health не зарегистрирован, URL
+    // легитимно в домене catch-all — запрос идёт в обычный flow (auth → upstream).
+    const configService = { get: () => undefined };
+    const authGuard = { authenticate: async () => undefined };
+    const live = { mutation() {}, bridge() {}, sections() {} };
+    const service = new ProxyService(configService, authGuard, live);
+    const res = makeRes();
+    await service.forward(
+        { method: 'GET', path: '/api/health', headers: {}, query: {}, body: {}, aborted: false },
+        res,
+    );
+    assert.equal(res.statusCode, 401, 'unauthenticated-mock обязан дойти до auth-шага proxy-flow, а не до 500');
+    assert.deepEqual(res.body, { error: 'unauthorized' });
 });
