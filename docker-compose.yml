@@ -64,6 +64,10 @@ services:
       - path: .env.local
         required: false
     environment:
+      # Dev-стек = development: production-guard (validateProduction в shared/runtime.cjs)
+      # не должен срабатывать на dev-настройках (.env: SSO_DISABLE=true и т.п.).
+      # Dockerfile ставит ENV NODE_ENV=production как production-дефолт — переопределяем.
+      - NODE_ENV=development
       - PORT=22222
       - CATALOG_SERVICE_URL=http://catalog-service:4100
       - BIND_HOST=0.0.0.0
@@ -89,6 +93,7 @@ services:
       - path: .env.local
         required: false
     environment:
+      - NODE_ENV=development
       - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-1}
       - PORT=4000
       - BIND_HOST=0.0.0.0
@@ -135,6 +140,7 @@ services:
       - path: .env.local
         required: false
     environment:
+      - NODE_ENV=development
       - PORT=4100
       - BIND_HOST=0.0.0.0
       - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
@@ -181,6 +187,7 @@ services:
       - path: .env.local
         required: false
     environment:
+      - NODE_ENV=development
       - PORT=4400
       - BIND_HOST=0.0.0.0
       - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
@@ -212,6 +219,7 @@ services:
       - path: .env.local
         required: false
     environment:
+      - NODE_ENV=development
       - PORT=4200
       - BIND_HOST=0.0.0.0
       - SKILLS_STORAGE_PATH=/app/data/skills
@@ -262,6 +270,7 @@ services:
       - path: .env.local
         required: false
     environment:
+      - NODE_ENV=development
       - PORT=4300
       - BIND_HOST=0.0.0.0
       - RAG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}
