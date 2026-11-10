@@ -212,13 +212,17 @@
       "id": "skill-neurocenter-packaging",
       "kind": "skill",
       "name": "Упаковка ассетов Neurocenter",
-      "metadataSha256": "09b9fcd410357d017b0d151d826fa9210098d7f1fc8e6793a9b808dfec8bb10b",
+      "metadataSha256": "794e5f7cd54789a7bd5d9ba19ebd6fe8c7803b0f7d5031023e57ef55747e69f7",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.1.0",
+      "sourceRevision": "1.1.1",
       "assetVersion": "1.1.0",
-      "description": "Подготовка, проверка и публикация MCP, плагинов, скиллов, моделей и моста в общем формате neurocenter-assets."
+      "description": "Подготовка, проверка и публикация MCP, плагинов, скиллов, моделей и моста в общем формате neurocenter-assets.",
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Регламент упаковки ассетов в каталог (packager-роль); без него выпуск и re-pin каталога не выполняются по регламенту."
     },
     {
       "id": "skill-playwright-best-practices",
@@ -296,19 +300,23 @@
       "id": "neurocenter-bridge",
       "kind": "bridge",
       "name": "Neurocenter Bridge",
-      "metadataSha256": "6d75e2dc713259466fa78e06c86c55ffc598944d9c8e9e3aa647c27b5b82a810",
+      "metadataSha256": "6202579cdfd8c68d8c79773525e429771bf48e73cb1b12fd109af61ebed70842",
       "delivery": {
         "type": "app-bridge",
         "automatic": false
       },
       "sourceRevision": "application",
-      "description": "Мост для подключения компьютера к Нейроцентру."
+      "description": "Мост для подключения компьютера к Нейроцентру.",
+      "system": true,
+      "required": true,
+      "subsystem": "core",
+      "note": "Core: мост asset-sync — устройство-канал Нейроцентра (BRIDGE_CAPABILITIES, билеты, connect/verify). Без него компьютер не является устройством системы."
     },
     {
       "id": "mcp-opencode-rag",
       "kind": "mcp",
       "name": "OpenCodeRAG",
-      "metadataSha256": "2da42b9e71ad8c3958c23b0a92430c7031e5241b3046c347de37ad0089eac73a",
+      "metadataSha256": "dba21e3776b1345a2513a180539e4b85f13cb9e8caaf4bfb4c0c32467fd4d876",
       "delivery": {
         "type": "prepared",
         "recipe": "catalog-source/recipes/mcp-opencode-rag.json",
@@ -316,13 +324,17 @@
         "adapter": "opencode-rag"
       },
       "sourceRevision": "2.12.2-mcp.pack.1",
-      "description": "Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; модель и размерность подключаются в настройках проекта через мост. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается."
+      "description": "Локальный поиск по смыслу, структура файлов и поиск использований из OpenCodeRAG. MCP с явным инструментом index_project и настоящим Web UI; модель и размерность подключаются в настройках проекта через мост. Без TUI и автоиндексации OpenCode V2. Intel Mac не поддерживается.",
+      "system": true,
+      "required": true,
+      "subsystem": "rag",
+      "note": "RAG: локальный семантический поиск OpenCodeRAG (prepared-source RAG_PLUGIN_SOURCE, features hosted-rag-core-v1/opencode-rag-ui-v1, rag-ui-капабилити устройства). Обязателен для подсистемы RAG и системных ролей."
     },
     {
       "id": "plugin-opencode-rag-plugin",
       "kind": "plugin",
       "name": "OpenCodeRAG (плагин)",
-      "metadataSha256": "f3e79dfad6508ec2c52698f07fde91abc486cfd9e4eb731bcb2cdb813ba94fa9",
+      "metadataSha256": "e89b554f9d2780f5d6f114de653658600bc243439008b26085358ef80cf24651",
       "delivery": {
         "type": "prepared",
         "recipe": "catalog-source/recipes/plugin-opencode-rag-plugin.json",
@@ -330,103 +342,139 @@
         "adapter": "opencode-rag-plugin"
       },
       "sourceRevision": "2.12.2-plugin.pack.1",
-      "description": "Плагин MrDoe/OpenCodeRAG 2.12.2 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Модель и размерность подключаются в настройках проекта через мост; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается."
+      "description": "Плагин MrDoe/OpenCodeRAG 2.12.2 из закреплённого GitHub commit: поиск, структура файлов, память, настоящий Web UI и hooks OpenCode 1. Модель и размерность подключаются в настройках проекта через мост; существующий opencode-rag.json сохраняется. Совместимая фабрика без V2/TUI. Intel Mac не поддерживается.",
+      "system": true,
+      "required": true,
+      "subsystem": "rag",
+      "note": "RAG: плагин OpenCodeRAG 2.12.2 — автоматическая индексация через hooks OpenCode, индекс и Web UI. Без него подсистема RAG не поддерживается."
     },
     {
       "id": "skill-neurocenter-project-context",
       "kind": "skill",
       "name": "Контекст проекта Neurocenter",
-      "metadataSha256": "33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7",
+      "metadataSha256": "92f31907abff666ea0e31dff57ff876dcf1d30503566f0752e493449779ff26d",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.0.0",
+      "sourceRevision": "1.0.1",
       "assetVersion": "1.0.0",
-      "description": "Использовать подтверждённый контекст проекта Neurocenter при планировании, реализации, проверке и ответах по коду: RAG, разрешённые публичные чаты, файлы и фактически предоставленные MCP."
+      "description": "Использовать подтверждённый контекст проекта Neurocenter при планировании, реализации, проверке и ответах по коду: RAG, разрешённые публичные чаты, файлы и фактически предоставленные MCP.",
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): контекст проекта. Внутренние системные агенты (coordinator/packager/indexer/ai-admin/autoconfigurator) зависят от этого скилла; без него у ролей нет подтверждённого контекста проекта."
     },
     {
       "id": "skill-neurocenter-system-assistance",
       "kind": "skill",
       "name": "Помощь системных ролей Neurocenter",
-      "metadataSha256": "f461efcc6e4a4e703cfa94971ed5806753e7df8f16e0181819e8707fee22b9d4",
+      "metadataSha256": "c911819555796c510718dce66d9000e791caab2bebd108fc6adb9342b7330dd3",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.0.0",
+      "sourceRevision": "1.0.1",
       "assetVersion": "1.0.0",
-      "description": "Запросить помощь системных ролей Neurocenter для диагностики, справки и настройки, когда задача проекта зависит от состояния RAG, моделей, моста, очереди или установленных инструментов."
+      "description": "Запросить помощь системных ролей Neurocenter для диагностики, справки и настройки, когда задача проекта зависит от состояния RAG, моделей, моста, очереди или установленных инструментов.",
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): системный ассистент по настройке и исправлению работы устройства; от этого скилла зависят внутренние системные агенты."
     },
     {
       "id": "skill-neurocenter-project-learning",
       "kind": "skill",
       "name": "Опыт и знания проекта Neurocenter",
-      "metadataSha256": "e11db4238f54908bd638b409df8d85af5a147f0576d6ad52f3c3689caf3c6cd9",
+      "metadataSha256": "589088364c607a848f445e8ae72fd9176eca812492ac7c332ccbde0e7fc68a54",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.0.0",
+      "sourceRevision": "1.0.1",
       "assetVersion": "1.0.0",
-      "description": "Читать принятые знания проекта Neurocenter, сохранять подтверждённый опыт выполненной задачи и по запросу предлагать проверяемые гипотезы с основаниями."
+      "description": "Читать принятые знания проекта Neurocenter, сохранять подтверждённый опыт выполненной задачи и по запросу предлагать проверяемые гипотезы с основаниями.",
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): принятые знания проекта и сохраняемый опыт выполненных задач; от этого скилла зависят внутренние системные агенты."
     },
     {
       "id": "agent-planner",
       "kind": "agent",
       "name": "Планировщик",
-      "metadataSha256": "a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df",
+      "metadataSha256": "34108a4f15575bd4637f6eff1ac599d6bfc302d0d242844d0140e887602ca8fc",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.1.0",
+      "sourceRevision": "1.1.1",
       "assetVersion": "1.1.0",
-      "description": "Планирует изменение и критерии проверки без правки файлов."
+      "description": "Планирует изменение и критерии проверки без правки файлов.",
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): планирование задач и изменений проекта. Нужен для стандартной работы; замена на пользовательских агентов разрешена."
     },
     {
       "id": "agent-developer",
       "kind": "agent",
       "name": "Разработчик",
-      "metadataSha256": "dead26971305dd00dd661cdd02c43bd729df7eb491d78b0de3b28bfe0fa59a53",
+      "metadataSha256": "10e487ffcc8aeaac18f746fcbeb5aa77eb4fa950244e57490dfe76dda70e4b80",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.1.0",
+      "sourceRevision": "1.1.1",
       "assetVersion": "1.1.0",
-      "description": "Реализует согласованные изменения и проверяет результат."
+      "description": "Реализует согласованные изменения и проверяет результат.",
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): реализация изменений и кода проекта. Нужен для стандартной работы."
     },
     {
       "id": "agent-reviewer",
       "kind": "agent",
       "name": "Ревьюер",
-      "metadataSha256": "ba81bca273c9fbfdc98c3147d8fc5507d857c2b1144c4bcffbc828e0ea959fe1",
+      "metadataSha256": "31d5c74625a729d70115bf6037f310fc536f94b234b1936fc9bd3287d0e6de9f",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.1.0",
+      "sourceRevision": "1.1.1",
       "assetVersion": "1.1.0",
-      "description": "Проверяет изменения и находит конкретные дефекты."
+      "description": "Проверяет изменения и находит конкретные дефекты.",
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): проверка изменений и кода. Нужен для стандартной работы."
     },
     {
       "id": "agent-tester",
       "kind": "agent",
       "name": "Тестировщик",
-      "metadataSha256": "98dac69c7827e93c04a6dafb760cb6b1870361638c09ec342d720c3c9734500a",
+      "metadataSha256": "a8a8b6e0ee9c6b6151e53eb0203caedf26316b6d459ed50cff1470a7946d54f2",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.1.0",
+      "sourceRevision": "1.1.1",
       "assetVersion": "1.1.0",
-      "description": "Проверяет поведение и отрицательные сценарии на изолированных данных."
+      "description": "Проверяет поведение и отрицательные сценарии на изолированных данных.",
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): тестирование и верификация изменений. Нужен для стандартной работы."
     },
     {
       "id": "agent-documenter",
       "kind": "agent",
       "name": "Документатор",
-      "metadataSha256": "1cb1748c3ea5b2f9ed048b59d9ef992a99d6504d6aeb98defdd2fbcb4f46c846",
+      "metadataSha256": "d2ba4635585f10358e7e1831f83bab6e0e740e52137fe45ba1031a97b9406442",
       "delivery": {
         "type": "inline"
       },
-      "sourceRevision": "1.1.0",
+      "sourceRevision": "1.1.1",
       "assetVersion": "1.1.0",
-      "description": "Поддерживает точные инструкции и документацию проекта."
+      "description": "Поддерживает точные инструкции и документацию проекта.",
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): документация и объяснения. Нужен для стандартной работы."
     }
   ],
   "history": {
@@ -709,6 +757,11 @@
       "bytes": 79670
     },
     {
+      "path": "metadata/10e487ffcc8aeaac18f746fcbeb5aa77eb4fa950244e57490dfe76dda70e4b80.json",
+      "sha256": "10e487ffcc8aeaac18f746fcbeb5aa77eb4fa950244e57490dfe76dda70e4b80",
+      "bytes": 4476
+    },
+    {
       "path": "metadata/13a16db45838cf20e630312d188f29ae82b9646f17a5ac0f26305725ab3c2432.json",
       "sha256": "13a16db45838cf20e630312d188f29ae82b9646f17a5ac0f26305725ab3c2432",
       "bytes": 5250
@@ -779,9 +832,19 @@
       "bytes": 11079
     },
     {
+      "path": "metadata/31d5c74625a729d70115bf6037f310fc536f94b234b1936fc9bd3287d0e6de9f.json",
+      "sha256": "31d5c74625a729d70115bf6037f310fc536f94b234b1936fc9bd3287d0e6de9f",
+      "bytes": 3827
+    },
+    {
       "path": "metadata/33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7.json",
       "sha256": "33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7",
       "bytes": 3908
+    },
+    {
+      "path": "metadata/34108a4f15575bd4637f6eff1ac599d6bfc302d0d242844d0140e887602ca8fc.json",
+      "sha256": "34108a4f15575bd4637f6eff1ac599d6bfc302d0d242844d0140e887602ca8fc",
+      "bytes": 4379
     },
     {
       "path": "metadata/34cecf3143157dce2e659fd36943add7ff801c351f5317db3e683287af542fb6.json",
@@ -814,19 +877,24 @@
       "bytes": 2453
     },
     {
+      "path": "metadata/589088364c607a848f445e8ae72fd9176eca812492ac7c332ccbde0e7fc68a54.json",
+      "sha256": "589088364c607a848f445e8ae72fd9176eca812492ac7c332ccbde0e7fc68a54",
+      "bytes": 4141
+    },
+    {
       "path": "metadata/5c5804d09e44d80e72d203f028cb743e7fcee1176f889bfda4ba8d04385e6438.json",
       "sha256": "5c5804d09e44d80e72d203f028cb743e7fcee1176f889bfda4ba8d04385e6438",
       "bytes": 41380
     },
     {
+      "path": "metadata/6202579cdfd8c68d8c79773525e429771bf48e73cb1b12fd109af61ebed70842.json",
+      "sha256": "6202579cdfd8c68d8c79773525e429771bf48e73cb1b12fd109af61ebed70842",
+      "bytes": 2761
+    },
+    {
       "path": "metadata/62cde495f47a0af6803bbc6d26b8065a4bebc7c28a2ab59bbee74c7a453d0cc4.json",
       "sha256": "62cde495f47a0af6803bbc6d26b8065a4bebc7c28a2ab59bbee74c7a453d0cc4",
       "bytes": 5212
-    },
-    {
-      "path": "metadata/659b6ea40d20f9231b1fa1e1cc3a56fabef81b2cd680039b36b4361d6e4e9766.json",
-      "sha256": "659b6ea40d20f9231b1fa1e1cc3a56fabef81b2cd680039b36b4361d6e4e9766",
-      "bytes": 7365
     },
     {
       "path": "metadata/6ceaac1debbde6c5b5906dce3f7543c19605bc46837c197e9fc0692071f99140.json",
@@ -854,6 +922,11 @@
       "bytes": 25599
     },
     {
+      "path": "metadata/794e5f7cd54789a7bd5d9ba19ebd6fe8c7803b0f7d5031023e57ef55747e69f7.json",
+      "sha256": "794e5f7cd54789a7bd5d9ba19ebd6fe8c7803b0f7d5031023e57ef55747e69f7",
+      "bytes": 6840
+    },
+    {
       "path": "metadata/7ab1b7290c8ab7e62098c8beaee6e653773933e238ec7d58788f9761c296b5c6.json",
       "sha256": "7ab1b7290c8ab7e62098c8beaee6e653773933e238ec7d58788f9761c296b5c6",
       "bytes": 10547
@@ -877,6 +950,11 @@
       "path": "metadata/886162707c25793c294487d959767f52c4787478484c2a91c6bef51521d6850a.json",
       "sha256": "886162707c25793c294487d959767f52c4787478484c2a91c6bef51521d6850a",
       "bytes": 5193
+    },
+    {
+      "path": "metadata/92f31907abff666ea0e31dff57ff876dcf1d30503566f0752e493449779ff26d.json",
+      "sha256": "92f31907abff666ea0e31dff57ff876dcf1d30503566f0752e493449779ff26d",
+      "bytes": 4319
     },
     {
       "path": "metadata/946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894.json",
@@ -909,6 +987,11 @@
       "bytes": 5034
     },
     {
+      "path": "metadata/a8a8b6e0ee9c6b6151e53eb0203caedf26316b6d459ed50cff1470a7946d54f2.json",
+      "sha256": "a8a8b6e0ee9c6b6151e53eb0203caedf26316b6d459ed50cff1470a7946d54f2",
+      "bytes": 4296
+    },
+    {
       "path": "metadata/a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df.json",
       "sha256": "a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df",
       "bytes": 4015
@@ -934,6 +1017,11 @@
       "bytes": 3574
     },
     {
+      "path": "metadata/bbdadd2f27165c25a1ee1fd03e87bcb1a508db098d0a6426b5794bea7d91868f.json",
+      "sha256": "bbdadd2f27165c25a1ee1fd03e87bcb1a508db098d0a6426b5794bea7d91868f",
+      "bytes": 12736
+    },
+    {
       "path": "metadata/bffca01f1720021c1bd3485bfbc35cb85b49f778f0c01ea82c2251758b4601cf.json",
       "sha256": "bffca01f1720021c1bd3485bfbc35cb85b49f778f0c01ea82c2251758b4601cf",
       "bytes": 9011
@@ -949,6 +1037,11 @@
       "bytes": 5204
     },
     {
+      "path": "metadata/c911819555796c510718dce66d9000e791caab2bebd108fc6adb9342b7330dd3.json",
+      "sha256": "c911819555796c510718dce66d9000e791caab2bebd108fc6adb9342b7330dd3",
+      "bytes": 4124
+    },
+    {
       "path": "metadata/cdac7f2e82af5584acfee65ca1a93dc7894091b7cb3ebfb82f8533554cb6009e.json",
       "sha256": "cdac7f2e82af5584acfee65ca1a93dc7894091b7cb3ebfb82f8533554cb6009e",
       "bytes": 1543
@@ -959,6 +1052,11 @@
       "bytes": 1419
     },
     {
+      "path": "metadata/d2ba4635585f10358e7e1831f83bab6e0e740e52137fe45ba1031a97b9406442.json",
+      "sha256": "d2ba4635585f10358e7e1831f83bab6e0e740e52137fe45ba1031a97b9406442",
+      "bytes": 3766
+    },
+    {
       "path": "metadata/d380d33d6c5d3523053f3d20e0974dfd68ea7132ae74dd2d1514cd027c9624ed.json",
       "sha256": "d380d33d6c5d3523053f3d20e0974dfd68ea7132ae74dd2d1514cd027c9624ed",
       "bytes": 996
@@ -967,6 +1065,11 @@
       "path": "metadata/d8debdb3984a7c45ab8d3324a953e844ac01eac70e6e3f70ce1b18d994150eb1.json",
       "sha256": "d8debdb3984a7c45ab8d3324a953e844ac01eac70e6e3f70ce1b18d994150eb1",
       "bytes": 14321
+    },
+    {
+      "path": "metadata/dba21e3776b1345a2513a180539e4b85f13cb9e8caaf4bfb4c0c32467fd4d876.json",
+      "sha256": "dba21e3776b1345a2513a180539e4b85f13cb9e8caaf4bfb4c0c32467fd4d876",
+      "bytes": 7544
     },
     {
       "path": "metadata/dead26971305dd00dd661cdd02c43bd729df7eb491d78b0de3b28bfe0fa59a53.json",
@@ -992,6 +1095,11 @@
       "path": "metadata/e6082bdf03049ce9cf23cff363d7deb08a95265d04480db9097894ecd34d7797.json",
       "sha256": "e6082bdf03049ce9cf23cff363d7deb08a95265d04480db9097894ecd34d7797",
       "bytes": 943
+    },
+    {
+      "path": "metadata/e89b554f9d2780f5d6f114de653658600bc243439008b26085358ef80cf24651.json",
+      "sha256": "e89b554f9d2780f5d6f114de653658600bc243439008b26085358ef80cf24651",
+      "bytes": 5885
     },
     {
       "path": "metadata/f3e79dfad6508ec2c52698f07fde91abc486cfd9e4eb731bcb2cdb813ba94fa9.json",
@@ -1025,7 +1133,7 @@
     },
     {
       "path": "producer.json",
-      "sha256": "30240947a9636a56872ee5dee1fc7104ba57898174f092cb8c08305b5c26d104",
+      "sha256": "5b3ab0764908ef05ff69bf360a91f6095f4318901a2be67b6e96aaa7462a4b86",
       "bytes": 32829
     },
     {
@@ -1071,7 +1179,7 @@
   ],
   "index": {
     "path": "bundled/index.json",
-    "sha256": "659b6ea40d20f9231b1fa1e1cc3a56fabef81b2cd680039b36b4361d6e4e9766"
+    "sha256": "bbdadd2f27165c25a1ee1fd03e87bcb1a508db098d0a6426b5794bea7d91868f"
   },
   "sourceCommit": "e1255b4e522a0b38e471d5624cc63f5f13442649"
 }

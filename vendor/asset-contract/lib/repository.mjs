@@ -1,8 +1,18 @@
 import {lstat,open,realpath} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import path from 'node:path';
-import {KINDS,identifier,object,pin,sha,safePath,assetDigest} from './validation.mjs';
-import {validateAsset} from './asset.mjs';
+import {KINDS,identifier,object,pin,sha,text,safePath,assetDigest} from './validation.mjs';
+import {validateAsset,SYSTEM_SUBSYSTEMS} from './asset.mjs';
+/** 1.3.0: index entries mirror the descriptor's required-system-asset marker; the four fields are all-or-nothing. */
+function entrySystemFields(entry) {
+  const present=['system','required','subsystem','note'].filter(key=>entry[key]!==undefined);
+  if(present.length===0)return;
+  if(present.length!==4)throw new Error('Index entry: system, required, subsystem and note are all-or-nothing');
+  if(entry.system!==true)throw new Error('Index entry: system flag must be true');
+  if(entry.required!==true)throw new Error('Index entry: required flag must be true');
+  if(!SYSTEM_SUBSYSTEMS.includes(entry.subsystem))throw new Error(`Index entry: system subsystem must be one of ${SYSTEM_SUBSYSTEMS.join(', ')}`);
+  text(entry.note,'System note',2000);
+}
 
 /** Index hashes bind descriptor bytes, not a reformatted or normalized JSON object. */
 export function validateIndex(value) {
@@ -10,7 +20,8 @@ export function validateIndex(value) {
   if(value.schemaVersion!==1||!Array.isArray(value.assets)||value.assets.length>1000)throw new Error('Unsupported asset index');
   const seen=new Set(),paths=new Set(),groups=new Map();
   for(const entry of value.assets) {
-    object(entry,['id','kind','version','path','sha256','current','status'],'Index entry');
+    object(entry,['id','kind','version','path','sha256','current','status','system','required','subsystem','note'],'Index entry');
+    entrySystemFields(entry);
     if(!identifier(entry.id)||!KINDS.includes(entry.kind)||typeof entry.current!=='boolean')throw new Error('Invalid indexed asset or current flag');
     if(entry.status!==undefined&&entry.status!=='active'&&entry.status!=='retired')throw new Error('Invalid index status; active or retired required');
     pin(entry.version,'Indexed version');sha(entry.sha256);safePath(entry.path);
@@ -60,6 +71,8 @@ export async function loadRepository(directory) {
     if(assetDigest(bytes)!==entry.sha256)throw new Error(`Descriptor SHA mismatch: ${entry.id}`);
     const asset=validateAsset(JSON.parse(bytes.toString('utf8')));
     if(asset.id!==entry.id||asset.kind!==entry.kind||asset.version!==entry.version)throw new Error('Index and descriptor identity mismatch');
+    const marker=(value)=>JSON.stringify(['system','required','subsystem','note'].map(key=>value[key]??null));
+    if(marker(entry)!==marker(asset))throw new Error(`Index and descriptor system marker mismatch: ${asset.id}`);
     if(asset.recipe) {const recipe=await checkedBytes(root,asset.recipe.path,1024**2);if(assetDigest(recipe)!==asset.recipe.sha256)throw new Error('Recipe SHA mismatch');}
     assets.push({asset,sha256:entry.sha256,path:entry.path,current:entry.current});
   }

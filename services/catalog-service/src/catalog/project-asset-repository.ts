@@ -9,6 +9,7 @@ import {
     type IProjectPinRow,
 } from './project-asset-pins';
 import { publicationHash } from '../publication/publication-validation';
+import { requiredAssetForNative, systemAssetRemovalMessage } from './system-assets';
 
 /** Назначение хранит exact native snapshot; повтор add сохраняет ранее выбранную версию. */
 export class ProjectAssetRepository {
@@ -161,6 +162,8 @@ export class ProjectAssetRepository {
     remove(projectId: string, id: string, kind: string, actor: string): Promise<boolean> {
         return this.transaction(async (client) => {
             await this.lock(client, id, kind);
+            const systemAsset = await requiredAssetForNative(client, id, kind);
+            if (systemAsset) throw new ConflictException(systemAssetRemovalMessage(systemAsset));
             const result = await client.query<IProjectPinRow>(
                 `DELETE FROM project_assets WHERE project_id=$1 AND asset_id=$2 AND asset_kind=$3 RETURNING ${projectAssetColumns}`,
                 [projectId, id, kind],

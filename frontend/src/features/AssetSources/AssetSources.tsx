@@ -34,6 +34,7 @@ import { availableSourceAssetIds, sourceAssetReady } from './archiveUpload';
 import { BundledCatalogSources } from './BundledCatalogSources';
 import { CatalogRebuildStatus } from './CatalogRebuildStatus';
 import { canReadCatalogSources } from './catalogSourceStatus';
+import { isSystemAsset, subsystemLabels, SYSTEM_ASSET_TAG, SYSTEM_MODEL_TAG } from './systemMarks';
 import { useCatalogRebuildPolling } from './hooks/useCatalogRebuildPolling';
 import './AssetSources.less';
 
@@ -231,6 +232,16 @@ export default function AssetSources({ embedded }: IAssetSourcesProps = {}): JSX
             .includes(value.trim().toLocaleLowerCase('ru'));
     const cards = (data?.assets ?? []).filter((asset) => matches(asset, query)),
         localCards = (data?.localAssets ?? []).filter((asset) => matches(asset, localQuery));
+    /** 12.1: обязательный системный набор — отдельная группа; метки приходят из описи (контракт 1.3.0). */
+    const systemCards = cards.filter(isSystemAsset),
+        regularCards = cards.filter((asset) => !isSystemAsset(asset));
+    const systemTags = (asset: ISourceAsset): JSX.Element | null =>
+        isSystemAsset(asset) ? (
+            <>
+                <Tag color="blue">{SYSTEM_ASSET_TAG}</Tag>
+                {!!asset.subsystem && <Tag color="blue">{subsystemLabels[asset.subsystem]}</Tag>}
+            </>
+        ) : null;
     const editControls = (asset: ISourceAsset): JSX.Element | null =>
         asset.imported && asset.kind !== 'bridge' ? (
             <>
@@ -250,14 +261,17 @@ export default function AssetSources({ embedded }: IAssetSourcesProps = {}): JSX
                 >
                     Редактировать
                 </FeatureButton>
-                <ArchiveAssetButton
-                    kind={asset.kind}
-                    id={asset.imported.id}
-                    restore={asset.imported.archived}
-                    children={asset.imported.archived ? 'Вернуть из архива' : 'Удалить'}
-                    onArchived={() => void load()}
-                    disabled={archive.busy || imports.blocked || asset.imported.unavailable}
-                />
+                {/* 12.1: удаление системного обязательного ассета из проекта недоступно — API отвечает 409 с основанием. */}
+                {!isSystemAsset(asset) && (
+                    <ArchiveAssetButton
+                        kind={asset.kind}
+                        id={asset.imported.id}
+                        restore={asset.imported.archived}
+                        children={asset.imported.archived ? 'Вернуть из архива' : 'Удалить'}
+                        onArchived={() => void load()}
+                        disabled={archive.busy || imports.blocked || asset.imported.unavailable}
+                    />
+                )}
             </>
         ) : null;
     const add = (ids: string[]): void => {
@@ -309,6 +323,106 @@ export default function AssetSources({ embedded }: IAssetSourcesProps = {}): JSX
                   '. Уже добавленные карточки сохранены.'
                 : 'Новые карточки не добавлены.')
           : imports.job?.message;
+    /** 12.1: одна карточка — две группы («Системные (обязательные)» и остальные поставки). */
+    const renderSourceCard = (asset: ISourceAsset): JSX.Element => (
+        <Card
+            key={asset.id}
+            size="small"
+            className="asset-sources__card"
+            title={
+                <Space align="start">
+                    <Checkbox
+                        aria-label={'Выбрать ' + asset.name}
+                        disabled={
+                            imports.blocked ||
+                            archive.busy ||
+                            !data?.source.verified ||
+                            !sourceAssetReady(asset) ||
+                            asset.imported?.archived ||
+                            asset.imported?.unavailable
+                        }
+                        checked={selected.includes(asset.id)}
+                        onChange={(e) =>
+                            setSelected((previous) =>
+                                e.target.checked
+                                    ? [...new Set([...previous, asset.id])]
+                                    : previous.filter((id) => id !== asset.id),
+                            )
+                        }
+                    />
+                    <span>{asset.name}</span>
+                </Space>
+            }
+        >
+            <div className="asset-sources__card-content">
+                <Space wrap>
+                    <Tag>{labels[asset.kind]}</Tag>
+                    {systemTags(asset)}
+                    {asset.kind === 'model' && <Tag>{SYSTEM_MODEL_TAG}</Tag>}
+                    <Typography.Text type="secondary">
+                        {asset.version} · {asset.license}
+                    </Typography.Text>
+                </Space>
+                <Typography.Paragraph>{asset.description || 'Описание не добавлено в источник.'}</Typography.Paragraph>
+                {isSystemAsset(asset) && !!asset.note && (
+                    <Typography.Text type="secondary">{asset.note}</Typography.Text>
+                )}
+                {!!asset.dependencies.length && (
+                    <Typography.Text type="secondary">
+                        Включает точные зависимости:{' '}
+                        {asset.dependencies.map((dep) => dep.id + ' ' + dep.version).join(', ')}
+                    </Typography.Text>
+                )}
+                {asset.supply && (
+                    <Typography.Text type={asset.supply.ready ? 'secondary' : 'warning'}>
+                        {asset.supply.ready
+                            ? 'Файлы и зависимости готовы'
+                            : 'Не хватает файлов: ' +
+                              asset.supply.missingFiles +
+                              ' · ' +
+                              (asset.supply.missingBytes < 1000
+                                  ? asset.supply.missingBytes + ' Б'
+                                  : formatBytes(asset.supply.missingBytes))}
+                    </Typography.Text>
+                )}
+                {asset.imported && (
+                    <Typography.Text type="secondary">
+                        В каталоге: версия источника {asset.imported.originVersion}
+                        {asset.imported.archived
+                            ? ' · в архиве'
+                            : asset.imported.updateAvailable
+                              ? ' · доступно обновление'
+                              : ''}
+                    </Typography.Text>
+                )}
+                {(asset.kind === 'mcp' || asset.kind === 'plugin') && (
+                    <AssetCatalogName sourceName={asset.name} catalogName={asset.imported?.name} />
+                )}
+                <div className="asset-sources__card-actions">
+                    <FeatureButton
+                        features={['asset_sources', assetCatalogFeature(asset.kind)]}
+                        type="primary"
+                        disabled={
+                            imports.blocked ||
+                            archive.busy ||
+                            !data?.source.verified ||
+                            !sourceAssetReady(asset) ||
+                            asset.imported?.archived ||
+                            asset.imported?.unavailable
+                        }
+                        onClick={() => add([asset.id])}
+                    >
+                        {asset.imported
+                            ? asset.imported.updateAvailable
+                                ? 'Обновить'
+                                : 'Проверить и добавить'
+                            : 'Добавить'}
+                    </FeatureButton>
+                    {editControls(asset)}
+                </div>
+            </div>
+        </Card>
+    );
     if (!isMain) return <></>;
     return (
         <section className={embedded ? 'asset-sources asset-sources--embedded' : 'asset-sources'}>
@@ -576,107 +690,22 @@ export default function AssetSources({ embedded }: IAssetSourcesProps = {}): JSX
                     {loading && !data ? (
                         <Spin />
                     ) : cards.length ? (
-                        <div className="asset-sources__grid">
-                            {cards.map((asset) => (
-                                <Card
-                                    key={asset.id}
-                                    size="small"
-                                    className="asset-sources__card"
-                                    title={
-                                        <Space align="start">
-                                            <Checkbox
-                                                aria-label={'Выбрать ' + asset.name}
-                                                disabled={
-                                                    imports.blocked ||
-                                                    archive.busy ||
-                                                    !data?.source.verified ||
-                                                    !sourceAssetReady(asset) ||
-                                                    asset.imported?.archived ||
-                                                    asset.imported?.unavailable
-                                                }
-                                                checked={selected.includes(asset.id)}
-                                                onChange={(e) =>
-                                                    setSelected((previous) =>
-                                                        e.target.checked
-                                                            ? [...new Set([...previous, asset.id])]
-                                                            : previous.filter((id) => id !== asset.id),
-                                                    )
-                                                }
-                                            />
-                                            <span>{asset.name}</span>
-                                        </Space>
-                                    }
-                                >
-                                    <div className="asset-sources__card-content">
-                                        <Space wrap>
-                                            <Tag>{labels[asset.kind]}</Tag>
-                                            <Typography.Text type="secondary">
-                                                {asset.version} · {asset.license}
-                                            </Typography.Text>
-                                        </Space>
-                                        <Typography.Paragraph>
-                                            {asset.description || 'Описание не добавлено в источник.'}
-                                        </Typography.Paragraph>
-                                        {!!asset.dependencies.length && (
-                                            <Typography.Text type="secondary">
-                                                Включает точные зависимости:{' '}
-                                                {asset.dependencies.map((dep) => dep.id + ' ' + dep.version).join(', ')}
-                                            </Typography.Text>
-                                        )}
-                                        {asset.supply && (
-                                            <Typography.Text type={asset.supply.ready ? 'secondary' : 'warning'}>
-                                                {asset.supply.ready
-                                                    ? 'Файлы и зависимости готовы'
-                                                    : 'Не хватает файлов: ' +
-                                                      asset.supply.missingFiles +
-                                                      ' · ' +
-                                                      (asset.supply.missingBytes < 1000
-                                                          ? asset.supply.missingBytes + ' Б'
-                                                          : formatBytes(asset.supply.missingBytes))}
-                                            </Typography.Text>
-                                        )}
-                                        {asset.imported && (
-                                            <Typography.Text type="secondary">
-                                                В каталоге: версия источника {asset.imported.originVersion}
-                                                {asset.imported.archived
-                                                    ? ' · в архиве'
-                                                    : asset.imported.updateAvailable
-                                                      ? ' · доступно обновление'
-                                                      : ''}
-                                            </Typography.Text>
-                                        )}
-                                        {(asset.kind === 'mcp' || asset.kind === 'plugin') && (
-                                            <AssetCatalogName
-                                                sourceName={asset.name}
-                                                catalogName={asset.imported?.name}
-                                            />
-                                        )}
-                                        <div className="asset-sources__card-actions">
-                                            <FeatureButton
-                                                features={['asset_sources', assetCatalogFeature(asset.kind)]}
-                                                type="primary"
-                                                disabled={
-                                                    imports.blocked ||
-                                                    archive.busy ||
-                                                    !data?.source.verified ||
-                                                    !sourceAssetReady(asset) ||
-                                                    asset.imported?.archived ||
-                                                    asset.imported?.unavailable
-                                                }
-                                                onClick={() => add([asset.id])}
-                                            >
-                                                {asset.imported
-                                                    ? asset.imported.updateAvailable
-                                                        ? 'Обновить'
-                                                        : 'Проверить и добавить'
-                                                    : 'Добавить'}
-                                            </FeatureButton>
-                                            {editControls(asset)}
-                                        </div>
-                                    </div>
-                                </Card>
-                            ))}
-                        </div>
+                        <>
+                            {!!systemCards.length && (
+                                <section className="asset-sources__system-group" aria-label="Системные (обязательные)">
+                                    <Typography.Title level={4}>Системные (обязательные)</Typography.Title>
+                                    <Typography.Paragraph type="secondary">
+                                        Набор обязателен для готовности устройства: он назначается автоматически при
+                                        создании проекта, а удаление из проекта недоступно — API отвечает ошибкой 409 с
+                                        основанием.
+                                    </Typography.Paragraph>
+                                    <div className="asset-sources__grid">{systemCards.map(renderSourceCard)}</div>
+                                </section>
+                            )}
+                            {!!regularCards.length && (
+                                <div className="asset-sources__grid">{regularCards.map(renderSourceCard)}</div>
+                            )}
+                        </>
                     ) : (
                         <Empty
                             description={

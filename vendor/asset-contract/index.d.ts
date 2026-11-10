@@ -9,6 +9,14 @@ export const CONTRACT_VERSION: string;
 /** AD-13: capability families widened from floor checks to [min,max] ranges. */
 export const PACKAGE_FORMAT_RANGE: { min: number; max: number };
 export const BRIDGE_PROTOCOL_RANGE: { min: number; max: number };
+/** 1.3.0: subsystems of the explicit required system set (epic-catalog-external, story 12.1). */
+export const SYSTEM_SUBSYSTEMS: readonly ('core' | 'rag' | 'system-roles' | 'agent-team')[];
+/** 1.3.0: required-system-asset marker; the four fields are all-or-nothing. */
+export interface SystemAssetMarker {
+  system: true; required: true; subsystem: 'core' | 'rag' | 'system-roles' | 'agent-team';
+  /** Human-readable note why this asset is required on the device (≤2000 chars). */
+  note: string;
+}
 export interface RuntimeArtifact {
   target: 'darwin-arm64'|'darwin-x64'|'linux-arm64-glibc'|'linux-x64-glibc'|'linux-arm64-musl'|'linux-x64-musl'|'win32-arm64'|'win32-x64';
   sha256: string; compressedBytes: number; unpackedBytes: number; filesCount: number; entrypoint: string; executable?: boolean;
@@ -28,6 +36,8 @@ export interface AssetBase {
   /** AD-13: semver of the contract that produced this descriptor; optional at read, mandatory at produce. */
   contractVersion?: string;
   dependencies?: Dependency[]; recipe?: {path:string;sha256:string};
+  /** 1.3.0: required-system-asset marker; present as a set (see SystemAssetMarker) or absent entirely. */
+  system?: true; required?: true; subsystem?: 'core' | 'rag' | 'system-roles' | 'agent-team'; note?: string;
 }
 /** Native publication; existing app validator is required before storing or building package format 5. */
 export interface ToolAsset extends AssetBase {
@@ -56,7 +66,9 @@ export interface AgentAsset extends AssetBase {
 export type AssetDescriptor=ToolAsset|SkillAsset|ModelAsset|BridgeAsset|AgentAsset;
 export interface IndexEntry {id:string;kind:AssetKind;version:string;path:string;sha256:string;current:boolean;
   /** AD-16: version status; missing at read means active, retired is irreversible. */
-  status?: 'active'|'retired'}
+  status?: 'active'|'retired';
+  /** 1.3.0: mirrors the descriptor's required-system-asset marker (all-or-nothing); loadRepository cross-checks it against the descriptor. */
+  system?: true; required?: true; subsystem?: 'core' | 'rag' | 'system-roles' | 'agent-team'; note?: string;}
 export interface AssetIndex {schemaVersion:1;assets:IndexEntry[]}
 export interface ResolvedAsset {asset:AssetDescriptor;sha256:string;path:string;current:boolean}
 export interface LoadedRepository {index:AssetIndex;indexSha256:string;assets:ResolvedAsset[]}

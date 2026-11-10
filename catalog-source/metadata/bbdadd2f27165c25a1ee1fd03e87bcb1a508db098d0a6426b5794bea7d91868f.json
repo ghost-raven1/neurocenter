@@ -98,12 +98,12 @@
       "version": "1.0.0"
     },
     {
-      "current": true,
       "id": "skill-neurocenter-packaging",
       "kind": "skill",
+      "version": "1.1.0",
       "path": "assets/skill-neurocenter-packaging/1.1.0/asset.json",
       "sha256": "09b9fcd410357d017b0d151d826fa9210098d7f1fc8e6793a9b808dfec8bb10b",
-      "version": "1.1.0"
+      "current": false
     },
     {
       "current": true,
@@ -159,7 +159,7 @@
       "version": "1.0.0",
       "path": "assets/skill-neurocenter-project-context/1.0.0/asset.json",
       "sha256": "33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7",
-      "current": true
+      "current": false
     },
     {
       "id": "skill-neurocenter-system-assistance",
@@ -167,7 +167,7 @@
       "version": "1.0.0",
       "path": "assets/skill-neurocenter-system-assistance/1.0.0/asset.json",
       "sha256": "f461efcc6e4a4e703cfa94971ed5806753e7df8f16e0181819e8707fee22b9d4",
-      "current": true
+      "current": false
     },
     {
       "id": "skill-neurocenter-project-learning",
@@ -175,7 +175,7 @@
       "version": "1.0.0",
       "path": "assets/skill-neurocenter-project-learning/1.0.0/asset.json",
       "sha256": "e11db4238f54908bd638b409df8d85af5a147f0576d6ad52f3c3689caf3c6cd9",
-      "current": true
+      "current": false
     },
     {
       "id": "agent-planner",
@@ -183,7 +183,7 @@
       "version": "1.1.0",
       "path": "assets/agent-planner/1.1.0/asset.json",
       "sha256": "a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df",
-      "current": true
+      "current": false
     },
     {
       "id": "agent-developer",
@@ -191,7 +191,7 @@
       "version": "1.1.0",
       "path": "assets/agent-developer/1.1.0/asset.json",
       "sha256": "dead26971305dd00dd661cdd02c43bd729df7eb491d78b0de3b28bfe0fa59a53",
-      "current": true
+      "current": false
     },
     {
       "id": "agent-reviewer",
@@ -199,7 +199,7 @@
       "version": "1.1.0",
       "path": "assets/agent-reviewer/1.1.0/asset.json",
       "sha256": "ba81bca273c9fbfdc98c3147d8fc5507d857c2b1144c4bcffbc828e0ea959fe1",
-      "current": true
+      "current": false
     },
     {
       "id": "agent-tester",
@@ -207,7 +207,7 @@
       "version": "1.1.0",
       "path": "assets/agent-tester/1.1.0/asset.json",
       "sha256": "98dac69c7827e93c04a6dafb760cb6b1870361638c09ec342d720c3c9734500a",
-      "current": true
+      "current": false
     },
     {
       "id": "agent-documenter",
@@ -215,7 +215,115 @@
       "version": "1.1.0",
       "path": "assets/agent-documenter/1.1.0/asset.json",
       "sha256": "1cb1748c3ea5b2f9ed048b59d9ef992a99d6504d6aeb98defdd2fbcb4f46c846",
-      "current": true
+      "current": false
+    },
+    {
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "version": "1.1.1",
+      "path": "assets/skill-neurocenter-packaging/1.1.1/asset.json",
+      "sha256": "794e5f7cd54789a7bd5d9ba19ebd6fe8c7803b0f7d5031023e57ef55747e69f7",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Регламент упаковки ассетов в каталог (packager-роль); без него выпуск и re-pin каталога не выполняются по регламенту."
+    },
+    {
+      "id": "skill-neurocenter-project-context",
+      "kind": "skill",
+      "version": "1.0.1",
+      "path": "assets/skill-neurocenter-project-context/1.0.1/asset.json",
+      "sha256": "92f31907abff666ea0e31dff57ff876dcf1d30503566f0752e493449779ff26d",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): контекст проекта. Внутренние системные агенты (coordinator/packager/indexer/ai-admin/autoconfigurator) зависят от этого скилла; без него у ролей нет подтверждённого контекста проекта."
+    },
+    {
+      "id": "skill-neurocenter-system-assistance",
+      "kind": "skill",
+      "version": "1.0.1",
+      "path": "assets/skill-neurocenter-system-assistance/1.0.1/asset.json",
+      "sha256": "c911819555796c510718dce66d9000e791caab2bebd108fc6adb9342b7330dd3",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): системный ассистент по настройке и исправлению работы устройства; от этого скилла зависят внутренние системные агенты."
+    },
+    {
+      "id": "skill-neurocenter-project-learning",
+      "kind": "skill",
+      "version": "1.0.1",
+      "path": "assets/skill-neurocenter-project-learning/1.0.1/asset.json",
+      "sha256": "589088364c607a848f445e8ae72fd9176eca812492ac7c332ccbde0e7fc68a54",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): принятые знания проекта и сохраняемый опыт выполненных задач; от этого скилла зависят внутренние системные агенты."
+    },
+    {
+      "id": "agent-planner",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-planner/1.1.1/asset.json",
+      "sha256": "34108a4f15575bd4637f6eff1ac599d6bfc302d0d242844d0140e887602ca8fc",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): планирование задач и изменений проекта. Нужен для стандартной работы; замена на пользовательских агентов разрешена."
+    },
+    {
+      "id": "agent-developer",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-developer/1.1.1/asset.json",
+      "sha256": "10e487ffcc8aeaac18f746fcbeb5aa77eb4fa950244e57490dfe76dda70e4b80",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): реализация изменений и кода проекта. Нужен для стандартной работы."
+    },
+    {
+      "id": "agent-reviewer",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-reviewer/1.1.1/asset.json",
+      "sha256": "31d5c74625a729d70115bf6037f310fc536f94b234b1936fc9bd3287d0e6de9f",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): проверка изменений и кода. Нужен для стандартной работы."
+    },
+    {
+      "id": "agent-tester",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-tester/1.1.1/asset.json",
+      "sha256": "a8a8b6e0ee9c6b6151e53eb0203caedf26316b6d459ed50cff1470a7946d54f2",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): тестирование и верификация изменений. Нужен для стандартной работы."
+    },
+    {
+      "id": "agent-documenter",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-documenter/1.1.1/asset.json",
+      "sha256": "d2ba4635585f10358e7e1831f83bab6e0e740e52137fe45ba1031a97b9406442",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): документация и объяснения. Нужен для стандартной работы."
     }
   ]
 }

@@ -1,4 +1,6 @@
 export type TSourceAssetKind = 'mcp' | 'plugin' | 'skill' | 'model' | 'bridge' | 'agent';
+/** 12.1: подсистемы обязательного системного набора (контракт поставки 1.3.0). */
+export type TSourceSubsystem = 'core' | 'rag' | 'system-roles' | 'agent-team';
 
 export interface ISourceAsset {
     id: string;
@@ -9,6 +11,11 @@ export interface ISourceAsset {
     sha256: string;
     license: string;
     dependencies: Array<{ id: string; version: string }>;
+    /** 12.1: all-or-nothing маркеры обязательного системного ассета. */
+    system?: boolean;
+    required?: boolean;
+    subsystem?: TSourceSubsystem;
+    note?: string;
     supply?: { ready: boolean; missingFiles: number; missingBytes: number };
     imported?: {
         id: string;
@@ -29,6 +36,11 @@ export interface IBundledSourcePlan {
     sourceRevision: string;
     revision: string;
     delivery: string;
+    /** 12.1: all-or-nothing маркеры обязательного системного ассета. */
+    system?: boolean;
+    required?: boolean;
+    subsystem?: TSourceSubsystem;
+    note?: string;
     catalogReady?: boolean;
     imported?: ISourceAsset['imported'];
 }

@@ -236,7 +236,7 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
                     ...(supply ? { supply: supply.get(asset.id) } : {}),
                 })),
             sourcePlans: (bundle?.plans ?? []).map(
-                ({ id, kind, name, description, sourceRevision, revision, delivery }) => {
+                ({ id, kind, name, description, sourceRevision, revision, delivery, system, required, subsystem, note }) => {
                     const owner = [...local, ...history].find(
                         (receipt) => receipt.external_id === id && receipt.asset_kind === kind,
                     );
@@ -248,6 +248,10 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
                         sourceRevision,
                         revision,
                         delivery: delivery.type,
+                        // 12.1: те же all-or-nothing маркеры обязательного системного ассета, что и в описи.
+                        ...(system === true && required === true
+                            ? { system: true, required: true, subsystem, note }
+                            : {}),
                         catalogReady:
                             !!owner &&
                             readyBuilds.some(

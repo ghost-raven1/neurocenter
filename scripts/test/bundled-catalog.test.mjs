@@ -58,6 +58,51 @@ test('Every historical index and exact descriptor remains readable after retirin
         for (const entry of index.assets) assert.equal((await source.descriptor(entry)).sha256, entry.sha256);
     }
 });
+test('Required system set (12.1): exactly 12 assets carry system+required+subsystem+note in index and manifest', async () => {
+    const bundle = await bundleReader.readBundledCatalog(),
+        source = new sourceReader.AssetSourceClient(bundle.pin, { contract, fetch: forbidden, offline: true }),
+        index = await source.index(),
+        expected = {
+            core: ['neurocenter-bridge'],
+            rag: ['mcp-opencode-rag', 'plugin-opencode-rag-plugin'],
+            systemRoles: ['skill-neurocenter-project-context', 'skill-neurocenter-system-assistance', 'skill-neurocenter-project-learning', 'skill-neurocenter-packaging'],
+            agentTeam: ['agent-planner', 'agent-developer', 'agent-reviewer', 'agent-tester', 'agent-documenter'],
+        };
+    const marker = (value) =>
+        value && value.system === true && value.required === true && ['core', 'rag', 'system-roles', 'agent-team'].includes(value.subsystem) && typeof value.note === 'string' && value.note.length > 0
+            ? { subsystem: value.subsystem, note: value.note }
+            : undefined;
+    // manifest.current: ровно 12 помеченных, подсистемы по описи, без метки — остальные 22 (модели не помечены).
+    const marked = bundle.manifest.current.filter((row) => marker(row));
+    assert.equal(marked.length, 12);
+    const bySubsystem = {};
+    for (const row of marked) {
+        bySubsystem[row.subsystem] = bySubsystem[row.subsystem] || [];
+        bySubsystem[row.subsystem].push(row.id);
+    }
+    assert.deepEqual(bySubsystem.core, expected.core);
+    assert.deepEqual(bySubsystem.rag.sort(), expected.rag.sort());
+    assert.deepEqual(bySubsystem['system-roles'].sort(), expected.systemRoles.sort());
+    assert.deepEqual(bySubsystem['agent-team'].sort(), expected.agentTeam.sort());
+    for (const row of bundle.manifest.current)
+        if (row.id.startsWith('model-')) assert.equal(marker(row), undefined, row.id + ' не входит в required-набор');
+    // index: те же поля у 9 current-записей (вне-индексных в описи поставок нет); маркер индекса совпадает с маркером описания.
+    const indexMarked = index.assets.filter((entry) => entry.current && marker(entry));
+    assert.equal(indexMarked.length, 9);
+    assert.deepEqual(
+        indexMarked.map((entry) => entry.id).sort(),
+        [...expected.systemRoles, ...expected.agentTeam].sort(),
+    );
+    const selected = await source.select(indexMarked.map((entry) => entry.id));
+    for (const record of selected.assets) {
+        assert.ok(marker(record.asset), record.asset.id + ' descriptor несёт метку');
+        const entry = indexMarked.find((row) => row.id === record.asset.id && row.version === record.asset.version);
+        for (const key of ['system', 'required', 'subsystem', 'note'])
+            assert.equal(record.asset[key], entry[key], record.asset.id + ' ' + key);
+    }
+    // Ни одна старая версия не помечена: маркер только у текущих версий.
+    assert.equal(index.assets.filter((entry) => !entry.current && marker(entry)).length, 0);
+});
 test('Unknown retired metadata fails closed without a network fallback; malformed content pins never become Git commits', async () => {
     const bundle = await bundleReader.readBundledCatalog(),
         old = bundle.historicalPins[0];
