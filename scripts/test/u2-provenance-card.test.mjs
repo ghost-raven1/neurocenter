@@ -45,10 +45,13 @@ const makePluginPkg = (id, version, config = { entrypoint: 'index.js' }) =>
 
 // ---------------------------------------------------------------------------
 // FR-202 static: ai_plugin_versions — INSERT-only (история версий не перезаписывается).
-// Единственное допущенное исключение — AD-13 (entry 2.11): metadata-only UPDATE только что
-// созданной строки в той же publishing-транзакции (не история, не head, не байты версии).
+// Допущенные исключения:
+//  - AD-13 (entry 2.11): metadata-only UPDATE только что созданной строки в той же
+//    publishing-транзакции (не история, не head, не байты версии);
+//  - AD-16 (entry 2.7): status-only UPDATE той же строки (retire, необратим;
+//    байты версии и история не меняются).
 // ---------------------------------------------------------------------------
-test('FR-202 static: no UPDATE/DELETE/TRUNCATE on ai_plugin_versions outside the AD-13 metadata-only publish', async () => {
+test('FR-202 static: no UPDATE/DELETE/TRUNCATE on ai_plugin_versions outside the AD-13/AD-16 exceptions', async () => {
     const dir = path.join(root, 'services/catalog-service/src');
     const files = [];
     const walk = async (current) => {
@@ -82,16 +85,25 @@ test('FR-202 static: no UPDATE/DELETE/TRUNCATE on ai_plugin_versions outside the
     const updates = hits.filter((hit) => hit.kind === 'update');
     assert.deepEqual(
         updates.map((hit) => hit.file).sort(),
-        ['asset-sources/tool-adapter.ts'],
-        'Единственный UPDATE — AD-13 (contractVersion в metadata) в tool-adapter.ts.',
+        ['asset-sources/tool-adapter.ts', 'publication/plugin-repository.ts'],
+        'UPDATE — только AD-13 (contractVersion в metadata) в tool-adapter.ts и AD-16 (retire) в plugin-repository.ts.',
     );
-    // Допущённый UPDATE должен касаться только колонки metadata той же строки.
-    const start = updates[0].text.lastIndexOf('`', updates[0].offset),
-        end = updates[0].text.indexOf('`', updates[0].offset);
-    const sql = updates[0].text.slice(start, end + 1);
-    const setClause = sql.match(/SET\s+([\s\S]*?)\s+WHERE\s/i);
-    assert.ok(setClause, 'AD-13 UPDATE: SET-клауза не найдена.');
-    assert.match(setClause[1].trim(), /^metadata\s*=\s*COALESCE\(metadata/i, 'AD-13 UPDATE — только metadata.');
+    // Допущённые UPDATE касаются только разрешённых колонок той же строки.
+    for (const hit of updates) {
+        const whereIdx = hit.text.indexOf('WHERE', hit.offset);
+        const stmt = hit.text.slice(hit.offset, whereIdx === -1 ? undefined : whereIdx);
+        const setClause = stmt.match(/SET\s+([\s\S]*?)\s*$/i);
+        assert.ok(setClause, `UPDATE ${hit.file}: SET-клауза не найдена.`);
+        if (hit.file === 'asset-sources/tool-adapter.ts') {
+            assert.match(setClause[1].trim(), /^metadata\s*=\s*COALESCE\(metadata/i, 'AD-13 UPDATE — только metadata.');
+        } else if (hit.file === 'publication/plugin-repository.ts') {
+            assert.match(
+                setClause[1].trim(),
+                /^status\s*=\s*\\?['"]retired\\?['"]$/i,
+                'AD-16 UPDATE — только status=\'retired\' (байты версии и история не перезаписываются).',
+            );
+        }
+    }
 });
 
 // ---------------------------------------------------------------------------
