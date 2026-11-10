@@ -25,13 +25,26 @@ ENV NPM_CONFIG_REGISTRY=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/
 ARG NPM_REGISTRY_AUTH_B64
 RUN if [ -n "$NPM_REGISTRY_AUTH_B64" ]; then printf '%s' "$NPM_REGISTRY_AUTH_B64" | base64 -d > /tmp/neurocenter-empty-global.npmrc; else : > /tmp/neurocenter-empty-global.npmrc; fi
 
-WORKDIR /app
-COPY services/oauth2-bridge/package*.json ./
-# AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на /supply/vendor.
-COPY supply/vendor/ /supply/vendor/
+# Repo layout, not flat: the lockfile's file: links (file:../../vendor/asset-contract) and the
+# postbuild hook (node ../../scripts/workspace/dist-freshness.mjs) resolve relative to the
+# service's position two levels below the repo root. A flat /app layout clamps ../../ at the
+# filesystem root, so the computed link location no longer matches the lockfile key (npm ci
+# EMISSINGTARGET → misleading "can only install with an existing package-lock.json").
+WORKDIR /repo
+COPY services/oauth2-bridge/package*.json /repo/services/oauth2-bridge/
+COPY vendor/asset-contract/ /repo/vendor/asset-contract/
+# AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на
+# /repo/supply/vendor (два уровня вверх от /repo/services/<svc>).
+COPY supply/vendor/ /repo/supply/vendor/
+# postbuild-stamp freshness-guard (AD-10): закрывает closure входов сборки, --write не требует git.
+COPY scripts/workspace/dist-freshness.mjs scripts/workspace/isolated-build-source.mjs /repo/scripts/workspace/
+WORKDIR /repo/services/oauth2-bridge
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl="$NEUROCENTER_NPM_STRICT_SSL" --no-audit --no-fund
-COPY services/oauth2-bridge/ .
-COPY services/shared/ /shared/
+COPY services/oauth2-bridge/ /repo/services/oauth2-bridge/
+COPY services/shared/ /repo/services/shared/
+# shared-пакет резолвит свои deps (@neurocenter/asset-contract и др.) через node_modules
+# владельца: symlink на node_modules сервиса (паттерн catalog-service).
+RUN ln -s /repo/services/oauth2-bridge/node_modules /repo/services/shared/node_modules
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm run build
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 

@@ -27,32 +27,40 @@ ENV NPM_CONFIG_REGISTRY=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/
 ARG NPM_REGISTRY_AUTH_B64
 RUN if [ -n "$NPM_REGISTRY_AUTH_B64" ]; then printf '%s' "$NPM_REGISTRY_AUTH_B64" | base64 -d > /tmp/neurocenter-empty-global.npmrc; else : > /tmp/neurocenter-empty-global.npmrc; fi
 
-WORKDIR /app
+# Repo layout, not flat: both the mcp-bridge and the service lockfiles carry file: links
+# (file:../../supply/vendor, file:../../vendor/asset-contract) and the postbuild hook
+# (node ../../scripts/workspace/dist-freshness.mjs) resolves relative to the component's
+# position two levels below the repo root. A flat /app layout clamps ../../ at the filesystem
+# root, so the computed link location no longer matches the lockfile key (npm ci EMISSINGTARGET
+# → misleading "can only install with an existing package-lock.json").
 
 # --- MCP-мост neurocenter-asset-sync: нужен rag-sync-service для in-container restore_rag_db ---
 # В репо только исходники; node_modules/dist не копируются (.dockerignore) и собираются в образе.
+WORKDIR /repo
 COPY mcp/neurocenter-asset-sync/package.json mcp/neurocenter-asset-sync/package-lock.json mcp/neurocenter-asset-sync/
 COPY mcp/neurocenter-asset-sync/vendor/ mcp/neurocenter-asset-sync/vendor/
-# AD-15 vendor-схема: file:-зависимости mcp-lockfile (file:../../supply/vendor) указывают на /app/supply/vendor.
-COPY supply/vendor/ /app/supply/vendor/
-WORKDIR /app/mcp/neurocenter-asset-sync
+# AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на
+# /repo/supply/vendor (два уровня вверх от /repo/mcp/neurocenter-asset-sync и /repo/services/<svc>).
+COPY supply/vendor/ /repo/supply/vendor/
+# postbuild-stamp freshness-guard (AD-10): закрывает closure входов сборки, --write не требует git.
+COPY scripts/workspace/dist-freshness.mjs scripts/workspace/isolated-build-source.mjs /repo/scripts/workspace/
+WORKDIR /repo/mcp/neurocenter-asset-sync
 # Lock содержит Linux GNU-биндинги обеих архитектур. Проверяем загрузку сразу,
-# без повторного npm install, который пересчитывал версии вне lock-файла.
+# без повторного npm install, который пересчитал версии вне lock-файла.
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm ci --install-links=true --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl="$NEUROCENTER_NPM_STRICT_SSL" --include=optional --no-audit --no-fund && node -e "require('@lancedb/lancedb')"
 COPY mcp/neurocenter-asset-sync/ .
 # MCP использует общие контракты и их типы уже во время собственной сборки.
-COPY services/shared/ /app/services/shared/
+COPY services/shared/ /repo/services/shared/
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm run build
-RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
+# --install-links=true: без него prune-ре-решение file:-зависимостей ollama-runtime
+# (ollama-ai-provider-v2 из supply/vendor-tarball, AD-15) идёт в registry → 404.
+RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --install-links=true --omit=dev --no-audit --no-fund
 
 # --- rag-sync-service (NestJS) ---
-WORKDIR /app
-COPY services/rag-sync-service/package*.json ./
-# AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на /supply/vendor.
-COPY supply/vendor/ /supply/vendor/
+WORKDIR /repo/services/rag-sync-service
+COPY services/rag-sync-service/package*.json /repo/services/rag-sync-service/
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl="$NEUROCENTER_NPM_STRICT_SSL" --no-audit --no-fund
-COPY services/rag-sync-service/ .
-COPY services/shared/ /shared/
+COPY services/rag-sync-service/ /repo/services/rag-sync-service/
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm run build
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 

@@ -43,21 +43,31 @@ RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=
     && apt-get install -y --no-install-recommends postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-COPY vendor/asset-contract/ /vendor/asset-contract/
-COPY services/catalog-service/package*.json ./
-# AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на /supply/vendor.
-COPY supply/vendor/ /supply/vendor/
+# Repo layout, not flat: the lockfile's file: links (file:../../vendor/asset-contract,
+# file:../../supply/vendor) and the postbuild hook (node ../../scripts/workspace/dist-freshness.mjs)
+# resolve relative to the service's position two levels below the repo root. A flat /app layout
+# clamps ../../ at the filesystem root, so the computed link location no longer matches the
+# lockfile key (npm ci EMISSINGTARGET → misleading "can only install with an existing package-lock.json").
+WORKDIR /repo
+COPY services/catalog-service/package*.json /repo/services/catalog-service/
+COPY vendor/asset-contract/ /repo/vendor/asset-contract/
+# AD-15 vendor-схема: file:-зависимости lockfile (file:../../supply/vendor) указывают на
+# /repo/supply/vendor (два уровня вверх от /repo/services/<svc>).
+COPY supply/vendor/ /repo/supply/vendor/
+# postbuild-stamp freshness-guard (AD-10): закрывает closure входов сборки, --write не требует git.
+COPY scripts/workspace/dist-freshness.mjs scripts/workspace/isolated-build-source.mjs /repo/scripts/workspace/
+WORKDIR /repo/services/catalog-service
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm ci --registry=https://artifactory.dev.ppod.cbr.ru/artifactory/api/npm/ppod-npm-trusted/ --userconfig=/dev/null --globalconfig=/tmp/neurocenter-empty-global.npmrc --strict-ssl="$NEUROCENTER_NPM_STRICT_SSL" --no-audit --no-fund
-COPY services/catalog-service/ .
-COPY services/shared/ /shared/
-COPY catalog-source/ /catalog-source/
+COPY services/catalog-service/ /repo/services/catalog-service/
+COPY services/shared/ /repo/services/shared/
+COPY catalog-source/ /repo/catalog-source/
 # Shared declarations resolve the same pinned contracts as the owning service.
-RUN ln -s /app/node_modules /shared/node_modules
+RUN ln -s /repo/services/catalog-service/node_modules /repo/services/shared/node_modules
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm run build
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 
 # Сервер использует общий native builder; source assets приходят из единого репозитория.
+# /tools — псевдо-корень репо для in-container builder'а (отдельный от /repo-лейаута сервиса).
 COPY scripts/catalog-plugins/ /tools/scripts/catalog-plugins/
 COPY catalog-source/ /tools/catalog-source/
 COPY services/shared/ /tools/services/shared/
@@ -74,7 +84,7 @@ COPY scripts/workspace/node-runtime.mjs /tools/scripts/workspace/node-runtime.mj
 COPY scripts/workspace/project-config.mjs /tools/scripts/workspace/project-config.mjs
 COPY scripts/opencode-platforms.mjs /tools/scripts/opencode-platforms.mjs
 COPY vendor/asset-contract/ /tools/vendor/asset-contract/
-RUN ln -s /app/dist /tools/services/catalog-service/dist && ln -s /app/node_modules /tools/services/catalog-service/node_modules && ln -s /app/node_modules /tools/services/shared/node_modules && ln -s /app/node_modules /tools/node_modules
+RUN ln -s /repo/services/catalog-service/dist /tools/services/catalog-service/dist && ln -s /repo/services/catalog-service/node_modules /tools/services/catalog-service/node_modules && ln -s /repo/services/catalog-service/node_modules /tools/services/shared/node_modules && ln -s /repo/services/catalog-service/node_modules /tools/node_modules
 
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=catalog-service
