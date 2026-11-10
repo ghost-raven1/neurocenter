@@ -1,0 +1,41 @@
+{
+  "card": {
+    "body": "OpenSpec — AI-native система для spec-driven development. Бандл из 12 skill-ов (skills/openspec-*) в едином контуре + CLI `openspec` (npm @fission-ai/openspec 1.17.0, bin openspec). Метод: change → propose → apply → verify. Скиллы поверх CLI ведут полный цикл: `openspec new change` → `openspec propose` → `openspec apply change` → `openspec verify change`; `openspec onboard` — guided onboarding.\n\nЗачем бандлом: 12 скиллов (`openspec-apply-change`, `openspec-archive-change`, `openspec-bulk-archive-change`, `openspec-continue-change`, `openspec-explore`, `openspec-ff-change`, `openspec-new-change`, `openspec-onboard`, `openspec-propose`, `openspec-sync-specs`, `openspec-update-change`, `openspec-verify-change`) — единый SDD-контур, генерируются из шаблонов и драйвят CLI. Разделение на 12 карточек ломает метод (поток workflow и перекрёстные ссылки сохраняются только в едином дереве).\n\nФорма = 1 бандл-ассет kind=skill + vendor’d npm-тарбол CLI (AD-15): skill-контур и CLI — один инструментальный юнит, соответствует FR-308 (BMAD → OpenSpec-поток агент-команды).\n\nСовместимость: skill-формат opencode; CLI требует Node >=22.12 и production-dependency closure (адресовано при установке по AD-15).",
+    "meta": {
+      "description": "OpenSpec — AI-native spec-driven development: бандл 12 skill-ов (change → propose → apply → verify) + CLI `openspec` 1.17.0. Метод ведётся скиллами поверх CLI.",
+      "mcp": [],
+      "plugins": [],
+      "tags": [
+        "OpenSpec",
+        "SDD",
+        "Spec-driven development",
+        "Метод",
+        "Skill-группа",
+        "openspec-cli"
+      ]
+    },
+    "name": "OpenSpec (SDD метод)",
+    "path": "common",
+    "slug": "openspec"
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "type": "inline"
+  },
+  "id": "skill-openspec",
+  "kind": "skill",
+  "license": {
+    "spdx": "MIT",
+    "url": "https://github.com/Fission-AI/OpenSpec/blob/579fcac57ae00c2dff38f971b6d88b6f1f098b8a/LICENSE"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "579fcac57ae00c2dff38f971b6d88b6f1f098b8a",
+    "path": "skills/",
+    "repository": "https://github.com/Fission-AI/OpenSpec",
+    "type": "git"
+  },
+  "version": "1.17.0"
+}

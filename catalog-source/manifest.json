@@ -427,6 +427,18 @@
       "sourceRevision": "1.1.0",
       "assetVersion": "1.1.0",
       "description": "Поддерживает точные инструкции и документацию проекта."
+    },
+    {
+      "id": "skill-openspec",
+      "kind": "skill",
+      "name": "OpenSpec (SDD метод)",
+      "metadataSha256": "173b90a6600076f86e83e250828e67c12ebfd1296223ef6bb651ef7578773f96",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "git-579fcac57ae00c2dff38f971b6d88b6f1f098b8a",
+      "assetVersion": "1.17.0",
+      "description": "OpenSpec — AI-native spec-driven development: бандл 12 skill-ов (change → propose → apply → verify) + CLI `openspec` 1.17.0. Метод ведётся скиллами поверх CLI."
     }
   ],
   "history": {
@@ -664,6 +676,91 @@
       "bytes": 399
     },
     {
+      "path": "components/openspec/cli/openspec-1.17.0.tgz",
+      "sha256": "f344f717e50b91d741d734fb15a0cd49c6d3d41471c4b59f22abbd5645c2f253",
+      "bytes": 648627
+    },
+    {
+      "path": "components/openspec/NOTICE.md",
+      "sha256": "5c4c37b2145550c60ba3c562b3f902841539705f37e395b648934cd5f22c6944",
+      "bytes": 1674
+    },
+    {
+      "path": "components/openspec/recipe.json",
+      "sha256": "29fad1a6e59859261bc42880f596eeac814da18c64a68456052fdc1672db87ee",
+      "bytes": 2177
+    },
+    {
+      "path": "components/openspec/skills/openspec-apply-change/SKILL.md",
+      "sha256": "40fc0655ae650213a130f376eed1475527d6c65cdc32973754449776a3227152",
+      "bytes": 11159
+    },
+    {
+      "path": "components/openspec/skills/openspec-archive-change/SKILL.md",
+      "sha256": "b080e65449e9895fb63964c811168943bf99cb131a378b6a9937ed519ae4d37f",
+      "bytes": 16570
+    },
+    {
+      "path": "components/openspec/skills/openspec-bulk-archive-change/SKILL.md",
+      "sha256": "cf2d41a55e4edc805ae9da48b418c8da3055e0ffd4824070a501b3dd840a5484",
+      "bytes": 22296
+    },
+    {
+      "path": "components/openspec/skills/openspec-continue-change/SKILL.md",
+      "sha256": "2c63e2828d784d0d4eaa94211421b329875fde290503b7823c93518735f60cec",
+      "bytes": 10694
+    },
+    {
+      "path": "components/openspec/skills/openspec-explore/SKILL.md",
+      "sha256": "e9fe2acf923d5f9376c5e198df235d7cc531913ba3d760faff867f9c60dbfebb",
+      "bytes": 23482
+    },
+    {
+      "path": "components/openspec/skills/openspec-ff-change/SKILL.md",
+      "sha256": "8532ec76a78ef0754de03525b0706ed470cecff397558a4496da3fcc28db603b",
+      "bytes": 11611
+    },
+    {
+      "path": "components/openspec/skills/openspec-new-change/SKILL.md",
+      "sha256": "5b28565b38e7cb46c4895c0b190ed1dd896da3853c38a96065b3101604f9ba24",
+      "bytes": 5870
+    },
+    {
+      "path": "components/openspec/skills/openspec-onboard/SKILL.md",
+      "sha256": "3418d949ea0c49de6110e6d9bbe714799517b0f159804647931fcc23dfedfcd1",
+      "bytes": 18406
+    },
+    {
+      "path": "components/openspec/skills/openspec-propose/SKILL.md",
+      "sha256": "e9f4baa05e9fdbc969fcbdb8b13b4795c19640cc920999cf06c30a1a1934bb5c",
+      "bytes": 16676
+    },
+    {
+      "path": "components/openspec/skills/openspec-sync-specs/SKILL.md",
+      "sha256": "474952afb40497c5cb756e5654ddc901619de6b3bd57aaa03fb11d2611a99da3",
+      "bytes": 15755
+    },
+    {
+      "path": "components/openspec/skills/openspec-update-change/SKILL.md",
+      "sha256": "9ca71b1ec6252e743028e561d73df32678e4486f80d2cb63887aa8648dc3a5cb",
+      "bytes": 11174
+    },
+    {
+      "path": "components/openspec/skills/openspec-verify-change/SKILL.md",
+      "sha256": "f06dfdd46d810b3db1e900044542fe89864578bd43b6705faff67e8f39bce97b",
+      "bytes": 20456
+    },
+    {
+      "path": "components/openspec/skills/README.md",
+      "sha256": "28ec3c79ef355a7603516503936ffb479b941f4633440f83a71a1366d2caee43",
+      "bytes": 623
+    },
+    {
+      "path": "components/openspec/SOURCE.json",
+      "sha256": "2fffb4e2acae7ed9f33c4f8c71a0eb9f19e69932e97d1c2ba0b3d7dda69e7085",
+      "bytes": 4419
+    },
+    {
       "path": "components/python-context/recipe.json",
       "sha256": "fcb3213a4d5ae1089678f03fb7c68ee7e3e4a33a97a06e536d457691300a75ae",
       "bytes": 597
@@ -722,6 +819,11 @@
       "path": "metadata/1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177.json",
       "sha256": "1739f8edb90d4ef7c55182e489f55a652a54ba12153bbc59b64450964e3e3177",
       "bytes": 10281
+    },
+    {
+      "path": "metadata/173b90a6600076f86e83e250828e67c12ebfd1296223ef6bb651ef7578773f96.json",
+      "sha256": "173b90a6600076f86e83e250828e67c12ebfd1296223ef6bb651ef7578773f96",
+      "bytes": 2656
     },
     {
       "path": "metadata/1cb1748c3ea5b2f9ed048b59d9ef992a99d6504d6aeb98defdd2fbcb4f46c846.json",
@@ -1067,6 +1169,11 @@
       "path": "recipes/plugin-project-context.json",
       "sha256": "ae461d7f9010e08c8d6e64284a242a9ae275273b8604e25e14f52f6ada775a2f",
       "bytes": 607
+    },
+    {
+      "path": "recipes/skill-openspec.json",
+      "sha256": "76e4b1a049a64ba18b8e604750321a5ed95ef69b3d35af04c75337df8970c50a",
+      "bytes": 2240
     }
   ],
   "index": {
