@@ -72,6 +72,7 @@ export class SkillFeaturePolicyGuard implements CanActivate {
             // сервис проверки может выбросить FeatureFlagError.
             await requireFeaturesEnabled(requiredFeatures);
         } catch (error) {
+            // AD-19 allowlist: текст FeatureFlagError сформирован доменом (shared/feature-client.cjs).
             // Если функция отключена и сервис вернул статус 403,
             // возвращаем клиенту подробную информацию об ограничении.
             if (error instanceof FeatureFlagError && error.status === 403) {

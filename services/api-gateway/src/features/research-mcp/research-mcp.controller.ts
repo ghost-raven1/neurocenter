@@ -80,6 +80,7 @@ export class ResearchMcpController {
                 await this.host.closeResearchSession?.(claim);
             }
         } catch (error) {
+            // AD-19 allowlist: текст FeatureFlagError сформирован доменом (shared/feature-client.cjs).
             if (error instanceof FeatureFlagError)
                 throw new HttpException(
                     {

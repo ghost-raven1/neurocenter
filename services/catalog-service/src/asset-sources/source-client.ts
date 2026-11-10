@@ -8,7 +8,11 @@ import {
 export type { IAssetSourcePin };
 export type TAssetSourceTransport = Pick<ConstructorParameters<typeof SourceClient>[1], 'cache' | 'offline'>;
 
-/** HTTP-граница не дублирует правила чтения источника, общие с CLI. */
+/**
+ * HTTP-граница не дублирует правила чтения источника, общие с CLI.
+ * AD-19 allowlist: failure.message — текст, сформированный shared/asset-source-client.cjs
+ * (фиксированные доменные сообщения; транспортные сбои там же нормализованы в UNAVAILABLE).
+ */
 function httpError(error: unknown): never {
     const failure = error as Error & { code?: string };
     if (failure.code === 'BAD_SELECTION') {

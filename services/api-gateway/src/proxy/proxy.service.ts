@@ -36,6 +36,14 @@ import { forwardToolImport } from './tool-import-forward';
 import { TOOL_IMPORT_ROUTE } from '../../../shared/tool-import-deadline.cjs';
 import { CATCH_ALL_ROW, matchPolicy } from './route-policy';
 import { RateLimitStore, TRateLimitScope } from '../rate-limit/rate-limit-store';
+import {
+    ROUTE_CONFIGURATION,
+    UPSTREAM_ERROR,
+    UPSTREAM_TIMEOUT,
+    UPSTREAM_UNAVAILABLE,
+    isTransportTimeout,
+} from './error-policy';
+import { shadowingIncident } from './shadowing-diagnostic';
 
 type THttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
@@ -100,6 +108,13 @@ export class ProxyService {
      * @returns {Promise<void>}
      */
     public async forward(req: Request, res: Response): Promise<void> {
+        // AD-19: shadowing-диагностика (таблица entry 8): явный роут, дошедший до catch-all —
+        // routing-инцидент (AD-14): actionable-лог (route + pattern + expected) и фиксированный
+        // client-body без internal-деталей.
+        if (shadowingIncident((req.method || 'GET').toUpperCase(), req.path) !== undefined && !res.headersSent) {
+            res.status(500).json(ROUTE_CONFIGURATION);
+            return;
+        }
         // Private chat history and missing receipts must stay fresh across session and commit changes.
         if (
             /^\/api\/(?:device-jobs\/requests|system-role-chats|agent-tools)(?:\/|$)/.test(
@@ -385,6 +400,19 @@ export class ProxyService {
                   : await this.http.request(upstreamRequest);
             if (!upstream) return;
 
+            // AD-19: upstream 5xx — статус сохранён, body фиксированный; internal-текст
+            // upstream-ошибки (hostname:port, stack) в body клиента не уходит, только в log.
+            if (upstream.status >= 500) {
+                console.error(
+                    '[api-gateway] upstream 5xx:',
+                    upstream.status,
+                    upstreamRequest.url,
+                    JSON.stringify(upstream.data).slice(0, 2000),
+                );
+                res.status(upstream.status).json(UPSTREAM_ERROR);
+                return;
+            }
+
             res.status(upstream.status);
             if (typeof upstream.headers['content-disposition'] === 'string') {
                 res.setHeader('content-disposition', upstream.headers['content-disposition']);
@@ -414,11 +442,14 @@ export class ProxyService {
             }
         } catch (error) {
             if (!inferenceOpen()) return;
+            // AD-19: транспортные ошибки upstream — фиксированный body; hostname:port и детали
+            // — только в server-лог. timeout — 504, соединение/DNS — 502.
+            const timeout = isTransportTimeout(error);
             console.error(
                 '[api-gateway] proxy error:',
                 error instanceof Error ? error.message : 'upstream-unavailable',
             );
-            res.status(502).json({ error: 'upstream-unavailable' });
+            res.status(timeout ? 504 : 502).json(timeout ? UPSTREAM_TIMEOUT : UPSTREAM_UNAVAILABLE);
         }
     }
 
@@ -535,8 +566,15 @@ export class ProxyService {
             });
             if (personalKeyTransfer && (response.status < 200 || response.status >= 300)) {
                 res.status(response.status >= 400 && response.status < 600 ? response.status : 502).json({
+                    code: 'upstream-error',
                     message: 'Перенос ключа не подтверждён. Проверьте сохранённую квитанцию перед повтором.',
                 });
+                return;
+            }
+            // AD-19: upstream 5xx в device-channel — статус сохранён, body фиксированный.
+            if (response.status >= 500) {
+                console.error('[api-gateway] device-channel upstream 5xx:', response.status, suffix);
+                res.status(response.status).json(UPSTREAM_ERROR);
                 return;
             }
             res.status(response.status).json(response.data === '' ? null : response.data);
@@ -560,8 +598,12 @@ export class ProxyService {
             ) {
                 this.live.sections(['knowledge', 'projects', 'operations', 'audit']);
             }
-        } catch {
-            res.status(502).json({ message: 'Сервис подключений недоступен.' });
+        } catch (error) {
+            console.error(
+                '[api-gateway] device-channel error:',
+                error instanceof Error ? error.message : 'upstream-unavailable',
+            );
+            res.status(502).json({ code: 'upstream-unavailable', message: 'Сервис подключений недоступен.' });
         }
     }
 
@@ -652,8 +694,12 @@ export class ProxyService {
                     abort.signal,
                 );
                 if (open()) res.status(response.status).json(response.data === '' ? null : response.data);
-            } catch {
-                if (open()) res.status(502).json({ message: 'Сервис подключений недоступен.' });
+            } catch (error) {
+                console.error(
+                    '[api-gateway] device-channel embedding error:',
+                    error instanceof Error ? error.message : 'upstream-unavailable',
+                );
+                if (open()) res.status(502).json({ code: 'upstream-unavailable', message: 'Сервис подключений недоступен.' });
                 else timeoutReply();
             }
         } finally {

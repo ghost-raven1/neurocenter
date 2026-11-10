@@ -244,13 +244,11 @@ export class SourceUploads {
                 error instanceof NotFoundException
             )
                 throw error;
-            if (
-                error instanceof Error &&
-                !('code' in error) &&
-                !/https?:|\/tmp\/|\/var\/|postgres|password|token|secret/i.test(error.message) &&
-                !controller.signal.aborted
-            )
-                throw new BadRequestException(error.message.slice(0, 500));
+            // AD-19: текст ошибки разбора архива клиенту не уходит: фиксированный body;
+            // детали — только в server-лог.
+            if (error instanceof Error) {
+                console.error('[catalog] source upload failed:', error.message);
+            }
             throw new BadRequestException(
                 controller.signal.aborted
                     ? 'Передача файла отменена. Можно повторить тот же файл.'

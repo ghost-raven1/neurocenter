@@ -12,6 +12,7 @@ export async function requireFeaturesEnabled(
     try {
         await sharedRequire(keys, env, request, signal);
     } catch (error) {
+        // AD-19 allowlist: текст FeatureFlagError сформирован доменом (shared/feature-client.cjs).
         if (error instanceof FeatureFlagError && error.status === 403)
             throw new ForbiddenException({
                 statusCode: 403,

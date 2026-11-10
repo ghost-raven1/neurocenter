@@ -7,6 +7,7 @@ export async function requireRagFeatures(keys: readonly TFeatureFlagKey[], signa
     try {
         await requireFeaturesEnabled(keys, process.env, globalThis.fetch, signal);
     } catch (error) {
+        // AD-19 allowlist: текст FeatureFlagError сформирован доменом (shared/feature-client.cjs).
         if (error instanceof FeatureFlagError)
             throw new HttpException(
                 {

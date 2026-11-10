@@ -18,6 +18,8 @@ export async function assertGgufCapacity(root: string, limits: IGgufImportPolicy
     } catch (error) {
         const failure =
             error instanceof CapacityError ? error : new CapacityError('CAPACITY_UNAVAILABLE', 'runtime-artifacts');
+        // AD-19 allowlist: CapacityError (shared/capacity.cjs) — фиксированный доменный текст
+        // без путей, строк соединения и Docker-диагностики.
         throw new HttpException(failure.message, failure.statusCode);
     }
 }

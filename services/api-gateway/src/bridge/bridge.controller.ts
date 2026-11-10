@@ -145,6 +145,8 @@ export class BridgeController {
                         return;
                     }
                     if (error instanceof FeatureFlagError) {
+                        // AD-19 allowlist: text FeatureFlagError сформирован доменом
+                        // (shared/feature-client.cjs: имя фичи / фикс. сообщение), не exception.
                         throw new HttpException(
                             {
                                 statusCode: error.status,

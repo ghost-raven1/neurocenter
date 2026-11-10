@@ -23,7 +23,7 @@ import {
     type TProjectLearningRecordInput,
     type TProjectLearningProposeInput,
 } from './features/project-learning/tools.js';
-import { ok, fail, errMsg, type TToolResult } from './lib/stdio.js';
+import { ok, fail, errMsg, infraErrorMessage, type TToolResult } from './lib/stdio.js';
 import { authorizeInstalledProviderProfile } from './bridge/cli-provider-profile.js';
 import { detectProjectTool, detectProjectInputSchema, type TDetectProjectInput } from './tools/detect-project.js';
 import { ragDbDiff, ragDbDiffInputSchema, type TRagDbDiffInput } from './tools/rag-db-diff.js';
@@ -120,8 +120,8 @@ if (process.argv[2] === '--init') {
             JSON.stringify({ ok: true, ...res, note: 'мост зарегистрирован в глобальном конфиге opencode' }),
         );
     } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        process.stdout.write(JSON.stringify({ ok: false, error: msg }));
+        // AD-19: CLI stdout — только user-safe текст (infra-детали не уходят в вызывающий процесс).
+        process.stdout.write(JSON.stringify({ ok: false, error: errMsg(e) }));
         process.exit(1);
     }
     process.exit(0);
@@ -155,8 +155,8 @@ if (process.argv[2] === '--run') {
         process.stdout.write(JSON.stringify({ ok: false, error: `unknown-tool: ${tool}` }));
         process.exit(1);
     } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        process.stdout.write(JSON.stringify({ ok: false, error: msg }));
+        // AD-19: CLI stdout — только user-safe текст (infra-детали не уходят в вызывающий процесс).
+        process.stdout.write(JSON.stringify({ ok: false, error: errMsg(e) }));
         process.exit(1);
     }
 }
@@ -166,6 +166,11 @@ function safe<A>(fn: (a: A) => Promise<unknown>): (a: A) => Promise<TToolResult>
         try {
             return ok(await fn(a));
         } catch (e) {
+            // AD-19: результат tool'а — только user-safe текст; детали инфраструктурной
+            // ошибки (пути, spawn) — в local-лог моста (stderr), клиенту не уходят.
+            if (infraErrorMessage(e) !== undefined) {
+                process.stderr.write(`[neurocenter-asset-sync] tool error: ${e instanceof Error ? e.stack : String(e)}\n`);
+            }
             return fail(errMsg(e));
         }
     };

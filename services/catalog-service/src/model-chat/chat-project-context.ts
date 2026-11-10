@@ -190,6 +190,7 @@ export class ModelChatProjectContext {
             return { identity: state.identity, evidence: state.evidence, searchEnabled };
         } catch (error) {
             signal?.throwIfAborted();
+            // AD-19 allowlist: текст FeatureFlagError сформирован доменом (shared/feature-client.cjs).
             if (error instanceof FeatureFlagError)
                 throw new HttpException({ code: error.code, message: error.message }, error.status);
             throw error;
@@ -256,6 +257,7 @@ export class ModelChatProjectContext {
             searchEnabled = (await readFeatures(process.env, globalThis.fetch, signal)).flags.project_search;
         } catch (error) {
             signal.throwIfAborted();
+            // AD-19 allowlist: текст FeatureFlagError сформирован доменом (shared/feature-client.cjs).
             if (error instanceof FeatureFlagError)
                 throw new HttpException({ code: error.code, message: error.message }, error.status);
             throw error;

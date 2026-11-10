@@ -147,6 +147,7 @@ export class ChatResearchTools {
         try {
             return await readFeatures();
         } catch (error) {
+            // AD-19 allowlist: текст FeatureFlagError сформирован доменом (shared/feature-client.cjs).
             if (error instanceof FeatureFlagError)
                 throw new HttpException({ code: error.code, message: error.message }, error.status);
             throw error;

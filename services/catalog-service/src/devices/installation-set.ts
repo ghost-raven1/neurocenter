@@ -294,6 +294,8 @@ export async function resolveInstallationSet(
             const current = packageIdentity(pkg),
                 path = [...parents, current],
                 dependency = parents.length > 0;
+            // AD-19 allowlist: текст домена — имя/версия пакета из данных + фиксированная причина
+            // assertInstallablePackage (ConflictException с фикс. текстом), не transport-exception.
             throw new ConflictException({
                 statusCode: 409,
                 error: 'Conflict',

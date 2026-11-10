@@ -350,11 +350,11 @@ class McpHostService {
             await this.authorizeSession(claim);
             session = await this.adopt(claim);
         } catch (error) {
-            const e = error as { status?: number; message?: string };
+            const e = error as { status?: number };
             if (!res.headersSent) {
                 res.status(e.status || 502).json({
                     jsonrpc: '2.0',
-                    error: { code: e.status === 503 ? -32000 : -32603, message: e.message || 'Хост MCP недоступен.' },
+                    error: { code: e.status === 503 ? -32000 : -32603, message: hostChannelMessage(error) },
                     id: null,
                 });
             }
@@ -400,11 +400,11 @@ class McpHostService {
                 res.end();
             }
         } catch (error) {
-            const e = error as { status?: number; message?: string };
+            const e = error as { status?: number };
             if (!res.headersSent && !res.writableEnded) {
                 res.status(e.status || 500).json({
                     jsonrpc: '2.0',
-                    error: { code: -32603, message: e.message || 'Хост MCP недоступен.' },
+                    error: { code: -32603, message: hostChannelMessage(error) },
                     id: null,
                 });
             } else if (!res.writableEnded) {
@@ -500,10 +500,33 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+const HOST_DOMAIN_ERROR = Symbol('mcp-host-domain-error');
+
 function httpError(status: number, message: string): Error & { status: number } {
-    const error = new Error(message) as Error & { status: number };
+    const error = new Error(message) as Error & { status: number } & { [HOST_DOMAIN_ERROR]?: boolean };
     error.status = status;
+    // AD-19: доменная ошибка хоста — текст сформирован хостом (фиксированный), не транспортным exception.
+    error[HOST_DOMAIN_ERROR] = true;
     return error;
+}
+
+/** AD-19: доменная ошибка хоста (квоты/авторизация — текст из кода хоста, user-safe). */
+function isHostDomainError(error: unknown): error is Error & { status: number } {
+    return error instanceof Error && (error as { [HOST_DOMAIN_ERROR]?: boolean })[HOST_DOMAIN_ERROR] === true;
+}
+
+/**
+ * AD-19: jsonrpc-body несёт только user-safe текст: доменная ошибка хоста (allowlist —
+ * текст сформирован хостом) или фиксированный fallback; детали transport-ошибок
+ * (spawn/SDK) — только в server-лог.
+ */
+function hostChannelMessage(error: unknown): string {
+    if (isHostDomainError(error)) return error.message;
+    console.error(
+        '[api-gateway] mcp-host channel error:',
+        error instanceof Error ? error.message : String(error),
+    );
+    return 'Хост MCP недоступен.';
 }
 
 export { McpHostService };
