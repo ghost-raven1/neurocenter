@@ -2,7 +2,7 @@
   "name": "api-gateway",
   "version": "0.1.0",
   "private": true,
-  "description": "Front-facing api-gateway: /api/* \u2192 \u043c\u0438\u043a\u0440\u043e\u0441\u0435\u0440\u0432\u0438\u0441\u044b (fan-out), /socket.io \u2192 real-time; auth-guard",
+  "description": "Front-facing api-gateway: /api/* → микросервисы (fan-out), /socket.io → real-time; auth-guard",
   "scripts": {
     "docs:generate": "node ../../scripts/openapi/generate.mjs --output src/docs/openapi.json",
     "build": "npm run docs:generate && nest build",
@@ -25,6 +25,7 @@
     "@nestjs/core": "11.2.7",
     "@nestjs/platform-express": "11.2.7",
     "@nestjs/swagger": "11.4.7",
+    "@neurocenter/asset-contract": "file:../../vendor/asset-contract",
     "axios": "^1.7.7",
     "pg": "^8.11.0",
     "reflect-metadata": "^0.1.13",
@@ -35,19 +36,18 @@
     "@eslint/js": "10.0.1",
     "@nestjs/cli": "11.0.24",
     "@nestjs/schematics": "11.1.0",
-    "@neurocenter/asset-contract": "file:../../vendor/asset-contract",
     "@types/express": "4.17.21",
     "@types/node": "^20.19.0",
     "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "4.1.12",
     "eslint": "10.13.0",
+    "prettier": "3.9.10",
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.72.0",
-    "vitest": "4.1.12",
-    "prettier": "3.9.10"
+    "vitest": "4.1.12"
   },
   "overrides": {
     "swagger-ui-dist": "5.14.0"
