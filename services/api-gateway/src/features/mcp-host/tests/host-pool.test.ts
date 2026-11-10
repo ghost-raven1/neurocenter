@@ -3,6 +3,7 @@ import net from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { McpHostService, type IMcpHostLimits } from '../host';
 import type { IHostedMcpClaim } from '../ticket';
+import { makeClaim, makeLimits } from './claim.fixture';
 
 /** Минимальный streamable-HTTP MCP: initialize/tools/list по POST; GET — 405 (SSE-стрима нет). */
 function startMcpServer(): Promise<{ url: string; close: () => Promise<void> }> {
@@ -67,34 +68,21 @@ function startMcpServer(): Promise<{ url: string; close: () => Promise<void> }> 
     });
 }
 
-const limits = (over: Partial<IMcpHostLimits> = {}): IMcpHostLimits => ({
-    maxHosts: 4,
-    maxPerProject: 8,
-    maxPerDevice: 2,
-    maxChannelsPerHost: 4,
-    authzCacheTtlMs: 60000,
-    ...over,
-});
+// Общий claim/limits-fixture (S3.a: дубли фабрик сведены в claim.fixture.ts).
+const limits = (over: Partial<IMcpHostLimits> = {}): IMcpHostLimits => makeLimits(over);
 
 const claimFor = (
     mcpUrl: string,
     over: { project?: string; device?: string; artifact?: string } = {},
-): IHostedMcpClaim => ({
-    artifactSha256: over.artifact ?? 'a'.repeat(64),
-    descriptorSha256: 'e'.repeat(64),
-    entrypoint: 'server.mjs',
-    executable: false,
-    name: 'pool',
-    compressedBytes: 12,
-    session: {
-        deviceId: over.device ?? 'device-1',
-        projectId: over.project ?? 'project-1',
+): IHostedMcpClaim =>
+    makeClaim({
+        name: 'pool',
+        deviceId: over.device,
+        projectId: over.project,
         assetId: 'asset-' + (over.project ?? 'project-1'),
-        version: 1,
-        manifest: 'b'.repeat(64),
-    },
-    operationRemote: { url: mcpUrl, headers: {} },
-});
+        artifactSha256: over.artifact,
+        operationRemote: { url: mcpUrl, headers: {} },
+    });
 
 describe('Пул хостов MCP: квоты (AD-4)', () => {
     it('глобальный лимит: превышение maxHosts — actionable 503', async () => {

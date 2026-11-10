@@ -1,21 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { HOSTED_MCP_TTL_MS, issueHostedMcpTicket } from '../ticket';
-
-const claim = () => ({
-    artifactSha256: 'a'.repeat(64),
-    descriptorSha256: 'e'.repeat(64),
-    entrypoint: 'server.mjs',
-    executable: false,
-    name: 'TTL',
-    compressedBytes: 12,
-    session: {
-        deviceId: 'device',
-        projectId: 'project',
-        assetId: 'asset',
-        version: 1,
-        manifest: 'b'.repeat(64),
-    },
-});
+import { makeClaim } from './claim.fixture';
 
 describe('TTL билета хоста (AD-4)', () => {
     const SECRET = 'qa'.repeat(16);
@@ -32,7 +17,9 @@ describe('TTL билета хоста (AD-4)', () => {
 
     it('issuance: exp = now + 24h, не 30 дней', () => {
         const before = Date.now();
-        const ticket = issueHostedMcpTicket(claim());
+        const ticket = issueHostedMcpTicket(
+            makeClaim({ name: 'TTL', deviceId: 'device', projectId: 'project', assetId: 'asset' }),
+        );
         const after = Date.now();
         const raw = JSON.parse(Buffer.from(ticket.split('.')[0], 'base64url')) as { exp: number };
         expect(raw.exp).toBeGreaterThanOrEqual(before + HOSTED_MCP_TTL_MS);

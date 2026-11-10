@@ -3,6 +3,7 @@ import net from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { McpHostService, type IMcpHostLimits } from '../host';
 import type { IHostedMcpClaim } from '../ticket';
+import { makeClaim, makeLimits } from './claim.fixture';
 
 /** Mock-каталог /internal/mcp-host/authorize-session: счётчик запросов, управляемый статус, режим hang. */
 interface ICatalogState {
@@ -53,29 +54,16 @@ function startCatalog(state: ICatalogState): Promise<{ url: string; close: () =>
     });
 }
 
-const LIMITS: IMcpHostLimits = {
-    maxHosts: 4,
-    maxPerProject: 8,
-    maxPerDevice: 2,
-    maxChannelsPerHost: 4,
-    authzCacheTtlMs: 250,
-};
+// Общий claim/limits-fixture (S3.a: дубли фабрик сведены в claim.fixture.ts).
+const LIMITS: IMcpHostLimits = makeLimits({ authzCacheTtlMs: 250 });
 
-const claimFor = (over: { device?: string; project?: string; artifact?: string } = {}): IHostedMcpClaim => ({
-    artifactSha256: over.artifact ?? 'a'.repeat(64),
-    descriptorSha256: 'e'.repeat(64),
-    entrypoint: 'server.mjs',
-    executable: false,
-    name: 'cache',
-    compressedBytes: 12,
-    session: {
-        deviceId: over.device ?? 'device-1',
-        projectId: over.project ?? 'project-1',
-        assetId: 'asset-1',
-        version: 1,
-        manifest: 'b'.repeat(64),
-    },
-});
+const claimFor = (over: { device?: string; project?: string; artifact?: string } = {}): IHostedMcpClaim =>
+    makeClaim({
+        name: 'cache',
+        deviceId: over.device,
+        projectId: over.project,
+        artifactSha256: over.artifact,
+    });
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
