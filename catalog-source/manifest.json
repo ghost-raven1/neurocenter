@@ -427,6 +427,18 @@
       "sourceRevision": "1.1.0",
       "assetVersion": "1.1.0",
       "description": "Поддерживает точные инструкции и документацию проекта."
+    },
+    {
+      "id": "skill-bmad-method",
+      "kind": "skill",
+      "name": "BMAD Method",
+      "metadataSha256": "8d5ee5422d2eac115eeaeade6daefc7dedefe00eb65c3c016d5a326987a885a9",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "git-a867e1604b365d48ea03cbd109da1066ba0c84bc",
+      "assetVersion": "6.13.0-next",
+      "description": "BMAD Method — agile AI-driven development: бандл 32 skill-ов (hub `bmad` + bmod-модули) для самонаправленной поставки. Hub `bmad` отвечает на «что делать дальше» и запускает bmad-build. Python/uv (BMad-setup) — compatibility-метка, не блокирует установку скиллов."
     }
   ],
   "history": {
@@ -679,6 +691,2511 @@
       "bytes": 115
     },
     {
+      "path": "components/skill-bmad-method/NOTICE.md",
+      "sha256": "a34940bef6e58d285308d8fcef0b17263dab146a865263345bb1b095b8034f22",
+      "bytes": 1087
+    },
+    {
+      "path": "components/skill-bmad-method/recipe.json",
+      "sha256": "e2af44153df05206b93853ca6f6042e02087199748a70600791c9245105f534f",
+      "bytes": 2021
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/assets/methods.csv",
+      "sha256": "5d22edd2175cc14529adf9b3b5830bd132a7a0cb54d833e482ed89adb969d58b",
+      "bytes": 9127
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/bmod.toml",
+      "sha256": "5d68a8398e8cbd4a262c8353df3b2cceb124d644d0d52376dcf1dbb777562dae",
+      "bytes": 122
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/customize.toml",
+      "sha256": "77b663f4446355dfccb1a7bdf1bcf889d25fa6f69d31d2c573d57e6778904d5b",
+      "bytes": 3531
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/evals/cases.json",
+      "sha256": "407896e97a732074e6eb1a10c86e9c751d162b21d1df630a02fad547e7246fbd",
+      "bytes": 6215
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/evals/files/pantry-pal.md",
+      "sha256": "8d85d8a57fe70e9508f79646270b35fb34685b9b532244bd01a23ffc4a12a555",
+      "bytes": 1199
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/evals/files/prd-notifications.md",
+      "sha256": "5b7e1a498bb75da0d44ea94cc9d3156ba3ed433e6e6c3de8a0ffa71f216af198",
+      "bytes": 3227
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/evals/files/rollout-plan.md",
+      "sha256": "a8d25b1c62187268f5074645411a0ba80a488faf04c16fa2170f825f6528fa60",
+      "bytes": 1291
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/evals/triggers.json",
+      "sha256": "7c3da82a8e1edaa15cb73fe69418d4105d354be9b71a28f7b98469c52dc58370",
+      "bytes": 3200
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/scripts/pick_methods.py",
+      "sha256": "2fb04e69382f344b7c501e7735b13267b2fa72e8ee1eaf1495bee9bcf2623dd6",
+      "bytes": 16497
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/scripts/tests/test_pick_methods.py",
+      "sha256": "d7d8c35d45e60d16fbb1efa4225c6b41c84a8774b9480e3eea0e9e10eba1e97d",
+      "bytes": 14876
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-advanced-elicitation/SKILL.md",
+      "sha256": "865e4a63e0c0d8e742139c413cc52fc47193da13fe96e4ccac5dd55a53b7343b",
+      "bytes": 8274
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/assets/brief-view.html",
+      "sha256": "8a35be3de711bb17ed36949c14db16956123247bc4995fba650085889cbda3f8",
+      "bytes": 4493
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/assets/prfaq-view.html",
+      "sha256": "8db4b27417f4f9b761f7e685ce502ee107ebb75037cd78778aed9cd37140ae96",
+      "bytes": 5097
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/assets/rubric-prfaq.md",
+      "sha256": "b41f00cd4aa7a5019739a43286072eeb98cb8347187943c97df51891a5638b8a",
+      "bytes": 882
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/assets/template-brd.md",
+      "sha256": "1997642d78e8f0b9587430a480af1320831895ded8e9bdf242141e1f3b544e31",
+      "bytes": 3531
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/assets/template-brief.md",
+      "sha256": "809680ddff6ad43b3a45100c52839f88104a1a3246611e20d49bfba9dcdd8305",
+      "bytes": 4050
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/assets/template-prfaq.md",
+      "sha256": "a0d27fced9a6c2b03652c2ac0fb6143a13e9e1e46c83ce37af2a402a37856b61",
+      "bytes": 6953
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/bmod.toml",
+      "sha256": "f502c227e7a381abaf046235bbf0164a966a7bb8390418fe06efc0981d640652",
+      "bytes": 214
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/customize.toml",
+      "sha256": "ff8caec8f158ec0f06d22351cf103730d6be3338a388e467365b66ea0097b53e",
+      "bytes": 4021
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/evals/triggers.json",
+      "sha256": "cdf212037a158c3c5ab4b2a66c53cf549d1540c9b5da896a43d408c19279c668",
+      "bytes": 2314
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-analyst/SKILL.md",
+      "sha256": "43c2ac1dc0697ef31a259db5cbbbafd32b0276bf05fd633dd3b42a8a0a087096",
+      "bytes": 4321
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-architect/bmod.toml",
+      "sha256": "e5b139dc71dcea400e42fcce20a27343db27c410c4e1dc4f8938964ed51a6acf",
+      "bytes": 147
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-architect/customize.toml",
+      "sha256": "659daadc2cd5bc96822dfe159191dcc3b80c2774e3d936bdbb79e8ec26791ab3",
+      "bytes": 2530
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-architect/SKILL.md",
+      "sha256": "cab16bd4223f626e914da039bf5597b8dc34c0922e5df1189addd00ebde4e256",
+      "bytes": 5249
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-dev/bmod.toml",
+      "sha256": "84ad37df8bd0b7adaa851b42ad8a4a913da27505f18197b91572bce4df35d535",
+      "bytes": 218
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-dev/customize.toml",
+      "sha256": "cf9b2c269117f1bb28f4240e87f3b0bfb627e71545e2048dbf7b5b315d9d349a",
+      "bytes": 3317
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-dev/SKILL.md",
+      "sha256": "72691e13785fe32fc937bf570d1f00b4541f1c650136cc3a4cc3c75a3688d481",
+      "bytes": 5442
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/pitch-view.html",
+      "sha256": "9537be6c67251a9fe0a1ff5cb83af224fa5076f2a8813dba873f7ed32b279ee2",
+      "bytes": 4650
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-agent-spec.md",
+      "sha256": "b6e2e59b7f7f8180fbe516116beb01a2b231898b54ae4860c6bbc7b83e3938cf",
+      "bytes": 2686
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-business-case.md",
+      "sha256": "e0305e278f6db9bfea80cdb415c3090164c7ce87cf529d6711b50c193e2c2801",
+      "bytes": 2279
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-charter.md",
+      "sha256": "fd6141fa1be7042c8343fcd9a155d9f97b2c6acfb6730026eaecf14ed2325d86",
+      "bytes": 2331
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-experiment.md",
+      "sha256": "7b16b5313ed636d0efb50909d2fc628b5df1bdcd4881e65a887cb0fc012dca33",
+      "bytes": 3381
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-launch.md",
+      "sha256": "9032260fbd46b4520fd082343ce8efa31d1a12fbba4b29470be636fae5044e86",
+      "bytes": 2119
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-narrative.md",
+      "sha256": "bc6b83871b2c0975b0c481cdb07d8b6b498e79cb3a5a3b9ab66857ddd18af1e5",
+      "bytes": 2029
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-opportunity.md",
+      "sha256": "0873b4ed47b1ae34e295fb8a540637c00e4ea21f419ea7e14b118c30f15b298a",
+      "bytes": 4054
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-pitch.md",
+      "sha256": "8169587f04c2290f314aa165e8828d1f275a366ba3b0a3236debef3697198159",
+      "bytes": 2747
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-prd-light.md",
+      "sha256": "f81bc8b579d110503fa52e9fbf53f6bb258118ae116fea0cb8e5fbbfd466e730",
+      "bytes": 2881
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-prd.md",
+      "sha256": "47bfad621d981fcd23726a827e2ff9a505ccd7e6500ecb83110a1ce20518bc94",
+      "bytes": 10481
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-prototype-plan.md",
+      "sha256": "2d7a867bea6626d3f51bab81b83ae2e14fd3420747ce7e33e2bb3e9a853e5f6e",
+      "bytes": 4561
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/assets/template-srs.md",
+      "sha256": "1b80dbeac080ee3a4a90232b45d3bb6fb79258c56ae1e91218a10bc4b81418dd",
+      "bytes": 2918
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/bmod.toml",
+      "sha256": "f19e312c1661089388cb51c929d6d8a9e1e81332258f1224f417e5bd4da105f1",
+      "bytes": 259
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/customize.toml",
+      "sha256": "9f04cc1637012d78f9f54a0c574cf2999ae1c968c067c25c25f5cbd62a120276",
+      "bytes": 3095
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/evals/triggers.json",
+      "sha256": "8690e08c62edf9356dc167105c15382b30e71b6f07873289bd69c9d4d88545fa",
+      "bytes": 4348
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-pm/SKILL.md",
+      "sha256": "dc71f430483af5d515741f56fab93db1f3993c26993ad180b1b75ff01a870773",
+      "bytes": 6831
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/assets/bug-template.md",
+      "sha256": "cf08c0467ce4829e6418404011ae6c950775d806bdf55fc4ccf9c8a02601403d",
+      "bytes": 2307
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/assets/spike-template.md",
+      "sha256": "a275d856820ce7d0019f08e2e043b61d3e8c0da7978197d47021ca73ab0139c0",
+      "bytes": 1851
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/assets/ticket-template.md",
+      "sha256": "02167ba264c555aea6be0ddc5cbad00857c784c5eeede50280299180cdddb261",
+      "bytes": 5753
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/assets/tickets-template.toml",
+      "sha256": "e0943e4f1f30460d676737c1a004a9ed7f701438d05e00b7d32d1d69bd682016",
+      "bytes": 3119
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/bmod.toml",
+      "sha256": "b1e4c56e53b3ad28f51f495c3fe227e70708c79a540df7ed569736a603e55c5f",
+      "bytes": 113
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/config/github-ticketing.toml",
+      "sha256": "c8c92ff2641c1be1e327b8d5d62e4cf0848143a0c864ff377a1da0f3290e2202",
+      "bytes": 4735
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/config/jira-ticketing.toml",
+      "sha256": "06bef5404be1e6b683c1737c96646558727ad496f834fe54341f07282cd56005",
+      "bytes": 4903
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/config/linear-ticketing.toml",
+      "sha256": "260d4b9e95afa78f9cc36f8c27eaa4be13eaae909a578f341b41b5bcdfee92a8",
+      "bytes": 4119
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/config/notion-ticketing.toml",
+      "sha256": "ff07876a7438661c9b3a4a470e38ead556eea2e1f6dedac9be365e888e6dd278",
+      "bytes": 4139
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/config/repo-ticketing.toml",
+      "sha256": "dd4421bb68f833359deaed324fa77fd3b951e18689c21116140d127e62e9c78b",
+      "bytes": 2630
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/config/trello-ticketing.toml",
+      "sha256": "4db062b7a0839796deb2ac173e9776bd061a8faba543445b64a8c1a3a851dec5",
+      "bytes": 3749
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/customize.toml",
+      "sha256": "7b71ed071afe7cfd1bdf2953144c3b370f4e8910af0f737e6c1e0364a9f7fe34",
+      "bytes": 8015
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/references/board.md",
+      "sha256": "f007c5536a9504721cc3d0093d956e9e94cd8122233235ffd1f1b789c237ad6c",
+      "bytes": 7214
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/references/replan.md",
+      "sha256": "399af0b2b61785bb475f0d4e9eb21394b104cddbe5063a1df86db9d5699b05d3",
+      "bytes": 1450
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/references/slice.md",
+      "sha256": "4bc964d234f2ae09cc080ee06f5c1dff602d7f11cdb87ac69d94326d76d65c57",
+      "bytes": 9101
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/references/spec.md",
+      "sha256": "5271c171c23ca4330e2986a399bef225b01edbf34b2f7254968bda5d9f48005c",
+      "bytes": 6483
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/references/store-setup.md",
+      "sha256": "d94aa026312609d1255718ddceebed7b732833c9496f91c28642670fcd1127e6",
+      "bytes": 1770
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/references/ticket.md",
+      "sha256": "09ff3284407d22776b59a4eb8580f3dd61e36365514b91a7ad08495ab9b98b2f",
+      "bytes": 5359
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/references/validate-checks.md",
+      "sha256": "18d27a33599095fd9e48bdcbc4a8d66f56f62d94d916135d27b9723b49f0f976",
+      "bytes": 4507
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/references/validate.md",
+      "sha256": "124ee2404c993782e75a827e8a84db5e34fe0d8be97ee0ac2647baf2bebcab3b",
+      "bytes": 1792
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/scripts/read_store.py",
+      "sha256": "cbfefc16456e323d7e3acafd28fe60bc100ea5dc6126153b89aec1cfdaa31c7c",
+      "bytes": 4737
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/scripts/tests/test_read_store.py",
+      "sha256": "828ab882803110da62299ca321c1dee695ff9b22d6d0a3c89dfe906aea7bbcbb",
+      "bytes": 5542
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/scripts/tests/test_tickets.py",
+      "sha256": "c57b965b5abec97afb002f1c90f94d0e88e332ebd57284940143fd79a024f434",
+      "bytes": 111997
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/scripts/tickets.py",
+      "sha256": "ae6f0108f68a92a50191a046d4698f92bf065ac6f22849e74c6709f54d17d2e7",
+      "bytes": 83646
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/SKILL.md",
+      "sha256": "b6d14b60fc74c72456a58fa8caad417052fd371877567930d2c23758798271c2",
+      "bytes": 1559
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-po/workflow.md",
+      "sha256": "0a03ac4d8afa1e7007d19bfbf9459a3aae146322dfe6919115786fa8f75771db",
+      "bytes": 8435
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-ux-designer/bmod.toml",
+      "sha256": "0105e5373e65d8dac0f15888ae31ee354a69126d9cf918fc88fcb5861a651824",
+      "bytes": 118
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-ux-designer/customize.toml",
+      "sha256": "c3480990de41e9b54ba0ef94e3033a93fea18169d4de4b01d3b7ed52a9018b54",
+      "bytes": 2510
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-agent-ux-designer/SKILL.md",
+      "sha256": "0c295c2fd79b41627c3567c91fe3e44872b25b11983c2509d004134d6dac3a43",
+      "bytes": 5355
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-architecture/assets/spine-template.md",
+      "sha256": "9dfeedef63217d9f988addf39fc86893cd7bbc12d4da85043650e4cc8b7291b2",
+      "bytes": 4378
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-architecture/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-architecture/customize.toml",
+      "sha256": "8fef03e796a10921f8bf755080c6e377ce9df1b8a63a0e53a7510181eb2d0fcb",
+      "bytes": 6104
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-architecture/references/headless.md",
+      "sha256": "644bee18a6842ef515fe6788a22e6346b6e80a8231f4125ad5f29617b89535e0",
+      "bytes": 2702
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-architecture/references/reviewer-gate.md",
+      "sha256": "38e3a48327256e73ac064373da2c8ff9c119fe1c6a2ece53256788e9f98ce6cd",
+      "bytes": 3241
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-architecture/scripts/lint_spine.py",
+      "sha256": "d4cda7e79fedc3752a9f363202c10e1c6226ef8b560eaaafd092e5b230f30d32",
+      "bytes": 11121
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-architecture/scripts/tests/test_lint_spine.py",
+      "sha256": "a8d590bfbcf9e4acea007811a08d8f934f2da86e2a55f65d38d2c2fe08f95f30",
+      "bytes": 10596
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-architecture/SKILL.md",
+      "sha256": "c8b62cc4725bafc2bd5fa3159a076a41ca84a114d3cdd8caaa4a94358b715378",
+      "bytes": 15090
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/assets/brain-icons.json",
+      "sha256": "a101c56e89f1d0f9e4131dfdfc19e10c746e3a61c3f92537d04a6f4897b7d331",
+      "bytes": 41231
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/assets/brain-methods.csv",
+      "sha256": "fff112eabca1a9cb8b190f8314bc47678becc5782a2372e11c83daa0e33b6dfd",
+      "bytes": 19519
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/assets/brain-selector.html",
+      "sha256": "c110919a3366bd96061f050f98503e3586185e3d1df5ff8b62a5a046c571a436",
+      "bytes": 244638
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/customize.toml",
+      "sha256": "55e1e94a6ebce4f113bbe1de3f267d32115dcdfc43d0d73b4b64f34fa3a4da34",
+      "bytes": 4472
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/references/converge.md",
+      "sha256": "5498dd391b1c8320f4f070251db96d090d6f56c1c7e752f658cfa45171ff7ec2",
+      "bytes": 2918
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/references/finalize.md",
+      "sha256": "aa1f86a429235190172b34a04a6c1bc8bd6639648d9b7adaf6b13e14c9280706",
+      "bytes": 4851
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/references/headless.md",
+      "sha256": "3fdea8adcffef066ae43af92abf9725b209ccfa78576c6ce2348e2920ae5f2b1",
+      "bytes": 5013
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/references/in-chat-techniques.md",
+      "sha256": "18239464e3e4f00ea9063d015d26d6b0a696b72e7e3c5be92352da6db9a3f244",
+      "bytes": 2200
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/references/mode-autonomous.md",
+      "sha256": "d815d2c7f0f8cc0cdfa7c619eaf61f59fd78142f13c69365eda257da38b97bdf",
+      "bytes": 1895
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/references/mode-facilitator.md",
+      "sha256": "1b908498d285d190859aed00c3ba5b399d7f6aa8e94d54e95456d15cd6fe6073",
+      "bytes": 970
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/references/mode-partner.md",
+      "sha256": "caa0ed378c116def4de382f4e5a95173c6ae6cc5464f1792e7d8196360f79c8a",
+      "bytes": 1606
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/references/resume.md",
+      "sha256": "0f79535d72eefe6c55bd5ae47fe4753de8d27235cf129f10b2c596a124c26526",
+      "bytes": 737
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/scripts/brain.py",
+      "sha256": "064a7c1f16684a46953f8299813b4f59fd3d5c6eafd0f925c5024f2858048081",
+      "bytes": 39129
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/scripts/tests/test_brain.py",
+      "sha256": "43c37437faee3ce61f91f5eb8d67c7dba946c67cab7c7628937bd03581481f99",
+      "bytes": 14277
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-brainstorming/SKILL.md",
+      "sha256": "26bc84494a4d177dde70557ef224cd10cb6a0a7a43d31ab16563c25e607680da",
+      "bytes": 10223
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/customize.toml",
+      "sha256": "56836bc55bb01c205c7931e42b913be2e7b0df148b7a0a56a9e771e7e541a5e8",
+      "bytes": 7650
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/plan-template.md",
+      "sha256": "75ac42563e7938b8c117bf85d42d4e4870727dec0ee460c63272f7225529bdf7",
+      "bytes": 5247
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/references/claims-check.md",
+      "sha256": "6cb20a86d819b95272876bca0dffef59ca07ba6a373d804295066751043867c0",
+      "bytes": 1430
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/references/deletion-check.md",
+      "sha256": "0f1f124e4e957147e89164a272b10bedc694ad0d9ad2618c8610ac74ee9cb0da",
+      "bytes": 1009
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/review-prompts/edge-case-hunter.md",
+      "sha256": "b909fe0ec8e4daaf2550d0ec783618c5146261d0dbc0e054698ce00d0905a3d1",
+      "bytes": 8361
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/review-prompts/verification-gap.md",
+      "sha256": "859930110817293bf9d25bd6df093f094cdc50fe6b8359e3720aee6dba96e17a",
+      "bytes": 7751
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/SKILL.md",
+      "sha256": "2176e57a1d834e2e8749582ce8e5498ade1ec3e9b9af891809e5c6247e8296fd",
+      "bytes": 1361
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/step-01-clarify-and-route.md",
+      "sha256": "32ec18f56f5f106dbfe0dd1ab8adfbf2858cd3cfa1eded3e00b0f6e1074d8d7a",
+      "bytes": 8075
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/step-02-plan.md",
+      "sha256": "f7159bdf6795b6740306926f80e55df0a0bd541a8c1ebcdf5276e4a8af9f5720",
+      "bytes": 4048
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/step-03-implement.md",
+      "sha256": "bbe36d05e0ad30e1398c4ece55705f0eb74fdd7feccf68415c45d29435a45089",
+      "bytes": 4514
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/step-04-review.md",
+      "sha256": "1c55a8d935f1674912248841528fc186c3ff215a743fb828619a89afa9858b90",
+      "bytes": 17158
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build-auto/workflow.md",
+      "sha256": "02be104dccfd1f3c3cfa5563369578665b97b3a5c129e512b62374872dd74b91",
+      "bytes": 4862
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/customize.toml",
+      "sha256": "5dfd76c8c08463e6d01c7664d8e783033a5ae968baf0a2d86535df3ab2f10fb8",
+      "bytes": 9081
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/plan-template.md",
+      "sha256": "5b7a533b40d4473376961c4b7c566a89b7d6c07002cd42b9dee2734749a57ce1",
+      "bytes": 4907
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/references/claims-check.md",
+      "sha256": "6cb20a86d819b95272876bca0dffef59ca07ba6a373d804295066751043867c0",
+      "bytes": 1430
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/references/deletion-check.md",
+      "sha256": "0f1f124e4e957147e89164a272b10bedc694ad0d9ad2618c8610ac74ee9cb0da",
+      "bytes": 1009
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/review-prompts/edge-case-hunter.md",
+      "sha256": "b909fe0ec8e4daaf2550d0ec783618c5146261d0dbc0e054698ce00d0905a3d1",
+      "bytes": 8361
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/review-prompts/verification-gap.md",
+      "sha256": "859930110817293bf9d25bd6df093f094cdc50fe6b8359e3720aee6dba96e17a",
+      "bytes": 7751
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/SKILL.md",
+      "sha256": "4c19bb23bfedc541df60f100e5333e22d62aff5dbec5cd72d52a8454e7aba228",
+      "bytes": 1642
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/step-01-clarify-and-route.md",
+      "sha256": "943d8cc7328301a3d3620da7eab7fd1bd29e8130f8213ac0d31b5dd42876076e",
+      "bytes": 11361
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/step-02-plan.md",
+      "sha256": "7e6e32bf9cd872f713533a13371215b4612bfb37accd9bfea924ad9ebc31e95c",
+      "bytes": 6740
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/step-03-implement.md",
+      "sha256": "90d51381abaf357b712eb360f8149c92125734ea113888dfbc8237bfd348d806",
+      "bytes": 3698
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/step-04-review.md",
+      "sha256": "99a2300ff8eb9608f941ca4dbc20d9ea18bab1b64d8762231265cf73999ebe75",
+      "bytes": 11982
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/step-05-present.md",
+      "sha256": "8c3a4f5e627524b05c3f1db4850b6ab68ae6930d8046c340a3e1590dccc4ed61",
+      "bytes": 1104
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/step-oneshot.md",
+      "sha256": "824c35c6ea28a2eb152174eec1991dd40a88eb922c46e2f90957a7f421e831d1",
+      "bytes": 7942
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-build/workflow.md",
+      "sha256": "a4a1fed8a1d374b5ff8ac5613211a2e31d7e89743d1b153348ae6fe9ce36ec80",
+      "bytes": 4110
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/customize.toml",
+      "sha256": "f8b2b8c65f643008935c63d819e025468635a4ad89650bd699d4b0fb657f8a3c",
+      "bytes": 7910
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/references/claims-check.md",
+      "sha256": "7be5d35dd90a1950addc2062acdf8669026b239117efe1e398da1e8161cfa6f9",
+      "bytes": 1362
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/references/deletion-check.md",
+      "sha256": "0f1f124e4e957147e89164a272b10bedc694ad0d9ad2618c8610ac74ee9cb0da",
+      "bytes": 1009
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/review-prompts/edge-case-hunter.md",
+      "sha256": "5f4572d57340b4c0d155f33454d644a44af101cd7fd02a01591be68a4ebb8b7f",
+      "bytes": 8434
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/review-prompts/verification-gap.md",
+      "sha256": "3ba70ad39f8663b83c599814ad52f28bbbc50ddf137b4762037c9b30ed84a34e",
+      "bytes": 7681
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/SKILL.md",
+      "sha256": "d5af4c76e1dcb7e664a9db25d1a111e8d74b58ffc1ace01a00b08935db685eea",
+      "bytes": 1489
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/step-01-gather-context.md",
+      "sha256": "e792523473a0bc8d2c5239b44ed9b7646ce305d9f5e572ddc0ed72fc25df621a",
+      "bytes": 5514
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/step-02-review.md",
+      "sha256": "db0394f512035be9a2f311cdf8488ff228d508305efdc58b58eb35225f7a88de",
+      "bytes": 3449
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/step-03-triage.md",
+      "sha256": "950b8c0faa9ede279a16aa5c741f903792b849836413ac7ee79a4b57503e29cf",
+      "bytes": 7541
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/step-04-route.md",
+      "sha256": "554d56a219c27a32336f1d6c5ca21acc7bebdba7bb53e85e0537cc858a19a04d",
+      "bytes": 2232
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/step-05-present.md",
+      "sha256": "f3379d41fd82dce11c7ee80809ebed03435579291323caf2b4e947a1894f53b7",
+      "bytes": 7638
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-code-review/workflow.md",
+      "sha256": "8d12706a762292c03a9dc67bc81d003ca09aa7ae26ce7d3af56f51198f0319f9",
+      "bytes": 1699
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-customize/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-customize/scripts/list_customizable_skills.py",
+      "sha256": "5fcde79fd65b462b264b818c288af9fa9589748ee15066f636612af8c1f6cc5e",
+      "bytes": 8153
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-customize/scripts/tests/test_list_customizable_skills.py",
+      "sha256": "13c2edf3055ea05481704348f3245f09edf605809c88120deb810ddfd0002cb4",
+      "bytes": 9224
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-customize/SKILL.md",
+      "sha256": "7335ce164dac2ec92919a923877f4683af8300187051b20da79ab0937ba0bcfa",
+      "bytes": 10314
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/assets/codebase.template.md",
+      "sha256": "c0e6ffed5d15cbb71503e15d5d7f0c13252a913ae5744f5e51ca1ff328903909",
+      "bytes": 1460
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/assets/research.template.md",
+      "sha256": "87d7cfa85fa5036b5a309b7bfb88f7934f50bb81f3cff02d2b49b4c7345cfc38",
+      "bytes": 460
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/customize.toml",
+      "sha256": "445a0659532e4fa71e21a828afc44f8eba7498ec3dce114edfd979b6b07b20f8",
+      "bytes": 10775
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/evals/triggers.json",
+      "sha256": "8a97e5a4fc7d6bf5028ba0cbb9bc0f2e56012c56ea032be8ad2697cdd3e3d3b9",
+      "bytes": 2510
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/codebase-analyzer.md",
+      "sha256": "ce698afdb21e32e523738b3fbe12e60f4ec221cfc6fb344380398e6755c2fdc3",
+      "bytes": 1880
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/codebase-historian.md",
+      "sha256": "348959247e3504538fcde1aab142cb35da61d06ce23ac86cd7ba07537d586f6b",
+      "bytes": 1742
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/codebase-locator.md",
+      "sha256": "505276e8e2648f29e7d3599aa1c1c2bb57652fe56e631433fe006d2095e54b97",
+      "bytes": 1438
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/codebase-verifier.md",
+      "sha256": "6d2f655b7b81332d9647e29968d7933a7544bf9d20e0d985e81642a12a406c11",
+      "bytes": 1456
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/codebase.md",
+      "sha256": "99d40e299c30c197d62f7b8ef71ea1a501d9e63defc7451e39fb366edd81fce0",
+      "bytes": 9613
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/draft.md",
+      "sha256": "68f66068d3b5cec4e3851588d4910760ee0e1fc1cf6a7d7089023df160980cac",
+      "bytes": 2060
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/finalize.md",
+      "sha256": "693e4f4883257440887aef273393bf756d9a27e1067343d1790fb33f5cab6d17",
+      "bytes": 1840
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/html-briefing.md",
+      "sha256": "d2eb0692b5d36b8d56a78b056ffb2904e34873392db403625a8f4c71a10d3e8c",
+      "bytes": 2457
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/lifecycle.md",
+      "sha256": "8498ebcd8b496397cb8cdc5c0a5b421299b11ebbefee1186eacd3542cb8a5d80",
+      "bytes": 1165
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/process.md",
+      "sha256": "dbacae76073f3dd36d5a747a406abab454b9ef76e2a9dba9ad261133e9265f09",
+      "bytes": 1973
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/run.md",
+      "sha256": "4dab2fe90c2eb1e00cff5d6e1a5cced6956533c1d6be0a10502977c52604fce0",
+      "bytes": 9487
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/selection.md",
+      "sha256": "c7aef57a8ffa15b8455f26950ff091a2b331e92011f94a1a2c5ddf0deda43001",
+      "bytes": 2440
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/synthesis.md",
+      "sha256": "65e4a62cfca08b442c11c68b5b788cff5345f679f7a01c08a57c96f30d2d1b22",
+      "bytes": 2807
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/references/verification.md",
+      "sha256": "0393ded4828fec69a4819d7236827910d641d09c3b61144c0211a9a78776fdd2",
+      "bytes": 4222
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/scripts/recon_kit.py",
+      "sha256": "fd6a312c7086e3548cb17f75e0ae9ab0d7a96e7c0a1b7b18141529c2c0d62f7f",
+      "bytes": 28554
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/scripts/tests/test_recon_kit.py",
+      "sha256": "8ac3e355d7a8cf0b8a5e8d7ba3c3d6d9771e03e04092de0252a0825ab0066744",
+      "bytes": 25275
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/SKILL.md",
+      "sha256": "f5360d92576908b91ce97c1bb75577c4cd724d0dcefaf20dd3b460c5a738507b",
+      "bytes": 10687
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/types/academic-lit.md",
+      "sha256": "514b0b7b1184cb95363dedeb0c2298a9bf5c430c74146fe2114f31780fadb325",
+      "bytes": 1544
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/types/competitive.md",
+      "sha256": "39b53df87d295fdc4388719fcdf31ad2221e64afc136e669207f46d2727a3aec",
+      "bytes": 1512
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/types/domain.md",
+      "sha256": "3a34b2e62c3589f8c8d01158357ee9fba32648c9fdfe70035bb3ca971862896b",
+      "bytes": 1712
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/types/market.md",
+      "sha256": "81ac04499da441857672e29fcd7169436a7e239e67194288ac0d526ec514cb5e",
+      "bytes": 1337
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/types/technical.md",
+      "sha256": "55f71428c70547b89d67ef0c6cdad59caeb0ee21082cd1230c05618ba8d04707",
+      "bytes": 1654
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-deep-recon/types/user-voice.md",
+      "sha256": "1831ce46e53e8c68244d28e336c5ef9e53e64f21a00b74a817b9b2924c1e8e72",
+      "bytes": 1758
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/bmod.toml",
+      "sha256": "2f5574b4739d7f892ad4b2da78bd14d6f76a05e8917fd0a5664c1e271059c0b3",
+      "bytes": 83
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/customize.toml",
+      "sha256": "d42906cf29b7c1fca19b2ee707545e4e186b1fb0a835253803f4ee98f1b9a1b5",
+      "bytes": 1184
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/evals/triggers.json",
+      "sha256": "d0b8230def499e6763ae8828b3c8419bb2139c5747db1db18af1b2035bdf9fe0",
+      "bytes": 2225
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/references/description-optimization.md",
+      "sha256": "3911251d7a8a8ef85dd82692af1f9f7c0cfb85f1a184bfb6b23e612d943c94f8",
+      "bytes": 6660
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/references/eval-format.md",
+      "sha256": "42741a3bbdcf81e433fc58c7c7cc2a7611f3e510edd54d41218be52396d5046f",
+      "bytes": 7875
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/references/grader.md",
+      "sha256": "a93e15cdbfcb70fd73b351be368b95494021e636e568becf76401a36f139b852",
+      "bytes": 6007
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/references/harness.md",
+      "sha256": "60b0c43e11cb488467763184ecb8f26e4482fd262cd0cfc94d0f962b5faa501e",
+      "bytes": 2300
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/references/self-improvement.md",
+      "sha256": "33d642d1e8902a2736a95d302f0b504699147872d576fad86306bce668b83aac",
+      "bytes": 5127
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/aggregate_benchmark.py",
+      "sha256": "4f6e6fc263b3433791de33031b17994f3ddb8fe01f12a429b2e749dfed4bb3fe",
+      "bytes": 9130
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/convert_cases.py",
+      "sha256": "95a38b5456c9896ed0908febfaefee9aa382bdfa0806ceeb056ebe9aff14b0ff",
+      "bytes": 4122
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/eval_common.py",
+      "sha256": "35c05fe25144ad648dbc76700280e752036caa197dcb701d9d65e28faaed116d",
+      "bytes": 13934
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/run_evals.py",
+      "sha256": "ea9006d4fdd7861bcf16e9116591c9820930fbcf06ead0986a7965a6e6db8edf",
+      "bytes": 17088
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/run_triggers.py",
+      "sha256": "9808d78ccee7452e3f6f2d7da4b48cd74f12de2da512300422873979de5b3e39",
+      "bytes": 11652
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/tests/fake_harness.py",
+      "sha256": "b5cb57b94ea12cdd1c9d8d205f32504fb84bdb1e69b627562e386a305bcdbfef",
+      "bytes": 2158
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/tests/test_aggregate_benchmark.py",
+      "sha256": "39b52c5984a56ddf7171a4916e201da80b03e7f24dc84ee3b66be1af79e957d0",
+      "bytes": 1534
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/tests/test_convert_cases.py",
+      "sha256": "0ef22ee56ef5011c6ccdc8de3f71a19a8e508daa43071a88405275d6b019253b",
+      "bytes": 3779
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/tests/test_eval_common.py",
+      "sha256": "a11404e5b35d5291592d3c623e1010645b948a9385d2c353c291f8eaa051be2d",
+      "bytes": 3863
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/tests/test_run_evals.py",
+      "sha256": "5eb1126d83fccfb9127198156fe1f53124c1502886de753f88a7b28008290331",
+      "bytes": 13242
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/scripts/tests/test_run_triggers.py",
+      "sha256": "693570dd5aa353799c22adac2122e6577c8e269818d650c4e2c17a6419b369db",
+      "bytes": 6351
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-eval/SKILL.md",
+      "sha256": "f6295371c0767f72b8664d5c0570b46a2c84068c9bf5054685c267ed46713b95",
+      "bytes": 6802
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/customize.toml",
+      "sha256": "a366871ec486818801e5db3c226479f6b6317d65e05923c0ef5071fa490d711e",
+      "bytes": 2439
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/references/guidance-planning.md",
+      "sha256": "46c79c11a7ecffd8eb33c176589691d25dc572704357a9fb87a4a30a9edac26a",
+      "bytes": 2195
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/references/rubric-general.md",
+      "sha256": "85a39058750bf727006b89441ff33e6b2ce2794fbee5d1e45e28737d20e6bf2e",
+      "bytes": 656
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/references/rubric-planning.md",
+      "sha256": "d7bd0094d2eb1dda472d1491b61e06df44d4c71ea5e327c0f5d8328620bf4dcb",
+      "bytes": 670
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/scripts/check_ids.py",
+      "sha256": "b2ed8b916989e306edcecafccb3eb6e0ecaa7e276ee039b15043e3e41d7202c7",
+      "bytes": 10716
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/scripts/render_view.py",
+      "sha256": "e12a091565c0d6e48bde9c2fedf2c58aacdf958641086d56f86e7a0dde17189f",
+      "bytes": 28954
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/scripts/tests/test_check_ids.py",
+      "sha256": "1e3541d5e11cd3202161bc373d0a9c68bd82d6e6944b4d6f01cf449c3d0e452e",
+      "bytes": 6779
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/scripts/tests/test_render_view.py",
+      "sha256": "d0ad1da4e85ecda8e9b33143af248461909ddca4b5adae1050bf17f7c299b354",
+      "bytes": 11883
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-facilitate/SKILL.md",
+      "sha256": "ba719e2fc6cb36d1f6cf3cb8cea4abffacaf7f4fbbf6acf781a7fd7419a50102",
+      "bytes": 21277
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-forge-idea/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-forge-idea/customize.toml",
+      "sha256": "b32358e9cf326d856d691de974b4815f7f43f7b83c312ce4383d55604e828d9a",
+      "bytes": 1761
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-forge-idea/scripts/resolve_personas.py",
+      "sha256": "51c6fbf747eec0ffa3bcc4bafd78d867427c2d01c6f36b83deb0b59a33351f44",
+      "bytes": 13911
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-forge-idea/scripts/tests/test_resolve_personas.py",
+      "sha256": "e7778a7b6e906baa9194d665b415b9fef1681ce18479b83278900ad8bd5926ac",
+      "bytes": 12427
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-forge-idea/SKILL.md",
+      "sha256": "1de8258c9c493b8042de761e96fe150590e8c09d5e5bc5aec8d7da447f50bd02",
+      "bytes": 11309
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ingest/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ingest/customize.toml",
+      "sha256": "028cedac81ff86b40983387bf4105e56a2c0262e9feb6022b66d1a359ed18595",
+      "bytes": 1656
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ingest/evals/triggers.json",
+      "sha256": "a5f7197146cdcc2e0cce52f0c0828090af0152d4e79e356ade3e1a20eac44573",
+      "bytes": 2635
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ingest/SKILL.md",
+      "sha256": "5544f163278a3fcad811e86216d5ebdb29866045e9c84930c14d69e4ad67c49b",
+      "bytes": 7357
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/customize.toml",
+      "sha256": "5469c71930bf4c7e8fb456561aba97d46152d031cfde6adc43f9fa9c91aa8fbd",
+      "bytes": 12473
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/references/create-party.md",
+      "sha256": "fb516cf4e66b2c94519b9bb80cf7bd966fee285549c773b402400bff664a2aab",
+      "bytes": 9037
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/references/mode-agent-team.md",
+      "sha256": "def759a17f4bb45463b68fb74c2b828b0a4241720b2b6cc1c9c611a1016ae9d7",
+      "bytes": 2052
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/references/mode-auto.md",
+      "sha256": "a37fd24f76dfcde385890d5c5947bb6f40ca44bea86c805d267b6ae3aab39f70",
+      "bytes": 1095
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/references/mode-subagent.md",
+      "sha256": "86161b24a0b13b8f9cb9309042e4249d8caefff8cc33728b084cd2ec22f9d2e1",
+      "bytes": 4191
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/references/party-memory.md",
+      "sha256": "800b4b4b920bb881a7b32aaabca8559a98273799b2476d83a23e290e301fb315",
+      "bytes": 3903
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/scripts/resolve_party.py",
+      "sha256": "67ea4e599f9014e1a5e0d29b728e7b61011316dfb814480fc103624619955553",
+      "bytes": 15454
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/scripts/tests/test_resolve_party.py",
+      "sha256": "e381cd9b85bfd273af352075dea6db655637b11d7797acfd17241bd657a83a08",
+      "bytes": 13715
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-party-mode/SKILL.md",
+      "sha256": "a29ab2937b2f80e28f32ac49aeb63cb8cf3ccac39240b7809acce0c39902a9d6",
+      "bytes": 10706
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-project-context/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-project-context/customize.toml",
+      "sha256": "9bf8a3aa919832cd8932853da550fcaebd06a9e13c0cde453f4379d8327f9c0f",
+      "bytes": 967
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-project-context/references/best-practices.md",
+      "sha256": "850c45d2e1de44b1cd8e3b06b8175df53aac8983326d73351eab547bfacc532b",
+      "bytes": 9379
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-project-context/references/template.md",
+      "sha256": "5e2bc291e734a481fd2925877adfbe82b03313f300baf67dfdb6fa22a1181601",
+      "bytes": 2664
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-project-context/SKILL.md",
+      "sha256": "2fc53a5a9639c832a65673dd9b16ecba4c70739054cad54f15c277e3295490d9",
+      "bytes": 13369
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-qa-generate-e2e-tests/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-qa-generate-e2e-tests/customize.toml",
+      "sha256": "ef12b181467ba1a465320b96516f4cba647c48a783b7ec872e26a9f5e6213dd2",
+      "bytes": 1564
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-qa-generate-e2e-tests/SKILL.md",
+      "sha256": "6b772205d7a82a49cf4cdbf0913b6859f1d023e8834a70d10050ffad95eaa60a",
+      "bytes": 1222
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-qa-generate-e2e-tests/workflow.md",
+      "sha256": "835f48e0f013e74bd73c5f0bcb6d6ffcb85c50b18aeb1b89ad693f18df6be3d1",
+      "bytes": 5905
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/customize.toml",
+      "sha256": "4e954664043e193f874f3e8bd090afd65a2d221668c827efbbb9acaab4683f92",
+      "bytes": 1548
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/references/acceptance-verdict.md",
+      "sha256": "a564275a4392fe82e9b380d9e0f94e801a9dfac51666fb69fda5d1fb19cad90d",
+      "bytes": 5979
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/references/aggregate-views.md",
+      "sha256": "d7c5f8c350fa3fb1cb2201a9e70967a9ea525dc110ca9eb7fb88a73632ee7954",
+      "bytes": 4305
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/references/evidence-gathering.md",
+      "sha256": "5dec3a1de9c19469f027d53f4b55b186172acb0caa079bacbc4ba0ad6fc6325e",
+      "bytes": 6077
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/references/retro-document.md",
+      "sha256": "fb82d9a1b76426f5034307b304972d4cab4b966daddd339bd7a801c4b3e517cc",
+      "bytes": 3451
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/references/team-discussion.md",
+      "sha256": "dec27941b7a5056b2bdd5d160d9769806aa95e2ed3452234fbf3bf47b0831d7d",
+      "bytes": 2284
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/scripts/git_evidence.py",
+      "sha256": "6a98487722c9adc4513a9deff8e1b5d5813d695cd7a942e9ce707ce2bef80f0e",
+      "bytes": 11383
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/scripts/tests/test_git_evidence.py",
+      "sha256": "b15fe3b42b64c8c01eca4af5e0eb536e1929391e5425abfd57210571afa7b1f4",
+      "bytes": 23520
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/SKILL.md",
+      "sha256": "3084226f532486a284bb7cd9125a531cfb5f3088b17c9fa1557795b6ea3277d2",
+      "bytes": 1250
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-retrospective/workflow.md",
+      "sha256": "7c6f628c029d84661cc5b7ccc5a926c5d0ea3a74dda6eae92b12de20a5aaf8f1",
+      "bytes": 11116
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/customize.toml",
+      "sha256": "36666ad3517e89177bdafbca7c50b3acf9e6e6d720885e3309e605e7c7b9a21b",
+      "bytes": 5853
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/references/editorial-common.md",
+      "sha256": "f0cdc72ea345b2c5dc3001477b3dfcc909ca11b78f7db8865b6763d18ffc66c8",
+      "bytes": 5811
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/references/lens-adversarial.md",
+      "sha256": "7c5ce97ab2f3ecb96ceb6aa76417f68c1b7df535edd3cc51666d8e1216e6e557",
+      "bytes": 779
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/references/lens-edge-case-hunter.md",
+      "sha256": "5f0c4778d7b393d11156af8c1bd9bf88aafeb9d50fff5f460ca67df50d927e7d",
+      "bytes": 5857
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/references/lens-prose.md",
+      "sha256": "4cbcb1eaea8567d272f5db7c6cdfd74ed5a8aae6831053cb2f01cbfc2cb98b98",
+      "bytes": 1354
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/references/lens-structure.md",
+      "sha256": "98c08221f517133e57ef6325013935360c3365ebd7dcb8411b2050d7df507ee3",
+      "bytes": 1582
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/references/lens-verification-gap.md",
+      "sha256": "b84a04c48fc37b83c6e3fc54e773f8f40f960ca56c5fed2316dd74967e604091",
+      "bytes": 7769
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/references/structure-models.md",
+      "sha256": "f84f85070e1af75f2482757aba9d37d69d805a20826d185527e598f2ba6b9292",
+      "bytes": 1972
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/scripts/tests/test_word_metrics.py",
+      "sha256": "a88f87ce28f11c2a54045b7f8ab791043aacf4ddbc49d53cf10c4cab7c76534a",
+      "bytes": 1866
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/scripts/word_metrics.py",
+      "sha256": "be107b5740c564a8ec608ffdd4742c095ab23d8b6edeeee6b93643ff6c22a749",
+      "bytes": 3688
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-review/SKILL.md",
+      "sha256": "c5fa7bc6342fc4da84549c9fddcce04313c210863613724e2c44aeee0089e9cc",
+      "bytes": 9770
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-shard-pro/assets/sharded-note.md",
+      "sha256": "80a476d9cca057db390c3ca4da85639998a8ef23aac553d2995e152f8f6b492a",
+      "bytes": 826
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-shard-pro/bmod.toml",
+      "sha256": "af352a2f14a4aee7c717dbd80ca56512f3079aa15d2ef5652928d5c084c8e2a1",
+      "bytes": 121
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-shard-pro/evals/cases.json",
+      "sha256": "8d7c3a1fbf08ac89da79a75f13cec0c6d1bf6d82e69ad5ed9298d66822542cb1",
+      "bytes": 4105
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-shard-pro/evals/triggers.json",
+      "sha256": "81b68636445cbeca25e4a262f6fa4de5a7cfb490023a61c71a0d05192ccd464d",
+      "bytes": 2882
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-shard-pro/references/update.md",
+      "sha256": "19d20fcdafec60ea895b24f1e9995ed6f7a199fe45c8a6c79c544616301af64f",
+      "bytes": 2766
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-shard-pro/scripts/shard_tool.py",
+      "sha256": "d46bd9f15f0ddf94a2405b4b1fb6455b8e5c12996cc105451db7104e49336a4a",
+      "bytes": 52824
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-shard-pro/scripts/tests/test_shard_tool.py",
+      "sha256": "a4512a0d58a314050a38d7a2c9b2329c8b07974e4753935a650b02e2fdfa3452",
+      "bytes": 33201
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-shard-pro/SKILL.md",
+      "sha256": "71587b406b4f71380bf2b7d14a2f1d76d08bec260d5c39c085f72a395bf46451",
+      "bytes": 7723
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/approaches/eval-first.md",
+      "sha256": "d702ef177b1a36122bb975f82f99843cf1b9c4fcf3058bcca25816e36204e2e8",
+      "bytes": 1347
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/approaches/eval-loop.md",
+      "sha256": "cd9b77dcff2b624f2f11ff709aa5187240838c25c6408626df5d5950b3a4c463",
+      "bytes": 2458
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/approaches/from-logs.md",
+      "sha256": "2bc6073f36d1eba2842af063c9e01dd29494faa0c6ae1cc4a389a8fcf0b33c41",
+      "bytes": 1754
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/approaches/lean.md",
+      "sha256": "160d2edc8d2e6ef79f3611bd601aa882760ea0ef81c717162824b92ad0cc74d3",
+      "bytes": 1753
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/approaches/scaffold.md",
+      "sha256": "6e18db397244557d2096ecbec4e14f798578b71afd682b272bc404d76a241a85",
+      "bytes": 1330
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/approaches/skill-creator-loop.md",
+      "sha256": "af33a9e049b36f127f6f8f138f6567dd8ac8cff01a95e7a9a5534832c38328da",
+      "bytes": 1274
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/bmod.toml",
+      "sha256": "3a4f31db6dec6d008e33347e674d89495494d1494c5916619bd12fc260014342",
+      "bytes": 118
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/canon.md",
+      "sha256": "ba05a1ecfeca4334c4e8f7b50de322888e49e7f4c441daafa7efb6faa3a842ed",
+      "bytes": 10711
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/customize.toml",
+      "sha256": "401407e85a073405c32dfe84ded1b28ed0754e4782585222226b5c3332654e50",
+      "bytes": 4880
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/discover.md",
+      "sha256": "09c4497be82a4430a6079261b34ea42b2d0c851de76a5ef48c8bc574ddffe171",
+      "bytes": 5630
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/evals/triggers.json",
+      "sha256": "7498fb865cd503dd1779cc04a8ad171f437f2470219e507785df732bcba3a020",
+      "bytes": 3366
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/lenses/lens-architecture.md",
+      "sha256": "0e6feda6e89f79fc9f182c9da3dd72a7bd6c6a9e0a73f17d0390c0cbc0e5df8e",
+      "bytes": 2944
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/lenses/lens-contract.md",
+      "sha256": "59782d8b2be50b411cc1406e604d48fcdb49499af4f7e4389808e7bf7f6cce3c",
+      "bytes": 1403
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/lenses/lens-customization.md",
+      "sha256": "1902eb985795a98424a062374c0874f23629eb80cd59ccd0c2381fa15b5eef90",
+      "bytes": 2421
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/lenses/lens-determinism.md",
+      "sha256": "ef0893505b2be999515c7d1e8ab9aa7e44d9c0fbd9e331b9d8bd3c049f4cbde4",
+      "bytes": 1858
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/lenses/lens-leanness.md",
+      "sha256": "45ba828af55fbc4e03c6bb98ddc1a254ea3e76905a081eadc3ef10e414707492",
+      "bytes": 3168
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/lenses/lens-trigger.md",
+      "sha256": "02a5abd3a90ba607a42bc046607d1f6da21b691ef90c752578a445da3692b3e0",
+      "bytes": 2409
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/lenses/standards.md",
+      "sha256": "49d1da75caa2ca1880b070fcf4e86ed9acc5f79042e7bc664a98bc025c829445",
+      "bytes": 5344
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/modes/convert.md",
+      "sha256": "df3e6823c47b16c5a721c50731fc7f975482a14d60b737c9f098046af6cb264a",
+      "bytes": 2174
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/modes/cut-roles.md",
+      "sha256": "d3d8d167ea7d4be07eccb96afe6f6be308cf31c2d3a69fed0e01235ea52d6c6b",
+      "bytes": 3341
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/modes/cut.md",
+      "sha256": "b6a308202b1f7892c05723718e06a76b571af279f10b651f54ace86d5682ef10",
+      "bytes": 3337
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/modes/edit.md",
+      "sha256": "96612f1b3b587030fb215c193561f9d16d2c4de1ef8a4134af25fc140328aeeb",
+      "bytes": 1288
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/modes/migrate.md",
+      "sha256": "3af6b585e99b292f92338a233c1b78819d8c4a39619aae714eb662eeadf7b50e",
+      "bytes": 3367
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/modes/package.md",
+      "sha256": "75e0d85f34b180d54d1f2875839ea357c532e7708e9cd76e34656eb4330cba0a",
+      "bytes": 2648
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/modes/review.md",
+      "sha256": "caebbaf18e4c248a3f71d50cb5faaccbebca7a5411907256a00bfedd5c9c23ff",
+      "bytes": 1330
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/modes/validate.md",
+      "sha256": "392779dee11caab343841039ff9df90872da4dda7aa7fe5d86f4969166ee4539",
+      "bytes": 1821
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/count_tokens.py",
+      "sha256": "d43a4fa16113599c0349ed56062ef636c4baae295956f8940da7dfe62ac15f5a",
+      "bytes": 3682
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/cut_check.py",
+      "sha256": "101aef4f4412fd3e25fb3ce518366188208aa202898a091cb830249ab96f13f2",
+      "bytes": 5175
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/init_skill.py",
+      "sha256": "13e31787c848334d0e8843af9b1204f10b4d9e739bd36dfb272a643a6bf4fec4",
+      "bytes": 13607
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/prepass.py",
+      "sha256": "43dd7d297caeb082f61504ab85a4774f5e00cfbfeb460cd86e3c619ac1af0e57",
+      "bytes": 7713
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/process_template.py",
+      "sha256": "d6d580e410d4adb54442cadf46ce150fc7b1a807111acc3cfeb2134a0ad74de3",
+      "bytes": 4891
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/read_session_log.py",
+      "sha256": "86944e4ede2b1db36c69459eb2c2065b2300c2f999813123e910818cf83fdcc3",
+      "bytes": 10012
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/registry.py",
+      "sha256": "ef0735c8d12c241b3a0a1c0e2314dd3e960af6f3d5f856f893fc2bba6a3e5e34",
+      "bytes": 6005
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/scan_legacy_module.py",
+      "sha256": "399ed361e9f9c5ced9960084c7070e2c13d530256a26f293c5c2fb4ace993cfa",
+      "bytes": 7884
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/scan_paths.py",
+      "sha256": "073bf2a10ba7d3040b184973d98149d3eb61ad12e0056a7e9c0a91e013a37435",
+      "bytes": 9414
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/scan_scripts.py",
+      "sha256": "2636023ac396bf65aa6e397986f1759c2a9f2ec44d2698c10d847481e2b6765e",
+      "bytes": 6710
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_count_tokens.py",
+      "sha256": "1495a0b7657095518833edf5372861336ca8a30d96e3df23234efecac3be30f4",
+      "bytes": 4171
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_cut_check.py",
+      "sha256": "d9c311799bab3d21608baa7f1f39e5098ded91e131b09091c652052597db7d74",
+      "bytes": 3147
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_init_skill.py",
+      "sha256": "d4d24ce1236a34fb8df0f3e7fb3db92f154e528ac19dd343035e2257a02fd37f",
+      "bytes": 9924
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_memory_agent_scripts.py",
+      "sha256": "b94c19c9050277f88e7ae4dfd2602d3a5158191d60cfca9cbfb76236e5a17e90",
+      "bytes": 8816
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_prepass.py",
+      "sha256": "b2301aa29bce75a63e4e1e04693af82caf3f132333751b9df04d01fa910bacfe",
+      "bytes": 8549
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_process_template.py",
+      "sha256": "398efcb2449c2388b11717e045f9d231d1e700c42c285aba498a592536288f80",
+      "bytes": 4804
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_read_session_log.py",
+      "sha256": "b25f3a7adafdcc85f85baa19de9ecf845d1468e5e60f30bd213a6f15e840a6b1",
+      "bytes": 7430
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_registry.py",
+      "sha256": "20b6d7f4e9bc6d69d77d28f1acc02a7c52b603fb63b72659233faa326e9e3dc5",
+      "bytes": 6128
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_scan_legacy_module.py",
+      "sha256": "767dd0baafeb7ca31a306894db541ab7583d373c60db2b06688e15912205e2f7",
+      "bytes": 8418
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_scan_paths.py",
+      "sha256": "6f2f50fb35b8e17146ab15fea6959a03cd600f288c47d53d4c933ce37526351c",
+      "bytes": 7849
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/scripts/tests/test_scan_scripts.py",
+      "sha256": "3e2b7eed1a26f3406d7172ac576b47ff344e81bb644af0fb2375d70247e4523d",
+      "bytes": 4220
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/agent/assets/capability-template.md",
+      "sha256": "29bdd9466119df34b8c9c19f259459426cf8a000dc9af39a6a529e32588b8a6d",
+      "bytes": 582
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/agent/assets/customize-template.toml",
+      "sha256": "e3d6b65fd1fa636230f51a386435b4576b9c6a439f6b9b65245f88345199843e",
+      "bytes": 1910
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/agent/assets/sample-capability.md",
+      "sha256": "d67bf32abb31ba10d7fa19fa9d774f01ee8f62383af999f42cb5bf8714afbdfb",
+      "bytes": 887
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/agent/assets/SKILL-template.md",
+      "sha256": "44f5ae83f231b1798b80c91b1b3ad60bbf4b4cc5d05b6f102e2440ae078752be",
+      "bytes": 2056
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/agent/shape.md",
+      "sha256": "d770975dfeb93c6464ed17b9cee616d28b900de06a368e9bb1b8fb70e9264ac9",
+      "bytes": 3250
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/BOND-template.md",
+      "sha256": "d9306faec1394bbd68b3ced648540bdf0ada4b78802c1632fc9b1e3c87593c10",
+      "bytes": 392
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/CAPABILITIES-template.md",
+      "sha256": "ddd82573e90cc331c4cf4b6157926009f974104f6b6800cf5c6b2c8900ec1e37",
+      "bytes": 1017
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/CREED-template.md",
+      "sha256": "7682c907a42269a27095b95f593c522c9b92de3669dd19a08bf0faa69761a014",
+      "bytes": 2138
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/customize-template.toml",
+      "sha256": "26e8636ecfe7c9690ad59d3f6b7508ee25bc0beed6b9240c23d02673e7a30ce8",
+      "bytes": 1222
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/first-breath-config-template.md",
+      "sha256": "0ae4de99c09b9ff426fc6ec20947d42152aed0aad2df254c2aa22c754611723a",
+      "bytes": 4628
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/first-breath-template.md",
+      "sha256": "a80a0f4b0e9eae075ff2b4eea1413ccd8e2a5c8778052ce4e1d9f860de4e07d3",
+      "bytes": 9512
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/HOW-I-REMEMBER-template.md",
+      "sha256": "c1746bb55915611817fef56b794bba7c16050dd8d2ef7d2d20b6d73527e1f4bf",
+      "bytes": 3424
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/init-sanctum-template.py",
+      "sha256": "a84462375d2cbe318996f7c8c718e6c0a2bae92daa51b6d78f6bd2b7b100f576",
+      "bytes": 5886
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/intake-capability-template.md",
+      "sha256": "d961fba9f57cfbb19040beb39b28b1b5cbef526cebb0addbc7df007f138b3448",
+      "bytes": 975
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/PERSONA-template.md",
+      "sha256": "23991b886c01cda4bcbb2c8703d779541dc008b34e430ea6f450236e1724bcbf",
+      "bytes": 705
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/PULSE-template.md",
+      "sha256": "c79b1fee736283a3993d2740e53bf2ec48816879bd08ed6d5baf009e91447905",
+      "bytes": 849
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/SKILL-template-bootloader.md",
+      "sha256": "6f73cb700695dc086299680413ceebaccfe26f827da741dce2a9059e162c72c7",
+      "bytes": 4340
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/assets/wake-template.py",
+      "sha256": "c6f47052adcf0d87d7a94fa8b98a3e3bb327781f3cd1f093c4c0ac5ca16a6d1d",
+      "bytes": 6913
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/memory-agent/shape.md",
+      "sha256": "a75b6eaca49f5d1ee5b17a95a400238efb3ed839f0598303778427974dc363eb",
+      "bytes": 5092
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/multi-skill-module/assets/help-template.md",
+      "sha256": "e722697a88ee02ef19aa3cee75e6726cc57f3fcac05c751a6e0ce2055ea08efc",
+      "bytes": 623
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/multi-skill-module/assets/member-bmod-template.toml",
+      "sha256": "0bc2c9b0e3d589375fde9982ed784e6d3b3e3ccff428862ce8f423d3a35d66e6",
+      "bytes": 490
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/multi-skill-module/assets/record-bmod-template.toml",
+      "sha256": "9f70e6bc492ff65957b0615a417495f8420156306e95b89773e869ecf0deb477",
+      "bytes": 802
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/multi-skill-module/assets/record-SKILL-template.md",
+      "sha256": "216660a8bbb7b0f48adea0007ee4df3868a2048e7e56c0a4aa4748eb255f79f1",
+      "bytes": 374
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/multi-skill-module/assets/retired-template.toml",
+      "sha256": "6f518c4a367e0fa313d36d5a844b6e5363901740e41447adb71fecf4fd5d8cbe",
+      "bytes": 287
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/multi-skill-module/assets/roster-template.toml",
+      "sha256": "5ad194338e2f46ceb4da533be8f404759c2c489d698c666727f0813429d3fbc5",
+      "bytes": 567
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/multi-skill-module/shape.md",
+      "sha256": "6acb09a4a732f6f424d3f5aaf46f6d659d6ab7455c2bf912165d86362504c6a9",
+      "bytes": 4412
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/plain-skill/assets/customize-template.toml",
+      "sha256": "4f5579886bb82235a20614b86366e4f3bf7ab197fe06fade606f5e669502c256",
+      "bytes": 1032
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/plain-skill/assets/sample-skill/SKILL.md",
+      "sha256": "a09bd5af70a4d1270e026d188750516fcc39596293ce98d30f5a41d77946ef29",
+      "bytes": 1510
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/plain-skill/assets/SKILL-template.md",
+      "sha256": "01d85a5f7d0cb871e9ac024e765269a967646203094d3db8ff0e19ed6c535a29",
+      "bytes": 2003
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/plain-skill/shape.md",
+      "sha256": "ea22aeafcb2651740548c24fe746ed0cd67670fe18f651b279097600e1914f9a",
+      "bytes": 2923
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-agent/assets/capability.md",
+      "sha256": "9f816a3bf210c14a60cc0c581cb7cdc8e2e2e5ffad1fafa369787fb1e72cb7a9",
+      "bytes": 1161
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-agent/assets/customize-template.toml",
+      "sha256": "8ec282e4e97fe2a3ea611084de7371dd99308ae7f35ac114d002440fabc99c31",
+      "bytes": 2684
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-agent/assets/SKILL-template.md",
+      "sha256": "181b39296da5f1b8b4a102b8367976ab874f10e00a0aa337e888a3b640e51068",
+      "bytes": 1066
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-agent/assets/workflow.md",
+      "sha256": "86f9ed701766488229f8f4ad52693739f1d9cd875709cadb6d6e0a824e8ab8f1",
+      "bytes": 1821
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-agent/shape.md",
+      "sha256": "ff0e07605c91b0c4bf41aaedab2768a3f494d33791b827cc55b8765b625d6265",
+      "bytes": 3931
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-skill/assets/customize-template.toml",
+      "sha256": "596f32ff70792894e9da14262561d44c5ab788c82608398e30aa5cbd5370f823",
+      "bytes": 990
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-skill/assets/SKILL-template.md",
+      "sha256": "5f64d8b94aa13c35dbb500550e21b22224b7b4c503a16fa32eb5b6e987337d4a",
+      "bytes": 1052
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-skill/assets/step.md",
+      "sha256": "5ab19da3ef74f92e06f5f2a5be268f99d92a39f5f0b73e8e273c96b544d59851",
+      "bytes": 688
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-skill/assets/workflow.md",
+      "sha256": "5c3b2758f1f7b74aede376e4570048dda4f0f0a125b8c7b0db7c62408e314d68",
+      "bytes": 1004
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/rendered-skill/shape.md",
+      "sha256": "23e2bb030b2fd571016a15fd3238beab888b99803a007f487bd9d2897586ac55",
+      "bytes": 2239
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/script-utility/assets/script-template.py",
+      "sha256": "e4a732641be4b85fa5f395d14f93c7b411dafd6afe6f978b463885ad2f5c8ceb",
+      "bytes": 1500
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/script-utility/assets/SKILL-template.md",
+      "sha256": "f30b1c2ba31b72d30ed1ff9f9155d04db3c3b6af725a5bfadbe098ef9ce382af",
+      "bytes": 859
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/script-utility/assets/test-template.py",
+      "sha256": "b8eb778c551d4358be2e00f4f1d5c9a25743d436cd39365fa8a8fae10408ff83",
+      "bytes": 1246
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/script-utility/shape.md",
+      "sha256": "f70c981cb3a4716838a773671fc139530e4120b40cc0e6941945ae22d0a121d0",
+      "bytes": 1687
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/single-skill-module/assets/bmod-template.toml",
+      "sha256": "dc56f9bed90a1346538bb3066d16e9d1353a6307e82f67b94da877a1693309e9",
+      "bytes": 696
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/single-skill-module/assets/help-template.md",
+      "sha256": "c2db011e82bf7755f88f3bf4508c83b76c97ce929c0e461afcf74db1f89cacd4",
+      "bytes": 177
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/shapes/single-skill-module/shape.md",
+      "sha256": "9a6457d9ac853746564a75f6bbcae71c97024f79e3aac441aee483d328cd7e13",
+      "bytes": 2522
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/ship.md",
+      "sha256": "71bdfe23fce439f15f448055c00e95d192056a1a7eea5682995dc493c65e189f",
+      "bytes": 6588
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-toolsmith/SKILL.md",
+      "sha256": "9ab76056e07ee78b92101457bd662f4e687b5d3c3de2e1bb98887e8139064b2e",
+      "bytes": 3469
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/color-themes.md",
+      "sha256": "ccb6e4ef47a196476cf9392d788938ad3ca8d07b9ce095b7c092dcb4e06735f0",
+      "bytes": 1084
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/design-directions.md",
+      "sha256": "90e58714a86597d43bff8917528e128652f851374ce0d09eefd1db738992b27f",
+      "bytes": 1056
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/design-example-editorial.md",
+      "sha256": "a659166845b1a4ed3f9aef942c5935537a97382b10303684fbb78ed86265870e",
+      "bytes": 7363
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/design-example-mobile.md",
+      "sha256": "a93fb9f114f2e83af0c961c0d7909b3859fc80bcd713715517cd639a53a0372a",
+      "bytes": 4957
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/design-example-shadcn.md",
+      "sha256": "25e0dfb2bb21483973a8f0a6ed650288b3dc2ae5ed02aa0f091bb9b6b0b39fc0",
+      "bytes": 6376
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/excalidraw-wireframe.md",
+      "sha256": "660bbcdebff50cd044a3752eda43f3cb303aca4b0f521b55a270da93b89ddb18",
+      "bytes": 1901
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/experience-example-mobile.md",
+      "sha256": "76388c087b25653f40e28395a8be9ca039c93e04212a6aa14c22c1fd31a25aaa",
+      "bytes": 5099
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/experience-example-shadcn.md",
+      "sha256": "9588c7c21ad4e7ac9c920a25b8c376520f2eea082cea359505e51c1fce24f6fa",
+      "bytes": 9263
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/headless-schemas.md",
+      "sha256": "38f42ed31ba2ad151b3537339c160af8706ca124f5847696ee780750eddac7c3",
+      "bytes": 2618
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/key-screens.md",
+      "sha256": "e4d97afba29e752fe4e2ca8b3ea2fa21bdde8dbeb368ad6d6c6da91f4f9b91b7",
+      "bytes": 2188
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/assets/validation-report-template.html",
+      "sha256": "4000a66a02052e949c1cc1cfe457ef51e49bb67dec5d4cad1d91d6ebc7b5fdb5",
+      "bytes": 10945
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/customize.toml",
+      "sha256": "e91c0457be87f50c097ffed516662191f7d91a294a5108b9e2486855e0e10259",
+      "bytes": 4595
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/references/creative-tools.md",
+      "sha256": "e281292d7c0fdecdbb67ca9b7d95d4bed803626ba5edfd8dcc99146fcaa118e6",
+      "bytes": 1895
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/references/design-md-spec.md",
+      "sha256": "d04d5f663607aba3f3181e818ae33856e6caf5e560dcb16fa64ed80b7cf3d590",
+      "bytes": 3298
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/references/headless.md",
+      "sha256": "7900a25fa838b4cdae5ed76b9b1af9f88c4191d86844f3eafe4fe87ac0ce0c49",
+      "bytes": 2506
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/references/validate.md",
+      "sha256": "7f6e0d874000719c37a08499ade1e1f736194c0ff725ac28307b4904ea75ac1d",
+      "bytes": 6983
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-ux/SKILL.md",
+      "sha256": "7053f91a2a9e733fd6e1361f449c4ba33fcfef44f0e4c60ebba2d9daf35562c1",
+      "bytes": 12734
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-walkthrough/bmod.toml",
+      "sha256": "4b518dc0ab40a96e39bec615f1298298efa5c36914982984cfd1b51904430312",
+      "bytes": 80
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-walkthrough/customize.toml",
+      "sha256": "c093aa6b5357679de792342859c0272c7c2c99e473c4a8e3e8c4b6bd1e28b2fd",
+      "bytes": 1087
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-walkthrough/SKILL.md",
+      "sha256": "c28fad6ab0ca63cb6b0b00e326dbfd49540d5dd7154ea21216bda66a73a3aacb",
+      "bytes": 961
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-walkthrough/step-01-orientation.md",
+      "sha256": "6d54c3418762cdc24d6edfae529e856f305ad49456538c7db7c636775c917d29",
+      "bytes": 691
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-walkthrough/step-02-narrative.md",
+      "sha256": "bfedc6a74ea43c2168f234b842bebfb1dd678991b516ddeca91d066b25e2b1c6",
+      "bytes": 1031
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-walkthrough/step-03-walkthrough.md",
+      "sha256": "ee2bd70b9ad51bcda5e28565ea119c7e312d4c5551ba791cd7cccc89888f7c14",
+      "bytes": 3732
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-walkthrough/templates/log-template.md",
+      "sha256": "ebf59c7f6a85dfccea6f580e8a35363a0a8641e66067427ec803592d297ae770",
+      "bytes": 1412
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad-walkthrough/workflow.md",
+      "sha256": "4dc8ed89f5381fdd9e488d4d9831c39fda968d9bc04c92af94199120f4bc6d81",
+      "bytes": 3750
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/assets/config.template.toml",
+      "sha256": "9d955137e614026921752b22934986cea6b1f757903172c64af110ca7d12c029",
+      "bytes": 87
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/bmod.toml",
+      "sha256": "6b44fa7184345f8465176cc23ff7ff1c9718fc100d377b9e8743dabbe82eebda",
+      "bytes": 84
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/references/help.md",
+      "sha256": "4b13799ff9ff33e0408ea9f861b7e53e857bbebb85662401656a21fe5bc175d0",
+      "bytes": 2318
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/references/initiative.md",
+      "sha256": "c301eacd9024e87464d82ee82f1c6300710112470f18f678acfbb0179497bdeb",
+      "bytes": 1224
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/references/migrate.md",
+      "sha256": "02c8f7b8f4ee3c4a2ce038a48ae30fe8009375c66961500b636101c3a2aea65c",
+      "bytes": 2381
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/references/setup.md",
+      "sha256": "73e0caf39f84f97646ab9f0ad923f5fc199066089e82a2b65b79a4a0332f5ce4",
+      "bytes": 5923
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/config_utils.py",
+      "sha256": "a4bba671cb3aedbf80fa4309d9c96afe6674f8de656a44a7fe67324815de437d",
+      "bytes": 4096
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/knowledge.py",
+      "sha256": "cfcb7c332a50e901d21f4f0d1bbd74914eb1bb98d7d18e3a23b09feed35c5c85",
+      "bytes": 21558
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/list_templates.py",
+      "sha256": "a18ca7aad1f58f599755eb069055e7a62f0d7c7747d21ae5aa1c679c5db8bb7f",
+      "bytes": 23363
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/memlog.py",
+      "sha256": "aedb4db43d186105d46f58ac8f3dc00567c108af00a1d4e71b17580b0e649749",
+      "bytes": 11959
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/migrate_v6.py",
+      "sha256": "a1bcbf7e5d2cb7b3daafc3efebfbaf467ee9b1c3cf197f2e6bc9548085e8950e",
+      "bytes": 45663
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/render_skill.py",
+      "sha256": "b9206d0454ce8287c5ca2abdaa4dadf50fcacefbad46d0a1c5656e6968b3bf35",
+      "bytes": 31765
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/resolve_config.py",
+      "sha256": "8175da8c5f7780e4f105fb3d29841ca429ddc65f0ff1ab32e6618367f654ab58",
+      "bytes": 2377
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/resolve_customization.py",
+      "sha256": "ea521b3ed5c62232cfa4f4c41ece4e8886792a05372e64b88fd73d97b19eac43",
+      "bytes": 6159
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/roster.py",
+      "sha256": "f9bdf9079d2d5a09ed55e5e34da6a0d07be371393d7a1797c74b409f6d7e1f1c",
+      "bytes": 9121
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/setup_check.py",
+      "sha256": "5e8d899bc7618df63d14d459df63849b2814a49ed2498432d05fcd19700ab723",
+      "bytes": 7194
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/setup.py",
+      "sha256": "8607707c686978bd24bf509d9e0eb9534fb5bb58c6df6a1a4929e9878321d13f",
+      "bytes": 104537
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/stamp_release.py",
+      "sha256": "d73a50b404ffdb3be07d17032ff8713a28c6fd22f0999a32bdfdc3532634e01c",
+      "bytes": 5367
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_config_utils.py",
+      "sha256": "667d0ebf860e46c83475510c10f0df7caf67463c08ab632dcf2e29f312833a51",
+      "bytes": 3524
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_knowledge_migrations.py",
+      "sha256": "3c5e709bd198ba8e9df96a1985371b689d0fe1bafd7da4d88a4c5befe972af0f",
+      "bytes": 6853
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_knowledge_templates.py",
+      "sha256": "cce4c193bd2ca99719ce4e3ae3aba14f2e45ca9a2f4f40498febf3121f231527",
+      "bytes": 3354
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_list_templates.py",
+      "sha256": "04b692e98348cb956ddc18d72a540d4e42cd89171106a1656d6662afe2f62c6d",
+      "bytes": 26191
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_memlog.py",
+      "sha256": "80af8688ce29961bb1fe36c1307ad88a1663028b05377385ee6de462ec323226",
+      "bytes": 11846
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_render_skill.py",
+      "sha256": "9fc1003a2585b1d313ba87b0b5e4d57eafc1b71010177817f1c2a24f105b1066",
+      "bytes": 58274
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_resolve_config.py",
+      "sha256": "8c5441f43111698a4bf5b3b49be3a0890e8776f61fefb3c9fe7e726f891b7dee",
+      "bytes": 4403
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_resolve_customization.py",
+      "sha256": "c905120258ca2bb7f2f18e632859a398f5234f3c3d35752fc97c3342a2902334",
+      "bytes": 9301
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_roster.py",
+      "sha256": "292c6e59c0fbec3884068750f981cefb39a7d4cfec1f631c5f7cd96d3ade3c86",
+      "bytes": 10765
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_setup_check.py",
+      "sha256": "d23e3e9bfe43feebde7e4969926ffd05bc472b53f4f14724c66305ccedfbf4be",
+      "bytes": 15585
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_stamp_release.py",
+      "sha256": "8c95127d53ce873a23420dec13117732f803aa8cf2ed4c24c05b1169cb76c858",
+      "bytes": 15385
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/tests/test_validate_manifests.py",
+      "sha256": "1cb8d5c7a1ef7c6ca9500b68f207d559f2aa625d2fc118c5130a31da84d8ee60",
+      "bytes": 25447
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/scripts/validate_manifests.py",
+      "sha256": "3bd7d19b20e771d612903fbe917768b08519b29286735fc33131804fd2d513f0",
+      "bytes": 21439
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmad/SKILL.md",
+      "sha256": "a2740b6080a7b79a5a854d7c1261d029e126d19794c4d7038898264f43f1fa64",
+      "bytes": 2498
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/bmod.toml",
+      "sha256": "a853587dfc1ac3221af00474c1f30bbf968c30840230db702a68a9158abcebba",
+      "bytes": 1503
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/advanced-elicitation.md",
+      "sha256": "0ce48fa4fc924cb43ae1d40f7fa8f7d5841c8402406b5ea1f1e77cee1b168bc6",
+      "bytes": 5087
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/customization.md",
+      "sha256": "74b9d0eec699addc5ac16644e80358a1695b09e71bbf944784ab7b71e577feed",
+      "bytes": 3779
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/facilitate.md",
+      "sha256": "249bfc65d0f8a01b4d947c8417760032549fb1cec1e66c5f5666ee2a81765b1d",
+      "bytes": 8457
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/help.md",
+      "sha256": "8d9ac9524bf54ac3c35bbc7aa2018b9ccfbb85ff6e93b6fbe2e1cbff68cf35a0",
+      "bytes": 12618
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/ingest.md",
+      "sha256": "0f7a6b18336c2f8c2afea62b617b45a18dcbfc3e68e59583985f73a57aa50332",
+      "bytes": 2898
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/modules.md",
+      "sha256": "d012a71161b48a435042b03cc2ef93aef4f7122a68be614987dd098d76091949",
+      "bytes": 4233
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/party-mode.md",
+      "sha256": "9d160c7877e8bd9e880906a764f47247a60284b3c3d95aa34d7d18a8ed303e2a",
+      "bytes": 3244
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/research.md",
+      "sha256": "fba2140e741cf82f28bf02979f2812c2a206fa0322ce0fd5efd507e6de05c421",
+      "bytes": 3453
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/shard-pro.md",
+      "sha256": "1b0c3a86e4f26b1d504e5560a36e90d9047c4c0cf408b65f90e5967b4c8277b5",
+      "bytes": 4714
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/help/team-adoption.md",
+      "sha256": "de5ba4c11b44e83d0fb66693f76c2218b75e9c691d8c303ca491a9e55f73ca72",
+      "bytes": 2110
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/ingest-templates/template-document.md",
+      "sha256": "20b0c2c0af6de912830ecb34ac9a4427b5bf49de7a682bb786390a92f835379a",
+      "bytes": 759
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/ingest-templates/template-meeting.md",
+      "sha256": "6a5af68fe9f078d091eff23122b8f8b4a886974130dbd9fe4a62f990ec7781c0",
+      "bytes": 923
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/ingest-templates/template-one-on-one.md",
+      "sha256": "acc013034d44471d29d91d793edd2f24013a047ee7a2f4b150efaf46f02ee2e1",
+      "bytes": 796
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/ingest-templates/template-thread.md",
+      "sha256": "af0dc78f47cbfce09c4276195a79188969ba51d97571fd18a965549f258fa50f",
+      "bytes": 1005
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/ingest-templates/template-voice-memo.md",
+      "sha256": "5c28ff3f51f1a9d8e5fed591e5d0144d9bb0b4bd1ea04e837569c093c4b09065",
+      "bytes": 649
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/retired.toml",
+      "sha256": "ffaac20fb3384fa286973ae1b9a973217939629d5499f2ad3f22e292f6c5b4c3",
+      "bytes": 318
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-core-tools/SKILL.md",
+      "sha256": "9392dc6f150da22ba00c7ecbb25a109073128a63f218d720edb44074ec2a7109",
+      "bytes": 390
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-founder/bmod.toml",
+      "sha256": "b5cb9e9f2f5302d5235dc4d3e2a00d629f84d4928bcccd68dc71c353730bcda9",
+      "bytes": 503
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-founder/doc-templates/rubric-proposal.md",
+      "sha256": "52322b0443bff815f638b85e7beec0ce3a2b3f194348d1e2b587fa9cbf94adc8",
+      "bytes": 684
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-founder/doc-templates/template-pitch-deck.md",
+      "sha256": "cdefd21da17f66e08ba7712f92057278395c54085953708c1cfb4f931b438444",
+      "bytes": 2717
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-founder/doc-templates/template-proposal.md",
+      "sha256": "1d782c7298e80410bcc2e4bac36f8e9d0c8e5aadae60759304d3d542e96f699e",
+      "bytes": 2554
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-founder/help/help.md",
+      "sha256": "ac7f739adbf834b609d17ff587dec2a4a83a3c7e44ad23035caa6d330b6791aa",
+      "bytes": 1259
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-founder/SKILL.md",
+      "sha256": "ffe7c826af0bc9386cab1cfe8b51db422ffc60b416aeb675950b60508634d89d",
+      "bytes": 376
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/bmod.toml",
+      "sha256": "bb0845c80ca14724dc4402754e5a50892cd67549e1cb2d17efabbecc32640908",
+      "bytes": 615
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/doc-templates/methods-security.csv",
+      "sha256": "4ae9a4e0eefed6c526de02362c2d08e64e27d4c7f2d6366cb188524163077b68",
+      "bytes": 6648
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/doc-templates/template-decision-record.md",
+      "sha256": "6c46ab3bf7281487343bdde8da65e70426f9521c676c01f13a6d56f86a659030",
+      "bytes": 2912
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/doc-templates/template-postmortem.md",
+      "sha256": "f4e78fff08f65e80f30a9065072cfa6f276ecb4548440c1e8b0ff779212c69ec",
+      "bytes": 3569
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/doc-templates/template-security-review.md",
+      "sha256": "73fe82b93052cc685ebd061bba5299f184b2c9789e968beb6be948a547075760",
+      "bytes": 2806
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/analysis-skills.md",
+      "sha256": "7ce5a160393c8609b0c2a3278aa662ca986fa95b16dd5a78443a72f19a7d9467",
+      "bytes": 2859
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/artifact-lifetime.md",
+      "sha256": "df488ea4529ad56847e98bf60dfbfec6bf5316e677a6c8397a66426c7230d51e",
+      "bytes": 1039
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/existing-codebase.md",
+      "sha256": "9ec5a2f89156a02ddb2bf93555c6064d9bf25f4653cf23bd5d8271805c193809",
+      "bytes": 2745
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/help.md",
+      "sha256": "c176781578bc28e2b2e94a53c6e3a9dc4ab606a8d7030ebd76a42aaee852515e",
+      "bytes": 21052
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/implementation-skills.md",
+      "sha256": "407b426476e00c02cd10139b329141278e385de4ad44646a88a6b1a6c4d94f64",
+      "bytes": 2955
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/monorepo-and-polyrepo.md",
+      "sha256": "1572a669435e416a66287fc44bfa5f32d554bd48cfa4d2f10d17f42ae8c53419",
+      "bytes": 2302
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/planning-skills.md",
+      "sha256": "dfecfba0437578b1108d3ed936e8990f059817e545291f861030a3a81ba9a2e7",
+      "bytes": 10579
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/preparing-a-repo-for-agents.md",
+      "sha256": "071470406f4acede3ca253d39b316384e39d776522c0f5f5075b6ebf51e182dd",
+      "bytes": 3126
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/project-context.md",
+      "sha256": "a5f54af7dfef5713cf84368fc5b48ea11b5d83121d7362260ec1bb7b8cfcd625",
+      "bytes": 3173
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/prototyping.md",
+      "sha256": "74e3c9874c802de861030a62d7795eba271dc35053db9e504a490c4a4682966c",
+      "bytes": 4840
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/review-choices.md",
+      "sha256": "2609a891019890b75be90a0cb7b31e9078bafc3f7caa9f11e475f897b25d681f",
+      "bytes": 3736
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/ticketing-and-epics.md",
+      "sha256": "4edfcc3142558e616ac71f69ef35feebd38398d29b79a252d3506cf261cd52aa",
+      "bytes": 2060
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/ticketing-setup.md",
+      "sha256": "90df8220d98b8ff94587600f5160e915e8bc1fb7f24f5e6a70e6c96a6eb8f0c5",
+      "bytes": 5529
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/unattended-builds.md",
+      "sha256": "365349975758f68b0c2a27e0a71052cb53801baf3314551c183440191e7a0d79",
+      "bytes": 5354
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/validation-skills.md",
+      "sha256": "6959a8ec226d59bf388d603f8137d1a63a07359385a986eaa37646f21140aed1",
+      "bytes": 4256
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/help/working-in-an-organization.md",
+      "sha256": "59f290a7742194a681abdef2e421209e36989c2b8b5a01e57eed4220c06d8afe",
+      "bytes": 5273
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/ingest-templates/template-discovery-workshop.md",
+      "sha256": "9a48d39867df9bdc9b63ea7c38daa42c98abc26967710a6ba24cc235a3843b7c",
+      "bytes": 961
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/ingest-templates/template-retrospective.md",
+      "sha256": "21b1f01beab2aac6ab71f089c230fb8706c7a0512d55d0b7fa8b9a4e2da0645c",
+      "bytes": 932
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/ingest-templates/template-sprint-review.md",
+      "sha256": "db46da2ffdbf1f9524762797613982478d2936cc1d093fd69a6b7aff25c446ae",
+      "bytes": 640
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/ingest-templates/template-standup.md",
+      "sha256": "d51adb9d3bc19ca03006f0000b6b403440e0da13ad2d9ae6f471f8aa51ff5aae",
+      "bytes": 639
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/ingest-templates/template-user-interview.md",
+      "sha256": "69c3bbdebfe0ce36adee2dea2b8a1575033ab8bfc7ff51138165d0b7bacc8b99",
+      "bytes": 1074
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/migration-1.toml",
+      "sha256": "6b11a2e9a1275f87d6e16463cd64b862fa186bb0aa9a8d7c3156eae0d9b0f1be",
+      "bytes": 27518
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/migration-2.toml",
+      "sha256": "ccde4d9af5c27bfdf5df4f46d2cc5d53a114de5aa71b37f21ebd24dc1fe5a0d2",
+      "bytes": 6904
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/retired.toml",
+      "sha256": "d13007bc152204ebe622696cf23031f929d739088e87eac32773326f9d6a34fa",
+      "bytes": 1760
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/roster.toml",
+      "sha256": "a0ce9d7879145d88dc74206fa534ab2d6ada4dd40cff9acf3f397ed9d99aaaca",
+      "bytes": 3490
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-method/SKILL.md",
+      "sha256": "3200579fbff4a77543d9471658bfbf86193ff7274efab3af3c935056acecaa14",
+      "bytes": 378
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/bmod.toml",
+      "sha256": "248e5b40984e3d5a788a125e8dcdda19353c0bf0d6258ef115ffa138603a9e75",
+      "bytes": 595
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/approaches.md",
+      "sha256": "4950cfe90a7b577a2fddd23aac38fd30ce26efc0c97c71432d24ac23a35d2ab0",
+      "bytes": 3037
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/craft-customization.md",
+      "sha256": "db801061d3459cd215be19a30221d7afcc7e56b8d33f5d34576263065c69d75d",
+      "bytes": 1867
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/craft-description.md",
+      "sha256": "17793f799a4c31d9273801582157c0d4aad1d27cd0dc7b594f0e260039d17428",
+      "bytes": 2052
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/craft-progressive-disclosure.md",
+      "sha256": "cad29c1487aa2a418eecfb125f6a28077d7c55e12124f80e1afe0f94d72b4a60",
+      "bytes": 2223
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/craft-scripts.md",
+      "sha256": "2cc9723e4ff2a5ccadf8c5cc4c0a50a384554b48e7808dca134e604930bf54f3",
+      "bytes": 1552
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/craft-subagents.md",
+      "sha256": "505efb9e2a342587b5d391e18799f9d2840e63e460583b43d72d7aaf4508e204",
+      "bytes": 1772
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/evals.md",
+      "sha256": "789032e2f7773f9373f5edffdc6cf1c26030bd81f9ea614b192393c75ffb9ebb",
+      "bytes": 3888
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/help.md",
+      "sha256": "a69adb714bfed1c2d99a7f112478495bc837e15eccbeaa77f85627e1a1b66805",
+      "bytes": 12380
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/how-to-add-to-module.md",
+      "sha256": "6514002adcf2eca306217587dd7e47451b2b5d4a7ca4d6e5e32dbcd8846c0766",
+      "bytes": 1790
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/how-to-convert-external.md",
+      "sha256": "594a7bc1f80e13f215af85d27af54f2da4a77dbc7e361a75213453a12237b2a1",
+      "bytes": 1795
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/how-to-distribute.md",
+      "sha256": "df152151e2c362a88a0d76c4b244fa91c0073c9c3a40872cffb1de1535eedb7c",
+      "bytes": 1539
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/how-to-memory-agent.md",
+      "sha256": "01c9da6930800db26fb731c8804672013821009d42481a6618e04bb820d081e2",
+      "bytes": 2210
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/how-to-personal-skill.md",
+      "sha256": "f8c98260b9a7395bffdc6b862e8bb7bc06e571320281a7e4287b7e6134a970dc",
+      "bytes": 1832
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/how-to-review.md",
+      "sha256": "ad4cef3978d5efcf2f794e1771ba924e2248a6ea5051b371c5118f9638c0f0bf",
+      "bytes": 1812
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/modes.md",
+      "sha256": "b5657258a4769a2dd139b4af3e284d05e5f0c43af03b45a3bf668173cfce2e50",
+      "bytes": 3099
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/naming.md",
+      "sha256": "c32d1f049c1df847fc0e5fc592d82d78a639cc4febd4cfdb5c9901c46bfd6bd0",
+      "bytes": 1510
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/references.md",
+      "sha256": "84c8ef2309315e40d2e7c227f42c704339e5ba091437f9d60325cb042d8ecccb",
+      "bytes": 2610
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/registration.md",
+      "sha256": "cb54d364a0f59ab1dd67eeb78da453b2f693f2616776d4f22a7b9d9c4458df37",
+      "bytes": 3087
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/shape-agent.md",
+      "sha256": "9ebe5a58709ec7a9dc9ae6be3807f6e79867ada43f94cc9628436cd2284fb6de",
+      "bytes": 2729
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/shape-memory-agent.md",
+      "sha256": "02652d255db1842bf5420a2d0a6b0a957db0b84f62496d0a688da059165ec975",
+      "bytes": 3487
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/shape-multi-skill-module.md",
+      "sha256": "e957d083dff5305d34d5232e7b5c6e24ac4570741e3d79bbd963e39404460a81",
+      "bytes": 1409
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/shape-plain-skill.md",
+      "sha256": "f7c75562a5a4fd4fc9bb5523d264274b1f0f0da13f6bdf0a145bfe20d521a634",
+      "bytes": 1803
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/shape-rendered-skill.md",
+      "sha256": "1c6ce49e9bf4c7973a49f9519c4b941e0837b205bc702fb2adb176fc8a74b5b1",
+      "bytes": 955
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/shape-script-utility.md",
+      "sha256": "ab0790e31d8d9c6f820696254af32f66336fec3fab9dde99c95432699b2228a9",
+      "bytes": 865
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/shape-single-skill-module.md",
+      "sha256": "3a01596844902f7f88d3dfe968815b0366a2a62987600ef6d49d99c8114746b9",
+      "bytes": 1377
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/help/shapes.md",
+      "sha256": "ae7a6ac022445b2c6275a53465238df0e4276973819b8ef7e249a9fd31d5bad6",
+      "bytes": 2848
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/retired.toml",
+      "sha256": "46b5e96274b35b59a45691490547c1179435f216ce72eca3ff7637bcaf628863",
+      "bytes": 348
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/roster.toml",
+      "sha256": "d28aca2b3872648e0b2406e627ef270107feec7063d707d696fdda6917742db0",
+      "bytes": 854
+    },
+    {
+      "path": "components/skill-bmad-method/skills/bmod-toolsmith/SKILL.md",
+      "sha256": "2823d42ca3571484bb26057ac08c11cd2a22afaf773db88ea6ab48737313965d",
+      "bytes": 382
+    },
+    {
+      "path": "components/skill-bmad-method/SOURCE.json",
+      "sha256": "e4aedec6e9e455701e3d11a18651db5ea03f27c21c6fe4d6d23f4aced64610f4",
+      "bytes": 106196
+    },
+    {
       "path": "metadata/00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007.json",
       "sha256": "00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007",
       "bytes": 1647
@@ -879,6 +3396,11 @@
       "bytes": 5193
     },
     {
+      "path": "metadata/8d5ee5422d2eac115eeaeade6daefc7dedefe00eb65c3c016d5a326987a885a9.json",
+      "sha256": "8d5ee5422d2eac115eeaeade6daefc7dedefe00eb65c3c016d5a326987a885a9",
+      "bytes": 3118
+    },
+    {
       "path": "metadata/946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894.json",
       "sha256": "946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894",
       "bytes": 45319
@@ -1067,6 +3589,11 @@
       "path": "recipes/plugin-project-context.json",
       "sha256": "ae461d7f9010e08c8d6e64284a242a9ae275273b8604e25e14f52f6ada775a2f",
       "bytes": 607
+    },
+    {
+      "path": "recipes/skill-bmad-method.json",
+      "sha256": "e2af44153df05206b93853ca6f6042e02087199748a70600791c9245105f534f",
+      "bytes": 2021
     }
   ],
   "index": {

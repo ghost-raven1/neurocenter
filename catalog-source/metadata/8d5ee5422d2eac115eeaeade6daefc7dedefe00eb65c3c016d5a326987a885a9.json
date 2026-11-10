@@ -1,0 +1,41 @@
+{
+  "card": {
+    "body": "BMAD Method — структурированный агентный подход к поставке ПО. Бандл из 32 skill-ов в едином дереве skills/ (hub `bmad` + bmod-модули core-tools / method / toolsmith / founder и их bmad-* скиллы), перекрёстные ссылки между скиллами сохраняются.\n\nHub `bmad` — ваш советник по методу: отвечает на вопрос «что делать дальше», рекомендует следующий skill и почему, ведёт по целям с установленными модулями, запускает нужные скиллы по запросу (`bmad build` / `bmad setup` / `bmad migrate` / `bmad status`). Ответы берутся из установленных модулей через `uv run <skill-root>/scripts/knowledge.py --content`.\n\nМодули: core-tools (базовые скиллы: brainstorming, deep-recon, review, forge-idea, ingest, shard-pro, advanced-elicitation, customise, party-mode, facilitate); method (продакт-менеджмент/дизайн/инжиниринг: bmad-agent-po/pm/architect/dev/ux-designer/analyst, bmad-architecture, bmad-build, bmad-build-auto, bmad-code-review, bmad-project-context, bmad-qa-generate-e2e-tests, bmad-retrospective, bmad-ux, bmad-walkthrough); toolsmith (bmad-toolsmith, bmad-eval); founder (bmad-facilitate).\n\nСовместимость: skill-формат opencode; Python/uv-зависимость BMad-setup — скиллы запускают helper-скрипты через `uv run`. Это compatibility-метка, НЕ блокирует установку скиллов (device должен предоставить uv либо получить предложение установить его).",
+    "meta": {
+      "description": "BMAD Method — agile AI-driven development: бандл 32 skill-ов (hub `bmad` + bmod-модули) для самонаправленной поставки. Hub `bmad` отвечает на «что делать дальше» и запускает bmad-build. Python/uv (BMad-setup) — compatibility-метка, не блокирует установку скиллов.",
+      "mcp": [],
+      "plugins": [],
+      "tags": [
+        "BMAD",
+        "Метод",
+        "Agile AI",
+        "AI-driven development",
+        "Skill-группа",
+        "bmad-build"
+      ]
+    },
+    "name": "BMAD Method",
+    "path": "common",
+    "slug": "bmad-method"
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "type": "inline"
+  },
+  "id": "skill-bmad-method",
+  "kind": "skill",
+  "license": {
+    "spdx": "MIT",
+    "url": "https://github.com/bmad-code-org/BMAD-METHOD/blob/a867e1604b365d48ea03cbd109da1066ba0c84bc/LICENSE"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "a867e1604b365d48ea03cbd109da1066ba0c84bc",
+    "path": "skills/",
+    "repository": "https://github.com/bmad-code-org/BMAD-METHOD",
+    "type": "git"
+  },
+  "version": "6.13.0-next"
+}

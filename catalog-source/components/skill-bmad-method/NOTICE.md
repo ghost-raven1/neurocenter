@@ -1,0 +1,5 @@
+Pinned source from bmad-code-org/BMAD-METHOD at a867e1604b365d48ea03cbd109da1066ba0c84bc (main branch reference, confirmed via git ls-remote / local clone). Upstream is MIT-licensed (Copyright (c) 2025 BMad Code, LLC); upstream authorship and source provenance are preserved.
+
+Scope note: this component vendors the `skills/` working contour only — the 32-skill tree `skills/bmad-*` + `skills/bmod-*` (including the hub `skills/bmad` with its `references/`, `assets/` and `scripts/`, and each module's `bmod.toml`). `tools/`, `docs-site/`, `docs/`, `.github/`, `CHANGELOG.md`, `action.yml` and repository metadata are deliberately OUT of the vendored contour; `SOURCE.json` records the exact vendored file set and its SHA-256 inventory (FR-201).
+
+Runtime dependency note: BMAD skills run helper Python scripts via `uv run <script>` (e.g. `skills/bmad/scripts/knowledge.py`). The Python/uv toolchain is NOT vendored here — it is declared as a compatibility note on install (the device must provide `uv`, or the user is prompted to install it). This does not block skill installation.
