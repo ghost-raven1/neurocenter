@@ -78,9 +78,50 @@ node scripts/production/recovery.mjs verify \
 
 Файловый помощник использует проверенный catalog-образ без сети, с read-only rootfs, лимитами CPU/памяти/PID и только необходимыми capabilities для чтения томов. Docker daemon должен быть локальным: bind-пути относятся к машине, на которой выполняется CLI. Для remote Docker сначала перенесите выполнение/источник на хост daemon.
 
+## DR-бандл образов релиза
+
+Комплект данных не содержит образов. Для восстановления нужны **те же точные образы**, которыми создана копия: сверяются image ID семи приложений, включая `feature-flags-service`, и PostgreSQL. DR-бандл — это `docker save` этих восьми образов **по точному image ID** из верифицированного release-манифеста и опись `image-bundle.json` с SHA256 каждого tar. Бандл ключится на релиз (`commit` + `release` + image ID): повторная сборка для того же релиза — no-op, а бандл для другого commit отклоняется с понятной ошибкой.
+
+```sh
+# Сборка по верифицированному release-манифесту (7 приложений + postgres)
+node scripts/production/dr-images.mjs bundle \
+  --manifest /etc/neurocenter/releases/<release>/release-manifest.json \
+  --destination /mnt/neurocenter-images/<release>
+
+# Проверка: docker load каждого tar; ID обязан совпасть с описью и release-манифестом
+node scripts/production/dr-images.mjs verify \
+  --source /mnt/neurocenter-images/<release> \
+  --manifest /etc/neurocenter/releases/<release>/release-manifest.json
+```
+
+`verify` и `load` не пересобирают образы и не трогают текущие теги: `docker load` по image ID аддитивен. Битый tar (SHA), расхождение ID с описью или с release-манифестом, недостающий tar или бандл для другого commit останавливают проверку с конкретным сервисом и ID.
+
+Передача на внешнее S3 — тем же проверенным транспортом и с полным SHA readback, что и [внешние бэкапы](external-backups.md). Опись публикуется последней, только после чтения и SHA-проверки каждого блока:
+
+```sh
+node scripts/production/dr-images.mjs upload \
+  --source /mnt/neurocenter-images/<release> \
+  --backup-id <новый-id>
+node scripts/production/dr-images.mjs download \
+  --destination /mnt/neurocenter-images/<release>-restored \
+  --backup-id <id>
+```
+
+При восстановлении образы загружаются **до** `restore` (раздел [Восстановление на чистой машине](#восстановление-на-чистой-машине)):
+
+```sh
+node scripts/production/dr-images.mjs load --source /mnt/neurocenter-images/<release>
+```
+
+`docker save` по image ID не сохраняет ни теги, ни repo-digest (проверено: в tar `RepoTags: null`, а в image-конфиге нет `repoDigests`), а production-комплект резолвит приложения по `neurocenter/<service>:<release>`. Поэтому `load` после сверки ID сам помечает семь приложений меткой релиза из описи: после `load` они доступны для `restore` без обращения к registry. PostgreSQL в production-комплекте указан по digest `pgvector/pgvector:pg16@sha256:…`; после `load` бандла postgres доступен только по ID, поэтому этот reference не резолвится офлайн — см. ограничение ниже.
+
+Опись не несёт секретов. Тар-бандлы не коммитятся в git: в VCS попадают только опись, SHA, инструмент и эта процедура. Бандл не заменяет registry — это офлайн-доставка точных образов для одной площадки и релиза.
+
+> **Ограничение (postgres):** production-комплект ссылается на PostgreSQL по manifest-list digest `pgvector/pgvector:pg16@sha256:…`. `docker save` не переносит repo-digest ни в одном режиме (проверено: save по ID и save по digest-reference дают tar с `RepoTags: null` и без `repoDigests` в image-конфиге), поэтому после `load` на DR-хосте digest-reference не резолвится офлайн — даже если postgres в бандле совпадает с закреплённым образом. Перед `restore` укажите сервис `postgres` recovery-проекта на загруженный образ: `docker tag <ID postgres из описи image-bundle> pgvector/pgvector:pg16` + однострочный override `image` этого сервиса. Отдельная доставка postgres по reference спасает только тег (save по ТЕГ-reference сохраняет `RepoTags` в manifest tar — проверено; по digest-reference — нет), а digest-pin override всё равно потребуется. Для семи приложений это ограничение не действует: метка `neurocenter/<service>:<release>` накладывается `load`.
+
 ## Восстановление на чистой машине
 
-1. Восстановите исходный ключ моделей и его identity marker в закрытый `secrets/` recovery-конфигурации, затем выполните `setup.mjs configure`, подготовьте TLS и исходный комплект. Доставьте **точные образы**: проверяются image ID семи приложений, включая `feature-flags-service`, и PostgreSQL. Текущая реализация ещё не публикует их в registry автоматически. Встроенный `nc_rag_template` и фиксированные роли создаются initializer из этого же выпуска; произвольные глобальные настройки/дополнительные роли PostgreSQL требуют отдельной процедуры.
+1. Восстановите исходный ключ моделей и его identity marker в закрытый `secrets/` recovery-конфигурации, затем выполните `setup.mjs configure`, подготовьте TLS и исходный комплект. Доставьте **точные образы** DR-бандлом релиза ([DR-бандл образов релиза](#dr-бандл-образов-релиза)): загрузите бандл до `restore`, сверяются image ID семи приложений, включая `feature-flags-service`, и PostgreSQL из release-манифеста. Встроенный `nc_rag_template` и фиксированные роли создаются initializer из этого же выпуска; произвольные глобальные настройки/дополнительные роли PostgreSQL требуют отдельной процедуры.
 2. Проверьте хэш из ранее сохранённой квитанции. Дампы должны происходить из доверенного источника: при restore PostgreSQL исполняет SQL, а SHA256 не является SQL-песочницей. [Предупреждение pg_restore](https://www.postgresql.org/docs/16/app-pgrestore.html).
 3. Выберите **новое имя Compose-проекта**, без его контейнеров и томов, включая `model-weights`, если он определён в конфигурации. Рабочий стек никогда не является целью восстановления.
 
