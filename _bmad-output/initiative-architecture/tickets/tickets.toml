@@ -1,5 +1,5 @@
 # Эпики инициативы. Порядок таблиц = порядок сборки.
-# next_id = 12
+# next_id = 13
 
 [[epic]]
 id = 1
@@ -87,3 +87,11 @@ title = "Вход: настоящий Blitz IdP (P0-SSO)"
 description = "P0-SSO закрыт: вход/отказы/истечение/выход на настоящем Blitz (единственный IdP контракта), первый админ, отзыв прав без re-login, отказ production-старта при dev-auth; неверный state/отказ IdP не создают сессию (fail-closed, FR-901); человек добавляется главным админом по почте (FR-902) — человеческая часть R2 (onboarding без оператора). UJ-1 работает как записан. Решение пользователя 2026-11-06: эпик перенесён в конец очереди сборки (после пилота) — пилот идёт на локальной версии. Открытый вопрос (решить до пилота): локальный auth-режим пилота должен быть поддержанной конфигурацией, а не dev-обходом (AD-OP-5 запрещает их в production-конфиге, entry 1.4) — если это отдельная работа до пилота, выносится в отдельный микро-эпик (решение с пользователем); Blitz-часть эпика строится после GO."
 covers = ["R1", "R2", "R12"]
 after = [{ epic = 1, needs = "кандидат REL-01 (замороженный релиз)" }, { epic = 10, needs = "пилот: локальная версия принята (GO) — решение пользователя 2026-11-06: SSO после пилота" }]
+
+[[epic]]
+id = 12
+slug = "epic-catalog-external"
+title = "Каталог: системные ассеты и внешние репозитории"
+description = "Расширение каталога по решению пользователя 2026-11-10 (два вопроса, оба закрыты): (1) системные скиллы/MCP/плагины ЯВНО выделить — критерий «влияют на работоспособность системы и отдельных подсистем» (функциональная нагрузка, не prefix): core (neurocenter-bridge — device-канал, BRIDGE_CAPABILITIES), RAG-подсистема (mcp-opencode-rag, plugin-opencode-rag-plugin — prepared-source RAG_PLUGIN_SOURCE + rag-installation-authority hosted-rag-core-v1/opencode-rag-ui-v1), подсистема системных ролей (skill-neurocenter-project-context/system-assistance/project-learning — контекст ролей coordinator/packager/indexer/ai-admin/autoconfigurator; skill-neurocenter-packaging), агент-команда по умолчанию (agent-planner/developer/reviewer/tester/documenter); (2) ПЯТЬ внешних репозиториев полноценно перенести и запаковать «из коробки»: opencode-see-image (plugin, pinned 091becb), ui-ux-pro-max-skill (skill, pinned 4f2dbb6), BMAD-METHOD (бандл skills/ 32, pinned main@11-08), alibaba/open-code-review (CLI npm @alibaba-group + Claude-plugin, pinned main@11-10), Fission-AI/OpenSpec (CLI npm @fission-ai/openspec 1.17.0 + 12 skills, pinned main@11-09). Формат — венединг по прецеденту components/codex-connector: component (source + SOURCE.json с pinned commit/SHA-описью) + metadata-карта + recipe + index/manifest + re-pin (FR-201/203: SHA-опись, провенанс). Параллельно с остатком эпика 2 (директива пользователя); re-pin (12.7) — после мержа 2.7/2.10, чтобы не конфликтовать по pin-каскаду. Решения пользователя 2026-11-10 (зафиксированы в 12.1): (а) системные 12 ассетов = ОБЯЗАТЕЛЬНАЯ установка на компьютер; (б) = ПО УМОЛЧАНИЮ в проект, снятие недоступно; (в) МОДЕЛИ ВРЕМЕННО ИЗ ПОСТАВКИ — дефолтные модели всех подсистем (чат/vision/embedding) и ключи провайдеров берутся из конфигурации opencode на компьютере; модель-ассеты остаются в каталоге как возможность хостинга (по желанию, FR-601 сохраняется), в required-набор/project-дефолт не входят; (г) нет конфигов opencode → предлагать заполнить (онбординг-шаг), тихого fallback нет. Открытые решения в тикетах: kind для CLI-ассетов (tool vs plugin+skill), бандл vs отдельные скиллы (BMAD/OpenSpec)."
+covers = ["R12"]
+after = []

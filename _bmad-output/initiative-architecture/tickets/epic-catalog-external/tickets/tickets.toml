@@ -1,0 +1,79 @@
+# Сторис эпика epic-catalog-external. Порядок таблиц = порядок сборки.
+# next_id = 8
+
+[[entry]]
+id = 1
+type = "story"
+title = "Системные ассеты: required-набор — обязательная установка на устройство + по умолчанию в проект"
+description = "Явное выделение системных ассетов каталога (решение пользователя 2026-11-10: критерий = влияние на работоспособность системы и отдельных подсистем; анализ с основаниями в epic-md). Группы (12 ассетов): core — neurocenter-bridge; rag — mcp-opencode-rag, plugin-opencode-rag-plugin; system-roles — skill-neurocenter-project-context, skill-neurocenter-system-assistance, skill-neurocenter-project-learning, skill-neurocenter-packaging; agent-team — agent-planner/developer/reviewer/tester/documenter. РЕШЕНИЯ ПОЛЬЗОВАТЕЛЯ 2026-11-10: (а) системные ассеты = ОБЯЗАТЕЛЬНАЯ УСТАНОВКА НА КОМПЬЮТЕР (устройстве); (б) системные ассеты = ПО УМОЛЧАНИЮ В ПРОЕКТ; (в) МОДЕЛИ ВРЕМЕННО УБИРАЮТСЯ ИЗ ПОСТАВКИ: дефолтные модели ВСЕХ подсистем (чат, vision для изображений, embedding для RAG) и КЛЮЧИ ПРОВАЙДЕРОВ берутся из конфигурации opencode на компьютере (устройстве); модель-ассеты каталога (model-embedding-qwen3-4b, model-vision-qwen3-vl-2b и др.) остаются в каталоге как ВОЗМОЖНОСТЬ ХОСТИНГА (установка по желанию, механизм FR-601 сохраняется), но в required-набор и project-дефолт НЕ входят. Механика: поле в metadata-карточке (system: true, required: true, subsystem: 'core'|'rag'|'system-roles'|'agent-team', note с основанием) — распространяется в index/manifest (prepare.mjs) и в API каталога (catalog-service: карточка + список). (а) Устройство: onboarding/реконсилиация устройства = автоназначение+установка required-набора (без ручных шагов); readiness-гейт устройства: отсутствие системного ассета = явное состояние «не готов» (не тихая деградация) — устройство не проходит приёмку, пока required-набор не установлен. (б) Проект: создание проекта (в т.ч. из шаблона, FR-102) = required-набор автоматически входит в назначения проекта; снятие системного ассета из проекта НЕ доступно (в UI кнопки удаления нет; API-вызов = явная ошибка с причиной). (в) Резолвинг моделей/ключей: подсистемы (RAG-embedding, chat-vision, see-image) читают дефолтную модель и ключи провайдеров из локального opencode-конфига устройства (opencode.json + auth-хранилище opencode); если в конфиге opencode нет нужной модели/ключей — предлагать заполнить (явный онбординг-шаг с указанием, что именно добавить в конфиг; решение пользователя 2026-11-10); тихий fallback на каталог отсутствует. UI каталога: отдельная группа «Системные (обязательные)» + badge с подсистемой; модель-ассеты — в обычной группе с пометкой «хостинг (опционально)». Внутренние системные агенты (agent-coordinator/packager/indexer/ai-admin/autoconfigurator) не трогать — они вне каталога."
+verify = "12 карточек несут system+required+subsystem+note (тест по описи из epic-md); index/manifest содержат поля (prepare.mjs + pin-тест); API отдаёт метку (тест на каждый kind группы); UI: группа «Системные (обязательные)» + badge, снятие недоступно (e2e/скриншот-проверка); onboarding устройства без required-набора = явное «не готов» (тест); создание проекта = required-набор в назначениях автоматически (тест); снятие системного ассета через API = явная ошибка с основанием (тест); модель-ассеты в required-набор и project-дефолт НЕ входят (тест), возможность установки из каталога (хостинг) сохранена (тест); подсистемы резолвят дефолтные модели + ключи провайдеров из opencode-конфига устройства (тест); отсутствие конфигов opencode = предложение заполнить (тест); пользовательские ассеты метку не несут и в проект НЕ подставляются; корневой сьют без деградации."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Вендинг opencode-see-image (plugin, pinned 091becb)"
+description = "Полноценный перенос alfaoz/opencode-see-image (master @ 091becb8159b031423b01737c80c0891e11d803b, сверить ls-remote при исполнении) в каталог по прецеденту components/codex-connector: component (source: TS-ядро index/v1/v2/core/lib + package.json, SHA-опись files) + SOURCE.json (repository/commit/license/scope) + metadata-карта (kind=plugin, origin, revision git-<sha>, compatibility: OpenCode v1+v2, зависимость: vision-модель берётся из конфига opencode устройства — решение 2026-11-10 (в), если нет — предлагать заполнить (г)) + recipe (установка как opencode-плагин на устройство). «Из коробки»: после установки из каталога текстовая модель видит изображения (selftest/тест-сценарий на dev-стек: скриншот → описание через vision-модель). Модель-ассеты каталога (model-vision-qwen3-vl-2b, хостинг по решению (в)) могут указываться в конфиге opencode — совместимость проверить и зафиксировать в compatibility."
+verify = "Component в каталоге с SOURCE.json (pinned commit, SHA-опись сверяется тестом); карточка+recipe в index/manifest; установка из каталога на dev-стек/чистую opencode-среду — selftest зелёный без ручных шагов; корневой сьют без деградации."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Вендинг ui-ux-pro-max-skill (skill, pinned 4f2dbb6)"
+description = "Полноценный перенос nextlevelbuilder/ui-ux-pro-max-skill (main @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b, сверить ls-remote) в каталог: component (skill-ядро: skill.json + src/ + cli/ в рабочем контуре, SHA-опись; README-мультиязычка и gallery — вне контура, scope-заметка) + SOURCE.json + metadata-карта (kind=skill, origin, revision, compatibility: skill-формат opencode, CLI-зависимости зафиксированы) + recipe (установка как skill). «Из коробки»: после установки из каталога skill срабатывает триггером и даёт дизайн-рекомендации (проверка на dev-стек: запрос дизайна → применение skill, без ручных шагов)."
+verify = "Component с SOURCE.json (pinned, SHA-опись); карточка+recipe в index/manifest; установка из каталога — skill виден и срабатывает (тест-сценарий на dev-стек); корневой сьют без деградации."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Вендинг BMAD-METHOD (бандл 32 skills, pinned main @ 11-08)"
+description = "Полноценный перенос bmad-code-org/BMAD-METHOD (main @ 11-08, HEAD сверить ls-remote; stable-линия = V6.12 — зафиксировать ветку/тег пина в SOURCE.json) в каталог. ФОРМА — решение при исполнении, рекомендованное: ОДИН бандл-ассет kind=skill «BMAD Method» (skills/: 32 папки bmad-*/bmod-* с SKILL.md — единый контур, cross-ссылки между скиллами сохраняются; дробление на 32 карточки ломает метод). Component: skills/ (SHA-опись) + SOURCE.json (scope: skills only; tools/, docs-site/, .github — вне контура) + metadata-карта (compatibility: skill-формат; Python/uv-зависимость BMad-setup — compatibility-метка, не блокирует установку скиллов) + recipe (установка бандла как skill-группа). «Из коробки»: после установки hub-skill `bmad` отвечает на вопрос «что делать дальше» и запускает bmad-build (тест-сценарий на dev-стек). NOTE: BMAD уже используется этой инициативой (наш борд/планы) — пин должен соответствовать версии, на которой идёт инициатива (сверить с локально установленным)."
+verify = "Component с SOURCE.json (pinned ветка/commit, SHA-опись); бандл-карточка+recipe в index/manifest; установка из каталога — hub `bmad` отвечает и bmad-build запускается (тест-сценарий); decision-заметка по форме (бандл/дробление) в story-plan; корневой сьют без деградации."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Вендинг alibaba/open-code-review (CLI + plugin, pinned main @ 11-10)"
+description = "Полноценный перенос alibaba/open-code-review (main @ 11-10, HEAD сверить ls-remote) в каталог. Состав: npm-пакет @alibaba-group/open-code-review (launcher bin/ocr.js) + нативный биндинг linux-x64 (@alibaba-group/ocr-linux-x64 — Go-бинарь) + Claude-plugin (.claude-plugin/marketplace.json → plugins/open-code-review/claude-code). ФОРМА — решение при исполнении, рекомендованное: kind=tool (новый kind: CLI-инструмент с pinned npm-версией; UI-группа «Инструменты») + установка = vendor'd npm-пакет (tarball в supply/vendor по AD-15-схеме) + PATH/запуск с устройства; альтернатива (skill-обёртка поверх CLI) — если kind=tool не принимается. «Из коробки»: `ocr` доступен после установки из каталога и прогоняет code review на git-diff (тест-сценарий: диф в test-репо → structured review-комменты, LLM-ключ — проектный model set, не хардкод)."
+verify = "Component с SOURCE.json (pinned commit + pinned npm-версии launcher/бинаря, SHA-опись); карточка (kind=tool или обёртка — по decision)+recipe в index/manifest; установка из каталога — ocr работает на dev-стек (тест-сценарий на реальном дифе); корневой сьют без деградации."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Вендинг Fission-AI/OpenSpec (CLI + 12 skills, pinned main @ 11-09)"
+description = "Полноценный перенос Fission-AI/OpenSpec (main @ 11-09, HEAD сверить ls-remote) в каталог. Состав: npm-пакет @fission-ai/openspec 1.17.0 (bin openspec) + 12 skills (skills/: openspec-apply-change, archive, bulk-archive, continue, explore, ff, new-change, onboard, propose, sync-specs, update, verify-change). ФОРМА — решение при исполнении, рекомендованное: бандл-ассет kind=skill «OpenSpec» (12 skills — единый контур SDD-метода, как BMAD) + CLI-часть (vendor'd npm-пакет, AD-15) — либо 2 ассета (skill-бандл + tool) если раздельное назначение нужнее. Component: skills/ + npm-tarball (SHA-опись) + SOURCE.json (pinned commit + npm-версия) + metadata-карта + recipe. «Из коробки»: `openspec` CLI работает + skill openspec-onboard/propose срабатывают (тест-сценарий на dev-стек: новый change → propose → статус). NOTE: FR-308 (эпик 9) предполагает BMAD → OpenSpec-поток агент-команды — пин и форма должны этому соответствовать."
+verify = "Component с SOURCE.json (pinned commit + npm-версия, SHA-опись); карточка+recipe в index/manifest (форма по decision); установка из каталога — CLI + skills работают (тест-сценарий); корневой сьют без деградации."
+covers = ["R12"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Re-pin каталога + «из коробки»-проверка пяти ассетов"
+description = "Финализация: re-pin каталога по стандартному каскаду (node scripts/assets/catalog-source-pin.mjs --write: producer.json → manifest.json (34→39 ассетов: +5) → services/shared/bundled-catalog.lock.json) + индекс (scripts/catalog-plugins/prepare.mjs). Сквозная «из коробки»-проверка: скрипт-сценарий на dev-стек/чистой opencode-среде — установка ВСЕХ 5 новых ассетов из каталога без ручных шагов + smoke-запуск каждого (see-image: скриншот→описание; ui-ux-pro-max: дизайн-запрос; BMAD: hub-ответ; ocr: review дифа; openspec: propose change). Provenance (FR-203): у каждого нового ассета в карточке версия/SHA/источник/время/издатель; SHA-опись (FR-201) проверяется тестом. TIMING: после мержа 2.7/2.10 на main (pin-каскад не должен конфликтовать с их коммитами); если 2.7/2.10 ещё не смержены — entry исполняется по их мержу."
+verify = "Manifest: 39 ассетов, pin-каскад пересчитан (тест prepare/pin); drift-тесты каталога зелёные; сквозной сценарий «из коробки» зелёный на dev-стек (лог/артефакт в story-plan); provenance-поля у 5 новых ассетов полные (тест); корневой сьют без деградации."
+covers = ["R12"]
+after = [2, 3, 4, 5, 6]
+hitl = false
+risk = "high"
