@@ -326,6 +326,13 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     }
 
     /**
+     * Готовность проекта по REQUIRED-набору системных ассетов (12.1).
+     */
+    systemReadiness(projectId: string) {
+        return this.db.systemReadiness(projectId);
+    }
+
+    /**
      * Уровень роли principal в проекте: 4 — Главный админ, 3 — Админ проекта,
      * 2 — Разработчик, 1 — Наблюдатель, 0 — не участник.
      */

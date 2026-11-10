@@ -4,6 +4,18 @@ The single maintained format reference is [Asset contract v1](../skills/neurocen
 
 The shared runtime implementation is exported from `@neurocenter/asset-contract`. Types are in [`index.d.ts`](../index.d.ts).
 
+## Contract 1.3.0
+
+Explicit required system set for the device (epic-catalog-external, story 12.1). Four additive top-level fields on the asset descriptor and, mirroring it, on the index entry:
+
+- **`system: true` / `required: true`** — mark the asset as a mandatory device asset: it must be installed on the device and is assigned to every new project by default.
+- **`subsystem`** — one of `SYSTEM_SUBSYSTEMS`: `core`, `rag`, `system-roles`, `agent-team`.
+- **`note`** — non-empty text (≤2000 chars, no control characters) explaining why the asset is required.
+- **All-or-nothing** — either all four fields are present or none are. A partial set is rejected; flags must be the boolean `true`.
+- **Index mirror** — `IndexEntry` carries the same four fields; `loadRepository` rejects an index whose marker diverges from the descriptor bytes. `assertIndexEvolution` is unchanged: previously published version bytes cannot change, so the marker only appears on new versions.
+
+Already published descriptors without the fields remain valid at read; model assets deliberately never carry the marker (they stay optional hosting).
+
 ## Contract 1.2.2
 
 Four additive extensions for the runtime-trust architecture (AD-2, AD-12, AD-13, AD-16); already published bytes without the new fields remain valid at read, while `validateAsset(value, {mode: 'produce'})` makes them mandatory:

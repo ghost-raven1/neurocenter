@@ -100,14 +100,14 @@ const indexEntry = (status, overrides = {}) => ({
 });
 const indexWith = (...entries) => ({ schemaVersion: 1, assets: entries });
 
-test('Contract 1.2.2 constants are the single pinned source (AD-12/AD-13)', () => {
+test('Contract 1.3.0 constants are the single pinned source (AD-12/AD-13)', () => {
     assert.deepEqual(ARTIFACT_CEILING, {
         compressedBytes: 1024 ** 3,
         unpackedBytes: 4 * 1024 ** 3,
         filesCount: 100000,
         cacheBytes: 8 * 1024 ** 3,
     });
-    assert.equal(CONTRACT_VERSION, '1.2.2');
+    assert.equal(CONTRACT_VERSION, '1.3.0');
     assert.deepEqual(PACKAGE_FORMAT_RANGE, { min: 5, max: 5 });
     assert.deepEqual(BRIDGE_PROTOCOL_RANGE, { min: 2, max: 2 });
 });
@@ -177,11 +177,11 @@ test('contractVersion: strict semver at read, exactly CONTRACT_VERSION at produc
         asset.contractVersion = bad;
         assert.throws(() => validateAsset(asset), /Contract version/);
     }
-    assert.throws(() => validateAsset(baseAsset(), { mode: 'produce' }), /Contract version 1.2\.2 required/);
+    assert.throws(() => validateAsset(baseAsset(), { mode: 'produce' }), /Contract version 1.3\.0 required/);
     const stale = baseAsset();
-    stale.contractVersion = '1.2.1';
+    stale.contractVersion = '1.2.2';
     descriptor(stale).limits = LIMITS;
-    assert.throws(() => validateAsset(stale, { mode: 'produce' }), /Contract version 1.2\.2 required/);
+    assert.throws(() => validateAsset(stale, { mode: 'produce' }), /Contract version 1.3\.0 required/);
 });
 
 test('Index entry status: active/retired are valid, other values rejected (AD-16)', () => {
@@ -189,6 +189,97 @@ test('Index entry status: active/retired are valid, other values rejected (AD-16
     assert.doesNotThrow(() => validateIndex(indexWith(indexEntry('retired'))));
     assert.doesNotThrow(() => validateIndex(indexWith(indexEntry(undefined))));
     assert.throws(() => validateIndex(indexWith(indexEntry('archived'))), /active or retired required/);
+});
+
+const systemMarker = (overrides = {}) => ({
+    system: true,
+    required: true,
+    subsystem: 'core',
+    note: 'Mandatory device asset',
+    ...overrides,
+});
+
+test('1.3.0: system/required/subsystem/note are all-or-nothing on the descriptor', () => {
+    const asset = baseAsset();
+    Object.assign(asset, systemMarker());
+    const checked = validateAsset(asset);
+    assert.equal(checked.system, true);
+    assert.equal(checked.required, true);
+    assert.equal(checked.subsystem, 'core');
+    assert.equal(checked.note, 'Mandatory device asset');
+    for (const subsystem of ['rag', 'system-roles', 'agent-team']) {
+        const ok = baseAsset();
+        Object.assign(ok, systemMarker({ subsystem }));
+        assert.equal(validateAsset(ok).subsystem, subsystem);
+    }
+    // Частичный набор — отклоняется (all-or-nothing).
+    for (const drop of ['system', 'required', 'subsystem', 'note']) {
+        const marker = systemMarker();
+        delete marker[drop];
+        assert.throws(() => validateAsset(Object.assign(baseAsset(), marker)), /all-or-nothing/);
+    }
+    for (const [key, value] of [
+        ['system', false],
+        ['required', false],
+        ['system', 'yes'],
+    ]) {
+        assert.throws(
+            () => validateAsset(Object.assign(baseAsset(), systemMarker({ [key]: value }))),
+            new RegExp(`${key} flag must be true`),
+        );
+    }
+    assert.throws(
+        () => validateAsset(Object.assign(baseAsset(), systemMarker({ subsystem: 'other' }))),
+        /system subsystem must be one of core, rag, system-roles, agent-team/,
+    );
+    assert.throws(
+        () => validateAsset(Object.assign(baseAsset(), systemMarker({ note: 'x'.repeat(2001) }))),
+        /System note: invalid text/,
+    );
+    assert.throws(
+        () => validateAsset(Object.assign(baseAsset(), systemMarker({ note: '  padded  ' }))),
+        /System note: invalid text/,
+    );
+    // Без маркера прежние описания остаются валидными (backward-совместимость).
+    assert.doesNotThrow(() => validateAsset(baseAsset()));
+});
+
+test('1.3.0: index entry mirrors the marker; loadRepository rejects index-to-descriptor drift', async (t) => {
+    const marker = systemMarker({ subsystem: 'agent-team', note: 'Required agent team' });
+    const bytes = serializeAsset(Object.assign(baseAsset(), marker));
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'nc-contract-13-')));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const directory = path.join(root, 'assets/bump-fixture/1.0.0');
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'asset.json'), bytes);
+    const entry = (extra) => ({
+        id: 'bump-fixture',
+        kind: 'mcp',
+        version: '1.0.0',
+        path: 'assets/bump-fixture/1.0.0/asset.json',
+        sha256: sha(bytes),
+        current: true,
+        ...extra,
+    });
+    const withMarker = indexWith(entry(marker));
+    validateIndex(withMarker);
+    await fs.writeFile(path.join(root, 'index.json'), JSON.stringify(withMarker, null, 2) + '\n');
+    const loaded = await loadRepository(root);
+    assert.deepEqual(loaded.index.assets[0], withMarker.assets[0]);
+    // Маркер индекса расходится с описаниями — fail-closed.
+    const drifted = indexWith(entry({ ...marker, subsystem: 'core' }));
+    await fs.writeFile(path.join(root, 'index.json'), JSON.stringify(drifted, null, 2) + '\n');
+    await assert.rejects(loadRepository(root), /system marker mismatch/);
+    // Маркер есть в описании, но не в индексе — тоже отклоняется.
+    const missing = indexWith(entry());
+    await fs.writeFile(path.join(root, 'index.json'), JSON.stringify(missing, null, 2) + '\n');
+    await assert.rejects(loadRepository(root), /system marker mismatch/);
+    // Частичный маркер в индексе — отклоняется валидацией.
+    assert.throws(() => validateIndex(indexWith(entry({ system: true, required: true }))), /all-or-nothing/);
+    assert.throws(
+        () => validateIndex(indexWith(entry({ system: true, required: true, subsystem: 'bogus', note: 'n' }))),
+        /system subsystem must be one of/,
+    );
 });
 
 test('assertIndexEvolution: retired is irreversible, existing immutability checks preserved (AD-16)', () => {

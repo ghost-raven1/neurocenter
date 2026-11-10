@@ -3,7 +3,7 @@ import { listAuditHistory } from './audit-history';
 import { createPool, observeClientErrors } from '../database/pool';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
 
 import { Client, Pool } from 'pg';
 import { PluginRepository } from '../publication/plugin-repository';
@@ -18,6 +18,8 @@ import type { IProjectRow } from './project-row';
 import { ProjectMemberRepository, projectMemberFromRow } from './project-member-repository';
 import type { IProjectMemberRow } from './project-member-repository';
 import { ProjectAssetRepository } from './project-asset-repository';
+import { ProjectAgentRepository } from '../agents/project-agent.repository';
+import { projectSystemAssets, resolveNativeId, SYSTEM_ASSET_ACTOR } from './system-assets';
 import { reserveSkillDependencies } from '../publication/skill-dependency-registry';
 import { SkillAuditRepository } from '../publication/skill-audit-repository';
 import { backfillModelCatalog } from '../models/models.repository';
@@ -57,6 +59,7 @@ export class CatalogDb {
     private readonly projectAssets: ProjectAssetRepository;
     private readonly skillAudit: SkillAuditRepository;
     private readonly projectSettings: ProjectSettingsRepository;
+    private readonly logger = new Logger('CatalogDb');
     private setupDone: Promise<void> | null = null;
 
     constructor(url: string) {
@@ -239,7 +242,49 @@ export class CatalogDb {
         if (!detail) {
             throw new Error(`project not created: ${name}`);
         }
+        // Epic 12 (12.1): автоназначение системных обязательных ассетов.
+        // Сбой отдельного назначения не роняет создание проекта — пропуск
+        // становится виден в system-readiness (state 'unpublished'/'unassigned').
+        await this.assignSystemAssets(detail.id);
         return detail;
+    }
+
+    /**
+     * Назначает проекту REQUIRED-набор (11 project-level системных ассетов).
+     * Каждый ассет разрешается в native-id по квитанции импорта; отсутствующий
+     * нативный объект пропускается (виден в system-readiness как не готов).
+     *
+     * @param {string} projectId - id созданного проекта.
+     * @returns {Promise<void>}
+     */
+    private async assignSystemAssets(projectId: string): Promise<void> {
+        let assets: Awaited<ReturnType<typeof projectSystemAssets>>;
+        try {
+            assets = await projectSystemAssets();
+        } catch (error) {
+            this.logger.warn(
+                `Не удалось прочитать REQUIRED-набор: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            return;
+        }
+        const agentRepo = new ProjectAgentRepository(this.pool);
+        for (const asset of assets) {
+            const nativeId = await resolveNativeId(this.pool, asset.id);
+            if (!nativeId) continue; // ещё не импортирован в нативный каталог
+            try {
+                if (asset.kind === 'agent') {
+                    await agentRepo.assignDefault(projectId, nativeId);
+                } else {
+                    await this.projectAssets.add(projectId, nativeId, asset.kind, SYSTEM_ASSET_ACTOR);
+                }
+            } catch (error) {
+                this.logger.warn(
+                    `Системный ассет ${asset.id} не назначен проекту ${projectId}: ${
+                        error instanceof Error ? error.message : String(error)
+                    }`,
+                );
+            }
+        }
     }
 
     /**
@@ -328,6 +373,47 @@ export class CatalogDb {
      */
     public removeProjectAsset(projectId: string, assetId: string, assetKind: string, actor: string): Promise<boolean> {
         return this.projectAssets.remove(projectId, assetId, assetKind, actor);
+    }
+
+    /**
+     * Готовность проекта к работе Нейроцентра по REQUIRED-набору (12.1).
+     *
+     * Проверяет 11 project-level системных ассетов (bridge исключён: его
+     * готовность — это подключённость самого устройства). status 'ready'
+     * только если все назначены; иначе 'not-ready' с явными причинами.
+     *
+     * @param {string} projectId - id проекта.
+     * @returns {Promise<ISystemReadiness>}
+     */
+    public async systemReadiness(projectId: string): Promise<ISystemReadiness> {
+        const assets = await projectSystemAssets();
+        const view: ISystemReadinessAsset[] = [];
+        for (const asset of assets) {
+            const nativeId = await resolveNativeId(this.pool, asset.id);
+            if (!nativeId) {
+                view.push({ ...asset, state: 'unpublished' });
+                continue;
+            }
+            let assigned = false;
+            if (asset.kind === 'agent') {
+                const res = await this.pool.query(
+                    'SELECT 1 FROM project_agents WHERE project_id=$1 AND agent_id=$2 AND NOT removed',
+                    [projectId, nativeId],
+                );
+                assigned = (res.rowCount ?? 0) > 0;
+            } else {
+                const res = await this.pool.query(
+                    'SELECT 1 FROM project_assets WHERE project_id=$1 AND asset_id=$2 AND asset_kind=$3',
+                    [projectId, nativeId, asset.kind],
+                );
+                assigned = (res.rowCount ?? 0) > 0;
+            }
+            view.push({ ...asset, state: assigned ? 'assigned' : 'unassigned' });
+        }
+        return {
+            status: view.every((asset) => asset.state === 'assigned') ? 'ready' : 'not-ready',
+            assets: view,
+        };
     }
 
     public listAiPluginVersions(pluginId: string): Promise<IAiPluginVersion[]> {
@@ -634,6 +720,20 @@ interface ICreateProjectBody {
     retention?: number;
     quotas?: IQuota;
     fsRootPath?: string;
+}
+
+export interface ISystemReadinessAsset {
+    id: string;
+    kind: string;
+    name: string;
+    subsystem: string;
+    note?: string;
+    state: 'assigned' | 'unpublished' | 'unassigned';
+}
+
+export interface ISystemReadiness {
+    status: 'ready' | 'not-ready';
+    assets: ISystemReadinessAsset[];
 }
 
 function toSummary(r: IProjectRow): IProjectSummary {

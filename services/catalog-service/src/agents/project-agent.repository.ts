@@ -6,6 +6,7 @@ import type { IAccessActor } from '../access/access.model';
 import { securityEvent } from '../access/security-events';
 import { AgentRepository, agentSummary } from './agent.repository';
 import { agentMutation } from './agent-mutation';
+import { requiredAssetForNative, systemAssetRemovalMessage } from '../catalog/system-assets';
 import { agentId, agentManifest, effectiveDefinition, object, revision, sha } from './agent-validation';
 import type { IAgentAssignmentRow, IProjectAgentAssignment, IAgentDelivery } from './agent.interfaces';
 type TDb = Pick<PoolClient, 'query'>;
@@ -183,6 +184,66 @@ export class ProjectAgentRepository {
             },
         );
     }
+    /**
+     * Внутреннее назначение системного агента по head-версии (Epic 12, 12.1).
+     * Вызывается каталогом при создании проекта; не проходит actor/CAS-защиту,
+     * потому что это автоматическое, идемпотентное назначение.
+     *
+     * @returns {Promise<{assigned: boolean; reason?: string}>}
+     */
+    async assignDefault(projectId: string, id: string, actor = 'system:catalog'): Promise<{ assigned: boolean; reason?: string }> {
+        agentId(id);
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+                'asset-management:agent:' + id,
+            ]);
+            const head = await this.cards.get(id, client);
+            if (head.archivedAt) {
+                await client.query('COMMIT');
+                return { assigned: false, reason: 'archived' };
+            }
+            const existing = (
+                await client.query<IAgentAssignmentRow>(
+                    'SELECT * FROM project_agents WHERE project_id=$1 AND agent_id=$2',
+                    [projectId, id],
+                )
+            ).rows[0];
+            if (existing && !existing.removed) {
+                await client.query('COMMIT');
+                return { assigned: true };
+            }
+            // project_agent_sets обязателен для saved() (UPDATE ... RETURNING).
+            await client.query('INSERT INTO project_agent_sets(project_id) VALUES($1) ON CONFLICT DO NOTHING', [projectId]);
+            await client.query(
+                `INSERT INTO project_agents(project_id,agent_id,version,manifest,added_by,updated_by) VALUES($1,$2,$3,$4,$5,$5)
+                ON CONFLICT(project_id,agent_id) DO UPDATE SET version=EXCLUDED.version,manifest=EXCLUDED.manifest,enabled=false,removed=false,updated_by=EXCLUDED.updated_by,updated_at=now()`,
+                [projectId, id, head.version, head.manifest, actor],
+            );
+            const result = await this.saved(client, projectId, id);
+            await securityEvent(client, {
+                actor,
+                action: 'project.agent.system-assign',
+                resourceId: id,
+                before: null,
+                after: {
+                    ...agentSummary(head),
+                    projectId,
+                    revision: result.revision,
+                    enabled: false,
+                    removed: false,
+                },
+            });
+            await client.query('COMMIT');
+            return { assigned: true };
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
     update(actor: IAccessActor, projectId: string, id: string, raw: unknown) {
         agentId(id);
         const input = object(raw, ['requestKey', 'expectedRevision', 'version', 'manifest', 'overrides', 'enabled']);
@@ -287,6 +348,8 @@ export class ProjectAgentRepository {
                 await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
                     'asset-management:agent:' + id,
                 ]);
+                const systemAsset = await requiredAssetForNative(db, id, 'agent');
+                if (systemAsset) throw new ConflictException(systemAssetRemovalMessage(systemAsset));
                 await this.lock(db, projectId, Number(input.expectedRevision));
                 const before = (
                     await db.query<IAgentAssignmentRow>(

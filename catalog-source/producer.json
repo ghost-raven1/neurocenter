@@ -563,8 +563,8 @@
     },
     {
       "path": "services/shared/bundled-catalog.d.cts",
-      "sha256": "89af46d102d30e0a9235a2096616bfe7bcdb89321ea8b68ba5b657edbf5a4ce5",
-      "bytes": 2260
+      "sha256": "673a3afec58af155cf5e1f9bc19b67da3a6a07f50ed12457088e20e344fca7fe",
+      "bytes": 2542
     },
     {
       "path": "services/shared/codex-connector-pin.json",
@@ -828,13 +828,13 @@
     },
     {
       "path": "vendor/asset-contract/SHA256SUMS",
-      "sha256": "fb044eef926380fc73f62b986fc0641192c2f8a4c21b4a89d57583e885a19b85",
+      "sha256": "30de3d8ae25c107684f3670dc787bf156ba484e9798a62892dda50ee7509212c",
       "bytes": 1385
     },
     {
       "path": "vendor/asset-contract/SOURCE.json",
-      "sha256": "ad5fae741a40215e0b1ab2daf278b5e2cf4fec551a203107c0a3733e757be44e",
-      "bytes": 4161
+      "sha256": "a6647c6db80979c625408aa02212104739d4f6da0abeabe4f92159a8c17bc821",
+      "bytes": 4394
     },
     {
       "path": "vendor/asset-contract/bin/assets.mjs",
@@ -843,13 +843,13 @@
     },
     {
       "path": "vendor/asset-contract/docs/contract.md",
-      "sha256": "d2e7b450e5669db94e5a854288b76748cb4b0d238760ba4d1da0676f1e3e3b50",
-      "bytes": 3811
+      "sha256": "de2c243a01702be5f96a3eacf16791a323d75152f74ba6acc3193199f3ace1b7",
+      "bytes": 4948
     },
     {
       "path": "vendor/asset-contract/index.d.ts",
-      "sha256": "ee72414afe3c0b82e3bb919e308fa762d362fdc20465412a07a5800f1338a2b7",
-      "bytes": 7231
+      "sha256": "304c64c93430f75a2b8a72f9ff22c4cb1e4f9eb25b15153442f8892526edd82d",
+      "bytes": 8204
     },
     {
       "path": "vendor/asset-contract/lib/agent.mjs",
@@ -858,12 +858,12 @@
     },
     {
       "path": "vendor/asset-contract/lib/asset.mjs",
-      "sha256": "6769e790ecaa7d6641694c5c41d455afc08b371742c1894c121195b0cbea6c66",
-      "bytes": 11799
+      "sha256": "2140d908f8d08c1dee1ddea564e0b94500b6f819d528425105d9bfe9b1adcd68",
+      "bytes": 12797
     },
     {
       "path": "vendor/asset-contract/lib/ceiling.mjs",
-      "sha256": "8d3343c170bafc88333223be687d4d499933a08cad6b807fc72cc29a8325425c",
+      "sha256": "c3e05e58e938a5408943c02e489fdb9c10c4ff8a9dff8ed6955f427b16fd7ac5",
       "bytes": 870
     },
     {
@@ -878,8 +878,8 @@
     },
     {
       "path": "vendor/asset-contract/lib/index.mjs",
-      "sha256": "bc81d80bacb8760174f2186ab24c2ac95e03a5f3ef5e111b0a97bedeccf63a24",
-      "bytes": 497
+      "sha256": "a10b5b4de8a31f2865566cb1f2a74b2701d80f73a983dcd69ac4e56785531d3c",
+      "bytes": 515
     },
     {
       "path": "vendor/asset-contract/lib/native-delivery.mjs",
@@ -893,8 +893,8 @@
     },
     {
       "path": "vendor/asset-contract/lib/repository.mjs",
-      "sha256": "8f768cd3c8718170ea273a72359dea8a077e19a967eddc5f8dc43aaef34374c0",
-      "bytes": 6599
+      "sha256": "dac1ecd3100cb9d445a491828f455779287289eb9c734aa2955f481a8b52e04e",
+      "bytes": 7667
     },
     {
       "path": "vendor/asset-contract/lib/validation.mjs",
@@ -903,7 +903,7 @@
     },
     {
       "path": "vendor/asset-contract/package.json",
-      "sha256": "a09246d4c06d0ae9d78993d4f7b987bdd196e2f9250a723b5c061e281fe1e2be",
+      "sha256": "30434eb8fe8332a630a97922760f014950fcb8dca6ae63d58fbb7e96dcbd4255",
       "bytes": 1107
     }
   ]

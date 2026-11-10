@@ -110,7 +110,7 @@ test('Vendored contract retains exact reviewed upstream bytes and no runtime dep
     assert.equal(source.files.length, 15);
     assert.equal(source.repository, 'https://github.com/ghost-raven1/neurocenter-assets');
     assert.equal(pkg.name, '@neurocenter/asset-contract');
-    assert.equal(pkg.version, '1.2.2');
+    assert.equal(pkg.version, '1.3.0');
     // Entry 1 (epic-trust-device-catalog): the in-tree amendment is documented; unamended base files keep upstream bytes.
     assert.equal(source.amendment.type, 'in-tree');
     assert.equal(source.amendment.baseCommit, sourceCommit);
@@ -141,7 +141,7 @@ test('Vendored contract retains exact reviewed upstream bytes and no runtime dep
         );
     }
     assert.equal(amended, 8);
-    assert.equal(bytes, 67916);
+    assert.equal(bytes, 72110);
     const sums = (await fs.readFile(path.join(vendor, 'SHA256SUMS'), 'utf8')).trim().split('\n');
     assert.equal(sums.length, 17);
     for (const line of sums) {

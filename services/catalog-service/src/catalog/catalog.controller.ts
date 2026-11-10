@@ -39,6 +39,7 @@ import { resolveFsRootPath } from './local-assets';
 import { IBackupRunResult } from './backup';
 import { verifyPackage } from './bundle-package';
 import { CatalogService } from './catalog.service';
+import type { ISystemReadiness } from './catalog-db';
 import { pagination } from './pagination';
 import { validateProjectRetention, validateProjectSettings } from './project-validation';
 import { AccessDb } from '../access/access-db';
@@ -452,6 +453,19 @@ export class CatalogController {
         return {
             ok: await this.catalog.removeProjectAsset(project.id, body.assetId, body.assetKind, this.actor(req).email),
         };
+    }
+
+    /**
+     * Готовность проекта по REQUIRED-набору системных ассетов (Epic 12, 12.1).
+     * Явное «не готово» при любом отсутствующем/не назначенном ассете.
+     *
+     * @param {string} id - id проекта.
+     * @returns {Promise<ISystemReadiness>}
+     */
+    @Get('projects/:id/system-readiness')
+    public async systemReadiness(@Param('id') id: string): Promise<ISystemReadiness> {
+        const project = await this.catalog.getProject(id, { includeLiveSizes: false });
+        return this.catalog.systemReadiness(project.id);
     }
 
     /**

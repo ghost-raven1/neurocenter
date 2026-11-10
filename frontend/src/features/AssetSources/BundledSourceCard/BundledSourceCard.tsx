@@ -1,6 +1,7 @@
 import { Button, Card, Space, Tag, Typography } from 'antd';
 import { FeatureButton } from '../../FeatureFlags/FeatureAvailability';
 import { sourcePlanPreparation } from '../sourcePlanPreparation';
+import { isSystemAsset, subsystemLabels, SYSTEM_ASSET_TAG, SYSTEM_MODEL_TAG } from '../systemMarks';
 import type { IBundledSourceCardProps } from './interfaces';
 /** Source and published edition are shown separately; neither claims a project or computer installation. */
 export function BundledSourceCard({
@@ -24,6 +25,9 @@ export function BundledSourceCard({
                                 ? 'Модель'
                                 : 'Мост компьютера'}
                     </Tag>
+                    {isSystemAsset(value) && <Tag color="blue">{SYSTEM_ASSET_TAG}</Tag>}
+                    {isSystemAsset(value) && value.subsystem && <Tag color="blue">{subsystemLabels[value.subsystem]}</Tag>}
+                    {value.kind === 'model' && <Tag>{SYSTEM_MODEL_TAG}</Tag>}
                     <Typography.Text type="secondary" title={value.sourceRevision}>
                         {value.sourceRevision === 'application'
                             ? 'Из исходников приложения'
@@ -31,6 +35,7 @@ export function BundledSourceCard({
                     </Typography.Text>
                 </Space>
                 <Typography.Paragraph>{value.description}</Typography.Paragraph>
+                {isSystemAsset(value) && !!value.note && <Typography.Text type="secondary">{value.note}</Typography.Text>}
                 {value.imported && (
                     <Typography.Text type="secondary">
                         В каталоге: редакция {value.imported.version} · {value.imported.originVersion}

@@ -6,6 +6,18 @@ import {validateAgentDelivery} from './agent.mjs';
 
 const toolFields=['name','kind','description','version','compatibility','tags','origin','revision','config','files','dependencies'];
 const targets=['darwin-arm64','darwin-x64','linux-arm64-glibc','linux-x64-glibc','linux-arm64-musl','linux-x64-musl','win32-arm64','win32-x64'];
+/** 1.3.0: subsystems of the explicit required system set (epic-catalog-external, story 12.1). */
+export const SYSTEM_SUBSYSTEMS=Object.freeze(['core','rag','system-roles','agent-team']);
+/** 1.3.0: system/required/subsystem/note describe one mandatory device asset; the four fields are all-or-nothing. */
+function systemFields(value,label) {
+  const present=['system','required','subsystem','note'].filter(key=>value[key]!==undefined);
+  if(present.length===0)return;
+  if(present.length!==4)throw new Error(`${label}: system, required, subsystem and note are all-or-nothing`);
+  if(value.system!==true)throw new Error(`${label}: system flag must be true`);
+  if(value.required!==true)throw new Error(`${label}: required flag must be true`);
+  if(!SYSTEM_SUBSYSTEMS.includes(value.subsystem))throw new Error(`${label}: system subsystem must be one of ${SYSTEM_SUBSYSTEMS.join(', ')}`);
+  text(value.note,'System note',2000);
+}
 /** AD-1 interim default policy (256 MiB / 1 GiB / 20000); documented for reference only — the contract validates against ARTIFACT_CEILING, never against environment values (AD-2/AD-12). */
 const limitDefaults={compressedBytes:256*1024**2,unpackedBytes:1024**3,filesCount:20000};
 
@@ -83,8 +95,9 @@ function skill(asset) {
 /** mode 'read' (default) stays backward-compatible with already published bytes; mode 'produce' makes contractVersion and descriptor limits mandatory (AD-2/AD-13). */
 export function validateAsset(value, {mode='read'}={}) {
   const produce=mode==='produce';
-  const asset=object(value,['schemaVersion','id','kind','version','source','license','compatibility','contractVersion','card','delivery','dependencies','recipe'],'Asset');
+  const asset=object(value,['schemaVersion','id','kind','version','source','license','compatibility','contractVersion','card','delivery','dependencies','recipe','system','required','subsystem','note'],'Asset');
   if(asset.schemaVersion!==1||!identifier(asset.id)||!KINDS.includes(asset.kind))throw new Error('Unsupported asset schema, ID or kind');
+  systemFields(asset,'Asset');
   pin(asset.version,'Asset version');source(asset.source);
   object(asset.license,['spdx','url'],'License');text(asset.license.spdx,'SPDX identifier',128);if(asset.license.url!==undefined)https(asset.license.url,'License URL');
   if(asset.contractVersion!==undefined)semver(asset.contractVersion,'Contract version');

@@ -3,7 +3,7 @@
   "repository": "https://github.com/ghost-raven1/neurocenter-assets",
   "commit": "e1255b4e522a0b38e471d5624cc63f5f13442649",
   "package": "@neurocenter/asset-contract",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "license": "UNLICENSED",
   "selection": "Минимальный runtime/CLI и документация контракта. Исходные байты сохранены; ассеты, рецепты, промпты, модели и веса не включены.",
   "files": [
@@ -15,15 +15,15 @@
     },
     {
       "path": "docs/contract.md",
-      "bytes": 3811,
-      "sha256": "d2e7b450e5669db94e5a854288b76748cb4b0d238760ba4d1da0676f1e3e3b50",
+      "bytes": 4948,
+      "sha256": "de2c243a01702be5f96a3eacf16791a323d75152f74ba6acc3193199f3ace1b7",
       "gitBlobSha1": "857290c069311b866bcf61cf0ba7747aa7f45b5e",
       "amended": true
     },
     {
       "path": "index.d.ts",
-      "bytes": 7231,
-      "sha256": "ee72414afe3c0b82e3bb919e308fa762d362fdc20465412a07a5800f1338a2b7",
+      "bytes": 8204,
+      "sha256": "304c64c93430f75a2b8a72f9ff22c4cb1e4f9eb25b15153442f8892526edd82d",
       "gitBlobSha1": "473a7189dba90fcd1640387f894ac7170b1ff8aa",
       "amended": true
     },
@@ -35,15 +35,15 @@
     },
     {
       "path": "lib/asset.mjs",
-      "bytes": 11799,
-      "sha256": "6769e790ecaa7d6641694c5c41d455afc08b371742c1894c121195b0cbea6c66",
+      "bytes": 12797,
+      "sha256": "2140d908f8d08c1dee1ddea564e0b94500b6f819d528425105d9bfe9b1adcd68",
       "gitBlobSha1": "68b8cadc1a640eea88719816e9e7dfec7dfae6ba",
       "amended": true
     },
     {
       "path": "lib/ceiling.mjs",
       "bytes": 870,
-      "sha256": "8d3343c170bafc88333223be687d4d499933a08cad6b807fc72cc29a8325425c",
+      "sha256": "c3e05e58e938a5408943c02e489fdb9c10c4ff8a9dff8ed6955f427b16fd7ac5",
       "amended": true
     },
     {
@@ -60,8 +60,8 @@
     },
     {
       "path": "lib/index.mjs",
-      "bytes": 497,
-      "sha256": "bc81d80bacb8760174f2186ab24c2ac95e03a5f3ef5e111b0a97bedeccf63a24",
+      "bytes": 515,
+      "sha256": "a10b5b4de8a31f2865566cb1f2a74b2701d80f73a983dcd69ac4e56785531d3c",
       "gitBlobSha1": "149ec7a60336658cc36045c4ce61b1d7cd8a164d",
       "amended": true
     },
@@ -79,8 +79,8 @@
     },
     {
       "path": "lib/repository.mjs",
-      "bytes": 6599,
-      "sha256": "8f768cd3c8718170ea273a72359dea8a077e19a967eddc5f8dc43aaef34374c0",
+      "bytes": 7667,
+      "sha256": "dac1ecd3100cb9d445a491828f455779287289eb9c734aa2955f481a8b52e04e",
       "gitBlobSha1": "80083cd8e420b490e153aaea5c4925e4469cf8a6",
       "amended": true
     },
@@ -94,7 +94,7 @@
     {
       "path": "package.json",
       "bytes": 1107,
-      "sha256": "a09246d4c06d0ae9d78993d4f7b987bdd196e2f9250a723b5c061e281fe1e2be",
+      "sha256": "30434eb8fe8332a630a97922760f014950fcb8dca6ae63d58fbb7e96dcbd4255",
       "gitBlobSha1": "545bac30e68cd2dba256e0034f1f281304cbf565",
       "amended": true
     },
@@ -107,7 +107,7 @@
   ],
   "amendment": {
     "type": "in-tree",
-    "reason": "AD-2/AD-12/AD-13/AD-16 (epic-trust-device-catalog, entry 1): descriptor limits, contractVersion, index status, [min,max] capability ranges, ceiling constants; environment limit path removed",
+    "reason": "AD-2/AD-12/AD-13/AD-16 (epic-trust-device-catalog, entry 1): descriptor limits, contractVersion, index status, [min,max] capability ranges, ceiling constants; environment limit path removed. 1.3.0 (epic-catalog-external, story 12.1): required-system-asset marker system/required/subsystem/note (all-or-nothing) on AssetBase and IndexEntry, SYSTEM_SUBSYSTEMS export, index-to-descriptor marker cross-check in loadRepository",
     "baseCommit": "e1255b4e522a0b38e471d5624cc63f5f13442649"
   }
 }

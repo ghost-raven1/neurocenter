@@ -60,6 +60,10 @@ export function sourceAssetView(
                       : undefined,
         license: asset.license.spdx,
         dependencies: (asset.dependencies ?? []).map(({ id, version }) => ({ id, version })),
+        // 12.1: метка обязательного системного ассета (контракт 1.3.0, all-or-nothing).
+        ...(asset.system === true && asset.required === true
+            ? { system: true, required: true, subsystem: asset.subsystem, note: asset.note }
+            : {}),
         imported: receipt
             ? {
                   id: receipt.native_id,

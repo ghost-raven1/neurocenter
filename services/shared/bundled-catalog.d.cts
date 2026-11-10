@@ -12,6 +12,11 @@ export interface IBundledCatalogPlan {
     metadataSha256?: string;
     revision: string;
     delivery: { type: string; recipe?: string; automatic?: boolean };
+    /** 1.3.0: маркеры обязательного системного ассета (all-or-nothing; см. контракт поставки). */
+    system?: boolean;
+    required?: boolean;
+    subsystem?: 'core' | 'rag' | 'system-roles' | 'agent-team';
+    note?: string;
 }
 export interface IBundledCatalogFile {
     path: string;

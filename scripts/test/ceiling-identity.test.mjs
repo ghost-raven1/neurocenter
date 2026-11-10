@@ -27,7 +27,7 @@ test('Identity: server-verify и bridge-клиент видят один и то
 });
 
 test('Единый источник: interim ceiling (AD-1) зафиксирован контрактом, shared не дублирует литералы', () => {
-    assert.equal(CONTRACT_VERSION, '1.2.2');
+    assert.equal(CONTRACT_VERSION, '1.3.0');
     assert.deepEqual(ARTIFACT_CEILING, {
         compressedBytes: 1024 ** 3,
         unpackedBytes: 4 * 1024 ** 3,
