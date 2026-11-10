@@ -111,6 +111,18 @@
       "description": "Сокращает вывод терминальных команд через opencode-snip и закреплённый snip CLI. Для этой optional-поставки выберите готовый локальный архив; GitHub Releases автоматически не скачиваются."
     },
     {
+      "id": "plugin-open-code-review",
+      "kind": "plugin",
+      "name": "OpenCode Review",
+      "metadataSha256": "d67c8d2365e1f0ee343dabdeab968b1be7808615f5fd38e8fec51e224610db94",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/components/open-code-review/recipe.json"
+      },
+      "sourceRevision": "git-e170728a2f05cada736aa481ce7ef26bbbadd3fb",
+      "description": "AI code review на git-diff (alibaba/open-code-review, pinned main @ e170728, Apache-2.0): CLI `ocr` + нативный linux-x64 Go-бинарь + OpenCode-плагин; установка из каталога ставит `ocr` на PATH. LLM-ключ и модель из конфига opencode устройства, не хардкод."
+    },
+    {
       "id": "plugin-project-context",
       "kind": "plugin",
       "name": "Контекст проекта",

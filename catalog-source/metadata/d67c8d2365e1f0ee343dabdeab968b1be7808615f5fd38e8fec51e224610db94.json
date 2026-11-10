@@ -1,0 +1,54 @@
+{
+  "card": {
+    "compatibility": "OC platform: linux-x64; CLI-зависимости закрыты венедингом (Node.js >= 14, проверено на 24.22.0); LLM-ключ и модель — проектный model set из конфига opencode устройства, не хардкод.",
+    "config": {
+      "entrypoint": "plugin.mjs"
+    },
+    "description": "AI code review на git-diff: pinned alibaba/open-code-review (main @ e170728, Apache-2.0). CLI `ocr` + нативный linux-x64 Go-бинарь + OpenCode-плагин; установка из каталога ставит `ocr` на PATH. LLM-ключ/модель из opencode-конфига устройства.",
+    "files": [],
+    "kind": "plugin",
+    "name": "OpenCode Review",
+    "origin": "https://github.com/alibaba/open-code-review",
+    "revision": "git-e170728a2f05cada736aa481ce7ef26bbbadd3fb.1",
+    "tags": [
+      "AI",
+      "Code Review",
+      "CLI",
+      "Git Diff"
+    ],
+    "version": 1
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "artifacts": [
+      {
+        "descriptor": {
+          "compressedBytes": 15531972,
+          "entrypoint": "plugin.mjs",
+          "filesCount": 9,
+          "sha256": "7b39a5e5029faa09bceb63795c66c5cb694bffe87e939516fd3e7386b653e1cc",
+          "target": "linux-x64-glibc",
+          "unpackedBytes": 56639762
+        }
+      }
+    ],
+    "type": "runtime-artifacts"
+  },
+  "id": "plugin-open-code-review",
+  "kind": "plugin",
+  "license": {
+    "spdx": "Apache-2.0",
+    "url": "https://github.com/alibaba/open-code-review/blob/e170728a2f05cada736aa481ce7ef26bbbadd3fb/LICENSE"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "c8e54bb5345702ed53dc0418a8ac851672d9b693",
+    "path": "catalog-source/components/open-code-review/SOURCE.json",
+    "repository": "https://github.com/ghost-raven1/neurocenter",
+    "type": "git"
+  },
+  "version": "git-e170728a2f05cada736aa481ce7ef26bbbadd3fb.1"
+}
+
