@@ -8,19 +8,48 @@ const roots: string[] = [];
 afterEach(async () => {
     for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
 });
-async function fixture() {
+const gatewayUrl = 'https://ai-gateway.ehd-zr.cbr.ru';
+async function fixture(input: { providerUrl?: string; config?: string | null; auth?: unknown } = {}) {
+    const providerUrl = input.providerUrl ?? gatewayUrl;
     const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'personal-key-test-')));
     roots.push(home);
-    const auth = path.join(home, '.local/share/opencode/auth.json');
+    const auth = path.join(home, '.local/share/opencode/auth.json'),
+        config = path.join(home, '.config/opencode/opencode.jsonc');
     await fs.mkdir(path.dirname(auth), { recursive: true, mode: 0o700 });
     await fs.writeFile(
         auth,
-        JSON.stringify({
-            openai: { type: 'api', key: 'synthetic-key-only' },
-            other: { type: 'oauth', refresh: 'retained' },
-        }),
+        JSON.stringify(
+            input.auth ?? {
+                'ai-gateway': { type: 'api', key: 'synthetic-key-only' },
+                openwebui: { type: 'oauth', refresh: 'retained' },
+            },
+        ),
         { mode: 0o600 },
     );
+    if (input.config !== null && input.config !== undefined) {
+        await fs.mkdir(path.dirname(config), { recursive: true, mode: 0o700 });
+        await fs.writeFile(config, input.config, { mode: 0o600 });
+    } else if (input.config === undefined) {
+        await fs.mkdir(path.dirname(config), { recursive: true, mode: 0o700 });
+        await fs.writeFile(
+            config,
+            JSON.stringify({
+                provider: {
+                    'ai-gateway': {
+                        name: 'AI-gateway CBR',
+                        npm: '@ai-sdk/openai-compatible',
+                        options: { baseURL: gatewayUrl + '/' },
+                    },
+                    openwebui: {
+                        name: 'Open WebUI CBR',
+                        npm: '@ai-sdk/openai-compatible',
+                        options: { baseURL: 'https://chat.ehd-zr.cbr.ru/api' },
+                    },
+                },
+            }),
+            { mode: 0o600 },
+        );
+    }
     const jobId = '11111111-1111-4111-8111-111111111111',
         payload = {
             schemaVersion: 1 as const,
@@ -40,9 +69,9 @@ async function fixture() {
         recipient: {
             ownerEmail: 'owner@example.test',
             modelId: payload.modelId,
-            modelName: 'OpenAI',
+            modelName: 'Model',
             providerId: payload.providerId,
-            providerUrl: 'https://api.openai.com/v1' as const,
+            providerUrl,
             connectionRevision: 2,
             credentialRevision: 3,
             authMode: 'required' as const,
@@ -89,6 +118,7 @@ async function fixture() {
     return {
         home,
         auth,
+        config,
         options,
         editor: new PersonalKeyEditor(options),
         wire,
@@ -130,14 +160,51 @@ describe('explicit personal key transfer', () => {
     });
     it('rejects OAuth rather than treating it as an API key', async () => {
         const f = await fixture();
-        await fs.writeFile(f.auth, JSON.stringify({ openai: { type: 'oauth', access: 'synthetic' } }));
+        await fs.writeFile(f.auth, JSON.stringify({ 'ai-gateway': { type: 'oauth', access: 'synthetic' } }));
         await expect(f.editor.prepare({})).rejects.toThrow();
         expect(f.wire.mock.calls.some(([route]) => route === 'save')).toBe(false);
     });
     it('an external source edit after consent prevents transmission', async () => {
         const f = await fixture(),
             preview = await f.editor.prepare({});
-        await fs.writeFile(f.auth, JSON.stringify({ openai: { type: 'api', key: 'changed' } }));
+        await fs.writeFile(f.auth, JSON.stringify({ 'ai-gateway': { type: 'api', key: 'changed' } }));
+        await expect(f.editor.save({ previewId: preview.previewId })).rejects.toThrow();
+        expect(f.wire.mock.calls.some(([route]) => route === 'save')).toBe(false);
+    });
+    it('resolves the built-in openai provider without a configuration entry', async () => {
+        const f = await fixture({
+            providerUrl: 'https://api.openai.com/v1',
+            config: null,
+            auth: { openai: { type: 'api', key: 'synthetic-key-only' } },
+        });
+        const preview = await f.editor.prepare({});
+        expect(await f.editor.save({ previewId: preview.previewId })).toEqual({ status: 'saved', receipt: f.receipt });
+    });
+    it('stops when several local providers share the recipient address', async () => {
+        const f = await fixture({
+            config: JSON.stringify({
+                provider: {
+                    'ai-gateway': { options: { baseURL: gatewayUrl } },
+                    'ai-gateway-alias': { options: { baseURL: gatewayUrl + '/' } },
+                },
+            }),
+        });
+        await expect(f.editor.prepare({})).rejects.toThrow();
+        expect(f.wire.mock.calls.some(([route]) => route === 'save')).toBe(false);
+    });
+    it('stops when no local provider matches the recipient address', async () => {
+        const f = await fixture({
+            providerUrl: 'https://unknown-gateway.example/v1',
+            config: null,
+            auth: { 'ai-gateway': { type: 'api', key: 'synthetic-key-only' } },
+        });
+        await expect(f.editor.prepare({})).rejects.toThrow();
+        expect(f.wire.mock.calls.some(([route]) => route === 'save')).toBe(false);
+    });
+    it('an external config edit after consent prevents transmission', async () => {
+        const f = await fixture(),
+            preview = await f.editor.prepare({});
+        await fs.writeFile(f.config, JSON.stringify({ provider: {} }));
         await expect(f.editor.save({ previewId: preview.previewId })).rejects.toThrow();
         expect(f.wire.mock.calls.some(([route]) => route === 'save')).toBe(false);
     });

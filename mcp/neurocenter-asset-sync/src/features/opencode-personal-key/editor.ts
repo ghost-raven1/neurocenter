@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { configurationObject, object } from '../project-configuration/json.js';
 import {
     snapshot,
     unchanged,
@@ -12,10 +13,28 @@ import {
 } from '../opencode-local-providers/files.js';
 import { contract, type IOpenCodePersonalKeyReceipt } from './contract.js';
 import type { IPersonalKeyOptions, IPersonalKeyIntent } from './interfaces.js';
+const CONFIG_FILE_NAMES = ['config.json', 'opencode.json', 'opencode.jsonc'],
+    FILE_BYTES = 1024 * 1024;
+/** OpenCode built-in provider endpoints; a local provider without a custom baseURL uses its built-in address. */
+const BUILTIN_PROVIDER_URLS: Readonly<Record<string, string>> = { openai: 'https://api.openai.com/v1' };
+const merge = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
+    const result = { ...a };
+    for (const [key, value] of Object.entries(b)) {
+        if (['__proto__', 'constructor', 'prototype'].includes(key)) throw conflict();
+        result[key] =
+            object(value) && object(result[key]) ? merge(result[key] as Record<string, unknown>, value) : value;
+    }
+    return result;
+};
+interface ILocalSource {
+    configFiles: ILocalSnapshot[];
+    auth: ILocalSnapshot;
+    providerName: string;
+}
 
 /** Transfers one explicitly selected stored API key; metadata sync and local auth remain unchanged. */
 export class PersonalKeyEditor {
-    private preview?: { id: string; source: ILocalSnapshot };
+    private preview?: { id: string; source: ILocalSource };
     private busy = false;
     constructor(private readonly options: IPersonalKeyOptions) {}
     async inventory() {
@@ -23,7 +42,7 @@ export class PersonalKeyEditor {
             recipient: this.options.context.recipient,
             siteOrigin: this.options.siteOrigin,
             apiOrigin: this.options.apiOrigin,
-            source: 'OpenCode 1.14.48: openai (API key)',
+            source: 'OpenCode 1.14.48 (API key)',
         };
     }
     private async admit() {
@@ -72,16 +91,62 @@ export class PersonalKeyEditor {
             )
         )
             throw conflict();
-        const file = path.join(
-            this.options.environment.XDG_DATA_HOME || path.join(this.options.home, '.local/share'),
-            'opencode',
-            'auth.json',
-        );
-        const value = await snapshot(file, 1024 * 1024, true);
-        this.key(value);
-        return value;
+        const environment = this.options.environment,
+            configRoot = path.join(
+                environment.XDG_CONFIG_HOME || path.join(this.options.home, '.config'),
+                'opencode',
+            ),
+            configFiles = await Promise.all(
+                CONFIG_FILE_NAMES.map((name) => snapshot(path.join(configRoot, name), FILE_BYTES, false)),
+            ),
+            auth = await snapshot(
+                path.join(environment.XDG_DATA_HOME || path.join(this.options.home, '.local/share'), 'opencode', 'auth.json'),
+                FILE_BYTES,
+                true,
+            ),
+            providerName = this.resolveProviderName(configFiles);
+        this.key(auth, providerName);
+        return { configFiles, auth, providerName };
     }
-    private key(source: ILocalSnapshot): string {
+    /** The recipient's canonical address selects exactly one local provider; ambiguity is a hard stop. */
+    private resolveProviderName(configFiles: ILocalSnapshot[]): string {
+        let config: Record<string, unknown> = {};
+        for (const item of configFiles) {
+            if (item.text === null) continue;
+            try {
+                config = merge(config, configurationObject(item.text));
+            } catch {
+                throw conflict();
+            }
+        }
+        const entries = object(config.provider) ? config.provider : {},
+            target = this.options.context.recipient.providerUrl,
+            names = [...new Set([...Object.keys(entries), ...Object.keys(BUILTIN_PROVIDER_URLS)])],
+            candidates: string[] = [];
+        for (const name of names) {
+            const entry = object(entries[name]) ? (entries[name] as Record<string, unknown>) : {},
+                options = object(entry.options) ? (entry.options as Record<string, unknown>) : {};
+            let raw: unknown = options.baseURL;
+            if (typeof raw !== 'string' || !raw) raw = BUILTIN_PROVIDER_URLS[name];
+            if (typeof raw !== 'string') continue;
+            let url: string;
+            try {
+                url = contract.normalizeOpenCodePersonalKeyProviderUrl(raw);
+            } catch {
+                continue;
+            }
+            if (url === target) candidates.push(name);
+        }
+        if (candidates.length !== 1) throw conflict();
+        const name = candidates[0];
+        if (!name) throw conflict();
+        return name;
+    }
+    /** The provider resolution depends on the config bytes; an external edit between consent and save aborts. */
+    private async assertUnchanged(source: ILocalSource) {
+        for (const item of [...source.configFiles, source.auth]) await unchanged(item, FILE_BYTES);
+    }
+    private key(source: ILocalSnapshot, providerName: string): string {
         let value: unknown;
         try {
             value = JSON.parse(source.text ?? 'null');
@@ -90,7 +155,7 @@ export class PersonalKeyEditor {
         }
         const entry =
             value && typeof value === 'object' && !Array.isArray(value)
-                ? (value as Record<string, unknown>).openai
+                ? (value as Record<string, unknown>)[providerName]
                 : null;
         if (
             !entry ||
@@ -161,14 +226,17 @@ export class PersonalKeyEditor {
             await this.context();
             const cli = await this.options.assertCompatibleCli();
             await cli.assertCurrent();
-            await unchanged(this.preview.source, 1024 * 1024);
-            await this.persist(this.preview.source);
+            await this.assertUnchanged(this.preview.source);
+            await this.persist(this.preview.source.auth);
             await this.context();
             await cli.assertCurrent();
-            await unchanged(this.preview.source, 1024 * 1024);
+            await this.assertUnchanged(this.preview.source);
             await this.admit();
             // No generic API/outbox transport: key exists only in this bounded private request.
-            await this.options.wire('save', { jobId: this.options.jobId, apiKey: this.key(this.preview.source) });
+            await this.options.wire('save', {
+                jobId: this.options.jobId,
+                apiKey: this.key(this.preview.source.auth, this.preview.source.providerName),
+            });
             const receipt = await this.lastSave();
             if (!receipt) throw conflict();
             return { status: 'saved', receipt };
