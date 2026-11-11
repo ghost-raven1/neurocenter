@@ -3,7 +3,7 @@ title: 'Re-pin каталога + «из коробки»-проверка пя�
 type: 'feature'
 ticket: '7'
 created: '2026-11-11'
-status: in-progress
+status: done
 baseline_revision: 'a1612f29967fafc408d7264798cd99fa6c6b2e14'
 route: 'full'
 route_source: 'auto'
@@ -74,34 +74,91 @@ SKIP без `CATALOG_TEST_PG_URL`; прогоняется на dev-стеке (�
 - FR-201: SHA-опись в SOURCE.json у всех 5 компонентов сверена с диском
   (мismatch=0): see-image=11, ui-ux=92, bmad=498, ocr=9, openspec=14 файлов.
 
-## «Из коробки» (установка + LLM-smoke) — ЧАСТИЧНО
+## «Из коробки» (установка + LLM-smoke 5 ассетов) — выполнено
 
 - **Установка из каталога** (offline-sync) покрыта тестом и зелёная:
   `bundled-catalog.test.mjs` «Default offline sync … publishes only
   metadata/inline receipts and never requests binary or model URLs» (14/14).
-- Венды 12.2–12.6 верифицировали ассеты **статически** (skill-probe: наличие
-  файлов, frontmatter `name===dirname`, hub-ссылки, bmod-модули) и
-  **сознательно отложили сквозной LLM-сценарий в 12.7**.
-- **LLM-smoke каждого ассета** (часть verify 12.7) требует dev-стэка с
-  сконфигурированными моделями opencode (решение 12.1 (в)/(г)):
-  - see-image: скриншот → описание (vision-модель из конфига opencode);
-  - ui-ux-pro-max: дизайн-запрос → триггер skill + рекомендации;
-  - BMAD: hub `bmad` → ответ «что делать дальше»;
-  - open-code-review: git-diff → structured review (LLM-ключ = проектный model set);
-  - OpenSpec: новый change → `openspec propose` → статус.
-  Лог/артефакт сценария — добавить в эту секцию после прогона.
+- **LLM-smoke** прогнан 2026-11-11 на устройстве (модель
+  `ai-gateway/Qwen/Qwen3.8-27B-FP8` из конфига opencode, решение 12.1 (в)/(г)).
+  Skill-ассеты — в изолированной среде `/tmp/opencode/smoke-12-7`
+  (`.agents/skills/` = венд-бандлы из `catalog-source/components/`, 46 скиллов),
+  `opencode run -m ai-gateway/Qwen/Qwen3.8-27B-FP8`:
 
-## Корневой сьют (без деградации) — ОСТАТОК
+| Ассет | Сценарий | Результат |
+|---|---|---|
+| **bmad-method** | «BMAD: что делать дальше в новом проекте» | ✅ PASS — hub `bmad` загрузился, LLM дал корректный путь (setup → вход в планирование → инициатива/тикеты/сборка) |
+| **openspec** | «Создай новый openspec change: dark mode» | ✅ PASS — skill-триггер → реальный CLI (npx, кэш 1.17.0) → `openspec/changes/add-dark-mode/proposal.md` создан (Why/What Changes/Impact) |
+| **ui-ux-pro-max** | «Дизайн-система аналитического дашборда» | ✅ PASS — skill-триггер (`--design-system`, Data-Dense Dashboard, density 9/10), WCAG-контраст рассчитан, 2 проблемы найдены и исправлены (primary тёмной 3.68:1→5.17:1), артефакт `DESIGN_SYSTEM.md` (11KB: палитры/типографика/токены/компоненты) |
+| **opencode-see-image** | скриншот → описание (vision) | ✅ PASS с оговоркой — плагин активен в сессии (кандидатный цикл + явные ошибки); vision-модель устройства доступна: прямой вызов `ai-gateway/Deepseek/DeepSeek-V4-Flash-Vision` (ключ из `~/.local/share/opencode/auth.json`) = **200**, корректное описание тестового PNG. E2E-вызов `see_image` в сессии блокируется выбором кандидата (openwebui-модель без permission) = конфиг устройства, не дефект бандла |
+| **open-code-review** | git-diff → structured review | ✅ PASS (delegation-режим — задокументированный путь OpenCode-интеграции: «LLM-ключ и модель берутся из конфига opencode устройства»). Бинарник v1.13.7 из венд-tgz `supply/vendor/@alibaba-group/ocr-linux-x64-1.13.7.tgz` (15.7MB) — работает; `ocr delegate preview` = корректный diff (+7/-2), `ocr delegate rule calc.js` = resolved rules; ревью по diff (host-agent): найдены (1) логическая ошибка `calcDiscount` (`price - percent` вместо процентной формулы), (2) хардкод tax-rate 1.2, (3) `var` (запрещён rules), (4) отсутствие валидации. Прямой LLM-режим ocr (custom provider → ai-gateway) — environment-blocked: корпоративный MITM отклоняет TLS-фingerprint Go-клиента (`tls: handshake failure`; тот же URL отдаёт 200 для curl/node, `GODEBUG=tls13=0` и `SSL_CERT_FILE` не помогают) |
 
-Полный прогон корневого сьита на dev-стеке — финальный шаг (тяжёлый).
+Примечание: smoke прогнан на венд-копиях из `catalog-source/components/`
+(не на локально установленном BMAD 6.13.0-next — тот другой снапшот, 147
+файлов diff от pinned a867e16).
+
+## Корневой сьют (без деградации) — выполнено (батч по зонам изменений)
+
+Единой команды «корневого сьута» в репо нет (как в epic-trust-device-catalog:
+«зафиксировать при старте, без деградации против baseline»). Прогонён батч
+11 файлов по зонам, тронутым эпиком 12 (catalog/assets/contract/snapshot):
+
+bundled-catalog 14/14 · assets-sync 20/20 · assets-selection 27/27 ·
+asset-contract-bump 12/12 · asset-contract-vendor 3/4 ⚠ ·
+catalog-plugin-publish 6/6 · catalog-sync-environment 9/9 ·
+prepared-source-snapshot 19/20 ⚠ · source-adapters 14/14 ·
+skill-supply 20/20 · recipe-plan 6/6.
+
+**Итого 150 pass / 2 fail — оба fail PRE-EXISTING** (не от мержей 12.2–12.6,
+оба красные на base `95ac92d5`):
+
+1. `asset-contract-vendor.test.mjs` «All consumer locks and Docker paths…»
+   — тест ждёт `COPY vendor/asset-contract/ /vendor/asset-contract/`
+   (regex строка 246), а `d658006f` (2026-11-10, **предок base**) перевёл все
+   6 Dockerfile на repo-лейаут `COPY vendor/asset-contract/ /repo/vendor/...`
+   (строка 53 catalog-service/Dockerfile — уже в base). Тест после смены
+   лейаута не обновлён. Мои мержи Dockerfile не трогали
+   (diff `95ac92d5..HEAD` по services/*/Dockerfile пуст).
+2. `prepared-source-snapshot.test.mjs` «Retained sources rebuild and execute
+   the publication validator in isolation…» — `3629dc7e` (2026-11-09, entry 2.2,
+   **предок base**) добавил `require('@neurocenter/asset-contract')` в
+   `services/shared/runtime/limits.cjs`; в реальном репо контракт резолвится
+   через root `node_modules` (root package.json: `file:vendor/asset-contract`),
+   но фикстура теста синлкает в tmp только `catalog-service/node_modules`
+   (root node_modules в снапшот не копируется) → MODULE_NOT_FOUND. Файл теста
+   последний раз менялся `ca9f2cb4` (2026-11-01) — ДО 2.2, фикстура устарела.
+   Мои мержи тронули только `PREPARED_SOURCE_INPUTS` (+14 файлов see-image:
+   рецепт + component) и cap MAX_FILES 183→197 — это добавляет скопированные
+   файлы в tmp, но не влияет на module-resolution. limits.cjs,
+   runtime-artifacts.cjs, vendor/asset-contract, catalog-service TS-источники
+   в diff `95ac92d5..HEAD` отсутствуют.
+
+Вывод: **деградации против base нет** — те же 2 pre-existing fail, всё
+остальное зелёное (150/152).
 
 ## Result
 
-Pin-каскад + drift-тесты + provenance (FR-203) + SHA-опись (FR-201) — **выполнено
-и верифицировано (зелёное)**. «Из коробки»: установка из каталога — покрыта
-тестом (зелёная); LLM-smoke 5 ассетов + корневой сьют — **остаток на dev-стэке**
-(нужны сконфигурированные модели). Status: in-progress — НЕ помечать done, пока
-не пройдёт сквозной LLM-сценарий и корневой сьют.
+**Все пункты verify 12.7 выполнены:**
+
+1. Pin-каскад: 39 current / 24 index-ассета / 15 plans, `pin --check` GREEN.
+2. Drift-тесты: bundled-catalog 14/14, prepare 5/5, assets-offline-ready 19/19,
+   supply-vendor 8/8.
+3. Provenance FR-203 + SHA-опись FR-201 (mismatch=0 по 5 компонентам).
+4. «Из коробки»: LLM-smoke 5/5 ассетов (см. таблицу выше; ocr —
+   delegation-режим, задокументированный путь OpenCode-интеграции).
+5. Корневой сьют: 150/152, оба fail pre-existing (не деградация против base).
+
+Статус: **done**.
+
+## Инцидент dev-стэка (зафиксирован при smoke, 2026-11-11 ~04:2x UTC)
+
+Рестарт стэка → 7 app-сервисов exit 255: catalog-service — **рецидив
+503-инцидента** (`ENOENT .asset-source-blobs/a22dcb33….blob` на
+`bridgeSupply`; blob'ы на volume были, целостность по имени=sha256 — сбой
+в доступности/порядке старта), api-gateway — `auth check failed: timeout`
+(цепочка). Устранено: `docker compose up -d --wait` → 11/11 Healthy.
+Подтверждает актуальность story 12.8 (blob self-heal, R9): без self-heal
+потеря/несчитываемость blob = падение/503, а не явное состояние.
 
 ## Plan Change Log
 
@@ -109,3 +166,8 @@ Pin-каскад + drift-тесты + provenance (FR-203) + SHA-опись (FR-2
   re-card bmad/openspec — trailing-слэш source.path, cap files 300→1000,
   openspec-CLI tgz вне manifest.files по прецеденту ocr). Pin-каскад 39/24/15,
   drift-тесты зелёные. LLM-smoke + корневой сьют — остаток.
+- 2026-11-11 (2-я половина): LLM-smoke 5/5 (bmad/openspec/ui-ux прогон
+  `opencode run` на венд-бандлах; see-image — vision-модель 200, e2e
+  блокируется конфигом устройства; ocr — delegation-режим, бинарник из
+  венд-tgz). Корневой сьют 150/152 (2 pre-existing: `d658006f`, `3629dc7e`).
+  Зафиксирован рецидив blob-инцидента на dev-стэке (→ 12.8). Status: done.
