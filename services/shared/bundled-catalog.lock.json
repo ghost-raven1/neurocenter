@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
   "path": "catalog-source/manifest.json",
-  "sha256": "2a7427143e2cc3b1826c6a4a3d5d19f976f9daeadb50186c36622ad6785bcec1",
+  "sha256": "ad2eb9420bfe7f001f55601674e1897864ab5e0356ceb175b808b0a5a1fb2666",
   "components": {
     "fetch-mcp": "97098a65d9f26eb7f634408781f48565a63091868e0d45d4562c1f078a6878b2",
     "codex-connector": "ca1c919e721dbc2cd36f5555ec9e6708e6766af867f66ab98b427e069e725a08",
-    "opencode-see-image": "6400d6b82810865ce3af9d9b9ba98ba4f97a8bb31fb47b560a42ec3751dea3e4"
+    "opencode-see-image": "6400d6b82810865ce3af9d9b9ba98ba4f97a8bb31fb47b560a42ec3751dea3e4",
+    "ui-ux-pro-max": "511693931b8b2aaa5d132ca5759aca0747ea7a5d46ddfa1fe7cc55a30d504c9f"
   }
 }

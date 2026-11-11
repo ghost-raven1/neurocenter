@@ -489,6 +489,18 @@
       },
       "sourceRevision": "git-091becb8159b031423b01737c80c0891e11d803b",
       "description": "Плагин alfaoz/opencode-see-image 1.5.0 из закреплённого GitHub commit: текстовая модель видит изображения и скриншоты — их описывает vision-модель (OpenCode v1 и v2). Vision-модель и ключи провайдера берутся из конфигурации opencode на устройстве; если в конфиге нет модели — плагин предлагает заполнить. Модель-ассеты не поставляются."
+    },
+    {
+      "id": "skill-ui-ux-pro-max",
+      "kind": "skill",
+      "name": "UI/UX Pro Max",
+      "metadataSha256": "21a34bd712f3984941bb999b4a7bf2aeef7a620c6aba52bb6677b6bc047b506c",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "git-4f2dbb67e64969a9a30ab00742f2d55d66ddec2b",
+      "assetVersion": "2.15.0",
+      "description": "Дизайн-интеллект для UI/UX (nextlevelbuilder, pinned commit, MIT): 80 стилей, 192 палитры, 74 пары шрифтов, 120 UX-правил, 105 иконок, 25 типов графиков, 22 стека; локальный Python-поиск по данным скилла. Skill-формат opencode; CLI-зависимости зафиксированы (package-lock.json, esbuild-бандл, Node.js >= 18, проверено на 24.22.0). Мультиязычные README и gallery — вне контура; шесть субскиллов — вне ассета."
     }
   ],
   "history": {
@@ -806,6 +818,471 @@
       "bytes": 115
     },
     {
+      "path": "components/ui-ux-pro-max/NOTICE.md",
+      "sha256": "8877535ca8882591c00c77f0d38eec885fdb871b991eafb1135c845fab6343e6",
+      "bytes": 563
+    },
+    {
+      "path": "components/ui-ux-pro-max/SOURCE.json",
+      "sha256": "511693931b8b2aaa5d132ca5759aca0747ea7a5d46ddfa1fe7cc55a30d504c9f",
+      "bytes": 21495
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/app-interface.csv",
+      "sha256": "331e7cf2c0b222d80c566c5f255c63cb339f65bfd02e471a720f28e4864a9f08",
+      "bytes": 11046
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/catalog-summary.json",
+      "sha256": "b27655fbce8fec64b7ab7ec6ac11f079a0e6ab29a5c2785d624cedc96dd0742f",
+      "bytes": 2392
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/charts.csv",
+      "sha256": "4115cf1120680f2cedef0676cb648f30c7ef4699e2a947535d4113e71ed3b12a",
+      "bytes": 23365
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/colors.csv",
+      "sha256": "8162429222bce22df62b564085946a30d07cc9722c58d0a3a494bd0d1d00841c",
+      "bytes": 37940
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/data-provenance.json",
+      "sha256": "e29a3aab8d8418a23f67e00a8e8f3064afe4eea1183540ec4af374ec6f4fc938",
+      "bytes": 38203
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/google-font-licenses.json",
+      "sha256": "35688523f2955795caa1a47c53b83099e60c1708461476f9cc3a050cf3b0148a",
+      "bytes": 433127
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/google-fonts.csv",
+      "sha256": "1c8c3b2ea1faf6a1012da463756def8b3889db33f2226f0343bb4daa80307d03",
+      "bytes": 747241
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/icons.csv",
+      "sha256": "50816c6012030178195a16ee481ebf58b47bd985d70e8ec58886cc83f6eddafc",
+      "bytes": 57945
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/landing.csv",
+      "sha256": "9a2edd3bb676c2a58f00ade7a062e285222d4297bfd847c8d5b056f0dbbf52d0",
+      "bytes": 25449
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/motion.csv",
+      "sha256": "381affe8df8ea1f66fbbda2598827f9f54299107bbe6a1b4e9b68f6b62091ceb",
+      "bytes": 14679
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/phosphor-icons-upstream.json",
+      "sha256": "2399325233b277b5c97a80e6a5e8941154f5d057beee4e7613db87c87d700236",
+      "bytes": 823933
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/products.csv",
+      "sha256": "5756125e2b0e0d2360926f175d0975c8cd846c7589e5e2ce02631ff645e66361",
+      "bytes": 76959
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/react-performance.csv",
+      "sha256": "3d925802539abac5afeb63ae8aa1960b7229ad271b3a47caed40ab2d97ad0734",
+      "bytes": 15080
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/angular.csv",
+      "sha256": "704be83f2bad30c7e6de01afb113ffa01e0c458762f48b7102f31ba2367b5553",
+      "bytes": 19863
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/astro.csv",
+      "sha256": "2c2f55fadaafc05e04cc321c8194a1a28b656e6757fe2ba316f41b16428299c6",
+      "bytes": 14591
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/avalonia.csv",
+      "sha256": "442fca14675a020683473e7e49f08abb27b9df0765c80efe54aef61f1a4ac258",
+      "bytes": 27327
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/flutter.csv",
+      "sha256": "64dba0ac17349f28bce517a0f5f48c54d9ed2e487ec0c0258303463b382f41a0",
+      "bytes": 14192
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/html-tailwind.csv",
+      "sha256": "d05a581d20af57b8ca0104a6d31d90a07c437d500662a96c3029fc2f9a4678ee",
+      "bytes": 16551
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/javafx.csv",
+      "sha256": "2e819b8d5abdd23ad4dae0991650fdb57af497aabd68b37463aa9c442944c869",
+      "bytes": 33577
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/jetpack-compose.csv",
+      "sha256": "699de218b286948eaec7d15767b6e1350ee299167e49bf476d82e3ff58724e0a",
+      "bytes": 12295
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/laravel.csv",
+      "sha256": "854ea4daa5fc61292d22235ad33b49ba3fe22423c3de8d3cb03758ffed3b59f9",
+      "bytes": 20163
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/nextjs.csv",
+      "sha256": "ecd2c27b2ea0127d203ae726060efcdd7335b5e83f96b99e4f3befbbfeebd5a4",
+      "bytes": 18687
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/nuxt-ui.csv",
+      "sha256": "9c0179d559abe39ad63b958b54cb29c82be1dd20706430476096ea8967bfa328",
+      "bytes": 32292
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/nuxtjs.csv",
+      "sha256": "3d9b54ed2d151bd9c86e9e5609b8a6f88a00c4c52fa601a30af96c49b2c4d176",
+      "bytes": 23014
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/react-native.csv",
+      "sha256": "ba31dd9c0c04da6bc02a74448bf121f9c0728ae5ba3b4d47b487778b0a1135b5",
+      "bytes": 14049
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/react.csv",
+      "sha256": "4dd176a9787e5c6306b5df94158d75955adcdc6edab41ce5286641a5842303c1",
+      "bytes": 21166
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/shadcn.csv",
+      "sha256": "e56cfde5b74907836ac3582a4779d5b7f3d206a702ab81b8669a1b668c3eeb51",
+      "bytes": 23184
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/svelte.csv",
+      "sha256": "f6e379ba802941ba26b01d4ffbe3cd39120f2587659a1d93851c707f66bc13db",
+      "bytes": 15078
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/swiftui.csv",
+      "sha256": "bdd9231ff3ad658f4e7c063e1eb49df2fd09ac8d90631a86df899b39833b9623",
+      "bytes": 15323
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/threejs.csv",
+      "sha256": "155d583b9c64da0df4b6c6cb060c02eab222505e0734d6353da02c9e2b5d982b",
+      "bytes": 46769
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/uno.csv",
+      "sha256": "a0474363e4225b5367214d5675fd3e075f137026f9500f0d04357882ef4f6d48",
+      "bytes": 30091
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/uwp.csv",
+      "sha256": "c409f08c1fbba1f1029f1acaa554e7b4471cc85517a5751c9f2e62465badcd5c",
+      "bytes": 24692
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/vue.csv",
+      "sha256": "b655f1ebb9dff2652d15981f31b1784c8a6d4759efd2815a14f3088257569f95",
+      "bytes": 12813
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/winui.csv",
+      "sha256": "e676dc1c13ee6c205c40b0746f1335150a346c7a49a0616d2545bc3d2c930c85",
+      "bytes": 27890
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/stacks/wpf.csv",
+      "sha256": "9781a9950b20333637b30a02e498b7efca21b618a3eeb8665836f3ac6e974da7",
+      "bytes": 24158
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/styles.csv",
+      "sha256": "a9b6cadbd1cb9e7cb8398a3b445e0691d01e42ed5e5efa60a5d0c08c99c8100d",
+      "bytes": 152958
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/typography.csv",
+      "sha256": "321fc446e89024488ebae96dda93efc4d2307bd8bddb240857ad51364f6782c8",
+      "bytes": 49997
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/ui-reasoning.csv",
+      "sha256": "f0774dd741cecdad5eec842034bd6d5e9ea50e9f220a1910069748daa0bb8e9a",
+      "bytes": 77360
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/data/ux-guidelines.csv",
+      "sha256": "d63dc39439cf615cdccfdf7acd2301e0c3ce5e1e56a89b60617fa190f7511512",
+      "bytes": 28310
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/references/pro-rules.md",
+      "sha256": "d28442d61c310b49c054a4ea736f89fb3008beebdbbc38c4b3a540b8f7fadf23",
+      "bytes": 10909
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/references/quick-reference.md",
+      "sha256": "fc53ccfafaa08d40d7326e34e88e9387df60b4256cd649d34dcae0284f247949",
+      "bytes": 24773
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/scripts/core.py",
+      "sha256": "f46781651e9ab38c0de6548edf4b145abd841269cafa16cfd2e0e467efd5e6f5",
+      "bytes": 44213
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/scripts/design_system.py",
+      "sha256": "e7d1c94c4b2eada17c5551157668362659ccf9626d34dbd58e68142410f90103",
+      "bytes": 71537
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/scripts/reasoning_contract.py",
+      "sha256": "b8bac1af82aa280d3e06f00aabaeac4337e632996b07fed874e2b6ee6e9c5913",
+      "bytes": 5824
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/scripts/search.py",
+      "sha256": "9fd5acc991142fd43c3afe7be0f6720911b668f3988b34e74b5cbc41d58e7947",
+      "bytes": 10642
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/scripts/validate_data.py",
+      "sha256": "a599aa256049cf30954d1f164721b99e453eb7e4cb8241bcab2d5573e6cf58b8",
+      "bytes": 52230
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/.claude/skills/ui-ux-pro-max/SKILL.md",
+      "sha256": "8390086c7c12d62376d3b584bd00395a1d3c0a22355724088f3a4145956bcd22",
+      "bytes": 16426
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/base/quick-reference.md",
+      "sha256": "2d7977a1280ac9a37319a1aae292f3a48543a60ed6723bd87e45c7b97a2b9ac1",
+      "bytes": 27665
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/base/skill-content.md",
+      "sha256": "17962bd4e02809ee8bf093d4b28fcdbd44057b7bd2abb6cba4e7fc37187ec589",
+      "bytes": 28451
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/agent.json",
+      "sha256": "51040afb06399ced1497933b88a04ed9a74484d38276e24671c5e0773b5bbeb1",
+      "bytes": 1475
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/amazonq.json",
+      "sha256": "9499ff100d2ea38356daab9be6fd3bc41a7a2007380748c5fba258607dd34e29",
+      "bytes": 949
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/augment.json",
+      "sha256": "6f9ffa6a3c93cd5758559a13dd2ca0a177ce7ded008a3302e019e6af5b6c8ef0",
+      "bytes": 905
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/autoclaw.json",
+      "sha256": "4965bef7a6212d2e91a4bd76fdca073751d3682ff0514a75979c7cf0d6a14bde",
+      "bytes": 1485
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/claude.json",
+      "sha256": "75e7466368b506ae276458fe7c9673d50f6a5cde7deb1d60181a1b796cbc820d",
+      "bytes": 1475
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/codebuddy.json",
+      "sha256": "d6edfec1eb27638f9e62576943eefea9d4cb63f33c056383b48781e665954249",
+      "bytes": 1458
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/codewhale.json",
+      "sha256": "cb3448d5417382eb62b97da9c30aff9c35f1b8503853085e508e6dd1b5c27468",
+      "bytes": 1458
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/codex.json",
+      "sha256": "ad0b3eaf4c4bd04d4db1e949cab512dabec93cd11933c5a53a4d8cbb2f6e77d7",
+      "bytes": 1446
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/continue.json",
+      "sha256": "fc2fe6a59c70a8ed2fda9b748e16f84055e2e80c0c65ceb359cb90ecd5226f25",
+      "bytes": 1455
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/copilot.json",
+      "sha256": "6e14cda774d23c331f637f6e44a986afbbfdae66fca2155bf9dc8666052ba10e",
+      "bytes": 1488
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/cursor.json",
+      "sha256": "f08a7200660ae985580cd957e69d5db2c25d0253067d10c5a917f8911cef4ba9",
+      "bytes": 1449
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/droid.json",
+      "sha256": "399a4d172b26e48774eeddac2e110b1d7593db8b96303bf8015354f16e822952",
+      "bytes": 1480
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/gemini.json",
+      "sha256": "db456403cbf03e72046f5580f46a249518bad6941400ccd71ef5158ec5e601c9",
+      "bytes": 1453
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/kilocode.json",
+      "sha256": "11c5bfe40d47224fbf45df1c270e26f9bcdf0849204f07b549b7e6eabbfd7b4c",
+      "bytes": 1455
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/kimi.json",
+      "sha256": "5d2f7b4ad94a1532729a6d635581ef419f51eae1c3f29fc03986c76fcc8c619d",
+      "bytes": 1453
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/kiro.json",
+      "sha256": "a6797995c0749c978693044dc8d3ab18366d3c2938e318eb93691119ef6a6082",
+      "bytes": 1450
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/openclaw.json",
+      "sha256": "afd03775439fec14e2053d6f1eea4a165ea7352ccef77cdbb46be2273b22d95a",
+      "bytes": 1453
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/opencode.json",
+      "sha256": "69d75cc9d43b5842f119b5d38f1b3749f1dd3f42aeacac3f9ae5e4d2240cac5c",
+      "bytes": 1455
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/qoder.json",
+      "sha256": "0a19bc6a6013c05b81cb2554af653954c9c86ee5b21dda8db874d077c731a303",
+      "bytes": 1446
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/roocode.json",
+      "sha256": "1074217be71153438800c1cf406173fb5dd9f2ecd827b430be9aad8f1a9094d5",
+      "bytes": 1452
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/trae.json",
+      "sha256": "926a78f3be2c42eacec6d09b4d293aa0225f454638366aaa91567092317ca5ef",
+      "bytes": 1443
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/universal.json",
+      "sha256": "bade7cc91a1aa5790a3908da935d683757cb411cf0fee836dcbe4beb549eb859",
+      "bytes": 1472
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/warp.json",
+      "sha256": "7e41dcfbe6ca5f8afcc1465123dd20a845be16b22c712ee4c42a82d5fb8b2b30",
+      "bytes": 896
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/windsurf.json",
+      "sha256": "9383d8893a9e63430fb16d33bb2855701819bba5ab3aa76314558ffd10032e65",
+      "bytes": 1455
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/assets/templates/platforms/zcode.json",
+      "sha256": "e2362dec7aa611909577db45d70d31150bba7f37d4ab5e3c665b911ef7c24d64",
+      "bytes": 1446
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/package-lock.json",
+      "sha256": "36d3384b4b04e7db769de1267db28bf784f5873374b6f59e46803747b34777b3",
+      "bytes": 14830
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/package.json",
+      "sha256": "437708e28cb24f148eeacc16a8af4b33e6b7ee9879b099ccb3f059b81ad962dc",
+      "bytes": 2435
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/scripts/build.mjs",
+      "sha256": "0b0fa327a8ebdd6dc48dd5e5940f996327979f29a80ea4e3b865070a12f82d7d",
+      "bytes": 1024
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/commands/init.ts",
+      "sha256": "774e91be2618c8e321b6c1e40a69b1877c12084cd853ce7222bf61765b71acd3",
+      "bytes": 7755
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/commands/uninstall.ts",
+      "sha256": "b810473938bd61b3cb2dd243db2d2eee45e6af1f090b71165cde3694994fc408",
+      "bytes": 5822
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/commands/update.ts",
+      "sha256": "711f798a0d3dd1132957c67d577b887ac8d2e403e333161fb804869293d9bb18",
+      "bytes": 3910
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/commands/versions.ts",
+      "sha256": "4820e1296a3f74d3dbb86c4d9c2d7afea6d169780c7111550263f0d408d00372",
+      "bytes": 1322
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/index.ts",
+      "sha256": "41a5f14aaccacf3cc240020c8de6235251b3ee91b48b10eda35e2703cab50db3",
+      "bytes": 3390
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/types/index.ts",
+      "sha256": "f48c30d5cf5dddbb75196cbf41caa1d8bc40d85dd692cabae30f055d29a7573c",
+      "bytes": 2620
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/utils/detect.ts",
+      "sha256": "a6a19af298e2870f702182fc61ccbe914b45fd0c2555de4e73699ed1b3ef34b6",
+      "bytes": 5175
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/utils/extract.ts",
+      "sha256": "b4f8fc7a166dabdb4c9563e350c56ac8dffd60b00b083733b9265c5867affa67",
+      "bytes": 4144
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/utils/github.ts",
+      "sha256": "78ed9417edf0c912b60e421cc0bfc776df917d3d97c8eeabbac085ecfa87dc41",
+      "bytes": 4000
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/utils/logger.ts",
+      "sha256": "cc7d676c9288668a307ff55c0991012cb6d24ea04addaa97f70579d49985e4e0",
+      "bytes": 441
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/src/utils/template.ts",
+      "sha256": "adbd5e50f745fd1a8c1fc63b7c06b05c2a32578ee9d54380d29a833f32ef5cff",
+      "bytes": 16735
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/cli/tsconfig.json",
+      "sha256": "791da6d1c530768e94d1f8f16484948f68a041bf38fa33422ecbfe7d64f591eb",
+      "bytes": 396
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/LICENSE",
+      "sha256": "738f69dfa83db5c347c678fb9d90e560877059f0de93a327c39001bff92dc014",
+      "bytes": 1075
+    },
+    {
+      "path": "components/ui-ux-pro-max/source/skill.json",
+      "sha256": "1bd178591cc1480565843cefc64b484f1aafd36ab458b070421f49782edb73ef",
+      "bytes": 943
+    },
+    {
       "path": "metadata/00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007.json",
       "sha256": "00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007",
       "bytes": 1647
@@ -881,6 +1358,11 @@
       "bytes": 855001
     },
     {
+      "path": "metadata/21a34bd712f3984941bb999b4a7bf2aeef7a620c6aba52bb6677b6bc047b506c.json",
+      "sha256": "21a34bd712f3984941bb999b4a7bf2aeef7a620c6aba52bb6677b6bc047b506c",
+      "bytes": 3561275
+    },
+    {
       "path": "metadata/21c0ba1d17b11f4f90f0c926188164feb2f681a80d9fa379320fae84182e7303.json",
       "sha256": "21c0ba1d17b11f4f90f0c926188164feb2f681a80d9fa379320fae84182e7303",
       "bytes": 4848
@@ -929,6 +1411,11 @@
       "path": "metadata/34cecf3143157dce2e659fd36943add7ff801c351f5317db3e683287af542fb6.json",
       "sha256": "34cecf3143157dce2e659fd36943add7ff801c351f5317db3e683287af542fb6",
       "bytes": 1578
+    },
+    {
+      "path": "metadata/36e95c9c97f2ade8854d1759a46298c4a65f83edb9860e409a056f5ee65aed58.json",
+      "sha256": "36e95c9c97f2ade8854d1759a46298c4a65f83edb9860e409a056f5ee65aed58",
+      "bytes": 13002
     },
     {
       "path": "metadata/3bb2d420442ec184cb04edb6d7b4a6f828ca2b18895dc357b7c5f31c518a03b0.json",
@@ -1004,6 +1491,11 @@
       "path": "metadata/794e5f7cd54789a7bd5d9ba19ebd6fe8c7803b0f7d5031023e57ef55747e69f7.json",
       "sha256": "794e5f7cd54789a7bd5d9ba19ebd6fe8c7803b0f7d5031023e57ef55747e69f7",
       "bytes": 6840
+    },
+    {
+      "path": "metadata/79de48cd555b9a11c2778c71ab7fe1173957524b5916d5b523357fcfe1b25b9b.json",
+      "sha256": "79de48cd555b9a11c2778c71ab7fe1173957524b5916d5b523357fcfe1b25b9b",
+      "bytes": 7631
     },
     {
       "path": "metadata/7ab1b7290c8ab7e62098c8beaee6e653773933e238ec7d58788f9761c296b5c6.json",
@@ -1268,7 +1760,7 @@
   ],
   "index": {
     "path": "bundled/index.json",
-    "sha256": "bbdadd2f27165c25a1ee1fd03e87bcb1a508db098d0a6426b5794bea7d91868f"
+    "sha256": "36e95c9c97f2ade8854d1759a46298c4a65f83edb9860e409a056f5ee65aed58"
   },
   "sourceCommit": "e1255b4e522a0b38e471d5624cc63f5f13442649"
 }
