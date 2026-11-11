@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import {
-    OPENCODE_PERSONAL_KEY_PROVIDER_URL,
+    normalizeOpenCodePersonalKeyProviderUrl,
     type IOpenCodePersonalKeyPayload,
 } from '../../../shared/opencode-personal-key.cjs';
 import { modelFromRow, type IModelRow } from '../models/model-history';
@@ -10,7 +10,7 @@ import { providerConnection, readUserCredential } from '../remote-providers/remo
 import { remoteProviderId, remoteAuthMode } from '../remote-providers/remote-provider.identity';
 import { remoteProviderAuthority } from '../remote-providers/remote-provider.authority';
 import type { IRemoteProviderActor } from '../remote-providers/remote-provider.interfaces';
-/** The first transfer slice has one recipient protocol; an API key never implies protocol compatibility. */
+/** The recipient is the model's own OpenAI-compatible endpoint; the device resolves the local provider by this address. */
 export async function personalKeyTarget(
     db: Pick<PoolClient, 'query'>,
     actor: IRemoteProviderActor,
@@ -28,9 +28,15 @@ export async function personalKeyTarget(
         connection = await providerConnection(db, model.id),
         providerId = remoteProviderId(model, connection),
         authMode = remoteAuthMode(connection);
+    let providerUrl = '';
+    try {
+        providerUrl = normalizeOpenCodePersonalKeyProviderUrl(connection.base_url);
+    } catch {
+        providerUrl = '';
+    }
     if (
         model.runtime !== 'remote-openai' ||
-        connection.base_url !== OPENCODE_PERSONAL_KEY_PROVIDER_URL ||
+        !providerUrl ||
         authMode === 'none' ||
         providerId !== payload.providerId ||
         Number(connection.revision) !== payload.expectedConnectionRevision ||
@@ -47,7 +53,7 @@ export async function personalKeyTarget(
             modelId: model.id,
             modelName: model.name,
             providerId,
-            providerUrl: OPENCODE_PERSONAL_KEY_PROVIDER_URL,
+            providerUrl,
             connectionRevision: Number(connection.revision),
             credentialRevision: current?.revision ?? 0,
             authMode,

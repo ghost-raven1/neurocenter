@@ -17,12 +17,12 @@ const jobId = '22222222-2222-4222-8222-222222222222',
     email = 'owner@example.test',
     secret = 'synthetic-personal-key',
     bearer = 'a'.repeat(64);
-function fixture() {
+function fixture(baseUrl = 'https://api.openai.com/v1') {
     const model = { id: 'openai-test', name: 'OpenAI test', runtime: 'remote-openai' },
         connection = {
             model_id: model.id,
             revision: 3,
-            base_url: 'https://api.openai.com/v1',
+            base_url: baseUrl,
             credential_kind: 'none',
             auth_mode: 'required',
             revoked_at: null,
@@ -230,6 +230,20 @@ it.each(['provider', 'revision', 'protocol'])('rejects changed recipient %s befo
     if (change === 'provider') f.connection.base_url = 'https://other.example/v1';
     else if (change === 'revision') f.connection.revision++;
     else f.model.runtime = 'remote-ollama';
+    await expect(f.service.save(bearer, { jobId, apiKey: secret })).rejects.toThrow();
+    expect(f.writes).toBe(0);
+});
+it('accepts the model own OpenAI-compatible endpoint and canonicalizes the recipient url', async () => {
+    const f = fixture('https://ai-gateway.ehd-zr.cbr.ru/'),
+        context = await f.service.context(bearer, { jobId });
+    expect(context.recipient.providerUrl).toBe('https://ai-gateway.ehd-zr.cbr.ru');
+    const result = await f.service.save(bearer, { jobId, apiKey: secret });
+    expect(result?.hasKey).toBe(true);
+    expect(f.writes).toBe(1);
+});
+it('rejects a plain http recipient before saving', async () => {
+    const f = fixture('http://x.example/v1');
+    await expect(f.service.context(bearer, { jobId })).rejects.toThrow();
     await expect(f.service.save(bearer, { jobId, apiKey: secret })).rejects.toThrow();
     expect(f.writes).toBe(0);
 });
