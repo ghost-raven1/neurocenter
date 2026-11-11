@@ -248,6 +248,28 @@ test('The Docker public-source layout can verify the server bundle and retain it
     assert.equal(bundle.plans.length, 15);
     assert.equal((await capturePreparedSource(tools)).files.length, PREPARED_SOURCE_INPUTS.length);
 });
+test('The repo-layout image (app dir + sibling tools root) verifies the server bundle without a nested tools copy', async (t) => {
+    // d658006f перенёс сервис на /repo-лейаут: root cjs стал /repo, а Docker-контракт
+    // держит producer-closure на верхнеуровневом /tools (сibling). Битая связка давала
+    // BUNDLED_CATALOG_INVALID во всех контейнерах (readBundledCatalog → /repo/tools — absent).
+    const directory = await fixture(t),
+        app = path.join(directory, 'app'),
+        tools = path.join(directory, 'tools');
+    await fs.mkdir(path.join(app, 'services/shared'), { recursive: true });
+    await fs.cp(path.join(directory, 'catalog-source'), path.join(app, 'catalog-source'), { recursive: true });
+    await fs.copyFile(
+        path.join(directory, 'services/shared/bundled-catalog.lock.json'),
+        path.join(app, 'services/shared/bundled-catalog.lock.json'),
+    );
+    await fs.mkdir(tools);
+    for (const relative of PREPARED_SOURCE_INPUTS) {
+        const target = path.join(tools, relative);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.copyFile(path.join(root, relative), target);
+    }
+    const bundle = await bundleReader.readBundledCatalog(app);
+    assert.equal(bundle.plans.length, 15);
+});
 test('Every retained producer input is covered by an actual Docker COPY into its public /tools path', async () => {
     const dockerfile = await fs.readFile(path.join(root, 'services/catalog-service/Dockerfile'), 'utf8');
     const copies = [...dockerfile.matchAll(/^COPY (\S+) (\/tools\/\S*|\/tools\/)$/gm)].map(([, from, to]) => ({

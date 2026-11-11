@@ -180,12 +180,20 @@ async function verifyBundledProducer(expected, directory = root) {
         producer.files.length > 200
     )
         throw failure();
-    let producerRoot = directory;
-    try {
-        await fs.lstat(path.join(producerRoot, 'scripts/catalog-plugins/build.mjs'));
-    } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-        producerRoot = path.join(directory, 'tools');
+    // The producer closure sits at the app root itself (source checkout), or at the
+    // in-container pseudo-repo root named 'tools' — next to the app directory (flat
+    // image layout: / + /tools) or one level up (repo-layout image: /repo + /tools,
+    // per the service Dockerfiles). First present candidate wins; none → checkedFile
+    // below fails closed as before.
+    let producerRoot = null;
+    for (const candidate of [directory, path.join(directory, 'tools'), path.resolve(directory, '../tools')]) {
+        try {
+            await fs.lstat(path.join(candidate, 'scripts/catalog-plugins/build.mjs'));
+            producerRoot = candidate;
+            break;
+        } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+        }
     }
     const seen = new Set();
     let total = 0;
