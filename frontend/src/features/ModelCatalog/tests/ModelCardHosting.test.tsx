@@ -99,3 +99,75 @@ it.each([true, false])(
         }
     },
 );
+/** Из сообщения про «Мой доступ» в карточке — прямой переход в настройку доступа к провайдеру. */
+it('offers a direct transition to provider access from the «Мой доступ» error message', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    stubModalBrowser();
+    io.hosting.mockImplementation(async () => {
+        throw new Error(
+            'Настройте «Мой доступ»: ключ вводится один раз на провайдера — после проверки работают все модели этого провайдера.',
+        );
+    });
+    const onProviderAccess = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    try {
+        await act(async () =>
+            root.render(
+                <ModelCard
+                    model={model}
+                    assigned={false}
+                    projectSelected
+                    canAssign={false}
+                    canHost={false}
+                    busy={false}
+                    onAssign={() => undefined}
+                    onView={() => undefined}
+                    onProviderAccess={onProviderAccess}
+                />,
+            ),
+        );
+        const link = container.querySelector('.model-runtime__setup-access') as HTMLButtonElement | null;
+        expect(link?.textContent).toContain('Настроить «Мой доступ»');
+        await act(async () => link?.click());
+        expect(onProviderAccess).toHaveBeenCalledTimes(1);
+    } finally {
+        await act(async () => root.unmount());
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    }
+});
+it('keeps other hosting errors without an access link', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    stubModalBrowser();
+    io.hosting.mockImplementation(async () => {
+        throw new Error('Сервис недоступен.');
+    });
+    const onProviderAccess = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    try {
+        await act(async () =>
+            root.render(
+                <ModelCard
+                    model={model}
+                    assigned={false}
+                    projectSelected
+                    canAssign={false}
+                    canHost={false}
+                    busy={false}
+                    onAssign={() => undefined}
+                    onView={() => undefined}
+                    onProviderAccess={onProviderAccess}
+                />,
+            ),
+        );
+        expect(container.querySelector('.model-runtime__setup-access')).toBeNull();
+        expect(container.querySelector('[role="alert"]')?.textContent).toContain('Сервис недоступен.');
+        expect(onProviderAccess).not.toHaveBeenCalled();
+    } finally {
+        await act(async () => root.unmount());
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    }
+});

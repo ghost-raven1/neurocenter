@@ -18,10 +18,11 @@ interface IProps {
     compact?: boolean;
     onManage?: () => void;
     onSettled?: () => Promise<void>;
+    onSetupAccess?: () => void;
 }
 
 /** Прогресс и содержательная проверка отделены от назначения модели проекту. */
-export function ModelHosting({ model, canManage, compact, onManage, onSettled }: IProps): JSX.Element {
+export function ModelHosting({ model, canManage, compact, onManage, onSettled, onSetupAccess }: IProps): JSX.Element {
     const { hosting, loading, busy, error, refresh, operate } = useModelHosting(model, onSettled);
     const operation = hosting?.operation;
     const remote = modelUsesApiConnection(model),
@@ -76,6 +77,16 @@ export function ModelHosting({ model, canManage, compact, onManage, onSettled }:
                 {(error || operation?.state === 'failed') && (
                     <div role="alert" className="model-runtime__error">
                         {message}
+                        {onSetupAccess && typeof message === 'string' && message.includes('«Мой доступ»') && (
+                            <Button
+                                type="link"
+                                size="small"
+                                className="model-runtime__setup-access"
+                                onClick={onSetupAccess}
+                            >
+                                Настроить «Мой доступ»
+                            </Button>
+                        )}
                     </div>
                 )}
                 {!error &&

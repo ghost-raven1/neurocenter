@@ -213,6 +213,7 @@ export function ModelCard({
                 compact
                 onSettled={onHostingSettled}
                 onManage={onConfigure ?? onView}
+                onSetupAccess={onProviderAccess}
             />
             {feedback}
             <div className="model-card__actions">
