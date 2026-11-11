@@ -93,6 +93,7 @@ for (const action of ['context', 'save', 'receipt']) {
             await f.run();
             expect(f.response.code).toBe(status === 307 ? 502 : status);
             expect(f.response.body).toEqual({
+                code: 'upstream-error',
                 message: 'Перенос ключа не подтверждён. Проверьте сохранённую квитанцию перед повтором.',
             });
             expect(f.response.setHeader).not.toHaveBeenCalled();
