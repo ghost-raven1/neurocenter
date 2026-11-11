@@ -1,6 +1,7 @@
 export const OPENCODE_PERSONAL_KEY_JOB: 'open-opencode-personal-key';
 export const OPENCODE_PERSONAL_KEY_CAPABILITY: 'opencode-personal-key-v1';
 export const OPENCODE_PERSONAL_KEY_VERSION: '1.14.48';
+/** OpenCode built-in provider endpoint; transfer resolves local providers by the recipient's canonical address. */
 export const OPENCODE_PERSONAL_KEY_PROVIDER_URL: 'https://api.openai.com/v1';
 export interface IOpenCodePersonalKeyRequest {
     kind: typeof OPENCODE_PERSONAL_KEY_JOB;
@@ -21,7 +22,8 @@ export interface IOpenCodePersonalKeyTarget {
     modelId: string;
     modelName: string;
     providerId: string;
-    providerUrl: typeof OPENCODE_PERSONAL_KEY_PROVIDER_URL;
+    /** Canonical recipient endpoint (https, no credentials, no trailing slash); the device resolves the local provider by it. */
+    providerUrl: string;
     connectionRevision: number;
     credentialRevision: number;
     authMode: 'optional' | 'required';
@@ -54,6 +56,8 @@ export type TOpenCodePersonalKeyResult = {
     kind: typeof OPENCODE_PERSONAL_KEY_JOB;
     checkedAt: string;
 } & ({ status: 'opened'; expiresAt: string } | { status: 'failed'; issue: TOpenCodePersonalKeyIssue });
+/** Canonical https recipient endpoint: no credentials, query, or fragment; trailing slashes removed; default port 443 omitted. */
+export function normalizeOpenCodePersonalKeyProviderUrl(value: unknown): string;
 export function normalizeOpenCodePersonalKeyRequest(value: unknown): IOpenCodePersonalKeyRequest;
 export function normalizeOpenCodePersonalKeyPayload(value: unknown): IOpenCodePersonalKeyPayload;
 export function normalizeOpenCodePersonalKeyResult(

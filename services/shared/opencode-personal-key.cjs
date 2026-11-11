@@ -2,8 +2,33 @@
 const OPENCODE_PERSONAL_KEY_JOB = 'open-opencode-personal-key';
 const OPENCODE_PERSONAL_KEY_CAPABILITY = 'opencode-personal-key-v1';
 const OPENCODE_PERSONAL_KEY_VERSION = '1.14.48';
+/** OpenCode built-in provider endpoint; the transfer slice resolves local providers by this address. */
 const OPENCODE_PERSONAL_KEY_PROVIDER_URL = 'https://api.openai.com/v1';
 const uuid = (value) => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
+/** Recipient endpoints are https only, never carry credentials or query data, and compare in one canonical form. */
+function normalizeOpenCodePersonalKeyProviderUrl(value) {
+    if (typeof value !== 'string' || !value || value.length > 2048) fail();
+    let url;
+    try {
+        url = new URL(value);
+    } catch {
+        fail();
+    }
+    if (
+        url.protocol !== 'https:' ||
+        !url.hostname ||
+        /[\s\x00-\x1f\x7f]/.test(url.hostname) ||
+        url.username ||
+        url.password ||
+        url.hash ||
+        url.search
+    )
+        fail();
+    const normalized =
+        'https://' + url.hostname + (url.port && url.port !== '443' ? ':' + url.port : '') + url.pathname.replace(/\/+$/, '');
+    if (normalized.length > 2048) fail();
+    return normalized;
+}
 const timestamp = (value) =>
     typeof value === 'string' &&
     /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) &&
@@ -156,7 +181,7 @@ function normalizeOpenCodePersonalKeyContext(value) {
         typeof r.modelName !== 'string' ||
         !r.modelName ||
         r.modelName.length > 500 ||
-        r.providerUrl !== OPENCODE_PERSONAL_KEY_PROVIDER_URL ||
+        normalizeOpenCodePersonalKeyProviderUrl(r.providerUrl) !== r.providerUrl ||
         !['optional', 'required'].includes(r.authMode) ||
         r.canStoreKey !== true
     )
@@ -245,7 +270,12 @@ const OPENCODE_PERSONAL_KEY_SCHEMAS = Object.freeze({
             modelId: targetSchema.modelId,
             modelName: { ...string, minLength: 1, maxLength: 500 },
             providerId: providerSchema,
-            providerUrl: { enum: [OPENCODE_PERSONAL_KEY_PROVIDER_URL] },
+            providerUrl: {
+                type: 'string',
+                minLength: 9,
+                maxLength: 2048,
+                pattern: '^https://[a-zA-Z0-9.\\[\\]:-]+(?::\\d+)?(?:/\\S*)*$',
+            },
             connectionRevision: positive,
             credentialRevision: nonnegative,
             authMode: { enum: ['optional', 'required'] },
@@ -259,6 +289,7 @@ module.exports = {
     OPENCODE_PERSONAL_KEY_CAPABILITY,
     OPENCODE_PERSONAL_KEY_VERSION,
     OPENCODE_PERSONAL_KEY_PROVIDER_URL,
+    normalizeOpenCodePersonalKeyProviderUrl,
     normalizeOpenCodePersonalKeyRequest,
     normalizeOpenCodePersonalKeyPayload,
     normalizeOpenCodePersonalKeyResult,
