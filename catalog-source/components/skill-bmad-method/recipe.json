@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "key": "skill-bmad-method",
+  "name": "BMAD Method",
+  "kind": "skill",
+  "description": "BMAD Method — agile AI-driven development. Бандл из 32 skill-ов (skills/bmad-* + skills/bmod-*) в едином контуре с hub `bmad`, который отвечает на вопрос «что делать дальше» и запускает bmad-build. Установка одного бандла-ассета; дробление на 32 карточки ломает метод (перекрёстные ссылки между скиллами сохраняются только в едином дереве).",
+  "tags": ["BMAD", "Метод", "Agile AI", "Skill-группа", "AI-driven development"],
+  "revision": "git-a867e1604b365d48ea03cbd109da1066ba0c84bc",
+  "source": {
+    "type": "bundle",
+    "component": "catalog-source/components/skill-bmad-method"
+  },
+  "install": {
+    "mode": "skill-group",
+    "entry": "skills/bmad/SKILL.md",
+    "payload": "skills/ (32 skill tree; hub bmad + bmod-* module manifests bmod.toml, references/, assets/, scripts/)",
+    "steps": [
+      "Place the vendored skills/ tree into the device/project skills folder (as a skill group, preserving the bmad/bmod directory names and cross-references).",
+      "Hub skill `bmad` registers by its SKILL.md frontmatter (name: bmad; description answers «что делать дальше / где начать»).",
+      "On first use the hub reads installed modules' own help via `uv run <skill-root>/scripts/knowledge.py -content`; `uv` must be available (compatibility note, does not block skill install).",
+      "`bmad setup` / `bmad migrate` / `bmad status` are driven by the hub references (setup.md / migrate.md / initiative.md)."
+    ]
+  },
+  "compatibility": {
+    "skillFormat": "opencode",
+    "runtime": "Python/uv (BMad-setup scripts under skill scripts/; uv must be present on the device to run script-based skills — compatibility label, not a hard install blocker)"
+  }
+}

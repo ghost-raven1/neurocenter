@@ -90,7 +90,7 @@ async function readBundledCatalog(directory = root) {
         !Array.isArray(manifest.current) ||
         manifest.current.length > 100 ||
         !Array.isArray(manifest.files) ||
-        manifest.files.length > 300 ||
+        manifest.files.length > 1000 ||
         !Array.isArray(manifest.history?.snapshots) ||
         manifest.history.snapshots.length > 100 ||
         typeof manifest.history.repository !== 'string'

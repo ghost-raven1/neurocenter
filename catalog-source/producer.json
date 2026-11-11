@@ -628,8 +628,8 @@
     },
     {
       "path": "services/shared/bundled-catalog.cjs",
-      "sha256": "3238fa7d293b33c5a19558598d23a4b672c2102d5bf29f1dc141d31de8f1e8f1",
-      "bytes": 11412
+      "sha256": "c36500e1174f1abb4f5b7c4c85f563c0e8589326d4c011a04f1cd3fb4bab41a9",
+      "bytes": 11413
     },
     {
       "path": "services/shared/bundled-catalog.d.cts",
