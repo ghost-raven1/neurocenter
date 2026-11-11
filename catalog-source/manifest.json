@@ -513,6 +513,18 @@
       "sourceRevision": "git-a867e1604b365d48ea03cbd109da1066ba0c84bc",
       "assetVersion": "6.13.0-next",
       "description": "BMAD Method — agile AI-driven development: бандл 32 skill-ов (hub `bmad` + bmod-модули) для самонаправленной поставки. Hub `bmad` отвечает на «что делать дальше» и запускает bmad-build. Python/uv (BMad-setup) — compatibility-метка, не блокирует установку скиллов."
+    },
+    {
+      "id": "plugin-open-code-review",
+      "kind": "plugin",
+      "name": "OpenCode Review",
+      "metadataSha256": "d67c8d2365e1f0ee343dabdeab968b1be7808615f5fd38e8fec51e224610db94",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/components/open-code-review/recipe.json"
+      },
+      "sourceRevision": "git-e170728a2f05cada736aa481ce7ef26bbbadd3fb",
+      "description": "AI code review на git-diff (alibaba/open-code-review, pinned main @ e170728, Apache-2.0): CLI `ocr` + нативный linux-x64 Go-бинарь + OpenCode-плагин; установка из каталога ставит `ocr` на PATH. LLM-ключ и модель из конфига opencode устройства, не хардкод."
     }
   ],
   "history": {

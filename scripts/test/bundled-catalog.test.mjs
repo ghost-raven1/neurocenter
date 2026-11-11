@@ -32,14 +32,14 @@ async function fixture(t) {
     }
     return directory;
 }
-test('Git bundle separates 23 ready inline assets from 14 current source plans and carries no runtime binaries or model weights', async () => {
+test('Git bundle separates 23 ready inline assets from 15 current source plans and carries no runtime binaries or model weights', async () => {
     const bundle = await bundleReader.readBundledCatalog(),
         source = new sourceReader.AssetSourceClient(bundle.pin, { contract, fetch: forbidden, offline: true });
     const index = await source.index(),
         selected = await source.select(index.assets.filter((entry) => entry.current).map((entry) => entry.id));
     assert.equal(selected.assets.length, 23);
     assert.ok(selected.assets.every((record) => ['agent', 'skill'].includes(record.asset.kind)));
-    assert.equal(bundle.plans.length, 14);
+    assert.equal(bundle.plans.length, 15);
     assert.equal(bundle.plans.filter((plan) => plan.kind === 'model').length, 2);
     assert.equal(bundle.pin.commit, 'sha256:' + bundle.pin.index.sha256);
     assert.equal(bundle.pin.repository, 'app-bundled');
@@ -157,7 +157,7 @@ test('Default offline sync from a fresh Git source publishes only metadata/inlin
     assert.equal(report.downloaded, 0);
     assert.equal(report.files, 0);
     assert.equal(report.assets.length, 23);
-    assert.equal(report.sourcePlans.length, 14);
+    assert.equal(report.sourcePlans.length, 15);
     assert.ok(report.sourcePlans.every((plan) => plan.state !== 'ready'));
     assert.ok(report.sourceCommit.startsWith('sha256:'));
     assert.equal(
@@ -245,7 +245,7 @@ test('The Docker public-source layout can verify the server bundle and retain it
     }
     await fs.rm(path.join(directory, 'scripts'), { recursive: true });
     const bundle = await bundleReader.readBundledCatalog(directory);
-    assert.equal(bundle.plans.length, 14);
+    assert.equal(bundle.plans.length, 15);
     assert.equal((await capturePreparedSource(tools)).files.length, PREPARED_SOURCE_INPUTS.length);
 });
 test('Every retained producer input is covered by an actual Docker COPY into its public /tools path', async () => {

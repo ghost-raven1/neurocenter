@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "repository": "alibaba/open-code-review",
+  "origin": "https://github.com/alibaba/open-code-review",
+  "commit": "e170728a2f05cada736aa481ce7ef26bbbadd3fb",
+  "license": "Apache-2.0",
+  "scope": "CLI working contour: Node launcher (bin/ocr.js + scripts/*) and platform-native binding metadata (npm/linux-x64). The linux-x64 Go binary is a runtime artifact delivered by the recipe (AD-15 vendor supply), not an in-tree producer file.",
+  "files": [
+    {
+      "path": "source/bin/ocr.js",
+      "sha256": "7668ea8933d987357da1e1815bd9bc32739a8ed57b53a033df47a3164d13e502",
+      "bytes": 4212,
+      "origin": "vendor-npm @alibaba-group/open-code-review@1.13.7"
+    },
+    {
+      "path": "source/LICENSE",
+      "sha256": "1945665fdb6968a66ea29438ddee0aee23035365c862e5c4a75b62b303340acf",
+      "bytes": 11356,
+      "origin": "vendor-npm @alibaba-group/open-code-review@1.13.7"
+    },
+    {
+      "path": "source/npm/linux-x64/package.json",
+      "sha256": "fb4fa831c391f612dd8b9b92c57f449852c04b3c3f93309534998d32ab23aa1f",
+      "bytes": 429,
+      "origin": "vendor-npm @alibaba-group/ocr-linux-x64@1.13.7"
+    },
+    {
+      "path": "source/package.json",
+      "sha256": "baebaabc0397296a50658beb241cebd95e301c7e5239e0968d022c1323ff4e3c",
+      "bytes": 1671,
+      "origin": "vendor-npm @alibaba-group/open-code-review@1.13.7"
+    },
+    {
+      "path": "source/README.md",
+      "sha256": "f39bc505beefffdc55e538c899b6cb8cd3a573c100e9bd935aea8fd0085b8813",
+      "bytes": 14105,
+      "origin": "vendor-npm @alibaba-group/open-code-review@1.13.7"
+    },
+    {
+      "path": "source/scripts/install.js",
+      "sha256": "b48696d5aea65c5ce3c6840839fc433661b6e14b8a23be37de8a6320209b4e0f",
+      "bytes": 7389,
+      "origin": "vendor-npm @alibaba-group/open-code-review@1.13.7"
+    },
+    {
+      "path": "source/scripts/platform.js",
+      "sha256": "19ad16acdba0fdd204ba2a8deb2651576907c070eb69c859dfbabad2c37ee3bb",
+      "bytes": 1896,
+      "origin": "vendor-npm @alibaba-group/open-code-review@1.13.7"
+    },
+    {
+      "path": "source/scripts/update.js",
+      "sha256": "62bf6d5d3076d775a681bffd65f1c556b759b59695bbc7fb4431e8df0b184cc5",
+      "bytes": 4330,
+      "origin": "vendor-npm @alibaba-group/open-code-review@1.13.7"
+    },
+    {
+      "path": "source/scripts/version.js",
+      "sha256": "51cd30899641cca504e68d876005e922d6a6ac6a065c3b41a91f201aedd23bac",
+      "bytes": 1268,
+      "origin": "vendor-npm @alibaba-group/open-code-review@1.13.7"
+    }
+  ],
+  "vendor": {
+    "launcher": {
+      "name": "@alibaba-group/open-code-review",
+      "version": "1.13.7",
+      "tarballSha256": "9c43cbca4057b9ebd4237973b74c83529367b222452522b054c72f160410c410",
+      "integrity": "sha512-083rYCiRH/R4wF6aOQVUcuRe6Ohfgeck++IBAVB0qxmq6CwLCksVNaAlTt3dUjKleCdRgQ2PPZz6l75wAtE+CA==",
+      "origins": "https://registry.npmjs.org/@alibaba-group/open-code-review/-/open-code-review-1.13.7.tgz"
+    },
+    "native": {
+      "name": "@alibaba-group/ocr-linux-x64",
+      "version": "1.13.7",
+      "tarballSha256": "0b43847bf8fe0e6b7746897eae63f65b3ed780b1a8d62ef99f58f31af808c1f4",
+      "integrity": "sha512-QCZxLkq/3kANs8nblrSj5T2TipU+dJvh1X7kjp/CWv+GS2XoXtlbdZ0cDpxmGlKq/wM8AGiwYi3WDMRiH+y7IQ==",
+      "origins": "https://registry.npmjs.org/@alibaba-group/ocr-linux-x64/-/ocr-linux-x64-1.13.7.tgz",
+      "binary": "bin/opencodereview",
+      "binarySha256": "8c1ff786161b6dc0e8dcb06107f18bda8b6181b39ce573400add4a39f90cf19d",
+      "binaryBytes": 56606882,
+      "target": "linux-x64-glibc"
+    }
+  },
+  "runtimeArtifacts": [
+    {
+      "target": "linux-x64-glibc",
+      "sha256": "7b39a5e5029faa09bceb63795c66c5cb694bffe87e939516fd3e7386b653e1cc",
+      "compressedBytes": 15531972,
+      "unpackedBytes": 56639762,
+      "filesCount": 9,
+      "entrypoint": "plugin.mjs"
+    }
+  ],
+  "adaptations": [
+    "Pinned upstream npm launcher+binary (1.13.7) at main commit e170728a2f05cada736aa481ce7ef26bbbadd3fb",
+    "Native linux-x64 Go binary delivered as a runtime artifact (AD-15 vendor supply); not an in-tree producer file",
+    "LLM key and model come from the device opencode config (project model set), never hardcoded"
+  ]
+}

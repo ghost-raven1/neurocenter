@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "key": "plugin-open-code-review",
+  "name": "OpenCode Review",
+  "kind": "plugin",
+  "description": "AI code review на git-diff (alibaba/open-code-review, pinned main, Apache-2.0): CLI `ocr` + нативный linux-x64 бинарь + OpenCode-плагин. LLM-ключ и модель берутся из конфига opencode устройства, не хардкодятся.",
+  "revision": "git-e170728a2f05cada736aa481ce7ef26bbbadd3fb",
+  "source": {
+    "type": "prepared",
+    "adapter": "open-code-review"
+  }
+}
