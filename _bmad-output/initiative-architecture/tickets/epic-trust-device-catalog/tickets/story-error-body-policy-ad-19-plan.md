@@ -3,7 +3,7 @@ title: 'Error-body-политика: фиксированные сообщени
 type: 'feature'
 ticket: '10'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '3433b1d147163a82fc023a34f909457830c7f6aa'
 route: 'full'
 route_source: 'auto'
@@ -108,6 +108,8 @@ context:
 Allowlist = validated domain-ошибки, где ТЕКСТ — часть доменного контракта с клиентом (UI показывает его напрямую): пример — `assertExpectedBinding`/`managedBinding` (device-compatibility.ts: «Папка проекта изменилась...»), `requireFeaturesEnabled` (фича отключена — текст домена), `installation-set` (зависимость — имя+версия из данных, не exception). Критерий allowlist: текст формируется из **данных домена** (имя папки/зависимости/фичи), а не из `Exception.message` (stack/транспорт). Passthrough-фикс: `code` (машина-читаемый, стабильный) + `message` (фиксированный или domain-данные). Shadowing-диагностика использует таблицу entry 8: `matchPolicy` знает, что роут ЯВНЫЙ (есть строка, не default) → если запрос дошёл до `ProxyService.forward` по строке, которая НЕ default → incident. Log-формат: `[api-gateway] shadowing: route=POST /api/mcp-host/connect pattern=api/{*path} expected=McpHostController.connect`.
 
 ## Plan Change Log
+
+- 2026-11-11: status → done без отдельного merge-коммита. Содержимое entry уже в main через `4e6afb4c` («feat: entry 2.10 — error-body-политика (AD-19)», Nov 10): byte-идентично во всех 23 файлах (`git diff 4e6afb4c b88a5753` по зонам 2.10 пуст, проверка сабэджентом read-only). Мерж worktree `entry-2-10` не выполняется: добавляет только 2 ложных add/add-конфликта (shadowing-diagnostic, доработанный 2.13 K3.1) и регрессит 2.13. Worktree/ветка — удалить.
 
 ## Review Triage Log
 
