@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "key": "skill-openspec",
+  "name": "OpenSpec (SDD метод)",
+  "kind": "skill",
+  "description": "OpenSpec — AI-native система для spec-driven development. Бандл из 12 skill-ов (skills/openspec-*) в едином контуре + CLI `openspec` (npm @fission-ai/openspec 1.17.0, bin openspec). Метод: change → propose → apply → verify. Установка одного бандла-ассета; дробление на 12 карточек ломает метод (перекрёстные ссылки и поток workflow сохраняются только в едином дереве). CLI помещается как vendor'd npm-тарбол по AD-15.",
+  "tags": ["OpenSpec", "SDD", "Spec-driven development", "Метод", "Skill-группа", "openspec-cli"],
+  "revision": "git-579fcac57ae00c2dff38f971b6d88b6f1f098b8a",
+  "source": {
+    "type": "bundle",
+    "component": "catalog-source/components/openspec"
+  },
+  "install": {
+    "mode": "skill-group",
+    "entry": "skills/",
+    "payload": "skills/ (12-skill SDD method tree: openspec-*/SKILL.md + README) + cli/openspec-1.17.0.tgz (vendor'd npm CLI, AD-15)",
+    "steps": [
+      "Place the vendored skills/ tree into the device/project skills folder (as a skill group, preserving the openspec-* names and cross-references).",
+      "Each openspec-*/SKILL.md registers by its frontmatter (name: openspec-<step>; description drives the trigger; allowed-tools: Bash(openspec:*)).",
+      "Install the CLI: extract cli/openspec-1.17.0.tgz and provision the Node production-dependency closure (per AD-15 closed-supply). `openspec --version` then reports 1.17.0.",
+      "The skills drive the `openspec` CLI: `openspec new change` → `openspec propose` → `openspec apply change` → `openspec verify change`; `openspec onboard` runs guided setup."
+    ]
+  },
+  "compatibility": {
+    "skillFormat": "opencode",
+    "runtime": "Node >=22.12 (the `openspec` CLI npm package; production dependency closure must be provisioned per AD-15 — the tarball itself is vendored, the transitive deps are not). Skills are self-contained instructions and install regardless; full CLI use requires the dep closure."
+  }
+}

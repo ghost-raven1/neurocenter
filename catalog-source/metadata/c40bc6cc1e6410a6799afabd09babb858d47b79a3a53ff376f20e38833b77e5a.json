@@ -1,0 +1,353 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "id": "agent-developer",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-developer/1.0.0/asset.json",
+      "sha256": "00b7f0e5804e3edde042cfb7cafd302c1abacdc11f205f658bb86eeaf1ee9007",
+      "current": false
+    },
+    {
+      "id": "agent-documenter",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-documenter/1.0.0/asset.json",
+      "sha256": "f4d0041fe9108c98ea0535f64f61cfd9b40c3c915c14355aea2be89f7a0fada2",
+      "current": false
+    },
+    {
+      "id": "agent-planner",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-planner/1.0.0/asset.json",
+      "sha256": "34cecf3143157dce2e659fd36943add7ff801c351f5317db3e683287af542fb6",
+      "current": false
+    },
+    {
+      "id": "agent-reviewer",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-reviewer/1.0.0/asset.json",
+      "sha256": "cdac7f2e82af5584acfee65ca1a93dc7894091b7cb3ebfb82f8533554cb6009e",
+      "current": false
+    },
+    {
+      "id": "agent-tester",
+      "kind": "agent",
+      "version": "1.0.0",
+      "path": "assets/agent-tester/1.0.0/asset.json",
+      "sha256": "09fcb2fdffbcefc4446b29966abc87ae57b06a91a3b12a74317c95b51c395aad",
+      "current": false
+    },
+    {
+      "current": true,
+      "id": "skill-accessibility-compliance",
+      "kind": "skill",
+      "path": "assets/skill-accessibility-compliance/1.0.0/asset.json",
+      "sha256": "6ceaac1debbde6c5b5906dce3f7543c19605bc46837c197e9fc0692071f99140",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-api-design-principles",
+      "kind": "skill",
+      "path": "assets/skill-api-design-principles/1.0.0/asset.json",
+      "sha256": "b5af7ca3ff50ef8d0c833aa8c4ad3f8322ff0a5566c61d626af958a73c88ed00",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-code-review-excellence",
+      "kind": "skill",
+      "path": "assets/skill-code-review-excellence/1.0.0/asset.json",
+      "sha256": "7540dcb7d1ab93f779793e8059b2b278574431199f0ab46f69a2d8d6f24e85dd",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-deployment-pipeline-design",
+      "kind": "skill",
+      "path": "assets/skill-deployment-pipeline-design/1.0.0/asset.json",
+      "sha256": "946255df7cab8c807d693c652fe4b4e407721695504f3817d3774a5d33b76894",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-mcp-builder",
+      "kind": "skill",
+      "path": "assets/skill-mcp-builder/1.0.0/asset.json",
+      "sha256": "4f6d72515d1c320c61d4a62b52a5be5b8462ed31bc8137b46a7864d378f19836",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-nestjs-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-nestjs-best-practices/1.0.0/asset.json",
+      "sha256": "a37448a27255b516ebcf336e57154997e956bf6195fc1babbf41508e67b00767",
+      "version": "1.0.0"
+    },
+    {
+      "current": false,
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "path": "assets/skill-neurocenter-packaging/1.0.0/asset.json",
+      "sha256": "d8debdb3984a7c45ab8d3324a953e844ac01eac70e6e3f70ce1b18d994150eb1",
+      "version": "1.0.0"
+    },
+    {
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "version": "1.1.0",
+      "path": "assets/skill-neurocenter-packaging/1.1.0/asset.json",
+      "sha256": "09b9fcd410357d017b0d151d826fa9210098d7f1fc8e6793a9b808dfec8bb10b",
+      "current": false
+    },
+    {
+      "current": true,
+      "id": "skill-playwright-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-playwright-best-practices/1.0.0/asset.json",
+      "sha256": "1ffa170b2faa9c2f3b9a2f16dd7a7fbe212a8c0533591820857ac092bc0fd6a2",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-react-state-management",
+      "kind": "skill",
+      "path": "assets/skill-react-state-management/1.0.0/asset.json",
+      "sha256": "f8668d778c6a878790a307d253449458dd0057ebc968aba1d7578ab07889b535",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-supabase-postgres-best-practices",
+      "kind": "skill",
+      "path": "assets/skill-supabase-postgres-best-practices/1.0.0/asset.json",
+      "sha256": "0f54db74c354535295cdf9ed5719c029063c9841341b4554983f8e396935a4d5",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-typescript-advanced-types",
+      "kind": "skill",
+      "path": "assets/skill-typescript-advanced-types/1.0.0/asset.json",
+      "sha256": "03006ac31d88ab29c2aa2b1641f6c09be56b3c4524833fd314f2ea656ceba1de",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-vite",
+      "kind": "skill",
+      "path": "assets/skill-vite/1.0.0/asset.json",
+      "sha256": "5c5804d09e44d80e72d203f028cb743e7fcee1176f889bfda4ba8d04385e6438",
+      "version": "1.0.0"
+    },
+    {
+      "current": true,
+      "id": "skill-vitest",
+      "kind": "skill",
+      "path": "assets/skill-vitest/1.0.0/asset.json",
+      "sha256": "0f253adca052c9a7eb16f6c447182aaa6d72d74a8634bc95266356612eb99f35",
+      "version": "1.0.0"
+    },
+    {
+      "id": "skill-neurocenter-project-context",
+      "kind": "skill",
+      "version": "1.0.0",
+      "path": "assets/skill-neurocenter-project-context/1.0.0/asset.json",
+      "sha256": "33c0e8b622f0c439602de91aff5e0afecb8dcface21da52e317cdca28f3f12c7",
+      "current": false
+    },
+    {
+      "id": "skill-neurocenter-system-assistance",
+      "kind": "skill",
+      "version": "1.0.0",
+      "path": "assets/skill-neurocenter-system-assistance/1.0.0/asset.json",
+      "sha256": "f461efcc6e4a4e703cfa94971ed5806753e7df8f16e0181819e8707fee22b9d4",
+      "current": false
+    },
+    {
+      "id": "skill-neurocenter-project-learning",
+      "kind": "skill",
+      "version": "1.0.0",
+      "path": "assets/skill-neurocenter-project-learning/1.0.0/asset.json",
+      "sha256": "e11db4238f54908bd638b409df8d85af5a147f0576d6ad52f3c3689caf3c6cd9",
+      "current": false
+    },
+    {
+      "id": "agent-planner",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-planner/1.1.0/asset.json",
+      "sha256": "a975f108aa5d1d5d91c733b5a6b9f1b61f41083a1e5e9b1c2bc0bb279dd380df",
+      "current": false
+    },
+    {
+      "id": "agent-developer",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-developer/1.1.0/asset.json",
+      "sha256": "dead26971305dd00dd661cdd02c43bd729df7eb491d78b0de3b28bfe0fa59a53",
+      "current": false
+    },
+    {
+      "id": "agent-reviewer",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-reviewer/1.1.0/asset.json",
+      "sha256": "ba81bca273c9fbfdc98c3147d8fc5507d857c2b1144c4bcffbc828e0ea959fe1",
+      "current": false
+    },
+    {
+      "id": "agent-tester",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-tester/1.1.0/asset.json",
+      "sha256": "98dac69c7827e93c04a6dafb760cb6b1870361638c09ec342d720c3c9734500a",
+      "current": false
+    },
+    {
+      "id": "agent-documenter",
+      "kind": "agent",
+      "version": "1.1.0",
+      "path": "assets/agent-documenter/1.1.0/asset.json",
+      "sha256": "1cb1748c3ea5b2f9ed048b59d9ef992a99d6504d6aeb98defdd2fbcb4f46c846",
+      "current": false
+    },
+    {
+      "id": "skill-neurocenter-packaging",
+      "kind": "skill",
+      "version": "1.1.1",
+      "path": "assets/skill-neurocenter-packaging/1.1.1/asset.json",
+      "sha256": "794e5f7cd54789a7bd5d9ba19ebd6fe8c7803b0f7d5031023e57ef55747e69f7",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Регламент упаковки ассетов в каталог (packager-роль); без него выпуск и re-pin каталога не выполняются по регламенту."
+    },
+    {
+      "id": "skill-neurocenter-project-context",
+      "kind": "skill",
+      "version": "1.0.1",
+      "path": "assets/skill-neurocenter-project-context/1.0.1/asset.json",
+      "sha256": "92f31907abff666ea0e31dff57ff876dcf1d30503566f0752e493449779ff26d",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): контекст проекта. Внутренние системные агенты (coordinator/packager/indexer/ai-admin/autoconfigurator) зависят от этого скилла; без него у ролей нет подтверждённого контекста проекта."
+    },
+    {
+      "id": "skill-neurocenter-system-assistance",
+      "kind": "skill",
+      "version": "1.0.1",
+      "path": "assets/skill-neurocenter-system-assistance/1.0.1/asset.json",
+      "sha256": "c911819555796c510718dce66d9000e791caab2bebd108fc6adb9342b7330dd3",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): системный ассистент по настройке и исправлению работы устройства; от этого скилла зависят внутренние системные агенты."
+    },
+    {
+      "id": "skill-neurocenter-project-learning",
+      "kind": "skill",
+      "version": "1.0.1",
+      "path": "assets/skill-neurocenter-project-learning/1.0.1/asset.json",
+      "sha256": "589088364c607a848f445e8ae72fd9176eca812492ac7c332ccbde0e7fc68a54",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "system-roles",
+      "note": "Системные роли (FR-303): принятые знания проекта и сохраняемый опыт выполненных задач; от этого скилла зависят внутренние системные агенты."
+    },
+    {
+      "id": "agent-planner",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-planner/1.1.1/asset.json",
+      "sha256": "34108a4f15575bd4637f6eff1ac599d6bfc302d0d242844d0140e887602ca8fc",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): планирование задач и изменений проекта. Нужен для стандартной работы; замена на пользовательских агентов разрешена."
+    },
+    {
+      "id": "agent-developer",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-developer/1.1.1/asset.json",
+      "sha256": "10e487ffcc8aeaac18f746fcbeb5aa77eb4fa950244e57490dfe76dda70e4b80",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): реализация изменений и кода проекта. Нужен для стандартной работы."
+    },
+    {
+      "id": "agent-reviewer",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-reviewer/1.1.1/asset.json",
+      "sha256": "31d5c74625a729d70115bf6037f310fc536f94b234b1936fc9bd3287d0e6de9f",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): проверка изменений и кода. Нужен для стандартной работы."
+    },
+    {
+      "id": "agent-tester",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-tester/1.1.1/asset.json",
+      "sha256": "a8a8b6e0ee9c6b6151e53eb0203caedf26316b6d459ed50cff1470a7946d54f2",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): тестирование и верификация изменений. Нужен для стандартной работы."
+    },
+    {
+      "id": "agent-documenter",
+      "kind": "agent",
+      "version": "1.1.1",
+      "path": "assets/agent-documenter/1.1.1/asset.json",
+      "sha256": "d2ba4635585f10358e7e1831f83bab6e0e740e52137fe45ba1031a97b9406442",
+      "current": true,
+      "system": true,
+      "required": true,
+      "subsystem": "agent-team",
+      "note": "Агент-команда (FR-301, дефолтный состав): документация и объяснения. Нужен для стандартной работы."
+    },
+    {
+      "id": "skill-ui-ux-pro-max",
+      "kind": "skill",
+      "version": "2.15.0",
+      "path": "assets/skill-ui-ux-pro-max/2.15.0/asset.json",
+      "sha256": "21a34bd712f3984941bb999b4a7bf2aeef7a620c6aba52bb6677b6bc047b506c",
+      "current": true
+    },
+    {
+      "id": "skill-bmad-method",
+      "kind": "skill",
+      "version": "6.13.0-next",
+      "path": "assets/skill-bmad-method/6.13.0-next/asset.json",
+      "sha256": "5c7059cdc5ceb7d505b803711bf434bf4f8e6214a1ef290755a8b9b59b089bc6",
+      "current": true
+    },
+    {
+      "id": "skill-openspec",
+      "kind": "skill",
+      "version": "1.17.0",
+      "path": "assets/skill-openspec/1.17.0/asset.json",
+      "sha256": "7ad7e615723cf742d57cdea04c07fafc088a0535feeddba5376846bd6f8dfdb5",
+      "current": true
+    }
+  ]
+}

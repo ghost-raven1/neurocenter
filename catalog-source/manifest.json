@@ -525,6 +525,18 @@
       },
       "sourceRevision": "git-e170728a2f05cada736aa481ce7ef26bbbadd3fb",
       "description": "AI code review на git-diff (alibaba/open-code-review, pinned main @ e170728, Apache-2.0): CLI `ocr` + нативный linux-x64 Go-бинарь + OpenCode-плагин; установка из каталога ставит `ocr` на PATH. LLM-ключ и модель из конфига opencode устройства, не хардкод."
+    },
+    {
+      "id": "skill-openspec",
+      "kind": "skill",
+      "name": "OpenSpec (SDD метод)",
+      "metadataSha256": "173b90a6600076f86e83e250828e67c12ebfd1296223ef6bb651ef7578773f96",
+      "delivery": {
+        "type": "inline"
+      },
+      "sourceRevision": "git-579fcac57ae00c2dff38f971b6d88b6f1f098b8a",
+      "assetVersion": "1.17.0",
+      "description": "OpenSpec — AI-native spec-driven development: бандл 12 skill-ов (change → propose → apply → verify) + CLI `openspec` 1.17.0. Метод ведётся скиллами поверх CLI."
     }
   ],
   "history": {
@@ -825,6 +837,86 @@
       "path": "components/opencode-see-image/source/v2.ts",
       "sha256": "f0a682207e9c7ec42f3e5c7d01dfab5cc004fc64bd91b3bee4c5cd472bc0edef",
       "bytes": 16668
+    },
+    {
+      "path": "components/openspec/NOTICE.md",
+      "sha256": "5c4c37b2145550c60ba3c562b3f902841539705f37e395b648934cd5f22c6944",
+      "bytes": 1674
+    },
+    {
+      "path": "components/openspec/recipe.json",
+      "sha256": "29fad1a6e59859261bc42880f596eeac814da18c64a68456052fdc1672db87ee",
+      "bytes": 2177
+    },
+    {
+      "path": "components/openspec/skills/openspec-apply-change/SKILL.md",
+      "sha256": "40fc0655ae650213a130f376eed1475527d6c65cdc32973754449776a3227152",
+      "bytes": 11159
+    },
+    {
+      "path": "components/openspec/skills/openspec-archive-change/SKILL.md",
+      "sha256": "b080e65449e9895fb63964c811168943bf99cb131a378b6a9937ed519ae4d37f",
+      "bytes": 16570
+    },
+    {
+      "path": "components/openspec/skills/openspec-bulk-archive-change/SKILL.md",
+      "sha256": "cf2d41a55e4edc805ae9da48b418c8da3055e0ffd4824070a501b3dd840a5484",
+      "bytes": 22296
+    },
+    {
+      "path": "components/openspec/skills/openspec-continue-change/SKILL.md",
+      "sha256": "2c63e2828d784d0d4eaa94211421b329875fde290503b7823c93518735f60cec",
+      "bytes": 10694
+    },
+    {
+      "path": "components/openspec/skills/openspec-explore/SKILL.md",
+      "sha256": "e9fe2acf923d5f9376c5e198df235d7cc531913ba3d760faff867f9c60dbfebb",
+      "bytes": 23482
+    },
+    {
+      "path": "components/openspec/skills/openspec-ff-change/SKILL.md",
+      "sha256": "8532ec76a78ef0754de03525b0706ed470cecff397558a4496da3fcc28db603b",
+      "bytes": 11611
+    },
+    {
+      "path": "components/openspec/skills/openspec-new-change/SKILL.md",
+      "sha256": "5b28565b38e7cb46c4895c0b190ed1dd896da3853c38a96065b3101604f9ba24",
+      "bytes": 5870
+    },
+    {
+      "path": "components/openspec/skills/openspec-onboard/SKILL.md",
+      "sha256": "3418d949ea0c49de6110e6d9bbe714799517b0f159804647931fcc23dfedfcd1",
+      "bytes": 18406
+    },
+    {
+      "path": "components/openspec/skills/openspec-propose/SKILL.md",
+      "sha256": "e9f4baa05e9fdbc969fcbdb8b13b4795c19640cc920999cf06c30a1a1934bb5c",
+      "bytes": 16676
+    },
+    {
+      "path": "components/openspec/skills/openspec-sync-specs/SKILL.md",
+      "sha256": "474952afb40497c5cb756e5654ddc901619de6b3bd57aaa03fb11d2611a99da3",
+      "bytes": 15755
+    },
+    {
+      "path": "components/openspec/skills/openspec-update-change/SKILL.md",
+      "sha256": "9ca71b1ec6252e743028e561d73df32678e4486f80d2cb63887aa8648dc3a5cb",
+      "bytes": 11174
+    },
+    {
+      "path": "components/openspec/skills/openspec-verify-change/SKILL.md",
+      "sha256": "f06dfdd46d810b3db1e900044542fe89864578bd43b6705faff67e8f39bce97b",
+      "bytes": 20456
+    },
+    {
+      "path": "components/openspec/skills/README.md",
+      "sha256": "28ec3c79ef355a7603516503936ffb479b941f4633440f83a71a1366d2caee43",
+      "bytes": 623
+    },
+    {
+      "path": "components/openspec/SOURCE.json",
+      "sha256": "2fffb4e2acae7ed9f33c4f8c71a0eb9f19e69932e97d1c2ba0b3d7dda69e7085",
+      "bytes": 4419
     },
     {
       "path": "components/python-context/recipe.json",
@@ -4037,6 +4129,11 @@
       "bytes": 10547
     },
     {
+      "path": "metadata/7ad7e615723cf742d57cdea04c07fafc088a0535feeddba5376846bd6f8dfdb5.json",
+      "sha256": "7ad7e615723cf742d57cdea04c07fafc088a0535feeddba5376846bd6f8dfdb5",
+      "bytes": 2655
+    },
+    {
       "path": "metadata/7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa.json",
       "sha256": "7bc40794671c3fc0658b1e561cd459cf47879550666a7b9e4f635395234afffa",
       "bytes": 11670
@@ -4140,6 +4237,11 @@
       "path": "metadata/c16495fb5b0c2151612fa6f83ba8ad2de31e575ffc8c843d85009631fcf19ce7.json",
       "sha256": "c16495fb5b0c2151612fa6f83ba8ad2de31e575ffc8c843d85009631fcf19ce7",
       "bytes": 13827
+    },
+    {
+      "path": "metadata/c40bc6cc1e6410a6799afabd09babb858d47b79a3a53ff376f20e38833b77e5a.json",
+      "sha256": "c40bc6cc1e6410a6799afabd09babb858d47b79a3a53ff376f20e38833b77e5a",
+      "bytes": 13530
     },
     {
       "path": "metadata/c4c042517b6fbd3f36fd04246dbf00a6dd0125972c10edaf7496d80c2f88f902.json",
@@ -4300,11 +4402,16 @@
       "path": "recipes/skill-bmad-method.json",
       "sha256": "e2af44153df05206b93853ca6f6042e02087199748a70600791c9245105f534f",
       "bytes": 2021
+    },
+    {
+      "path": "recipes/skill-openspec.json",
+      "sha256": "76e4b1a049a64ba18b8e604750321a5ed95ef69b3d35af04c75337df8970c50a",
+      "bytes": 2240
     }
   ],
   "index": {
     "path": "bundled/index.json",
-    "sha256": "f3171f735436b78309d05af4aa1794776b0a6248635baf73e5f9ed7853672c38"
+    "sha256": "c40bc6cc1e6410a6799afabd09babb858d47b79a3a53ff376f20e38833b77e5a"
   },
   "sourceCommit": "e1255b4e522a0b38e471d5624cc63f5f13442649"
 }

@@ -32,12 +32,12 @@ async function fixture(t) {
     }
     return directory;
 }
-test('Git bundle separates 23 ready inline assets from 15 current source plans and carries no runtime binaries or model weights', async () => {
+test('Git bundle separates 24 ready inline assets from 15 current source plans and carries no runtime binaries or model weights', async () => {
     const bundle = await bundleReader.readBundledCatalog(),
         source = new sourceReader.AssetSourceClient(bundle.pin, { contract, fetch: forbidden, offline: true });
     const index = await source.index(),
         selected = await source.select(index.assets.filter((entry) => entry.current).map((entry) => entry.id));
-    assert.equal(selected.assets.length, 23);
+    assert.equal(selected.assets.length, 24);
     assert.ok(selected.assets.every((record) => ['agent', 'skill'].includes(record.asset.kind)));
     assert.equal(bundle.plans.length, 15);
     assert.equal(bundle.plans.filter((plan) => plan.kind === 'model').length, 2);
@@ -156,7 +156,7 @@ test('Default offline sync from a fresh Git source publishes only metadata/inlin
         report = await syncAssets({ root: directory, environment: { ASSET_SOURCE_MODE: 'offline' }, fetch: forbidden });
     assert.equal(report.downloaded, 0);
     assert.equal(report.files, 0);
-    assert.equal(report.assets.length, 23);
+    assert.equal(report.assets.length, 24);
     assert.equal(report.sourcePlans.length, 15);
     assert.ok(report.sourcePlans.every((plan) => plan.state !== 'ready'));
     assert.ok(report.sourceCommit.startsWith('sha256:'));
