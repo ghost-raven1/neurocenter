@@ -1,5 +1,5 @@
 # Сторис эпика epic-catalog-external. Порядок таблиц = порядок сборки.
-# next_id = 8
+# next_id = 9
 
 [[entry]]
 id = 1
@@ -77,3 +77,14 @@ covers = ["R12"]
 after = [2, 3, 4, 5, 6]
 hitl = false
 risk = "high"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Self-heal asset-source blobs на старте catalog-service (R9)"
+description = "Вариант 3 (решение пользователя 2026-11-11 после инцидента 503 на install.sh). Инцидент: после восстановления volume в /app/runtime-artifacts/.asset-source-blobs/ отсутствовали blob-архивы bridge v0.9.17 (darwin a22dcb33… / linux bc49be91…) — строки в asset_source_blobs были, файлов на диске нет → /internal/asset-sources/bridge и install.sh отдавали 503 до ручного docker cp. Механизм: при старте catalog-service (и/или по первому asset-sources-запросу) сверить asset_source_blobs с каталогом .asset-source-blobs/: для каждого зарегистрированного blob (sha256) — наличие файла + совпадение sha256; при отсутствии/несовпадении — восстановить из URL receipt'а (asset_source_receipts / bridge_source_settings) с sha256-проверкой; при retired/недоступном источнике — явное состояние (лог + health), не тихий сбой. Идемпотентно, безопасно для параллельного старта, bounded (intact-blobs не перекачивать)."
+verify = "Сценарий: удалить/повредить blob в .asset-source-blobs/ → рестарт catalog-service → blob восстановлен (sha256-верифицирован), /internal/asset-sources/bridge → 200, install.sh → 200; тест реконсилизации (отсутствует→восстановить, несовпадение→восстановить, intact→no-op); retired/недоступный источник = явное состояние, не тихий сбой; корневой сьют без деградации."
+covers = ["R9"]
+after = []
+hitl = false
+risk = "medium"

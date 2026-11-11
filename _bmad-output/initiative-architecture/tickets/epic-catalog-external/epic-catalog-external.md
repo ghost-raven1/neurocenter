@@ -46,6 +46,8 @@ risk: medium
 
 **Открытые решения** (зафиксированы в тикетах, решаются при исполнении): kind CLI-ассетов (новый kind `tool` vs обёртка skill+CLI); бандл vs отдельные скиллы для BMAD (32) и OpenSpec (12); uv/python-зависимость BMAD-setup как compatibility-метка; размер венда open-code-review (npm-tarball vs git-source).
 
+**Линия 3 — robustness поставки (R9): self-heal asset-source blobs (entry 12.8).** Решение пользователя 2026-11-11 (после инцидента 503 на `install.sh`): **вариант 3 — self-heal на старте** catalog-service. Инцидент: после восстановления volume в `/app/runtime-artifacts/.asset-source-blobs/` отсутствовали blob-архивы bridge v0.9.17 (darwin `a22dcb33…` / linux `bc49be91…`) — строки в `asset_source_blobs` были, файлов на диске нет → `/internal/asset-sources/bridge` и `install.sh` отдавали 503, пока blobs не восстановили вручную (`docker cp`). R9: при старте catalog-service (и/или по первому asset-sources-запросу) сверить таблицу `asset_source_blobs` с каталогом `.asset-source-blobs/`: для каждого зарегистрированного blob (sha256) проверить наличие файла и совпадение sha256; при отсутствии/несовпадении — восстановить из URL receipt'а (`asset_source_receipts` / `bridge_source_settings`) с sha256-проверкой; при retired/недоступном источнике — явное состояние (лог + health), не тихий сбой. Идемпотентно, безопасно для параллельного старта, bounded (не перекачивать intact-blobs).
+
 ## Outcome
 
 Для пользователя: в каталоге явная группа «Системные» (данные + UI) с пониманием, что нельзя отключать без потери работоспособности подсистем; пять внешних инструментов (see-image, ui-ux-pro-max, BMAD, open-code-review, OpenSpec) ставятся из каталога и работают из коробки на dev-стеке и устройстве.
