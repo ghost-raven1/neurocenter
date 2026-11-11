@@ -11,6 +11,7 @@ import { RAG_REVISION } from './recipes/opencode-rag.mjs';
 import { RAG_PLUGIN_REVISION } from './recipes/opencode-rag-plugin.mjs';
 import { SNIP_VERSION, SNIP_PLUGIN_VERSION } from './recipes/opencode-snip.mjs';
 import { CODEX_REVISION } from './recipes/codex-bridge.mjs';
+import { SEE_IMAGE_REVISION } from './recipes/see-image.mjs';
 
 /** Встроенный каталог задаёт только рецепты; упаковка совпадает с любым пользовательским расширением. */
 export function builtinRecipes() {
@@ -66,6 +67,15 @@ export function builtinRecipes() {
             tags: ['Терминал', 'GitHub Releases', 'Готовый комплект'],
             description:
                 'Сокращает вывод команд терминала через opencode-snip и встроенный snip CLI. Готовые бинарники из GitHub Releases, SHA-256 проверен; ручная установка CLI и изменение PATH не нужны. Сложные shell-команды остаются без изменений.',
+        },
+        {
+            key: 'opencode-see-image',
+            name: 'OpenCode See Image',
+            kind: 'plugin',
+            revision: SEE_IMAGE_REVISION,
+            tags: ['Изображения', 'Vision', 'OpenCode v1+v2', 'GitHub'],
+            description:
+                'Плагин alfaoz/opencode-see-image 1.5.0 из закреплённого GitHub commit: текстовая модель видит изображения и скриншоты — их описывает vision-модель (OpenCode v1 и v2). Vision-модель и ключи провайдера берутся из конфигурации opencode на устройстве; если в конфиге нет модели — плагин предлагает заполнить. Модель-ассеты не поставляются.',
         },
     ];
     return tools.map((tool) => ({ schemaVersion: 1, ...tool, source: { type: 'prepared', adapter: tool.key } }));

@@ -475,6 +475,20 @@
       "required": true,
       "subsystem": "agent-team",
       "note": "Агент-команда (FR-301, дефолтный состав): документация и объяснения. Нужен для стандартной работы."
+    },
+    {
+      "id": "plugin-opencode-see-image",
+      "kind": "plugin",
+      "name": "OpenCode See Image",
+      "metadataSha256": "7f0b52b252c00483a592da2948b3a6ef01dbf6f5b36e565f3b8bbf0b564e71d7",
+      "delivery": {
+        "type": "prepared",
+        "recipe": "catalog-source/recipes/plugin-opencode-see-image.json",
+        "recipeSha256": "d666f12fca78a7d8da082806d7b0f3c05ebd8f3255f67cbeab248350a10ee98e",
+        "adapter": "opencode-see-image"
+      },
+      "sourceRevision": "git-091becb8159b031423b01737c80c0891e11d803b",
+      "description": "Плагин alfaoz/opencode-see-image 1.5.0 из закреплённого GitHub commit: текстовая модель видит изображения и скриншоты — их описывает vision-модель (OpenCode v1 и v2). Vision-модель и ключи провайдера берутся из конфигурации opencode на устройстве; если в конфиге нет модели — плагин предлагает заполнить. Модель-ассеты не поставляются."
     }
   ],
   "history": {
@@ -712,6 +726,71 @@
       "bytes": 399
     },
     {
+      "path": "components/opencode-see-image/NOTICE.md",
+      "sha256": "0841721e5533871f926bfb78f22926c9023733af23f4a10bac22bdb64b3d7a8e",
+      "bytes": 371
+    },
+    {
+      "path": "components/opencode-see-image/SOURCE.json",
+      "sha256": "6400d6b82810865ce3af9d9b9ba98ba4f97a8bb31fb47b560a42ec3751dea3e4",
+      "bytes": 2285
+    },
+    {
+      "path": "components/opencode-see-image/source/auto.ts",
+      "sha256": "447ea48f10fdc815b8759116557b064c708646a8ed760f4854e6ec0476807ade",
+      "bytes": 10377
+    },
+    {
+      "path": "components/opencode-see-image/source/bun.lock",
+      "sha256": "afe617476cf234b9ab1db05a6557f61fd48d6ba31a81f2703a7ea613c2e38ca4",
+      "bytes": 7247
+    },
+    {
+      "path": "components/opencode-see-image/source/core.ts",
+      "sha256": "f20e05803b5669959e67b43c9719a1d714ee321e0ddb67752708ac72b19d1dbe",
+      "bytes": 15592
+    },
+    {
+      "path": "components/opencode-see-image/source/index.ts",
+      "sha256": "316e3c2a77d286faec96fc20b44302a78af1fad64cdca56c465013e343ab8e6d",
+      "bytes": 1681
+    },
+    {
+      "path": "components/opencode-see-image/source/lib.ts",
+      "sha256": "f5fc841042bf99f29e558c4f976887e30fcc6205dbd8a610e4ee49b73a079486",
+      "bytes": 15466
+    },
+    {
+      "path": "components/opencode-see-image/source/LICENSE",
+      "sha256": "1126322e2cc8d165adc4c792eeb195717de2bcc7b39be1ce77959d78e87ef685",
+      "bytes": 1056
+    },
+    {
+      "path": "components/opencode-see-image/source/package-lock.json",
+      "sha256": "ba90f386dbbbc0c324bcec8b888b6079ecfcdad4062be9fa4f1d52aed360903f",
+      "bytes": 15130
+    },
+    {
+      "path": "components/opencode-see-image/source/package.json",
+      "sha256": "f057517f8c09243a7bce8eb67470aecf3e935737a0e57d102b9b37f5b411697c",
+      "bytes": 1028
+    },
+    {
+      "path": "components/opencode-see-image/source/README.md",
+      "sha256": "8cfb89c7cef81a85a2e2eed9dcd1f259dc0b5312fb815d61a8c13b7d956e783e",
+      "bytes": 17201
+    },
+    {
+      "path": "components/opencode-see-image/source/v1.ts",
+      "sha256": "e9dae9f15224aa88e0f82f96408e97e2470c618de537f1847fb1c264812c85bc",
+      "bytes": 13565
+    },
+    {
+      "path": "components/opencode-see-image/source/v2.ts",
+      "sha256": "f0a682207e9c7ec42f3e5c7d01dfab5cc004fc64bd91b3bee4c5cd472bc0edef",
+      "bytes": 16668
+    },
+    {
       "path": "components/python-context/recipe.json",
       "sha256": "fcb3213a4d5ae1089678f03fb7c68ee7e3e4a33a97a06e536d457691300a75ae",
       "bytes": 597
@@ -942,6 +1021,11 @@
       "bytes": 1002
     },
     {
+      "path": "metadata/7f0b52b252c00483a592da2948b3a6ef01dbf6f5b36e565f3b8bbf0b564e71d7.json",
+      "sha256": "7f0b52b252c00483a592da2948b3a6ef01dbf6f5b36e565f3b8bbf0b564e71d7",
+      "bytes": 2040
+    },
+    {
       "path": "metadata/7f6750251571082e6c498f4434f8cb80af7eb270a16f60bfefe65a2f57c3d283.json",
       "sha256": "7f6750251571082e6c498f4434f8cb80af7eb270a16f60bfefe65a2f57c3d283",
       "bytes": 5413
@@ -1133,8 +1217,8 @@
     },
     {
       "path": "producer.json",
-      "sha256": "5b3ab0764908ef05ff69bf360a91f6095f4318901a2be67b6e96aaa7462a4b86",
-      "bytes": 32829
+      "sha256": "81e6c875ab49907e5e66bd6f391b8ea42e4fea3e61985ad339fb1c6674678fd6",
+      "bytes": 35544
     },
     {
       "path": "recipes/mcp-filesystem.json",
@@ -1165,6 +1249,11 @@
       "path": "recipes/plugin-opencode-rag-plugin.json",
       "sha256": "3f2e548875576355a89d9d89976f14fad51fd75eb6d5f7b68bf83b9e552ae8b9",
       "bytes": 819
+    },
+    {
+      "path": "recipes/plugin-opencode-see-image.json",
+      "sha256": "d666f12fca78a7d8da082806d7b0f3c05ebd8f3255f67cbeab248350a10ee98e",
+      "bytes": 919
     },
     {
       "path": "recipes/plugin-opencode-snip.json",

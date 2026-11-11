@@ -1,0 +1,1 @@
+Pinned source from alfaoz/opencode-see-image at 091becb8159b031423b01737c80c0891e11d803b (v1.5.0), license MIT (source/LICENSE). The application source files are unchanged from the pinned upstream commit; the npm lockfile is application-generated from the pinned package.json against the official npm registry. selftest.ts and *.test.ts are outside the vendored closure.

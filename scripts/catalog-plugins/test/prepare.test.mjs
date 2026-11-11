@@ -24,11 +24,13 @@ async function fixture() {
 
 test('Все встроенные инструменты являются рецептами единого builder с новой ревизией упаковки', () => {
     const recipes = builtinRecipes();
-    assert.equal(recipes.length, 9);
-    assert.equal(new Set(recipes.map((recipe) => recipe.key)).size, 9);
+    assert.equal(recipes.length, 10);
+    assert.equal(new Set(recipes.map((recipe) => recipe.key)).size, 10);
     for (const recipe of recipes) {
         assert.equal(validateRecipe(recipe).source.type, 'prepared');
-        assert.match(recipe.revision, /pack\.\d+$/);
+        // see-image закреплен закоммитом upstream; остальные — ревизиями упаковки.
+        if (recipe.key === 'opencode-see-image') assert.match(recipe.revision, /^git-[a-f0-9]{40}$/);
+        else assert.match(recipe.revision, /pack\.\d+$/);
     }
     assert.equal(validateRecipe(recipes.find((recipe) => recipe.key === 'opencode-rag')).targets.length, 7);
     assert.equal(recipes.find((recipe) => recipe.key === 'project-context').revision, '1.0.1-pack.1');
@@ -43,7 +45,7 @@ test('Все встроенные инструменты являются рец
     assert.throws(() => validateRecipe({ ...ragPlugin, kind: 'mcp' }), /подключается как plugin/);
 });
 
-test('Общий dry-run проверяет девять рецептов и не создаёт output или сетевую сессию', async () => {
+test('Общий dry-run проверяет десять рецептов и не создаёт output или сетевую сессию', async () => {
     const f = await fixture();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = () => {
@@ -52,7 +54,7 @@ test('Общий dry-run проверяет девять рецептов и н�
     try {
         const result = await prepareCatalog({ output: f.output, dryRun: true });
         assert.equal(result.dryRun, true);
-        assert.equal(result.plans.length, 9);
+        assert.equal(result.plans.length, 10);
         assert.ok(result.plans.every((tool) => tool.dryRun));
         await assert.rejects(fs.access(f.output), { code: 'ENOENT' });
     } finally {

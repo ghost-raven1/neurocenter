@@ -1,0 +1,40 @@
+{
+  "card": {
+    "compatibility": "Плагин OpenCode v1 и v2. Vision-модель и ключи провайдеров берутся из конфигурации opencode на устройстве (opencode.json + auth.json) — решение 2026-11-10 (в); если в конфиге нет нужной модели — плагин предлагает заполнить (г). Модель-ассеты каталога не поставляются и не требуются.",
+    "config": {},
+    "description": "Плагин alfaoz/opencode-see-image 1.5.0 из закреплённого GitHub commit: текстовая модель видит изображения и скриншоты — их описывает vision-модель (OpenCode v1 и v2). Vision-модель и ключи провайдера берутся из конфигурации opencode на устройстве; если в конфиге нет модели — плагин предлагает заполнить. Модель-ассеты не поставляются.",
+    "files": [],
+    "kind": "plugin",
+    "name": "OpenCode See Image",
+    "origin": "https://github.com/alfaoz/opencode-see-image",
+    "revision": "git-091becb8159b031423b01737c80c0891e11d803b",
+    "tags": [
+      "Изображения",
+      "Vision",
+      "OpenCode v1+v2",
+      "GitHub"
+    ],
+    "version": 1
+  },
+  "compatibility": {
+    "packageFormat": 5
+  },
+  "delivery": {
+    "type": "prepared",
+    "recipe": "catalog-source/recipes/plugin-opencode-see-image.json",
+    "recipeSha256": "d666f12fca78a7d8da082806d7b0f3c05ebd8f3255f67cbeab248350a10ee98e",
+    "adapter": "opencode-see-image"
+  },
+  "id": "plugin-opencode-see-image",
+  "kind": "plugin",
+  "license": {
+    "spdx": "MIT"
+  },
+  "schemaVersion": 1,
+  "source": {
+    "commit": "091becb8159b031423b01737c80c0891e11d803b",
+    "repository": "https://github.com/alfaoz/opencode-see-image",
+    "type": "git"
+  },
+  "version": "git-091becb8159b031423b01737c80c0891e11d803b"
+}

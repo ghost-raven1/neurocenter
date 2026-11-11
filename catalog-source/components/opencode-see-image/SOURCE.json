@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "repository": "alfaoz/opencode-see-image",
+  "commit": "091becb8159b031423b01737c80c0891e11d803b",
+  "license": "MIT",
+  "scope": "OpenCode plugin source closure: dual v1/v2 vision bridge; selftest.ts and *.test.ts excluded",
+  "files": [
+    {
+      "path": "source/LICENSE",
+      "sha256": "1126322e2cc8d165adc4c792eeb195717de2bcc7b39be1ce77959d78e87ef685",
+      "bytes": 1056,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/README.md",
+      "sha256": "8cfb89c7cef81a85a2e2eed9dcd1f259dc0b5312fb815d61a8c13b7d956e783e",
+      "bytes": 17201,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/auto.ts",
+      "sha256": "447ea48f10fdc815b8759116557b064c708646a8ed760f4854e6ec0476807ade",
+      "bytes": 10377,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/bun.lock",
+      "sha256": "afe617476cf234b9ab1db05a6557f61fd48d6ba31a81f2703a7ea613c2e38ca4",
+      "bytes": 7247,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/core.ts",
+      "sha256": "f20e05803b5669959e67b43c9719a1d714ee321e0ddb67752708ac72b19d1dbe",
+      "bytes": 15592,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/index.ts",
+      "sha256": "316e3c2a77d286faec96fc20b44302a78af1fad64cdca56c465013e343ab8e6d",
+      "bytes": 1681,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/lib.ts",
+      "sha256": "f5fc841042bf99f29e558c4f976887e30fcc6205dbd8a610e4ee49b73a079486",
+      "bytes": 15466,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/package-lock.json",
+      "sha256": "ba90f386dbbbc0c324bcec8b888b6079ecfcdad4062be9fa4f1d52aed360903f",
+      "bytes": 15130,
+      "origin": "application-generated npm lock from pinned package.json"
+    },
+    {
+      "path": "source/package.json",
+      "sha256": "f057517f8c09243a7bce8eb67470aecf3e935737a0e57d102b9b37f5b411697c",
+      "bytes": 1028,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/v1.ts",
+      "sha256": "e9dae9f15224aa88e0f82f96408e97e2470c618de537f1847fb1c264812c85bc",
+      "bytes": 13565,
+      "origin": "upstream"
+    },
+    {
+      "path": "source/v2.ts",
+      "sha256": "f0a682207e9c7ec42f3e5c7d01dfab5cc004fc64bd91b3bee4c5cd472bc0edef",
+      "bytes": 16668,
+      "origin": "upstream"
+    }
+  ]
+}
