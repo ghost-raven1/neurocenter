@@ -181,3 +181,9 @@ it('missing capability cannot authorize OPEN', async () => {
     expect(button('Открыть приватное окно').disabled).toBe(true);
     expect(io.open).not.toHaveBeenCalled();
 });
+it('renders for a non-OpenAI provider URL and shows the actual recipient address', async () => {
+    io.read.mockResolvedValue({ ...view, providerUrl: 'https://gateway.example.test/v1' });
+    await render();
+    await click('Использовать ключ OpenCode');
+    expect(document.body.textContent).toContain('API провайдера: https://gateway.example.test/v1');
+});

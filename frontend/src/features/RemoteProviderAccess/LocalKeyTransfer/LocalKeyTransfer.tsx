@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, Button, Modal, Select, Space, Typography } from 'antd';
 import { useBridge } from '../../McpBridge/hooks/useBridge';
-import { OPENCODE_PERSONAL_KEY_PROVIDER_URL, OPENCODE_PERSONAL_KEY_VERSION } from './contract';
+import { OPENCODE_PERSONAL_KEY_VERSION } from './contract';
 import type { ILocalKeyTransferProps } from './interfaces';
 import { useLocalKeyTransfer } from './hooks/useLocalKeyTransfer';
 
@@ -24,13 +24,14 @@ function TransferDialog(input: ILocalKeyTransferProps & { onClose: () => void })
         <Modal open title="Личный ключ OpenCode" footer={null} onCancel={input.onClose}>
             <Space direction="vertical" size={12}>
                 <Typography.Paragraph>
-                    Поддерживается только обычная команда OpenCode {OPENCODE_PERSONAL_KEY_VERSION} и API-ключ OpenAI.
+                    Поддерживается только обычная команда OpenCode {OPENCODE_PERSONAL_KEY_VERSION} и сохранённый API-ключ
+                    провайдера (API-авторизация).
                     Версия и источник проверяются на компьютере перед открытием и передачей. OAuth и ключи OpenCode 2 не
                     переносятся этим действием.
                 </Typography.Paragraph>
                 <Typography.Text>Получатель личного доступа: {value.ownerEmail}</Typography.Text>
                 <Typography.Text>Модель: {input.view.modelId}</Typography.Text>
-                <Typography.Text>API провайдера: {OPENCODE_PERSONAL_KEY_PROVIDER_URL}</Typography.Text>
+                <Typography.Text>API провайдера: {input.view.providerUrl}</Typography.Text>
                 <Typography.Paragraph>
                     Точный сервер Нейроцентра, модель и получатель будут показаны в приватном окне на компьютере.
                     Передача произойдёт только после отдельного подтверждения там. Это окно сайта ключ не читает.

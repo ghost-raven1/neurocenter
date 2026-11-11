@@ -9,7 +9,7 @@ import { useFeatureAvailability } from '../../../FeatureFlags/FeatureAvailabilit
 import { browserCliJournalLock } from '../../../ComputerSetup/journalLock';
 import type { useBridge } from '../../../McpBridge/hooks/useBridge';
 import { localKeyTransferApi } from '../api';
-import { OPENCODE_PERSONAL_KEY_CAPABILITY, OPENCODE_PERSONAL_KEY_PROVIDER_URL } from '../contract';
+import { OPENCODE_PERSONAL_KEY_CAPABILITY } from '../contract';
 import type { ILocalKeyTransferProps, ITransferState } from '../interfaces';
 import { createLocalKeyTransferController } from './controller';
 
@@ -55,8 +55,7 @@ export function useLocalKeyTransfer(bridge: ReturnType<typeof useBridge>, input:
         !input.busy &&
         !input.manualPending &&
         input.view.canStoreKey &&
-        input.view.authMode !== 'none' &&
-        input.view.providerUrl === OPENCODE_PERSONAL_KEY_PROVIDER_URL;
+        input.view.authMode !== 'none';
     const latest = useRef({ input, canOpen });
     latest.current = { input, canOpen };
     const lock = useMemo(browserCliJournalLock, []);
