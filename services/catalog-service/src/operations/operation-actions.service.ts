@@ -127,7 +127,12 @@ export class OperationActionsService implements OnModuleInit {
                     : !exists || level < 1
                       ? no('Доступ к проекту отозван.')
                       : !canCancelBridgeJob(job.kind, job.state)
-                        ? no('Исполнитель уже завершён или не поддерживает отмену после начала записи файлов.')
+                        ? ['running', 'reconciling'].includes(job.state)
+                          // Для работающего задания «исполнитель уже завершён» — неверная причина.
+                          ? no(
+                                'Отмена после начала выполнения недоступна для этого вида задания. Результат сверяется с устройством; при ошибке прежнее локальное состояние сохраняется.',
+                            )
+                          : no('Задание уже завершено; отмена недоступна.')
                         : { supported: true };
             }
         } else if (operation.resourceType === 'rag-reindex' && uuid(operation.resourceId) && operation.projectId) {

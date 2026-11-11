@@ -78,7 +78,10 @@ const OperationActionButtons: FC<IOperationActionButtonsProps> = ({ operation, u
                     </Button>
                 </span>
             </Tooltip>
-            {operation.actions && !operation.actions.retry.supported && !operation.actions.cancel.supported && (
+            {/* Причина блокировки в списке — только в tooltip/aria-label кнопки; как видимый
+                текст под каждой строкой она читается как статус операции. В подробностях
+                остаётся видимым (там есть место и контекст). */}
+            {!onDetails && operation.actions && !operation.actions.retry.supported && !operation.actions.cancel.supported && (
                 <Typography.Text type="secondary">{operation.actions.retry.reason}</Typography.Text>
             )}
         </Space>

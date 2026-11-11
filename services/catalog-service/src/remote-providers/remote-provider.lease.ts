@@ -100,7 +100,7 @@ export async function remoteProviderLease(
                 code: 'PERSONAL_PROVIDER_KEY_REQUIRED',
                 modelId: model.id,
                 providerId,
-                message: 'Настройте «Мой доступ» к провайдеру этой модели: нужен ваш API-ключ.',
+                message: 'Настройте «Мой доступ»: ключ вводится один раз на провайдера — после проверки работают все модели этого провайдера.',
             });
         const apiKey = credential?.credential
             ? openUserCredential(
