@@ -234,7 +234,10 @@ test('All consumer locks and Docker paths retain the local contract independentl
         const consumer = path.join(root, directory),
             pkg = await json(path.join(consumer, 'package.json')),
             lock = await json(path.join(consumer, 'package-lock.json'));
-        const kind = directory === 'services/api-gateway' ? 'devDependencies' : 'dependencies',
+        // aed3da2d moved the api-gateway contract from devDependencies to dependencies
+        // (authenticated Swagger docs consume it at build time); read the section from
+        // the actual manifest instead of assuming one.
+        const kind = pkg.dependencies?.['@neurocenter/asset-contract'] ? 'dependencies' : 'devDependencies',
             reference = pkg[kind]['@neurocenter/asset-contract'];
         assert.match(reference, /^file:/);
         assert.equal(path.resolve(consumer, reference.slice(5)), vendor);
@@ -242,12 +245,20 @@ test('All consumer locks and Docker paths retain the local contract independentl
         assert.equal(lock.packages['node_modules/@neurocenter/asset-contract'].link, true);
         assert.ok(!JSON.stringify(lock).includes('codeload.github.com/ghost-raven1/neurocenter-assets'));
         if (directory) {
+            // d658006f: repo-лейаут — сервис собирается в /repo/services/<svc>, и
+            // file:../../vendor/asset-contract резолвится в /repo/vendor/asset-contract
+            // (плоский /app-лейаут ломал lockfile-ссылки, EMISSINGTARGET — см. Dockerfile).
             const docker = await fs.readFile(path.join(consumer, 'Dockerfile'), 'utf8');
-            const copy = docker.match(/^COPY vendor\/asset-contract\/? (\/vendor\/asset-contract\/?)$/m);
+            const copy = docker.match(/^COPY vendor\/asset-contract\/? (\/repo\/vendor\/asset-contract\/?)$/m);
             assert.ok(copy, 'The local dependency must be copied before npm ci.');
-            assert.ok(copy.index < docker.indexOf('npm ci'));
-            assert.equal(path.posix.resolve('/app', reference.slice(5)), copy[1].replace(/\/$/, ''));
-            assert.ok(!docker.slice(copy.index).includes('rm -rf /vendor'));
+            // The real `npm ci` invocation is a RUN line; 'npm ci' also appears in layout
+            // comments (d658006f) and must not be treated as the install step.
+            const npmCi = docker.search(/^RUN .*npm ci/m);
+            assert.ok(npmCi !== -1);
+            assert.ok(copy.index < npmCi);
+            const appDir = '/repo/services/' + path.basename(directory);
+            assert.equal(path.posix.resolve(appDir, reference.slice(5)), copy[1].replace(/\/$/, ''));
+            assert.ok(!docker.slice(copy.index).includes('rm -rf /repo/vendor'));
             if (directory === 'services/catalog-service')
                 assert.ok(docker.includes('COPY vendor/asset-contract/ /tools/vendor/asset-contract/'));
         }

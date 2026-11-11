@@ -157,6 +157,11 @@ test('Retained sources rebuild and execute the publication validator in isolatio
         service = path.join(root, 'services/catalog-service'),
         dependencies = path.join(repository, 'services/catalog-service/node_modules');
     await fs.symlink(dependencies, path.join(service, 'node_modules'), 'dir');
+    // Entry 2.2: limits.cjs re-exports the ceiling constants from the pinned contract
+    // (require('@neurocenter/asset-contract')). In the real checkout the root package.json's
+    // file:vendor/asset-contract link resolves through the repository root node_modules,
+    // which the retained-source fixture must mirror for the validator to execute.
+    await fs.symlink(path.join(repository, 'node_modules'), path.join(root, 'node_modules'), 'dir');
     const compiler = path.join(dependencies, 'typescript/bin/tsc'),
         built = spawnSync(process.execPath, [compiler, '-p', path.join(service, 'tsconfig.build.json')], {
             cwd: root,
