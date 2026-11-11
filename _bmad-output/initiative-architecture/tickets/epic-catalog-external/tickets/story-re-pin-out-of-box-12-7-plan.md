@@ -171,3 +171,18 @@ skill-supply 20/20 · recipe-plan 6/6.
   блокируется конфигом устройства; ocr — delegation-режим, бинарник из
   венд-tgz). Корневой сьют 150/152 (2 pre-existing: `d658006f`, `3629dc7e`).
   Зафиксирован рецидив blob-инцидента на dev-стэке (→ 12.8). Status: done.
+- 2026-11-11 (regression-fix, `07a9df9e`): найдена и закрыта причина баннера
+  «Текущие исходники каталога не подтверждены» на dev-стэке — двойной сбой
+  `readBundledCatalog()` в контейнере: (1) `d658006f` (/repo-лейаут в
+  Dockerfile) не обновил fallback `verifyBundledProducer` (ищет `<root>/tools`,
+  в /repo-лейауте closure в верхнеуровневом `/tools`); (2) образ 11/10 несёт
+  catalog-source до Epic 12 (109/755 файлов). Фикс: candidate-цикл
+  producerRoot (корень приложения / `<root>/tools` / `<parent>/tools`) +
+  новый тест repo-layout + re-pin (195 файлов, revision 142af97a…).
+  Root-сьют 11 файлов: 153/153 (152 + новый тест). Hot-patch dev-контейнера
+  выполнен (readBundledCatalog OK, сервис healthy); пересборка образов —
+  при следующей деплойке (обязательна: hot-patch живёт в writable-слое).
+  Смежный: «Не удалось загрузить отметки» (CatalogFeedback) — endpoint
+  /api/catalog-reactions чистый DB, к бандлу отношения не имеет; проверить
+  после обновления страницы (возможна транзиентная ошибка на фоне
+  blob-инцидента/рестартов).
