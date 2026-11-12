@@ -52,6 +52,7 @@ const expectedFiles = [
     'scripts/test/route-policy-completeness.test.mjs',
     'scripts/test/route-shadowing-diagnostic.test.mjs',
     'scripts/test/run-manifest.test.mjs',
+    'scripts/test/secret-rotation-runbook.test.mjs',
     'scripts/test/shared-declaration-drift.test.mjs',
     'scripts/test/workspace-process-failure.test.mjs',
     'scripts/agent-kit/test/role-contracts.test.mjs',
