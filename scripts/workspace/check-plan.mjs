@@ -115,7 +115,7 @@ function toolingTestFiles(root, { readFile = (name) => fs.readFileSync(path.join
     if (
         !Array.isArray(files) ||
         !files.length ||
-        files.length > 69 || // 64→65 (entry 2.8: +route-policy-completeness), 65→66 (entry 2.11: +contract-version-handshake), 66→68 (entry 2.10: +error-body-policy, +route-shadowing-diagnostic), 68→69 (entry 4.1: +dr-images); рост списка — только осознанно
+        files.length > 70 || // 64→65 (entry 2.8: +route-policy-completeness), 65→66 (entry 2.11: +contract-version-handshake), 66→68 (entry 2.10: +error-body-policy, +route-shadowing-diagnostic), 68→69 (entry 4.1: +dr-images), 69→70 (entry 4.2: +dr-evidence); рост списка — только осознанно
         new Set(files).size !== files.length ||
         files.some(
             (file) =>

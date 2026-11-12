@@ -78,6 +78,7 @@ const expectedFiles = [
     'scripts/test/dev-watch-root.test.mjs',
     'scripts/test/dev-watch-daemon.test.mjs',
     'scripts/test/docker-build-progress.test.mjs',
+    'scripts/test/dr-evidence.test.mjs',
     'scripts/test/dr-images.test.mjs',
     'scripts/test/error-body-policy.test.mjs',
     'scripts/test/tls-global-disable.test.mjs',
