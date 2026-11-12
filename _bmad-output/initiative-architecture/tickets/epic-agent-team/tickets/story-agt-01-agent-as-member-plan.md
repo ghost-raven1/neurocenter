@@ -3,7 +3,7 @@ title: 'FR-301: Агент — участник проекта (роль, кон
 type: 'feature'
 ticket: '1'
 created: '2026-11-09'
-status: ready-for-dev
+status: in-progress
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -98,6 +98,21 @@ context:
 - **Контекст = approved (FR-502):** learning context() отдаёт только approved; это якорь «контекст = одобренные знания» из FR-301.
 - **Семантический поиск (FR-311)** — потребляет epic-project entry 13/14; здесь только «инструмент доступен агенту», не реализация корпусов.
 
+## Progress (2026-11-12, in-progress)
+
+E2E `scripts/test/agent-as-member-e2e.test.mjs` (живой dev-стэк, docker-compose.yml): **4 pass / 0 fail / 1 skipped**.
+
+Доказано:
+- Server-агент: карточка (`definition` = description/prompt/mode/permission-объект), назначение в проект (CAS по ревизии `project_agent_sets`, `version`+`manifest` карточки), видимость в `assignments` списка `GET /api/agents?projectId=`.
+- Публичная комната: `visibility: 'PUBLIC'` + `memberEmails: []` (list-маршрута нет — доступ через `GET /team-chat/rooms/:roomId`).
+- FR-502: полный конвейер обучения (experience → hypothesis → check `human_review/passed` → candidate → approve → activate) с CAS-ревизией (старт 0); во второй конвейер без одобрения; в `/context` только approved (`e2e-approved`), proposed (`e2e-pending`) — нет.
+- Инструменты: `GET /api/agent-tools/capabilities?projectId=` — 200.
+- Регресс: корневой 72-файловый сьют — 1073 pass / 0 fail / 3 skipped, exit 0.
+
+НЕ доказано (честно, без done):
+- **Device-агент через mcp-host-билет** — требует bridge-worker runtime устройства: `bind-project` это workspace-job (`workspaceKinds`, devices/workspace-queue.ts), который обрабатывает и завершает worker-процесс устройства; pairing чистый HTTP, но binding без worker не завершится. Форж completion нарушает недоверенную границу — недопустимо. Live-итерация (потребление эпика 2), тест в e2e — skipped-сегмент.
+- **Fail-closed на инструмент вне каталога** — подтверждена доступность capabilities; точный формат отказа на dispatch уточняется по живому стеку (live-итерация).
+
 ## Verification
 
 ```bash
@@ -106,6 +121,8 @@ cd services/catalog-service && npm test -- agents project-chat project-chat-infe
 node --test scripts/test/agent-as-member-e2e.test.mjs 2>/dev/null || true
 ```
 Ожидаемо: e2e (2+ агента server+device в pубличном чате, роль/контекст/инструменты/доступ), контекст=approved, инструмент вне каталога → отказ, device через мост; корневой сьют без деградации.
+
+**Gap (2026-11-12):** `npm test -- agents project-chat project-chat-inference agent-tools` — exit 1 «No test files found»: в baseline нет ни одного unit-файла этих доменов (включено в паттерны vitest, файлов нет). Регресс покрывается корневым 72-файловым сьютом (см. Progress). Дописывать unit-файлы в этом тикете не планируется — это отдельная работа по покрытию.
 
 ## Open Questions
 
