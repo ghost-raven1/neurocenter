@@ -3,7 +3,7 @@ title: 'DR-бандл: образы релиза в комплекте (AD-OP-2,
 type: 'feature'
 ticket: '1'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '3433b1d147163a82fc023a34f909457830c7f6aa'
 route: 'full'
 route_source: 'auto'

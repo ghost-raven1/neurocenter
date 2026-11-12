@@ -12,9 +12,7 @@ review: ''
 review_source: ''
 lenses_ran: []
 review_loop_iteration: 0
-context:
-    - '_bmad-output/initiative-architecture/tickets/epic-catalog-external/epic-catalog-external.md'
-    - '_bmad-output/initiative-architecture/tickets/epic-catalog-external/tickets/tickets.toml'
+context: ['_bmad-output/initiative-architecture/tickets/epic-catalog-external/epic-catalog-external.md', '_bmad-output/initiative-architecture/tickets/epic-catalog-external/tickets/tickets.toml']
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
