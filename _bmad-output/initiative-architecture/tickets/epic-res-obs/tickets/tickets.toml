@@ -2,7 +2,7 @@
 # title: Ресурсы и наблюдаемость (P0-RES)
 # covers: R1, R7, R9, R10, R11
 # baseline_revision: 4097fdc35bd78dbebf44bec1b026b46663a005e2
-# next_id = 16
+# next_id = 17
 
 [[entry]]
 id = 1
@@ -168,3 +168,14 @@ covers = ["R1", "R7", "R9", "R10", "R11"]
 after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 hitl = true
 risk = "high"
+
+[[entry]]
+id = 16
+type = "story"
+title = "Remote-model inference: upstream error visibility (worker-логи + error-коды в completion)"
+description = "Рут-причина 5+ hosting-RAG embedding-сбоев (qwen3-embedding-4b): endpoint отклоняет явный `dimensions` (400 'does not support matryoshka representation') при request_dimensions=true, но сбой НЕДИАГНОСТИРУЕМ — тело/статус upstream-отказа нигде не логируется и не доходит до completion. Отчёт с доказательствами: docs/reports/rag-embedding-400-root-cause-2026-11-12.md. (1) Сервер (remote-model-client.ts:338-351): на non-OK ЧИТАТЬ тело ответа (кап ~2 КиБ) и писать warn-лог: model id + route + HTTP status + тело (редектированный — без key); классификация: 4xx (кроме 401/403/429) = новый kind 'rejected' (не 'unavailable'), RemoteModelError несёт status:number. (2) Сообщение к устройству (device-embedding.service.ts / RemoteConnectionService.infer): 503 с upstream-КОДОМ, фиксированная safe-формулировка (AD-19: без чужого тела) — 'Удалённый API отклонил запрос (HTTP 400). Проверьте настройки подключения модели.' (3) Device-сторона (relay.ts:69-74 + worker/completions): server status + message пишутся в worker-лог; результат задания (completion) получает поле с HTTP-кодом (без тела) — оператор видит код, а не только generic-текст. (4) Регрессионные тесты: fake-upstream 400 c телом → warn-лог содержит status+тело+model id; completion несёт код; 401/403/429 сохраняют прежнюю классификацию. (5) Документация: runbook/заметка к модели — matryoshka-сервинги (qwen3-embedding-4b) требуют request_dimensions=false; включение = гарантированный 400. Операционный факт: dev-конфиг уже request_dimensions=false (rev 5, verified)."
+verify = "Fake-upstream 400 c телом: warn-лог catalog-service содержит model id + route + 400 + тело (без key); RemoteModelError.kind='rejected', status=400; 503 к устройству несёт '(HTTP 400)'; completion-результат несёт код; worker-лог device содержит status+message; 401/403/429 — прежние классификации (тесты); root-сьют + vitest без деградации."
+covers = ["R10", "R7"]
+after = []
+hitl = false
+risk = "medium"
