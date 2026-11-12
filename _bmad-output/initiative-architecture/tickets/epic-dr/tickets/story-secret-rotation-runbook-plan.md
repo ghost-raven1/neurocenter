@@ -3,7 +3,7 @@ title: 'Rotation-секретов + edge-сертификата: runbook на к
 type: 'feature'
 ticket: '7'
 created: '2026-11-09'
-status: in-progress
+status: done
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
