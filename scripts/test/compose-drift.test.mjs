@@ -475,7 +475,11 @@ test('productionEnvConstraints с недопустимым именем, зна�
 test('AD-4: api-gateway hardening — pids_limit + cap_drop в compose и модели, non-root USER в Dockerfile', async (t) => {
     const f = await fixture(t);
     const { services, drift } = await f.report();
-    assert.equal(services['api-gateway'].pidsLimit, 128, 'api-gateway обязан держать pids_limit (форк-бомба child-MCP)');
+    assert.equal(
+        services['api-gateway'].pidsLimit,
+        128,
+        'api-gateway обязан держать pids_limit (форк-бомба child-MCP)',
+    );
     assert.ok(
         Number.isSafeInteger(services['api-gateway'].pidsLimit) && services['api-gateway'].pidsLimit >= 1,
         'pids_limit обязан быть целым положительным',
@@ -492,9 +496,19 @@ test('AD-4: api-gateway hardening — pids_limit + cap_drop в compose и мод
     assert.ok(userLines.length >= 1, 'Dockerfile api-gateway обязан завершаться USER (non-root)');
     const active = userLines[userLines.length - 1];
     assert.ok(!['root', '0'].includes(active), 'Dockerfile api-gateway не обязан заканчиваться USER root');
-    assert.match(dockerfile, /useradd[^|]*--uid\s+1000\b/, 'non-root пользователь обязан создаваться с явным uid 1000');
+    // AD-4 uid 1000 — либо явный useradd, либо встроенный node-пользователь официального
+    // node-образа (uid/gid 1000, зафиксирован для node:*-bookworm; groupadd --gid 1000 на
+    // этом базовом образе падает «GID already exists» — см. комментарий в Dockerfile).
+    assert.ok(
+        /useradd[^|]*--uid\s+1000\b/.test(dockerfile) || active === 'node',
+        'non-root пользователь обязан работать под uid 1000: явный useradd --uid 1000 либо встроенный node-пользователь node-образа',
+    );
     assert.match(dockerfile, /chown[^|]*\/app/, 'каталог /app обязан передаваться в owner non-root пользователя');
-    assert.match(dockerfile, /mkdir -p \/data\/gateway\/mcp-host/, 'корень кэша комплектов обязан быть создан для volume');
+    assert.match(
+        dockerfile,
+        /mkdir -p \/data\/gateway\/mcp-host/,
+        'корень кэша комплектов обязан быть создан для volume',
+    );
     assert.match(dockerfile, /chown[^|]*\/data\/gateway/, 'volume-каталог кэша обязан быть в owner non-root');
 
     // Drift ловится: расхождение pidsLimit/capDrop между моделью и compose — нарушение.

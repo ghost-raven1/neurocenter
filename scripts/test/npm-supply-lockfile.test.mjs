@@ -31,7 +31,9 @@ function parsePair(resolved) {
     const segments = url.pathname.slice(1, lastDash).split('/');
     const base = segments[segments.length - 1];
     const scope =
-        segments.length >= 2 && segments[segments.length - 2].startsWith('@') ? segments[segments.length - 2] + '/' : '';
+        segments.length >= 2 && segments[segments.length - 2].startsWith('@')
+            ? segments[segments.length - 2] + '/'
+            : '';
     const name = scope + base;
     const tarball = url.pathname.slice(lastDash + 3);
     if (!name || !tarball.startsWith(base + '-') || !tarball.endsWith('.tgz')) return null;
@@ -104,10 +106,18 @@ test('Every lockfile resolved is exactly one of the allowed supply forms (truste
                     context + ': пара ' + key + ' отсутствует в classification.json',
                 );
                 if (registrySet.has(key)) {
-                    assert.equal(resolved, trustedUrl(pair.name, pair.version), context + ': registry-пара не на trusted URL');
+                    assert.equal(
+                        resolved,
+                        trustedUrl(pair.name, pair.version),
+                        context + ': registry-пара не на trusted URL',
+                    );
                     trusted++;
                 } else if (platformSet.has(key)) {
-                    assert.equal(resolved, npmjsUrl(pair.name, pair.version), context + ': platform-пара не на исходном npmjs URL');
+                    assert.equal(
+                        resolved,
+                        npmjsUrl(pair.name, pair.version),
+                        context + ': platform-пара не на исходном npmjs URL',
+                    );
                     platform++;
                 } else {
                     throw new Error(context + ': supply-пара ' + key + ' должна быть file:-ссылкой, а не ' + resolved);
@@ -128,10 +138,17 @@ test('Every lockfile resolved is exactly one of the allowed supply forms (truste
                         context + ': lockfile integrity не в manifest: ' + entry.integrity,
                     );
                 if (entryRow.status === 'vendored')
-                    assert.ok(fs.existsSync(path.join(root, manifestRelative)), context + ': vendored-файл отсутствует: ' + manifestRelative);
+                    assert.ok(
+                        fs.existsSync(path.join(root, manifestRelative)),
+                        context + ': vendored-файл отсутствует: ' + manifestRelative,
+                    );
                 vendor++;
             } else {
-                assert.equal(resolved, LEGACY_FILE_DEPS.get(relative), context + ': неизвестная file:-зависимость: ' + resolved);
+                assert.equal(
+                    resolved,
+                    LEGACY_FILE_DEPS.get(relative),
+                    context + ': неизвестная file:-зависимость: ' + resolved,
+                );
             }
         }
     }
@@ -139,9 +156,12 @@ test('Every lockfile resolved is exactly one of the allowed supply forms (truste
     // 5437 = 5435 (baseline 326a01f2) + 2 entry 1.2 (js-yaml, argparse) — нормализованы
     // в canonical trusted-форму при мерже 1.9 (были :443-формой с sha1 из registry-quirk).
     // 5449 = 5437 + 12 entry 2.9 (pg + 5 зависимостей × 2 дерева, api-gateway, AD-6).
+    // 943 = 1025 − 82: a7270ea7 (npm install --package-lock-only) перестал дублировать
+    // file: resolved в legacy-дереве api-gateway (integrity в дзеркале на месте;
+    // packages-дерево неизменно — те же 82 ссылки, каждая валидирована по manifest/integrity).
     assert.equal(trusted, 5449, 'trusted-ссылок');
     assert.equal(platform, 420, 'platform npmjs-ссылок');
-    assert.equal(vendor, 1025, 'file: supply/vendor-ссылок');
+    assert.equal(vendor, 943, 'file: supply/vendor-ссылок');
 });
 
 test('supply manifest: 227 пар, статусы согласованы с файлами на диске, pending — явная часть', () => {
@@ -170,7 +190,7 @@ test('supply manifest: 227 пар, статусы согласованы с фа
     const needed = JSON.parse(fs.readFileSync(path.join(root, 'supply/vendor-pending/needed.json'), 'utf8'));
     const neededKeys = new Set(needed.packages.map((row) => row.name + '@' + row.version));
     const pendingKeys = new Set(
-        manifest.packages.filter((item) => item.status === 'pending').map((item) => item.name + '@' + item.version)
+        manifest.packages.filter((item) => item.status === 'pending').map((item) => item.name + '@' + item.version),
     );
     for (const key of pendingKeys) assert.ok(neededKeys.has(key), 'pending-пара не в needed.json: ' + key);
     for (const key of neededKeys) assert.ok(pendingKeys.has(key), 'needed.json содержит не-pending пару: ' + key);
@@ -184,7 +204,10 @@ test('Every Dockerfile ships the vendor tarballs its npm ci needs; .dockerignore
         assert.match(text, /^COPY supply\/vendor\/ \S+$/m, relative + ' missing COPY supply/vendor');
     }
     for (const relative of ['.dockerignore', 'frontend/.dockerignore']) {
-        const lines = fs.readFileSync(path.join(root, relative), 'utf8').split(/\r?\n/).map((line) => line.trim());
+        const lines = fs
+            .readFileSync(path.join(root, relative), 'utf8')
+            .split(/\r?\n/)
+            .map((line) => line.trim());
         for (const line of lines)
             assert.ok(!line.startsWith('supply'), relative + ' excludes supply/ from the Docker context: ' + line);
     }
@@ -206,7 +229,9 @@ test('Every .npmrc pins the exact trusted registry URL', () => {
 });
 
 test('Every Dockerfile pins the trusted registry, its auth build-arg and no npmjs fallback', () => {
-    const envPattern = new RegExp('ENV NPM_CONFIG_REGISTRY=' + TRUSTED_REGISTRY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\\\');
+    const envPattern = new RegExp(
+        'ENV NPM_CONFIG_REGISTRY=' + TRUSTED_REGISTRY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\\\',
+    );
     for (const relative of DOCKERFILES) {
         const text = fs.readFileSync(path.join(root, relative), 'utf8');
         assert.match(text, envPattern, relative + ' ENV registry');

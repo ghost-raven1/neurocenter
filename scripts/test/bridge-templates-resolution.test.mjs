@@ -31,8 +31,16 @@ async function imageLayout() {
     const bridgeCopy = dockerfile.match(/^COPY\s+bridge-dist\/\s+(\S+)\s*$/m);
     if (!bridgeCopy) throw new Error('COPY bridge-dist/ не найден в ' + DOCKERFILE);
     const templatesDir = bridgeCopy[1].replace(/\/+$/, '');
-    if (!/^COPY\s+services\/api-gateway\/\s+\.\s*$/m.test(dockerfile)) {
-        throw new Error('COPY services/api-gateway/ . не найден в ' + DOCKERFILE);
+    // /repo-лейаут (d658006f): сервис копируется в свой каталог, который и есть
+    // финальный WORKDIR (аналог прежнего flat `COPY services/api-gateway/ .`):
+    // dist собирается внутри него, controllerDir = workdir/outDir/bridge.
+    const serviceCopy = dockerfile.match(/^COPY\s+services\/api-gateway\/\s+(\S+)\s*$/m);
+    if (!serviceCopy) throw new Error('COPY services/api-gateway/ не найден в ' + DOCKERFILE);
+    const serviceDir = serviceCopy[1].replace(/\/+$/, '');
+    if (serviceDir !== workdir) {
+        throw new Error(
+            `цель COPY сервиса (${serviceDir}) не совпадает с финальным WORKDIR (${workdir}) — пересчитать controllerDir`,
+        );
     }
     const tsconfig = JSON.parse(await fs.readFile(path.join(root, TSCONFIG), 'utf8'));
     const outDir = String(tsconfig.compilerOptions?.outDir ?? '').replace(/^\.\//, '');
@@ -41,14 +49,14 @@ async function imageLayout() {
     return { workdir, templatesDir, controllerDir: path.posix.join(workdir, outDir, 'bridge') };
 }
 
-test('image layout api-gateway: WORKDIR /app, шаблоны в /app/bridge-dist, контроллер в /app/dist/bridge', async () => {
+test('image layout api-gateway: WORKDIR /repo/services/api-gateway, шаблоны в /app/bridge-dist, контроллер в /repo/services/api-gateway/dist/bridge', async () => {
     const { workdir, templatesDir, controllerDir } = await imageLayout();
-    assert.equal(workdir, '/app');
+    assert.equal(workdir, '/repo/services/api-gateway');
     assert.equal(templatesDir, '/app/bridge-dist');
-    assert.equal(controllerDir, '/app/dist/bridge');
+    assert.equal(controllerDir, '/repo/services/api-gateway/dist/bridge');
 });
 
-test('fallback из bridge.controller.ts:18 в production-образе даёт /bridge-dist, а не /app/bridge-dist (H5)', async () => {
+test('fallback из bridge.controller.ts:18 в production-образе даёт /repo/bridge-dist, а не /app/bridge-dist (H5)', async () => {
     const { templatesDir, controllerDir } = await imageLayout();
     const source = await fs.readFile(path.join(root, CONTROLLER), 'utf8');
     const line = source.split('\n').find((text) => text.includes('process.env.BRIDGE_TEMPLATES_DIR'));
@@ -58,9 +66,10 @@ test('fallback из bridge.controller.ts:18 в production-образе даёт 
         line,
         /process\.env\.BRIDGE_TEMPLATES_DIR \|\| path\.resolve\(__dirname, '\.\.', '\.\.', '\.\.', '\.\.', 'bridge-dist'\)/,
     );
-    // Арифметика ровно как в :18 на __dirname скомпилированного контроллера.
+    // Арифметика ровно как в :18 на __dirname скомпилированного контроллера:
+    // /repo/services/api-gateway/dist/bridge на 4 уровня вверх → /repo + bridge-dist.
     const fallback = path.posix.resolve(controllerDir, '..', '..', '..', '..', 'bridge-dist');
-    assert.equal(fallback, '/bridge-dist');
+    assert.equal(fallback, '/repo/bridge-dist');
     assert.notEqual(fallback, templatesDir, 'fallback совпал с целью COPY — H5 не воспроизводится, пересмотреть тест');
     // Каталог fallback не создаётся ни одной инструкцией Dockerfile.
     const dockerfile = await fs.readFile(path.join(root, DOCKERFILE), 'utf8');

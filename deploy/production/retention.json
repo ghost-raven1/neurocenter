@@ -1,7 +1,7 @@
 {
     "schema": "neurocenter-retention-v1",
     "ad": "AD-D3",
-    "updated": "2026-11-09",
+    "updated": "2026-11-12",
     "description": "Единая retention-таблица (AD-D3): ресурс → режим (ttl / rolling-n / manual / project-scoped / none) + TTL одним решением. Значения TTL фиксируются здесь и не дублируются в коде/документах; идентичность значений в коде проверяет scripts/test/retention-inventory.test.mjs. Prune исполняет story 8 (maintenance-tick); project-scoped — каскад удаления проекта (story 11).",
     "modes": ["ttl", "rolling-n", "manual", "project-scoped", "none"],
     "databases": {
@@ -672,6 +672,18 @@
             "pruneLocation": "scripts/production/maintenance.mjs (story 8)",
             "ownerService": "catalog-service",
             "ddl": ["services/catalog-service/src/model-rate-limits/model-rate-limits.schema.ts"]
+        },
+        {
+            "resource": "rate_limit_windows",
+            "db": "catalog",
+            "kind": "table",
+            "mode": "ttl",
+            "ttl": "30d",
+            "timeColumn": "window_start",
+            "reason": "счётчики pairing rate-limit окон (entry 2.9, AD-6; растёт с трафиком); класс operational 30d (прецедент model_api_dispatch_slots).",
+            "pruneLocation": "scripts/production/maintenance.mjs (story 8)",
+            "ownerService": "catalog-service",
+            "ddl": ["services/catalog-service/src/rate-limit-windows/rate-limit-windows.schema.ts"]
         },
         {
             "resource": "model_catalog",

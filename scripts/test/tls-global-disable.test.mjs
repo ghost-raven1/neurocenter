@@ -201,6 +201,7 @@ test('validateProduction отклоняет отключённую провер�
         SSO_CLIENT_ID: 'production-client',
         SSO_CLIENT_SECRET: 'test-only-secret',
         NEUROCENTER_INTERNAL_TOKEN: 'a'.repeat(64),
+        NEUROCENTER_MCP_HOST_SECRET: 'b'.repeat(64),
         NODE_TLS_REJECT_UNAUTHORIZED: '0',
         CATALOG_PG_URL: 'postgresql://catalog:fixture@postgres/catalog',
         RAG_PG_URL: 'postgresql://backup:fixture@postgres/rag',
