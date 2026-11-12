@@ -90,7 +90,7 @@ export class AssetSupplyController {
     }
     @Get('blobs/:sha') async blob(@Req() req: Request, @Param('sha') sha: string, @Res() res: Response) {
         assertInternal(req.headers['x-neurocenter-internal']);
-        const file = await this.service.blobs.open(sha);
+        const file = await this.service.supplyBlob(sha);
         res.status(200).setHeader('content-type', 'application/octet-stream');
         res.setHeader('content-length', file.bytes);
         res.setHeader('etag', '"' + file.sha256 + '"');

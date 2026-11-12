@@ -1,9 +1,9 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { downloadArtifacts, fetchArtifact, type AssetDescriptor } from '@neurocenter/asset-contract';
+import { downloadArtifacts, fetchArtifact, type AssetDescriptor, type DownloadArtifact } from '@neurocenter/asset-contract';
 import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 import { runtimeArtifactDirectory } from '../runtime-artifacts/runtime-artifacts';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
@@ -15,6 +15,14 @@ export interface IAssetBlob {
     bytes: number;
     filename: string;
     target?: string;
+}
+
+/** R9 (12.8): результат сверки описи поставки с хранилищем; pending — явное состояние, а не тихий сбой. */
+export interface IAssetBlobHealReport {
+    checked: number;
+    intact: number;
+    restored: string[];
+    pending: Array<{ sha256: string; bytes: number; reason: string }>;
 }
 
 /** Серверный кэш поставки; URL upstream остаются только во входной описи и никогда не возвращаются устройству. */
@@ -392,5 +400,149 @@ export class AssetBlobStore {
             bytes: Number(rows[0].bytes),
             sha256: sha,
         };
+    }
+
+    /** R9 (12.8): сверка описи с хранилищем; отсутствующие и повреждённые файлы восстанавливаются из зарегистрированных источников. */
+    async selfHeal(signal: AbortSignal): Promise<IAssetBlobHealReport> {
+        signal.throwIfAborted();
+        await this.root();
+        const { rows } = await this.pool.query<{ sha256: string; bytes: string }>(
+            'SELECT sha256,bytes FROM asset_source_blobs ORDER BY created_at,sha256',
+        );
+        const report: IAssetBlobHealReport = { checked: 0, intact: 0, restored: [], pending: [] };
+        for (const row of rows) {
+            signal.throwIfAborted();
+            const bytes = Number(row.bytes);
+            report.checked += 1;
+            let verified = false;
+            if (await this.hasLocalCandidate(row.sha256, bytes)) {
+                try {
+                    const handle = await this.checked(row.sha256, bytes, signal);
+                    await handle.close();
+                    verified = true;
+                } catch (error) {
+                    if ((error as Error).name === 'AbortError') throw error;
+                }
+            }
+            if (verified) {
+                report.intact += 1;
+                continue;
+            }
+            const outcome = await this.restoreArtifact(row.sha256, bytes, signal);
+            if (outcome === 'restored') report.restored.push(row.sha256);
+            else report.pending.push({ sha256: row.sha256, bytes, reason: outcome });
+        }
+        return report;
+    }
+
+    /** Один файл из зарегистрированных описей; в хранилище попадает только SHA-подтверждённая копия. */
+    private async restoreArtifact(sha: string, bytes: number, signal: AbortSignal): Promise<'restored' | string> {
+        signal.throwIfAborted();
+        if (this.offline) return 'offline mode: network restore is disabled';
+        const { rows } = await this.pool.query<{ descriptor: AssetDescriptor }>(
+            `SELECT v.descriptor
+             FROM asset_source_blobs b
+             JOIN asset_source_blob_refs r ON r.blob_sha256 = b.sha256
+             JOIN asset_source_versions v
+               ON v.repository = r.repository
+              AND v.external_id = r.asset_id
+              AND v.asset_version = r.asset_version
+              AND v.descriptor_sha256 = r.descriptor_sha256
+             WHERE b.sha256 = $1
+             ORDER BY v.created_at DESC`,
+            [sha],
+        );
+        if (!rows.length) return 'no registered source declares this file';
+        let failure = '';
+        for (const row of rows) {
+            signal.throwIfAborted();
+            let artifacts: ReturnType<typeof downloadArtifacts>;
+            try {
+                artifacts = downloadArtifacts(row.descriptor);
+            } catch {
+                continue;
+            }
+            const artifact = artifacts.find(
+                (file) => file.sha256 === sha && file.bytes === bytes && typeof file.url === 'string',
+            );
+            if (!artifact) continue;
+            try {
+                await this.restoreFromArtifact(artifact, sha, bytes, signal);
+                return 'restored';
+            } catch (error) {
+                if ((error as Error).name === 'AbortError') throw error;
+                failure = error instanceof Error ? error.message : String(error);
+            }
+        }
+        return failure ? 'restore failed: ' + failure : 'registered sources do not declare a download URL';
+    }
+
+    private async restoreFromArtifact(
+        artifact: DownloadArtifact,
+        sha: string,
+        bytes: number,
+        signal: AbortSignal,
+    ): Promise<void> {
+        const stage = await fs.mkdtemp(path.join(this.directory, '.selfheal-'));
+        let release: () => void = () => undefined;
+        try {
+            release = await reserveCapacity({ resource: 'runtime-artifacts', bytes, path: this.directory });
+            signal.throwIfAborted();
+            const temporary = path.join(stage, sha);
+            await fetchArtifact(artifact, temporary, { fetch: this.request, signal });
+            await fs.chmod(temporary, 0o400);
+            const target = this.filename(sha);
+            try {
+                await fs.link(temporary, target);
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+                // Параллельный старт мог уже положить файл: достаточно, если существующая копия проходит SHA-проверку.
+                // Повреждённую копию не сохраняем — заменяем атомарно (link под новым именем + rename).
+                let existingOk = false;
+                try {
+                    const existing = await this.checked(sha, bytes, signal);
+                    await existing.close();
+                    existingOk = true;
+                } catch (inner) {
+                    if ((inner as Error).name === 'AbortError') throw inner;
+                }
+                if (!existingOk) {
+                    const replacement = `${target}.restore-${randomUUID()}`;
+                    await fs.link(temporary, replacement);
+                    await fs.rename(replacement, target);
+                }
+            }
+            await fs.unlink(temporary);
+            if (process.platform !== 'win32') {
+                const directory = await fs.open(
+                    this.directory,
+                    constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+                );
+                try {
+                    await directory.sync();
+                } finally {
+                    await directory.close();
+                }
+            }
+            // Параллельный старт может удерживать второй link того же inode; повторные проверки догоняют.
+            let attempt = 0;
+            for (;;) {
+                signal.throwIfAborted();
+                try {
+                    const handle = await this.checked(sha, bytes, signal);
+                    await handle.close();
+                    return;
+                } catch (error) {
+                    if ((error as Error).name === 'AbortError' || ++attempt >= 3) throw error;
+                    await new Promise<void>((resolve) => {
+                        const retry = setTimeout(resolve, 500);
+                        retry.unref();
+                    });
+                }
+            }
+        } finally {
+            release();
+            await fs.rm(stage, { recursive: true, force: true });
+        }
     }
 }

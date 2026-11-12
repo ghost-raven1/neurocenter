@@ -10,6 +10,7 @@ import {
     NotFoundException,
     OnApplicationShutdown,
     OnModuleInit,
+    ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -26,7 +27,7 @@ import { CatalogService } from '../catalog/catalog.service';
 import { readModelActor } from '../models/model-access';
 import { createPool } from '../database/pool';
 import { RuntimeArtifacts } from '../runtime-artifacts/runtime-artifacts';
-import { AssetBlobStore } from './asset-blob-store';
+import { AssetBlobStore, type IAssetBlobHealReport } from './asset-blob-store';
 import { AssetSourceSnapshots } from './source-snapshots';
 import { AssetImportRepository } from './import-repository';
 import { AssetImportWorker } from './import-worker';
@@ -62,6 +63,11 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
     private stopping = false;
     private sourceCheck?: Promise<void>;
     private readonly sourceAbort = new AbortController();
+    /** R9 (12.8): состояние сверки описи поставки с хранилищем на старте; pending-файлы отдаются явно. */
+    private selfHealState:
+        | { phase: 'running' }
+        | { phase: 'complete'; report: IAssetBlobHealReport }
+        | { phase: 'failed'; error: string } = { phase: 'running' };
     constructor(
         private readonly catalog: CatalogService,
         private readonly access: AccessDb,
@@ -139,6 +145,31 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
         if (this.stopping) return;
         this.worker = new AssetImportWorker(this.pool, this.jobs, this.sources, this.blobs, this.runtime);
         this.worker.kick();
+        // R9 (12.8): сверка описи с хранилищем не блокирует старт и не останавливает сервис при недоступном источнике.
+        void this.blobs
+            .selfHeal(this.sourceAbort.signal)
+            .then((report) => {
+                this.selfHealState = { phase: 'complete', report };
+                if (report.pending.length) {
+                    for (const item of report.pending)
+                        console.warn(
+                            `[catalog-service] self-heal: файл поставки ${item.sha256} недоступен — ${item.reason}.`,
+                        );
+                    console.warn(
+                        `[catalog-service] self-heal: опись сверена (${report.checked} файлов), восстановлено ${report.restored.length}, недоступно ${report.pending.length}.`,
+                    );
+                } else {
+                    console.log(
+                        `[catalog-service] self-heal: опись поставки подтверждена (${report.intact + report.restored.length}/${report.checked}), восстановлено ${report.restored.length}.`,
+                    );
+                }
+            })
+            .catch((error: unknown) => {
+                if ((error as Error)?.name === 'AbortError') return;
+                const message = error instanceof Error ? error.message : String(error);
+                this.selfHealState = { phase: 'failed', error: message };
+                console.error('[catalog-service] self-heal: сверка хранилища поставки не завершена: ' + message);
+            });
         this.timer = setInterval(() => {
             void this.prepareSources()
                 .finally(() => {
@@ -147,6 +178,23 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
                 .catch(() => undefined);
         }, 5000);
         this.timer.unref();
+    }
+    /** Явное состояние сверки: running, complete (с отчётом) или failed (с причиной). */
+    selfHealStatus(): { phase: 'running' | 'complete' | 'failed'; report?: IAssetBlobHealReport; error?: string } {
+        const state = this.selfHealState;
+        if (state.phase === 'complete') return { phase: state.phase, report: state.report };
+        if (state.phase === 'failed') return { phase: state.phase, error: state.error };
+        return { phase: state.phase };
+    }
+    /** R9 (12.8): известный pending-файл отдаётся явной 503 с причиной, а не молчаливым 404. */
+    async supplyBlob(sha: string) {
+        if (this.selfHealState.phase === 'complete') {
+            const pending = this.selfHealState.report.pending.find((item) => item.sha256 === sha);
+            if (pending) {
+                throw new ServiceUnavailableException('Файл поставки недоступен: ' + pending.reason + '.');
+            }
+        }
+        return this.blobs.open(sha);
     }
     async onApplicationShutdown(): Promise<void> {
         this.stopping = true;
