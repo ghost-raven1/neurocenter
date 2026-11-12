@@ -3,7 +3,7 @@ title: 'FR-303: Системные роли — покрытие вопросо�
 type: 'feature'
 ticket: '4'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -104,3 +104,22 @@ node --test scripts/test/system-roles-coverage.test.mjs 2>/dev/null || true
 1. **Как фиксировать coverage-матрицу?** Рекомендация: data-driven тест-матрица (вопрос→роль) как единый источник (паттерн RUNTIME_LIMIT_CEILINGS, эпик 6 entry 4). Обоснование: новые классы вопросов подхватываются автоматически.
 2. **«Несколько уникальных» — порог N?** Рекомендация: N≥2 уникальных (совместимо с текущим ≥2, но по уникальности). Обоснование: FR-303 «несколько уникальных», не «один».
 3. **Координатор-владелец — новое поле или guidance?** Рекомендация: расширение guidance координатора (roleDefinitionPin/guidance). Обоснование: не новая сущность, а вывод координатора.
+
+## Progress (2026-11-12, done)
+
+Реализация завершена; идёт корневой сьют. Решил Open Questions: (1) coverage-матрица — data-driven файл `system-role.coverage.ts` как единый источник + структурные тесты; (2) порог сводки — N≥2 **уникальных** (по agent-id); (3) координатор-владелец — расширение guidance координатора (prompt → pin меняется по дизайну, old-консенты инвалидированы намеренно).
+
+**Код (catalog-service):**
+- `src/system-roles/system-role.coverage.ts` (new) — coverage-матрица FR-303: 11 классов вопросов системы (настройка/конфиг на компьютере, диагностика, модели, мосты, навыки/плагины/MCP, агенты/ассеты, доступы, данные RAG/quirk, очереди, обновление, восстановление) → ответственные роли с **структурным обоснованием** (target/diagnostic, реально существующие в определениях). Доступы/очереди — задокументированные владельцы (agent-ai-admin, measurement `project` + adapter), без изменения ролей.
+- `src/system-roles/system-role.definitions.ts` — промпт координатора: «Для каждого пункта nextSteps укажи владельца следующего действия: системная роль (точный ID), агент проекта или человек» (guidance; общий `contract` 5 ролей не тронут; pin координатора сместился — expected, old-консенты по дизайну инвалидированы).
+- Сводка (`projectChatSummary`, runner:41) — **код менять не потребовалось**: дедупликация по agent-id (Map) уже реализована, «≥2» считается по уникальным; зафиксировано тестами.
+- Бюджет (roleCallBudget/coordinatorCalls=5) — fail-closed уже в repository.ts:176, runner.ts:415 и DB CHECK (schema.ts:34); зафиксировано тестами констант.
+
+**Тесты (new):**
+- `src/system-roles/tests/system-role-coverage.test.ts` — полнота матрицы (все 11 классов, ≥1 владельца, все владельцы существуют), структурное обоснование каждого владельца (target ∈ role.targets / diagnostic ∈ role.diagnostics), координатор-владелец (prompt-лока, только у координатора, pin ≠ previous), бюджет (coordinatorCalls=5/calls=2/fanout=3/depth=1, roleCallBudget 5+MCP/2).
+- `src/project-chat/tests/project-chat-summary.test.ts` — сводка: 0/1 агент → ''; повтор одного агента (2 done) → ''; 2 уникальных → сводка с обеими вкладами и ссылками; failed/running игнорируются; truncation 4000.
+
+Доказано (2026-11-12):
+- Новые тесты: **13/13 pass**; полный vitest каталога: **199/199 pass (26 файлов)** — смена пина координатора без регрессий.
+- Prettier всех 9.4-файлов чист; dist пересобран (stamp fd771234… совпадает с src).
+- **Корневой сьют — ЗЕЛЁНЫЙ (2026-11-12):** `FILES=$(python3 -c "import json;print(' '.join(json.load(open('scripts/workspace/check-tooling-tests.json'))))"); node --test --test-concurrency=1 $FILES` — **1076 tests, 1073 pass, 0 fail, 3 skipped** (exit 0) — без деградации к базе 9.3.
