@@ -1,5 +1,5 @@
 # Сторис эпика epic-dr. Порядок таблиц = порядок сборки.
-# next_id = 9
+# next_id = 10
 
 [[entry]]
 id = 1
@@ -87,4 +87,15 @@ verify = "watchdog: упавший сервис → детект в предел
 covers = ["R10", "R7"]
 after = [2]
 hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "ceph-chat (dev) — ceph-osd crashloop после DR-репетиции: восстановление dev-стэка + verification gap"
+description = "Dev-стэк chat-хранилища (ceph:v20.2.4) в самоподдерживающемся crash-loop: падает ceph-osd (НЕ radosgw). Root cause подтверждён (2026-11-12): assert ceph_assert(h->pos <= h->file->fnode.size) в BlueFS::_flush_F при RocksDB recovery (BlueFS.cc:4154, v20.2.4); osd.log 22 465 crash-сборок; живое воспроизведение на том же volume: radosgw штатно, ceph-osd abort. Цикл: mon помнит «osd 1 up, 1 in» → osd_ready() (ceph osd stat) проходит по памяти мон → radosgw-admin user info виснет 20 с → fail → рестарт → OSD снова падает в той же точке recovery. Триггер: 10-11 09:20 DR-репетиция (stop контейнера, SIGTERM/SIGKILL в cleanup-трепе 12 с). Скоуп: (1) восстановление — варианты (а) пересоздать volume (HITL: dev-данные chat-файлов), (б) ручная правка SLOG-состояния, (в) апгрейд Ceph; (2) verification gap: osd_ready() (dev-ceph.sh:267) проверяет память мон, а не живость OSD — до RGW-verification добавить ceph daemon osd.0 version (admin socket) ИЛИ pgrep ceph-osd: немедленный fail с диагностикой crash-loop вместо 20-с виснения."
+verify = "Dev-стэк ceph-chat поднят и health (neurocenter-dev-ceph --health) зелёный: S3 на 127.0.0.1:19011 отвечает, user-verification прошёл; выбранный вариант восстановления зафиксирован (HITL). Verification gap: инжект crash-loop (или kill ceph-osd) → сценарий падает с диагностикой «OSD не жив» до 20-с RGW-таймаута; штатный старт — без регрессии (osd_ready + rgw_ready)."
+covers = ["R10"]
+after = []
+hitl = true
 risk = "medium"
