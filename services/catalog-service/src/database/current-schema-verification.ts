@@ -50,7 +50,7 @@ import { assertProjectRagAuthorizationSchema } from '../models/project-rag-autho
 import { DEVICE_CODEX_SCHEMA_CONTRACT } from '../models/device-codex.schema-contract';
 import { assertDeviceCodexSchema } from '../models/device-codex.schema-verification';
 import { assertSystemRoleSchema } from '../system-roles/system-role.schema-verification';
-import { CURRENT_PROJECT_CHAT_ISOLATION_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT } from '../project-chat/project-chat-isolation.schema-contract';
+import { CURRENT_PROJECT_CHAT_SHARED_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT } from '../project-chat/project-chat-shared.schema-contract';
 import { assertProjectChatIsolationSchema as assertProjectChatSchema } from '../project-chat/project-chat-isolation.schema-verification';
 import { CHAT_ACTIVITY_SCHEMA_CONTRACT } from '../chat-activity/chat-activity.schema-contract';
 import { assertChatActivitySchema } from '../chat-activity/chat-activity.schema-verification';

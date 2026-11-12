@@ -99,6 +99,8 @@ import { RATE_LIMIT_WINDOWS_SCHEMA_SQL } from '../rate-limit-windows/rate-limit-
 import { RATE_LIMIT_WINDOWS_SCHEMA_ASSERT_SQL } from '../rate-limit-windows/rate-limit-windows.schema-verification';
 import { VERSION_RETIREMENT_SCHEMA_SQL } from '../version-retirement/version-retirement.schema';
 import { VERSION_RETIREMENT_SCHEMA_ASSERT_SQL } from '../version-retirement/version-retirement.schema-verification';
+import { PROJECT_CHAT_SHARED_SCHEMA_SQL } from '../project-chat/project-chat-shared.schema';
+import { PROJECT_CHAT_SHARED_SCHEMA_ASSERT_SQL } from '../project-chat/project-chat-shared.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
@@ -331,5 +333,10 @@ export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
         version: 56,
         name: 'version-retirement-status',
         sql: VERSION_RETIREMENT_SCHEMA_SQL + '\n' + VERSION_RETIREMENT_SCHEMA_ASSERT_SQL,
+    },
+    {
+        version: 57,
+        name: 'agent-shared-context-provenance',
+        sql: PROJECT_CHAT_SHARED_SCHEMA_SQL + '\n' + PROJECT_CHAT_SHARED_SCHEMA_ASSERT_SQL,
     },
 ];

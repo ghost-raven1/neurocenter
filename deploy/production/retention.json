@@ -1078,6 +1078,16 @@
             "ddl": ["services/catalog-service/src/agent-method-workflows/chat-workflows.schema.ts"]
         },
         {
+            "resource": "project_chat_shared_items",
+            "db": "catalog",
+            "kind": "table",
+            "mode": "project-scoped",
+            "cascadeRef": "FK (project_id,room_id) REFERENCES project_chat_rooms(project_id,id) ON DELETE CASCADE",
+            "pruneLocation": "project deletion cascade (story 11)",
+            "ownerService": "catalog-service",
+            "ddl": ["services/catalog-service/src/project-chat/project-chat-shared.schema.ts"]
+        },
+        {
             "resource": "project_quota_usage",
             "db": "catalog",
             "kind": "table",

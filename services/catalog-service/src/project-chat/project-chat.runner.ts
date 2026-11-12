@@ -4,7 +4,7 @@ import {
     ForbiddenException,
     ServiceUnavailableException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
 import { securityEvent } from '../access/security-events';
@@ -17,6 +17,7 @@ import {
     parseProjectChatHandover,
     type IProjectChatHandover,
 } from './project-chat-handover';
+import { PROJECT_CHAT_SHARE_ACTION, parseProjectChatShares, type IProjectChatShare } from './project-chat-share';
 import type {
     TProjectChatDb,
     IProjectChatInference,
@@ -205,6 +206,9 @@ export class ProjectChatRunner {
                 await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
                 const children = await this.repository.children(db, job.projectId, job.source.id, roomId),
                     complete = children.filter((row) => row.kind === 'agent').every((row) => row.status === 'done');
+                // FR-309: shared context elements are durable before any handover re-queue,
+                // so the connected agent sees them in its context.
+                await this.finalizeShares(db, room, job, children);
                 // FR-302: a handover re-queues the task under a fresh generation; the connected agent
                 // completes it and the final summary is built then, with its answer included.
                 if (await this.finalizeHandovers(db, room, job, req, children)) {
@@ -348,6 +352,133 @@ export class ProjectChatRunner {
                 roomId,
             );
         }
+    }
+    /**
+     * FR-309: a published answer may share context elements (state/result/decision) with other
+     * agents, a user (private dialogue) or the team (public room). Each element is stored with
+     * per-item provenance (sharing agent, referenced source, version, SHA, time; NFR-4) and
+     * audited in the same finalization transaction. Sharing is gated on the agent's access to
+     * the target room (fail-closed); a private source never leaks into a public room (FR-403).
+     * The handover (FR-302) is the audited special case. Ungated or invalid directives never
+     * fail the published answers.
+     */
+    private async finalizeShares(
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        job: IProjectChatJob,
+        children: IProjectChatMessageRow[],
+    ): Promise<void> {
+        for (const child of children) {
+            if (child.kind !== 'agent' || child.status !== 'done' || !child.snapshot) continue;
+            if (!room.agent_ids.includes(child.snapshot.agentId)) continue;
+            for (const share of parseProjectChatShares(child.content))
+                await this.finalizeShare(db, room, job, child, share);
+        }
+    }
+    private async finalizeShare(
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        job: IProjectChatJob,
+        child: IProjectChatMessageRow,
+        share: IProjectChatShare,
+    ): Promise<void> {
+        const agentId = child.snapshot!.agentId;
+        const target = (
+            await db.query<IProjectChatRoomRow>('SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2', [
+                job.projectId,
+                share.roomId,
+            ])
+        ).rows[0];
+        if (!target || !target.agent_ids.includes(agentId)) {
+            console.error('[project-chat] shared context skipped: no access to target room ' + share.roomId);
+            return;
+        }
+        const currentRoomId = room.id ?? DEFAULT_PROJECT_CHAT_ROOM,
+            stored: Array<{
+                itemId: string;
+                kind: string;
+                refMessageId: string | null;
+                sourceRoomId: string;
+                sourceGeneration: string;
+                contentSha: string;
+            }> = [];
+        for (const item of share.items) {
+            // what-ref defaults to the carrying answer: the element quotes the response that carries it.
+            let refMessageId: string | null = child.id,
+                sourceRoomId = currentRoomId,
+                sourceGeneration = child.generation;
+            if (item.ref) {
+                const ref = (
+                    await db.query<{ id: string; room_id: string; kind: string; status: string; generation: string }>(
+                        'SELECT id,room_id,kind,status,generation FROM project_chat_messages WHERE project_id=$1 AND id=$2',
+                        [job.projectId, item.ref],
+                    )
+                ).rows[0];
+                if (!ref || ref.status !== 'done' || !['user', 'agent', 'summary'].includes(ref.kind)) {
+                    console.error('[project-chat] shared context skipped: unknown or unpublished source ' + item.ref);
+                    continue;
+                }
+                const refRoom = (
+                    await db.query<IProjectChatRoomRow>(
+                        'SELECT * FROM project_chat_rooms WHERE project_id=$1 AND id=$2',
+                        [job.projectId, ref.room_id],
+                    )
+                ).rows[0];
+                if (!refRoom || !refRoom.agent_ids.includes(agentId)) {
+                    console.error('[project-chat] shared context skipped: no access to the source room of ' + item.ref);
+                    continue;
+                }
+                if (refRoom.visibility === 'PRIVATE' && target.visibility !== 'PRIVATE') {
+                    console.error(
+                        '[project-chat] shared context skipped: a private source must not enter a public room (FR-403)',
+                    );
+                    continue;
+                }
+                refMessageId = ref.id;
+                sourceRoomId = ref.room_id;
+                sourceGeneration = ref.generation;
+            } else if (room.visibility === 'PRIVATE' && target.visibility !== 'PRIVATE') {
+                console.error(
+                    '[project-chat] shared context skipped: a private source must not enter a public room (FR-403)',
+                );
+                continue;
+            }
+            const itemId = randomUUID(),
+                contentSha = createHash('sha256').update(item.content).digest('hex');
+            await db.query(
+                `INSERT INTO project_chat_shared_items(project_id,room_id,item_id,kind,content,ref_message_id,source_room_id,source_agent_id,source_agent_name,source_generation,content_sha)
+                VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                [
+                    job.projectId,
+                    target.id ?? DEFAULT_PROJECT_CHAT_ROOM,
+                    itemId,
+                    item.kind,
+                    item.content,
+                    refMessageId,
+                    sourceRoomId,
+                    agentId,
+                    child.snapshot!.name ?? null,
+                    sourceGeneration,
+                    contentSha,
+                ],
+            );
+            stored.push({ itemId, kind: item.kind, refMessageId, sourceRoomId, sourceGeneration, contentSha });
+        }
+        if (!stored.length) return;
+        await securityEvent(db, {
+            actor: job.actor.email,
+            action: PROJECT_CHAT_SHARE_ACTION,
+            resourceId: child.id,
+            before: null,
+            after: {
+                roomId: target.id ?? DEFAULT_PROJECT_CHAT_ROOM,
+                roomVisibility: target.visibility,
+                agentId,
+                responseId: child.id,
+                responseGeneration: child.generation,
+                items: stored,
+            },
+        });
     }
     /**
      * FR-302: a published answer may direct a room colleague to join the task. The connection

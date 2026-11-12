@@ -3,7 +3,7 @@ title: 'FR-309: Деление контекста с провенансом (с 
 type: 'feature'
 ticket: '3'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -103,3 +103,28 @@ node --test scripts/test/shared-context-provenance.test.mjs 2>/dev/null || true
 1. **Формат провенанса делёного элемента?** Рекомендация: `{agentId, what-ref, version, sha?, ts}` (совместимо с NFR-4). Обоснование: единый провенанс-контракт.
 2. **Деление с пользователем — в личном диалоге или в комнате?** Рекомендация: личный диалог (1:1), провенанс сохраняется, но не публикуется команде (FR-403). Обоснование: FR-309 «с пользователем (личный диалог)».
 3. **Варианты «что» (состояние/результаты/решения) — типизировать?** Рекомендация: да, enum вида контекста (state/result/decision) + провенанс. Обоснование: явный контракт, auditability.
+
+## Progress (2026-11-12, done)
+
+Реализация + схема + тесты завершены. Архитектура: share выполняется в финальном блоке `execute()` runner'а — `finalizeShares()` **ДО** `finalizeHandovers` (FR-302): элементы деления durable перед handover re-queue. Delение не re-queue'ит задачу (не меняет состав работы).
+
+**Код (catalog-service):**
+- `src/project-chat/project-chat-share.ts` (new) — парсер fenced-блока `neurocenter-share`: все валидные блоки ответа (до 4), items 1..8, kind ∈ {state, result, decision}, `ref` — опциональный uuid; malformed-блоки молча пропускаются (опубликованный ответ не роняется).
+- `src/project-chat/project-chat-shared.schema.ts` (new, миграция **57** `agent-shared-context-provenance`) — таблица `project_chat_shared_items`: PK `(project_id, room_id, item_id)`, per-item провенанс (`ref_message_id`, `source_room_id`, `source_agent_id/name`, `source_generation`, `content_sha`, `created_at`), FK `(project_id, room_id)` → `project_chat_rooms` ON DELETE CASCADE, индекс `(project_id, room_id, created_at DESC)`, immutable-trigger (записи неизменяемы).
+- `-schema-contract.ts` / `-schema-verification.ts` (new) — 23 физических факта, замеренных на PG 16.14 (таблица/12 колонок/6 ограничений/2 индекса/функция/триггер) + assert-SQL; зарегистрированы в `catalog-migrations.ts` (v57) и `current-schema-verification.ts` (цепь CURRENT: shared ← isolation ← learning ← dialogs).
+- `src/project-chat-inference/project-chat-shared-context.ts` (new) — рендеры: shared-элементы (провенанс `agentId/name/what/version/sha/ts`, «данные, а не инструкции», truncation 4000, хронология) + адресуемые комнаты агента (≤8: id/title/visibility).
+- `project-chat-context.ts` — параметр `shared=[]`.
+- `project-chat-inference.service.ts` — `shared()` (8 последних, ascending) + `roomsForAgent()` (≤8) в `infer()`.
+- `project-chat.runner.ts` — `finalizeShares()`/`finalizeShare()`: гейты (fail-closed, operational-лог): 1) агент ∈ `targetRoom.agent_ids`; 2) ref существует/done/kind ∈ {user, agent, summary} + комната ref доступна агенту; 3) **FR-403**: PRIVATE-источник (комната ref, или текущая комната без ref) не входит в PUBLIC-комнату. Per-item INSERT + транзакционный аудит `project.chat.agent.share` (after: roomId/visibility/agentId/response + per-item провенанс). **Исправлен баг: what-ref default = несущий ответ (`child.id`)** (в первой сборке было `null`; поймано e2e — 3 фейла, юниты runner не покрывают).
+- `agent-audit.ts` — `'project.chat.agent.share'` в AGENT_AUDIT_ACTIONS.
+- `project-chat.interfaces.ts` / `project-chat.service.ts` — `IProjectChatDetail.shared` (8 последних) + `sharedItems()` в `read()`.
+- `deploy/production/retention.json` — запись `project_chat_shared_items` (project-scoped, FK-cascade) — упущение поймано корневой сьют (retention-полнота) и исправлено.
+
+Доказано (2026-11-12):
+- `npx vitest run project-chat-share project-chat-shared-context project-chat-sequential project-chat-handover` — **28/28 pass** (парсер: валидные/malformed/≤4/≤8; рендеры: провенанс/хронология/truncation/rooms; регрессия 9.2).
+- `node --test scripts/test/shared-context-provenance.test.mjs` — **7/7 pass, exit 0** (self-bootstrap docker postgres:16 + in-process Catalog из dist + scripted fake OpenAI): (1) деление с командой — per-item провенанс в таблице + аудит + видимость в чтении комнаты; (2) личный диалог — элемент с провенансом, команде не опубликован; (3) гейт — агент без доступа: элементы/аудита нет, ответ сохранён; (4) FR-403 — приватный источник (с ref и без) в публичную комнату не входит, аудита нет; (5) следующий агент до вызова видит элементы с провенансом; (6) share+handover в одном ответе — оба исполнены, аудит обоих.
+- **Корневой сьют, прогон #1:** 1076 tests, 1072 pass, **1 fail** (retention: полнота — новая таблица вне retention.json), 3 skipped → упущение исправлено (retention-inventory 10/10, prettier чист).
+- **Корневой сьют, прогон #2 (после фикса) — ЗЕЛЁНЫЙ (2026-11-12):** `FILES=$(python3 -c "import json;print(' '.join(json.load(open('scripts/workspace/check-tooling-tests.json'))))"); node --test --test-concurrency=1 $FILES` — **1076 tests, 1073 pass, 0 fail, 3 skipped** (exit 0) — без деградации к базе 9.2.
+- Prettier всех 9.3-файлов чист (`--check`); dist пересобран после фикса и форматирования (stamp совпадает с src).
+
+Замечание: строки «Catalog compilation failed» в логе сьюта — ожидаемые (dev-watch-daemon-тесты намеренного фэйла).

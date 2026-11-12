@@ -36,6 +36,12 @@ import type {
 import { projectChatContext } from './project-chat-context';
 import { projectChatModels } from './project-chat-models';
 import { projectChatSequentialContext, type IProjectChatSequentialAnswer } from './project-chat-sequential';
+import {
+    projectChatRoomsContext,
+    projectChatSharedContext,
+    type IProjectChatAddressableRoom,
+    type IProjectChatSharedItem,
+} from './project-chat-shared-context';
 
 /** Reuses effective project agents and the existing model dispatcher, without reading private chat history. */
 @Injectable()
@@ -183,6 +189,10 @@ export class ProjectChatInferenceService implements IProjectChatInference {
             settings = await this.settings(model);
         const ancestors = await this.ancestors(projectId, source);
         const sequential = projectChatSequentialContext(await this.sequential(projectId, source, response.generation));
+        const shared = [
+            ...projectChatRoomsContext(await this.roomsForAgent(projectId, snapshot.agentId)),
+            ...projectChatSharedContext(await this.shared(projectId, source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM)),
+        ];
         let messages = projectChatContext(
             snapshot.definition.prompt,
             source,
@@ -190,6 +200,7 @@ export class ProjectChatInferenceService implements IProjectChatInference {
             learning.messages,
             settings,
             sequential,
+            shared,
         );
         let toolsCurrent: (db?: TProjectChatDb) => Promise<void> = (db) => authorize(false, db, true);
         if (source.agent_tools_request) {
@@ -430,6 +441,56 @@ export class ProjectChatInferenceService implements IProjectChatInference {
                 generation: row.generation,
                 content: row.content,
             }));
+    }
+    /**
+     * FR-309: context elements shared into this room, with per-item provenance
+     * (sharing agent, referenced source, version, SHA, time), available before the call.
+     */
+    private async shared(projectId: string, roomId: string): Promise<IProjectChatSharedItem[]> {
+        const rows = (
+            await this.models.pool.query<{
+                item_id: string;
+                kind: string;
+                content: string;
+                ref_message_id: string | null;
+                source_room_id: string;
+                source_agent_id: string;
+                source_agent_name: string | null;
+                source_generation: string;
+                content_sha: string;
+                created_at: Date;
+            }>(
+                `SELECT item_id, kind, content, ref_message_id, source_room_id, source_agent_id, source_agent_name,
+                    source_generation, content_sha, created_at
+                 FROM project_chat_shared_items
+                 WHERE project_id=$1 AND room_id=$2
+                 ORDER BY created_at DESC, item_id DESC
+                 LIMIT 8`,
+                [projectId, roomId],
+            )
+        ).rows;
+        return rows.reverse().map((row) => ({
+            itemId: row.item_id,
+            kind: row.kind,
+            content: row.content,
+            refMessageId: row.ref_message_id,
+            sourceRoomId: row.source_room_id,
+            sourceAgentId: row.source_agent_id,
+            sourceAgentName: row.source_agent_name,
+            sourceGeneration: row.source_generation,
+            contentSha: row.content_sha,
+            createdAt: row.created_at,
+        }));
+    }
+    /** FR-309: rooms the agent participates in, so it can address context sharing by room ID. */
+    private async roomsForAgent(projectId: string, agentId: string): Promise<IProjectChatAddressableRoom[]> {
+        const rows = (
+            await this.models.pool.query<IProjectChatAddressableRoom>(
+                'SELECT id, title, visibility FROM project_chat_rooms WHERE project_id=$1 AND $2 = ANY(agent_ids) ORDER BY id LIMIT 8',
+                [projectId, agentId],
+            )
+        ).rows;
+        return rows.map((row) => ({ id: String(row.id), title: row.title, visibility: row.visibility }));
     }
     private async ancestors(projectId: string, source: IProjectChatMessageRow): Promise<IProjectChatMessageRow[]> {
         const rows: IProjectChatMessageRow[] = [],

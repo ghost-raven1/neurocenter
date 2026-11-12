@@ -34,6 +34,7 @@ export function projectChatContext(
     learning: IChatMessage[],
     settings: IChatContextSettings,
     sequential: IChatMessage[] = [],
+    shared: IChatMessage[] = [],
 ): IChatMessage[] {
     const base: IChatMessage[] = [
         { role: 'system', content: profile },
@@ -45,6 +46,7 @@ export function projectChatContext(
         },
         ...learning,
         ...sequential,
+        ...shared,
     ];
     const question: IChatMessage[] = [
         {

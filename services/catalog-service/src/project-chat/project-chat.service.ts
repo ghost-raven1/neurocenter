@@ -32,6 +32,7 @@ import {
     type IProjectChatMessageRow,
     type IProjectChatReceipt,
     type IProjectChatRoomRow,
+    type IProjectChatSharedItem,
 } from './project-chat.interfaces';
 import {
     projectChatBody,
@@ -166,6 +167,47 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
             };
         });
     }
+    /** FR-309: the latest shared context elements of the room, each with its per-item provenance. */
+    private async sharedItems(
+        db: TProjectChatDb,
+        projectId: string,
+        roomId: string,
+    ): Promise<IProjectChatSharedItem[]> {
+        const rows = (
+            await db.query<{
+                item_id: string;
+                kind: string;
+                content: string;
+                ref_message_id: string | null;
+                source_room_id: string;
+                source_agent_id: string;
+                source_agent_name: string | null;
+                source_generation: string;
+                content_sha: string;
+                created_at: Date;
+            }>(
+                `SELECT item_id, kind, content, ref_message_id, source_room_id, source_agent_id, source_agent_name,
+                    source_generation, content_sha, created_at
+                 FROM project_chat_shared_items
+                 WHERE project_id=$1 AND room_id=$2
+                 ORDER BY created_at DESC, item_id DESC
+                 LIMIT 8`,
+                [projectId, roomId],
+            )
+        ).rows;
+        return rows.reverse().map((row) => ({
+            itemId: row.item_id,
+            kind: row.kind,
+            content: row.content,
+            refMessageId: row.ref_message_id,
+            sourceRoomId: row.source_room_id,
+            sourceAgentId: row.source_agent_id,
+            sourceAgentName: row.source_agent_name,
+            sourceGeneration: row.source_generation,
+            contentSha: row.content_sha,
+            createdAt: new Date(row.created_at).toISOString(),
+        }));
+    }
     async methodWorkflows(
         req: Request,
         id: string,
@@ -248,6 +290,7 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
                     members,
                     agents: await this.inference.roster(req, projectId, room, db),
                     messages: await this.views(db, room, current, messages),
+                    shared: await this.sharedItems(db, projectId, roomId),
                     history: page.history,
                     canPost: current.writable && current.level >= 2,
                     canConfigure:

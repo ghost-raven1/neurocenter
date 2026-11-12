@@ -96,11 +96,26 @@ export interface IProjectChatMessageRow {
     created_at: Date | string;
 }
 
+/** FR-309: a shared context element with its per-item provenance (sharing agent, what, version, SHA, time). */
+export interface IProjectChatSharedItem {
+    itemId: string;
+    kind: string;
+    content: string;
+    refMessageId: string | null;
+    sourceRoomId: string;
+    sourceAgentId: string;
+    sourceAgentName: string | null;
+    sourceGeneration: string;
+    contentSha: string;
+    createdAt: string;
+}
+
 export interface IProjectChatDetail {
     room: IProjectChatRoom;
     members: Array<{ email: string; displayName: string; role: string }>;
     agents: IChatParticipant[];
     messages: IProjectChatMessage[];
+    shared: IProjectChatSharedItem[];
     history: { hasMore: boolean; nextCursor: string | null };
     canPost: boolean;
     canConfigure: boolean;
