@@ -5,14 +5,24 @@ import {
     ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import type { Request } from 'express';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
+import { securityEvent } from '../access/security-events';
 import { ProjectChatRepository } from './project-chat.repository';
 import { ProjectChatDispatch } from './project-chat-dispatch';
 import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.constants';
+import type { IChatAgentSnapshot } from '../model-chat/chat-group.interfaces';
+import {
+    PROJECT_CHAT_HANDOVER_ACTION,
+    parseProjectChatHandover,
+    type IProjectChatHandover,
+} from './project-chat-handover';
 import type {
+    TProjectChatDb,
     IProjectChatInference,
     IProjectChatJob,
     IProjectChatMessageRow,
+    IProjectChatRoomRow,
     TProjectChatStatus,
     TProjectChatTransport,
 } from './project-chat.interfaces';
@@ -195,6 +205,12 @@ export class ProjectChatRunner {
                 await this.repository.assertRunning(db, job.projectId, job.source.id, job.generation);
                 const children = await this.repository.children(db, job.projectId, job.source.id, roomId),
                     complete = children.filter((row) => row.kind === 'agent').every((row) => row.status === 'done');
+                // FR-302: a handover re-queues the task under a fresh generation; the connected agent
+                // completes it and the final summary is built then, with its answer included.
+                if (await this.finalizeHandovers(db, room, job, req, children)) {
+                    await this.repository.bump(db, room);
+                    return;
+                }
                 const summary = projectChatSummary(job.source, children);
                 if (summary)
                     await db.query(
@@ -332,6 +348,88 @@ export class ProjectChatRunner {
                 roomId,
             );
         }
+    }
+    /**
+     * FR-302: a published answer may direct a room colleague to join the task. The connection
+     * runs in the finalization transaction with its audit (NFR-4); it re-queues the task under
+     * a fresh generation, so the connected agent sees the published answers of the previous
+     * executors (sequential context) before its call. Invalid, duplicate or self-directed
+     * directives never fail the published answers.
+     */
+    private async finalizeHandovers(
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        job: IProjectChatJob,
+        req: Request,
+        children: IProjectChatMessageRow[],
+    ): Promise<boolean> {
+        const handovers: Array<{ from: IProjectChatMessageRow; to: IProjectChatHandover }> = [];
+        for (const child of children) {
+            if (child.kind !== 'agent' || child.status !== 'done' || !child.snapshot) continue;
+            if (!room.agent_ids.includes(child.snapshot.agentId)) continue;
+            const handover = parseProjectChatHandover(child.content);
+            if (!handover || handover.agentId === child.snapshot.agentId) continue;
+            if (!room.agent_ids.includes(handover.agentId)) continue;
+            if (children.some((row) => row.kind === 'agent' && row.snapshot?.agentId === handover.agentId)) continue;
+            handovers.push({ from: child, to: handover });
+        }
+        if (!handovers.length) return false;
+        const generation = randomUUID(),
+            connected: Array<{
+                target: IChatAgentSnapshot;
+                handover: IProjectChatHandover;
+                from: IProjectChatMessageRow;
+            }> = [];
+        for (const { from, to } of handovers) {
+            let target: IChatAgentSnapshot | undefined;
+            try {
+                [target] = await this.inference.resolve(req, job.projectId, room, [to.agentId], db);
+            } catch (error) {
+                // The agent is no longer available; the published answer stands, the connection is skipped.
+                console.error(
+                    '[project-chat] handover connection skipped: ' +
+                        String(error instanceof Error ? error.message : error),
+                );
+                target = undefined;
+            }
+            if (target) connected.push({ target, handover: to, from });
+        }
+        if (!connected.length) return false;
+        for (const { target, handover, from } of connected) {
+            await db.query(
+                `INSERT INTO project_chat_messages(id,project_id,room_id,kind,reply_to_id,source_message_id,status,snapshot,generation)
+                VALUES($1,$2,$6,'agent',$3,$3,'queued',$4::jsonb,$5)`,
+                [
+                    randomUUID(),
+                    job.projectId,
+                    job.source.id,
+                    JSON.stringify(target),
+                    generation,
+                    room.id ?? DEFAULT_PROJECT_CHAT_ROOM,
+                ],
+            );
+            await securityEvent(db, {
+                actor: job.actor.email,
+                action: PROJECT_CHAT_HANDOVER_ACTION,
+                resourceId: job.source.id,
+                before: null,
+                after: {
+                    taskId: job.source.id,
+                    fromAgentId: from.snapshot!.agentId,
+                    fromAnswerId: from.id,
+                    fromAnswerGeneration: from.generation,
+                    toAgentId: handover.agentId,
+                    note: handover.note,
+                },
+            });
+        }
+        const requeued = await db.query(
+            "UPDATE project_chat_messages SET status='queued',generation=$3,lease_until=NULL,error=NULL WHERE project_id=$1 AND id=$2 AND kind='user' AND status='running' AND generation=$4",
+            [job.projectId, job.source.id, generation, job.generation],
+        );
+        if (!requeued.rowCount)
+            throw new ConflictException('Задание уже остановлено; подключение агента не выполнено.');
+        return true;
     }
     /** Cleanup is allowed after revocation but can publish only a safe terminal status, never model output. */
     private async fail(job: IProjectChatJob, status: TProjectChatStatus, error: string): Promise<void> {

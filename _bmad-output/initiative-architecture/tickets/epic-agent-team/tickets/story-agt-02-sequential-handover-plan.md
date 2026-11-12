@@ -3,7 +3,7 @@ title: 'FR-302: Последовательный контекст + подклю
 type: 'feature'
 ticket: '2'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -68,12 +68,12 @@ context:
 ## Tasks & Acceptance
 
 ### Execution
-- [ ] Последовательный контекст: при вызове следующего исполнителя в контекст кладутся **опубликованные ответы предыдущих** (ID/автор/порядок/версия) до его вызова.
-- [ ] Только **опубликованные** (не приватные/неопубликованные) — FR-403.
-- [ ] Действие «подключить агента к задаче»: агент A → агент B, передача контекста задачи (состояние/результаты/решения).
-- [ ] Запись в аудит подключения (who/what/задача/когда) — транзакционная (NFR-4).
-- [ ] C5-цепочка: передача принятых решений + исходных артефактов (не пересказ, провенанс).
-- [ ] Тесты: последовательный контекст (порядок/версия), подключение (контекст+аудит), приватный вне контекста, C5-передача.
+- [x] Последовательный контекст: при вызове следующего исполнителя в контекст кладутся **опубликованные ответы предыдущих** (ID/автор/порядок/версия) до его вызова.
+- [x] Только **опубликованные** (не приватные/неопубликованные) — FR-403.
+- [x] Действие «подключить агента к задаче»: агент A → агент B, передача контекста задачи (состояние/результаты/решения).
+- [x] Запись в аудит подключения (who/what/задача/когда) — транзакционная (NFR-4).
+- [x] C5-цепочка: передача принятых решений + исходных артефактов (не пересказ, провенанс).
+- [x] Тесты: последовательный контекст (порядок/версия), подключение (контекст+аудит), приватный вне контекста, C5-передача.
 
 ### Acceptance
 - **Given** цепочка агент1→агент2 **when** вызов агента2 **then** до вызова агент2 видит опубликованные ответы агента1 (ID/автор/порядок/версия).
@@ -103,3 +103,29 @@ node --test scripts/test/sequential-context-handover.test.mjs 2>/dev/null || tru
 1. **Граничная длина последовательного контекста?** Рекомендация: наследовать лимиты `ancestors`/контекст-окна (не новый безлимит). Обоснование: NFR-6 — лимиты реально работают.
 2. **Подключение — синхронно или как задание (job)?** Рекомендация: действие в рамках текущего вызова + аудит (не новый long-running job). Обоснование: FR-302 о «подключении к задаче», не о фоновом запуске (это FR-305/entry 7).
 3. **Провенанс передаваемого контекста задачи?** Рекомендация: да — версия/SHA (NFR-4), стык с entry 3. Обоснование: единый провенанс-контракт.
+
+## Progress (2026-11-12, in-progress)
+
+Реализация + тесты завершены (uncommitted). Архитектура: handover выполняется **НЕ** в publish-транзакции ответа, а в финальном блоке `execute()` runner'а (после settling всех ответов) — publish-ре-квиз в середине ломал бы `assertRunning` параллельных агентов (кейс A1-handover + A2-параллель).
+
+**Код (catalog-service):**
+- `src/project-chat-inference/project-chat-sequential.ts` (new) — рендер последовательного контекста: `messageId`/`author`/`position`/`generation`, truncation ответа до 4000 с указателем на копию в комнате.
+- `src/project-chat/project-chat-handover.ts` (new) — парсер fenced-блока `neurocenter-handover` (строгий JSON, невалидные блоки не роняют ответ; первая валидная директива выигрывает). **Исправлен баг формата id:** канонический regex UUID отклонял реальные id платформы (`agent-<uuid>`); заменён на chat-agent контракт `agent-[a-z0-9][a-z0-9-]{0,120}` (case-insensitive, normalizация в нижний).
+- `src/project-chat-inference/project-chat-inference.service.ts` — метод `sequential()` (SQL: опубликованные `kind='agent' AND status='done'` из неп-приватной комнаты, `position < source OR (source_message_id=source AND generation≠response)`, LIMIT 8) + интеграция в `infer()`.
+- `src/project-chat/project-chat-context.ts` — параметр `sequential=[]`.
+- `src/project-chat/project-chat.runner.ts` — `finalizeHandovers()` в финальном блоке `execute()`: парсинг done-ответов, валидация from/to ∈ `room.agent_ids`, не-себе, не-дубликат, resolve с catch-skip (+ постоянный `console.error` при пропуске), INSERT child B `queued` + `securityEvent` + re-квиз source под новым generation; `ConflictException` если requeued=0.
+- `src/access/security-events.ts` — параметр расширен до `Pick<PoolClient,'query'>` (TProjectChatDb совместим).
+- `src/agents/agent-audit.ts` — `'project.chat.agent.handover'` в AGENT_AUDIT_ACTIONS (журнал агентов).
+
+**E2E-инфраструктура:** `scripts/test/model-chat.fixture.mjs` — миграция на новый API подключений (с 12.8 общий ключ в `PUT /connection` не настраивается): `authMode: required`/`none` + личный ключ «Мой доступ» (`PUT /api/models/:id/my-access`) для акторов main/developer; порядок: main до hosting-check, developer после назначения модели проекту.
+
+Доказано (2026-11-12):
+- `npx vitest run project-chat-sequential project-chat-handover` — **15/15 pass** (провенанс/порядок/версия, truncation, ordering; парсер: валидные/невалидные/first-valid/формат id).
+- `node --test scripts/test/sequential-context-handover.test.mjs` — **4/4 pass** (self-bootstrap docker postgres:16 + in-process Catalog из dist + scripted fake OpenAI): (1) C5-цепочка — агент2 до вызова видит опубликованный ответ агента1 (ID/автор/порядок/версия); (2) handover — контекст задачи + транзакционный аудит `project.chat.agent.handover` (who/кого/откуда-ответ/задача/когда, after_state jsonb); (3) FR-403 — приватный ответ вне последовательного контекста; (4) отказы — агент вне состава комнаты и malformed-директива: без аудита, опубликованный ответ сохранён.
+- tsc: файлы 9.2 чисты (7 pre-existing ошибок в чужих тестах backups/project-deletion/snapshots).
+
+- **Корневой сьют без деградации — ЗЕЛЁНЫЙ (2026-11-12):** `FILES=$(python3 -c "import json;print(' '.join(json.load(open('scripts/workspace/check-tooling-tests.json'))))"); node --test --test-concurrency=1 $FILES` — **1076 tests, 1073 pass, 0 fail, 3 skipped** (exit 0). Строки «Catalog compilation failed» в логе — ожидаемые: dev-watch-daemon-тесты намеренно проверяют сценарий битой компиляции (тесты зелёные).
+- Prettier-формат всех 9.2-файлов после верификации (стиль проекта, `prettier --check` чист); dist пересобран (stamp актуален), e2e 4/4 и юниты 15/15 перепроверены после форматирования.
+
+Замечание (pre-existing, не регресс 9.2):
+- **`check.mjs --tooling`** — не гоняется: хардкод CHECK_TIMEOUT 600 c < длительность сьюта ~1021 c (commit 0d9b9430); контент шага верифицирован отдельным прогоном корневого сьюта (см. выше).

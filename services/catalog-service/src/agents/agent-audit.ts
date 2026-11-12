@@ -9,6 +9,7 @@ export const AGENT_AUDIT_ACTIONS = [
     'project.agent.update',
     'project.agent.remove',
     'project.agents.connect',
+    'project.chat.agent.handover',
 ] as const;
 const actions = new Set<string>(AGENT_AUDIT_ACTIONS);
 const object = (value: unknown): value is Record<string, unknown> =>

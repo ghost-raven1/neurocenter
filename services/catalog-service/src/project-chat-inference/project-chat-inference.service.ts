@@ -35,6 +35,7 @@ import type {
 } from '../project-chat/project-chat.interfaces';
 import { projectChatContext } from './project-chat-context';
 import { projectChatModels } from './project-chat-models';
+import { projectChatSequentialContext, type IProjectChatSequentialAnswer } from './project-chat-sequential';
 
 /** Reuses effective project agents and the existing model dispatcher, without reading private chat history. */
 @Injectable()
@@ -181,7 +182,15 @@ export class ProjectChatInferenceService implements IProjectChatInference {
         const model = await this.base(req, projectId, snapshot.modelId, snapshot.modelPin),
             settings = await this.settings(model);
         const ancestors = await this.ancestors(projectId, source);
-        let messages = projectChatContext(snapshot.definition.prompt, source, ancestors, learning.messages, settings);
+        const sequential = projectChatSequentialContext(await this.sequential(projectId, source, response.generation));
+        let messages = projectChatContext(
+            snapshot.definition.prompt,
+            source,
+            ancestors,
+            learning.messages,
+            settings,
+            sequential,
+        );
         let toolsCurrent: (db?: TProjectChatDb) => Promise<void> = (db) => authorize(false, db, true);
         if (source.agent_tools_request) {
             if (!this.agentTools) throw new BadRequestException('Инструменты агентов недоступны.');
@@ -361,6 +370,66 @@ export class ProjectChatInferenceService implements IProjectChatInference {
             contextWindowTokens: row?.options.contextWindow ?? null,
             reservedOutputTokens: row?.options.maxOutputTokens ?? null,
         };
+    }
+    /**
+     * FR-302: published (non-private) answers of previous executors, with provenance
+     * (id/author/order/version), available to the next executor before its call.
+     * A sibling answer on the same task from a different generation is the handover case;
+     * an earlier position is the sequential chain case.
+     */
+    private async sequential(
+        projectId: string,
+        source: IProjectChatMessageRow,
+        responseGeneration: string,
+    ): Promise<IProjectChatSequentialAnswer[]> {
+        const rows = (
+            await this.models.pool.query<{
+                id: string;
+                position: string;
+                content: string;
+                generation: string;
+                agent_id: string | null;
+                name: string | null;
+            }>(
+                `SELECT m.id, m.position::text AS position, m.content, m.generation,
+                    m.snapshot->>'agentId' AS agent_id, m.snapshot->>'name' AS name
+                 FROM project_chat_messages m
+                 JOIN project_chat_rooms r ON r.project_id=m.project_id AND r.id=m.room_id
+                 WHERE m.project_id=$1 AND m.room_id=$2 AND m.kind='agent' AND m.status='done'
+                   AND r.visibility <> 'PRIVATE'
+                   AND (m.position < $3 OR (m.source_message_id = $4 AND m.generation <> $5))
+                 ORDER BY m.position DESC
+                 LIMIT 8`,
+                [
+                    projectId,
+                    source.room_id ?? DEFAULT_PROJECT_CHAT_ROOM,
+                    source.position,
+                    source.id,
+                    responseGeneration,
+                ],
+            )
+        ).rows;
+        return rows
+            .filter(
+                (
+                    row,
+                ): row is {
+                    id: string;
+                    position: string;
+                    content: string;
+                    generation: string;
+                    agent_id: string;
+                    name: string;
+                } => !!row.agent_id && !!row.name,
+            )
+            .map((row) => ({
+                id: row.id,
+                position: row.position,
+                agentId: row.agent_id,
+                name: row.name,
+                generation: row.generation,
+                content: row.content,
+            }));
     }
     private async ancestors(projectId: string, source: IProjectChatMessageRow): Promise<IProjectChatMessageRow[]> {
         const rows: IProjectChatMessageRow[] = [],

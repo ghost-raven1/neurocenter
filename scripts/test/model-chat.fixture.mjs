@@ -134,6 +134,7 @@ export async function startModelChatFixture({ adminUrl, browser = false, storage
                     ...(capability === 'embedding' ? { dimension: 3 } : {}),
                 },
             });
+            // С 12.8 общий ключ в подключении не настраивается: режим авторизации + личный ключ «Мой доступ».
             await f.request('main', '/api/models/' + card.id + '/connection', {
                 method: 'PUT',
                 body: {
@@ -141,12 +142,26 @@ export async function startModelChatFixture({ adminUrl, browser = false, storage
                     expectedModelRevision: card.revision,
                     baseUrl: endpoint + (runtime === 'remote-openai' ? '/v1' : ''),
                     requestDimensions: false,
-                    credential: runtime === 'remote-openai' ? 'stored' : 'none',
-                    ...(runtime === 'remote-openai' ? { apiKey: 'qa-chat-provider-key' } : {}),
+                    authMode: runtime === 'remote-openai' ? 'required' : 'none',
                     options: capability === 'embedding' ? {} : { temperature: 0.4, topP: 0.8, maxOutputTokens: 128 },
                 },
             });
             card = await f.request('main', '/api/models/' + card.id);
+            // Проверка модели (hosting check) выполняется от имени main и требует личного ключа.
+            const saveMyAccess = async (actor) => {
+                const access = await f.request(actor, '/api/models/' + card.id + '/my-access');
+                await f.request(actor, '/api/models/' + card.id + '/my-access', {
+                    method: 'PUT',
+                    body: {
+                        providerId: access.providerId,
+                        expectedConnectionRevision: access.connectionRevision,
+                        expectedCredentialRevision: 0,
+                        requestKey: randomUUID(),
+                        apiKey: 'qa-chat-provider-key',
+                    },
+                });
+            };
+            if (runtime === 'remote-openai') await saveMyAccess('main');
             await f.request('main', '/api/models/' + card.id + '/hosting', {
                 method: 'POST',
                 status: 201,
@@ -170,6 +185,8 @@ export async function startModelChatFixture({ adminUrl, browser = false, storage
                 status: 201,
                 body: { modelId: card.id },
             });
+            // Ключ developer требует назначение модели проекту (authority через project_models).
+            if (runtime === 'remote-openai') await saveMyAccess('developer');
         }
         f.actors.observer = { email: 'observer@chat.example.test', role: 'Наблюдатель' };
         await f.pool.query('INSERT INTO platform_users(email,display_name,is_main_admin) VALUES($1,$2,false)', [
