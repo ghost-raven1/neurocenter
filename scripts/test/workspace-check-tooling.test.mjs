@@ -54,6 +54,7 @@ const expectedFiles = [
     'scripts/test/run-manifest.test.mjs',
     'scripts/test/secret-rotation-runbook.test.mjs',
     'scripts/test/shared-declaration-drift.test.mjs',
+    'scripts/test/stack-watchdog.test.mjs',
     'scripts/test/workspace-process-failure.test.mjs',
     'scripts/agent-kit/test/role-contracts.test.mjs',
     'scripts/agent-kit/test/role-evals.test.mjs',

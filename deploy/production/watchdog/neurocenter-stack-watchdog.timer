@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Neurocenter stack health every five minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/5
+Persistent=true
+Unit=neurocenter-stack-watchdog.service
+
+[Install]
+WantedBy=timers.target

@@ -328,6 +328,32 @@ services:
       retries: 5
       start_period: 10s
 
+  # AD-OP-8: host-level-метрики через read-only-маунты; 9100 наружу не публикуется (scrape prometheus'ом в backend-сети).
+  node_exporter:
+    <<: *service
+    image: prom/node-exporter:v1.9.1@sha256:863b62ff9f392b6f472e22b4b670ad1cabb66b3042502ebd4b2cd192733e1bce
+    mem_limit: 128m
+    cpus: 1
+    pids_limit: 64
+    command:
+      [
+        --path.procfs=/host/proc,
+        --path.sysfs=/host/sys,
+        --path.rootfs=/host,
+        --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($|/),
+      ]
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    healthcheck:
+      test: [CMD, wget, --spider, http://127.0.0.1:9100/metrics]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
 secrets:
   model_credential_key: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/model_credential_key'}
   metrics_token: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/metrics_token'}

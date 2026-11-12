@@ -3,7 +3,7 @@ title: 'Stack-watchdog (AD-OP-8) + node_exporter: consumer /ready/dependencies'
 type: 'feature'
 ticket: '8'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'

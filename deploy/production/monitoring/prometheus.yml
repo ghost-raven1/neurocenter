@@ -20,3 +20,8 @@ scrape_configs:
           - catalog-service:4100
           - skills-service:4200
           - rag-sync-service:4300
+  # AD-OP-8: host-level-метрики (node_exporter, read-only-маунты); без Bearer — сервис не знает metrics_token.
+  - job_name: node-exporter
+    static_configs:
+      - targets:
+          - node_exporter:9100

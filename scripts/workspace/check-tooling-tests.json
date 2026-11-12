@@ -58,6 +58,7 @@
     "scripts/test/run-manifest.test.mjs",
     "scripts/test/secret-rotation-runbook.test.mjs",
     "scripts/test/shared-declaration-drift.test.mjs",
+    "scripts/test/stack-watchdog.test.mjs",
     "scripts/test/supply-vendor.test.mjs",
     "scripts/test/tls-global-disable.test.mjs",
     "scripts/test/verifier-tls.test.mjs",

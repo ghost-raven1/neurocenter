@@ -424,15 +424,22 @@ async function captureActuals(clone, client) {
     const postgresName = config.services?.postgres?.image;
     if (typeof postgresName !== 'string' || !postgresName)
         throw new Error('F2: в production-профиле отсутствует postgres');
-    const [images, postgresRaw] = await Promise.all([
+    const nodeExporterName = config.services?.node_exporter?.image;
+    if (typeof nodeExporterName !== 'string' || !nodeExporterName)
+        throw new Error('F2: в production-профиле отсутствует node_exporter');
+    const [images, postgresRaw, nodeExporterRaw] = await Promise.all([
         serviceImageIds(config),
         docker(['image', 'inspect', postgresName]),
+        docker(['image', 'inspect', nodeExporterName]),
     ]);
     const postgresImage = JSON.parse(postgresRaw)[0]?.Id;
     if (!imagePattern.test(postgresImage ?? '')) throw new Error('F2: образ postgres не закреплён');
+    const nodeExporterImage = JSON.parse(nodeExporterRaw)[0]?.Id;
+    if (!imagePattern.test(nodeExporterImage ?? '')) throw new Error('F2: образ node_exporter не закреплён');
     return {
         images,
         postgresImage,
+        nodeExporterImage,
         migrations: await inspectSchemaManifests(images, (args) => docker(args)),
         supply: await supplyInventory(clone),
     };
@@ -1044,6 +1051,7 @@ if (process.env.NODE_TEST_CONTEXT) {
             release,
             images: Object.fromEntries(applicationServices.map((service) => [service, 'sha256:' + 'a'.repeat(64)])),
             postgresImage: 'sha256:' + 'b'.repeat(64),
+            nodeExporterImage: 'sha256:' + 'f'.repeat(64),
             supply: {
                 runtime: [{ name: 'runtime/neurocenter-runtime.tgz', sha256: 'c'.repeat(64) }],
                 opencode: [{ name: 'opencode/neurocenter-opencode.tgz', sha256: 'd'.repeat(64) }],

@@ -1,0 +1,13 @@
+[Unit]
+Description=Neurocenter stack watchdog tick (AD-OP-8)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=neurocenter-operator
+WorkingDirectory=/opt/neurocenter
+EnvironmentFile=/etc/neurocenter/watchdog.env
+ExecStart=/usr/bin/node /opt/neurocenter/scripts/production/stack-watchdog.mjs check --directory /opt/neurocenter --project-name neurocenter-production --state-file /var/lib/neurocenter/stack-watchdog-state.json --alert-file /var/log/neurocenter/alerts.jsonl
+UMask=0077
+TimeoutStartSec=10m

@@ -131,7 +131,10 @@ function flowDeps({ root, directory, git, drift = false }) {
             assert.ok(service, 'fixture: неизвестный schema-образ в docker run');
             return JSON.stringify(migrationRows(service));
         }
-        if (args[0] === 'image' && args[1] === 'inspect') return JSON.stringify([{ Id: image('8') }]);
+        if (args[0] === 'image' && args[1] === 'inspect') {
+            const id = String(args[2]).startsWith('prom/node-exporter') ? image('9') : image('8');
+            return JSON.stringify([{ Id: id }]);
+        }
         throw new Error('fixture docker: ' + args.join(' '));
     };
     return {
@@ -149,6 +152,7 @@ function flowDeps({ root, directory, git, drift = false }) {
             services: {
                 ...Object.fromEntries(applicationServices.map((service) => [service, { image: 'fixture:' + service }])),
                 postgres: { image: 'pgvector/pgvector:pg16@sha256:' + '8'.repeat(64) },
+                node_exporter: { image: 'prom/node-exporter:v1.9.1@sha256:' + '9'.repeat(64) },
             },
         }),
         serviceImageIds: async () => {
@@ -175,6 +179,7 @@ test('validateReleaseManifest: полный манифест проходит, �
         release: 'fixture-1',
         images: serviceImages(),
         postgresImage: image('d'),
+        nodeExporterImage: image('8'),
         supply: {
             runtime: [],
             opencode: [],
@@ -228,6 +233,12 @@ test('validateReleaseManifest: полный манифест проходит, �
             },
         ],
         [
+            'nodeExporterImage',
+            (value) => {
+                value.nodeExporterImage = 'prom/node-exporter:v1.9.1';
+            },
+        ],
+        [
             'supply digest',
             (value) => {
                 value.supply.installers[0].sha256 = 'B'.repeat(64);
@@ -263,6 +274,7 @@ test('verifyReleaseManifest: пустой список при совпадени
     const actuals = {
         images: serviceImages(),
         postgresImage: image('d'),
+        nodeExporterImage: image('8'),
         supply: {
             runtime: [],
             opencode: [],
@@ -300,6 +312,7 @@ test('CLEAN_BUILD: чистый checkout записывает проверенн
     assert.equal(manifest.release, 'fixture-1');
     assert.deepEqual(manifest.images, serviceImages());
     assert.equal(manifest.postgresImage, image('8'));
+    assert.equal(manifest.nodeExporterImage, image('9'));
     // EMPTY_SUPPLY: в чистом checkout архивы bridge-dist могут отсутствовать.
     assert.deepEqual(manifest.supply.runtime, []);
     assert.deepEqual(manifest.supply.opencode, []);
@@ -316,8 +329,8 @@ test('CLEAN_BUILD: чистый checkout записывает проверенн
     const info = await stat(filename);
     assert.equal(info.mode & 0o777, 0o600);
     assert.deepEqual(JSON.parse(await readFile(filename, 'utf8')), manifest);
-    // Верификация пересчитала состояние: postgres inspect и 3 schema-образов дважды.
-    assert.equal(deps.dockerCalls.filter((args) => args[0] === 'image').length, 2);
+    // Верификация пересчитала состояние: postgres и node_exporter inspect дважды.
+    assert.equal(deps.dockerCalls.filter((args) => args[0] === 'image').length, 4);
     assert.equal(deps.dockerCalls.filter((args) => args[0] === 'run').length, 6);
 });
 
@@ -521,6 +534,7 @@ test('writeReleaseManifest: закрытая атомарная запись; п
         release: 'fixture-1',
         images: serviceImages(),
         postgresImage: image('d'),
+        nodeExporterImage: image('8'),
         supply,
         migrations: migrationManifests(),
     });
@@ -535,6 +549,7 @@ test('writeReleaseManifest: закрытая атомарная запись; п
         release: 'fixture-1',
         images: serviceImages(),
         postgresImage: image('d'),
+        nodeExporterImage: image('8'),
         supply,
         migrations: migrationManifests(),
     });

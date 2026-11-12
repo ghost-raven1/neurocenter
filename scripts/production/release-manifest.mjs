@@ -106,6 +106,7 @@ export function validateReleaseManifest(manifest) {
     )
         invalid();
     if (!imagePattern.test(manifest.postgresImage || '')) invalid();
+    if (!imagePattern.test(manifest.nodeExporterImage || '')) invalid();
     const supply = manifest.supply;
     if (!supply || typeof supply !== 'object' || Array.isArray(supply)) invalid();
     for (const key of ['runtime', 'opencode', 'installers']) supplyEntries(supply[key], key);
@@ -122,13 +123,22 @@ export function validateReleaseManifest(manifest) {
     return manifest;
 }
 
-export function buildReleaseManifest({ commit, release, images, postgresImage, supply, migrations }) {
+export function buildReleaseManifest({
+    commit,
+    release,
+    images,
+    postgresImage,
+    nodeExporterImage,
+    supply,
+    migrations,
+}) {
     return validateReleaseManifest({
         format: releaseManifestFormat,
         commit,
         release,
         images,
         postgresImage,
+        nodeExporterImage,
         supply,
         migrations,
     });
@@ -177,6 +187,10 @@ export function verifyReleaseManifest(manifest, actuals) {
     }
     if (expected.postgresImage !== actuals?.postgresImage)
         mismatches.push('postgresImage: ' + expected.postgresImage + ' -> ' + (actuals?.postgresImage ?? 'нет'));
+    if (expected.nodeExporterImage !== actuals?.nodeExporterImage)
+        mismatches.push(
+            'nodeExporterImage: ' + expected.nodeExporterImage + ' -> ' + (actuals?.nodeExporterImage ?? 'нет'),
+        );
     for (const key of ['runtime', 'opencode', 'installers', 'vendorContract']) {
         if (!isDeepStrictEqual(expected.supply[key], actuals?.supply?.[key]))
             mismatches.push('supply.' + key + ': опись не совпадает с фактическими артефактами');
@@ -408,9 +422,13 @@ async function captureReleaseActuals({
     const config = await composeConfiguration(client);
     const postgresName = config.services?.postgres?.image;
     if (typeof postgresName !== 'string' || !postgresName) throw new Error('В production-профиле отсутствует postgres');
-    const [images, postgresRaw] = await Promise.all([
+    const nodeExporterName = config.services?.node_exporter?.image;
+    if (typeof nodeExporterName !== 'string' || !nodeExporterName)
+        throw new Error('В production-профиле отсутствует node_exporter');
+    const [images, postgresRaw, nodeExporterRaw] = await Promise.all([
         serviceImageIds(config),
         docker(['image', 'inspect', postgresName]),
+        docker(['image', 'inspect', nodeExporterName]),
     ]);
     for (const service of applicationServices) {
         if (typeof images?.[service] !== 'string' || !imagePattern.test(images[service]))
@@ -424,9 +442,18 @@ async function captureReleaseActuals({
     }
     if (typeof postgresImage !== 'string' || !imagePattern.test(postgresImage))
         throw new Error('Не закреплён образ postgres');
+    let nodeExporterImage;
+    try {
+        nodeExporterImage = JSON.parse(nodeExporterRaw)[0]?.Id;
+    } catch {
+        nodeExporterImage = undefined;
+    }
+    if (typeof nodeExporterImage !== 'string' || !imagePattern.test(nodeExporterImage))
+        throw new Error('Не закреплён образ node_exporter');
     return {
         images,
         postgresImage,
+        nodeExporterImage,
         migrations: await inspectSchemaManifests(images, docker),
         supply: await supplyInventory(root),
     };

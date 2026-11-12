@@ -24,9 +24,12 @@ const OTHER_COMMIT = 'b'.repeat(40);
 const image = (letter) => 'sha256:' + letter.repeat(64);
 const serviceLetters = ['a', 'b', 'c', 'd', 'e', 'f', '0'];
 const driftLetters = ['2', '3', '4', '5', '6', '7', '8'];
-const serviceImages = () => Object.fromEntries(applicationServices.map((service, index) => [service, image(serviceLetters[index])]));
-const driftImages = () => Object.fromEntries(applicationServices.map((service, index) => [service, image(driftLetters[index])]));
+const serviceImages = () =>
+    Object.fromEntries(applicationServices.map((service, index) => [service, image(serviceLetters[index])]));
+const driftImages = () =>
+    Object.fromEntries(applicationServices.map((service, index) => [service, image(driftLetters[index])]));
 const POSTGRES = image('1');
+const NODE_EXPORTER = 'sha256:' + '9a'.repeat(32);
 const migrationRows = (service) =>
     service === 'rag-sync-service'
         ? [{ scope: 'data', version: 'project-generations-1', name: 'Поколения проектов', checksum: 'c'.repeat(64) }]
@@ -47,13 +50,30 @@ const supply = () => ({
     installers: [{ name: 'install.sh', sha256: 'b'.repeat(64) }],
     vendorContract: vendorContract(),
 });
-function makeManifest({ commit = COMMIT, release = 'fixture-1', images = serviceImages(), postgresImage = POSTGRES } = {}) {
-    return buildReleaseManifest({ commit, release, images, postgresImage, supply: supply(), migrations: migrationManifests() });
+function makeManifest({
+    commit = COMMIT,
+    release = 'fixture-1',
+    images = serviceImages(),
+    postgresImage = POSTGRES,
+    nodeExporterImage = NODE_EXPORTER,
+} = {}) {
+    return buildReleaseManifest({
+        commit,
+        release,
+        images,
+        postgresImage,
+        nodeExporterImage,
+        supply: supply(),
+        migrations: migrationManifests(),
+    });
 }
 
 /** Все 8 пар (svc -> imageId) бандла: 7 приложений + postgres, в порядке сборки. */
 function allEntries(manifest) {
-    return [...applicationServices.map((service) => [service, manifest.images[service]]), ['postgres', manifest.postgresImage]];
+    return [
+        ...applicationServices.map((service) => [service, manifest.images[service]]),
+        ['postgres', manifest.postgresImage],
+    ];
 }
 
 /** Детерминированные «tar»-байты на imageId; postgres — крупный (2 chunk'а EXTERNAL_CHUNK_BYTES). */
@@ -67,7 +87,8 @@ function makeTar(name, imageId, large) {
 }
 function makeRegistry(manifest) {
     const registry = new Map();
-    for (const [name, imageId] of allEntries(manifest)) registry.set(imageId, makeTar(name, imageId, name === 'postgres'));
+    for (const [name, imageId] of allEntries(manifest))
+        registry.set(imageId, makeTar(name, imageId, name === 'postgres'));
     return registry;
 }
 
@@ -153,42 +174,78 @@ test('validateImageBundle: валидная опись проходит, бит�
     };
     assert.equal(validateImageBundle(valid), valid);
     const cases = [
-        ['посторонний ключ (секрет)', (value) => {
-            value.token = 'x';
-        }],
-        ['отсутствующий ключ', (value) => {
-            delete value.createdAt;
-        }],
-        ['format', (value) => {
-            value.format = 'other-v1';
-        }],
-        ['release latest', (value) => {
-            value.release = 'latest';
-        }],
-        ['commit', (value) => {
-            value.commit = 'z'.repeat(39);
-        }],
-        ['imageId', (value) => {
-            value.images.frontend.imageId = 'sha256:zzz';
-        }],
-        ['sha256', (value) => {
-            value.images.frontend.sha256 = 'B'.repeat(64);
-        }],
-        ['size', (value) => {
-            value.images.frontend.size = 0;
-        }],
-        ['file', (value) => {
-            value.images.frontend.file = 'other.tar';
-        }],
-        ['отсутствующий сервис', (value) => {
-            delete value.images['api-gateway'];
-        }],
-        ['лишний сервис', (value) => {
-            value.images.postgres = value.postgresImage;
-        }],
-        ['postgres file', (value) => {
-            value.postgresImage.file = 'images/other.tar';
-        }],
+        [
+            'посторонний ключ (секрет)',
+            (value) => {
+                value.token = 'x';
+            },
+        ],
+        [
+            'отсутствующий ключ',
+            (value) => {
+                delete value.createdAt;
+            },
+        ],
+        [
+            'format',
+            (value) => {
+                value.format = 'other-v1';
+            },
+        ],
+        [
+            'release latest',
+            (value) => {
+                value.release = 'latest';
+            },
+        ],
+        [
+            'commit',
+            (value) => {
+                value.commit = 'z'.repeat(39);
+            },
+        ],
+        [
+            'imageId',
+            (value) => {
+                value.images.frontend.imageId = 'sha256:zzz';
+            },
+        ],
+        [
+            'sha256',
+            (value) => {
+                value.images.frontend.sha256 = 'B'.repeat(64);
+            },
+        ],
+        [
+            'size',
+            (value) => {
+                value.images.frontend.size = 0;
+            },
+        ],
+        [
+            'file',
+            (value) => {
+                value.images.frontend.file = 'other.tar';
+            },
+        ],
+        [
+            'отсутствующий сервис',
+            (value) => {
+                delete value.images['api-gateway'];
+            },
+        ],
+        [
+            'лишний сервис',
+            (value) => {
+                value.images.postgres = value.postgresImage;
+            },
+        ],
+        [
+            'postgres file',
+            (value) => {
+                value.postgresImage.file = 'images/other.tar';
+            },
+        ],
     ];
     for (const [label, mutate] of cases) {
         const broken = structuredClone(valid);
@@ -210,7 +267,10 @@ test('bundle: сборка 8 tar по точному image ID + опись с SH
     const saves = dockerMock.calls.filter((args) => args[0] === 'save');
     assert.equal(saves.length, 8);
     for (const [name, imageId] of allEntries(manifest)) {
-        assert.ok(saves.some((args) => args[1] === imageId), 'save ' + name);
+        assert.ok(
+            saves.some((args) => args[1] === imageId),
+            'save ' + name,
+        );
         const bytes = await readFile(path.join(destination, 'images', name + '.tar'));
         assert.ok(bytes.equals(registry.get(imageId)), 'tar bytes ' + name);
     }
@@ -236,7 +296,8 @@ test('bundle idempotency: повтор для того же релиза — no-
     const first = await bundleImages(manifest, destination, { run: makeDocker({ registry }).run });
     assert.equal(first.noOp, false);
     const before = {};
-    for (const [name] of allEntries(manifest)) before[name] = await readFile(path.join(destination, 'images', name + '.tar'));
+    for (const [name] of allEntries(manifest))
+        before[name] = await readFile(path.join(destination, 'images', name + '.tar'));
     // Другой registry: если бы случилась пересборка, байты tar изменились бы.
     const mutated = new Map([...registry].map(([id, tar]) => [id, Buffer.concat([tar, Buffer.from('X')])]));
     const second = await bundleImages(manifest, destination, { run: makeDocker({ registry: mutated }).run });
@@ -257,7 +318,10 @@ test('bundle: повреждённый tar при повторе останав�
     const buf = await readFile(victim);
     buf[0] ^= 0xff;
     await writeFile(victim, buf);
-    await assert.rejects(bundleImages(manifest, destination, { run: makeDocker({ registry }).run }), /SHA256 tar frontend/);
+    await assert.rejects(
+        bundleImages(manifest, destination, { run: makeDocker({ registry }).run }),
+        /SHA256 tar frontend/,
+    );
 });
 
 test('bundle: повтор после прерванной сборки — прерванные tar удаляются, сборка завершается', async (t) => {
@@ -297,7 +361,10 @@ test('bundle: существующий бандл с другими image ID о�
     assert.equal(drifted.release, 'fixture-1');
     const registry = new Map([...makeRegistry(base), ...makeRegistry(drifted)]);
     await bundleImages(base, destination, { run: makeDocker({ registry }).run });
-    await assert.rejects(bundleImages(drifted, destination, { run: makeDocker({ registry }).run }), /для других image ID/);
+    await assert.rejects(
+        bundleImages(drifted, destination, { run: makeDocker({ registry }).run }),
+        /для других image ID/,
+    );
 });
 
 test('verify: ID после docker load == опись == release-манифест', async (t) => {
@@ -346,7 +413,10 @@ test('verify: отсутствующий tar — отказ', async (t) => {
     const registry = makeRegistry(manifest);
     await bundleImages(manifest, destination, { run: makeDocker({ registry }).run });
     await rm(path.join(destination, 'images', 'frontend.tar'));
-    await assert.rejects(verifyImageBundle(destination, manifest, { run: makeDocker({ registry }).run }), /Отсутствует tar frontend/);
+    await assert.rejects(
+        verifyImageBundle(destination, manifest, { run: makeDocker({ registry }).run }),
+        /Отсутствует tar frontend/,
+    );
 });
 
 test('load: все образы бандла загружаются, ID сверяются с описью, приложения помечены меткой релиза', async (t) => {
@@ -361,13 +431,20 @@ test('load: все образы бандла загружаются, ID свер
     assert.equal(result.release, 'fixture-1');
     for (const [name, imageId] of allEntries(manifest)) assert.equal(result.images[name], imageId, name);
     // docker save по ID не несёт тегов: load сам метит 7 приложений по релизу, postgres — нет.
-    assert.deepEqual(result.tagged, Object.fromEntries(applicationServices.map((service) => [service, 'neurocenter/' + service + ':fixture-1'])));
+    assert.deepEqual(
+        result.tagged,
+        Object.fromEntries(applicationServices.map((service) => [service, 'neurocenter/' + service + ':fixture-1'])),
+    );
     assert.ok(!('postgres' in result.tagged), 'postgres не входит в tagged');
     const tagCalls = loadDocker.calls.filter((args) => args[0] === 'tag');
     assert.equal(tagCalls.length, applicationServices.length);
     for (const [name, imageId] of allEntries(manifest)) {
         if (name === 'postgres') assert.ok(!tagCalls.some((args) => args[1] === imageId), 'postgres не метится');
-        else assert.ok(tagCalls.some((args) => args[1] === imageId && args[2] === 'neurocenter/' + name + ':fixture-1'), 'tag ' + name);
+        else
+            assert.ok(
+                tagCalls.some((args) => args[1] === imageId && args[2] === 'neurocenter/' + name + ':fixture-1'),
+                'tag ' + name,
+            );
     }
 });
 
@@ -387,10 +464,7 @@ test('load: образ без ID в выводе load определяется �
     assert.equal(result.ok, true);
     for (const [name, imageId] of allEntries(manifest)) assert.equal(result.images[name], imageId, name);
     // byRef-разрешение ID не мешает разметке приложений
-    assert.deepEqual(
-        Object.keys(result.tagged).sort(),
-        [...applicationServices].sort(),
-    );
+    assert.deepEqual(Object.keys(result.tagged).sort(), [...applicationServices].sort());
 });
 
 test('upload+download: roundtrip — байты tar и SHA описи совпадают', async (t) => {
@@ -441,7 +515,15 @@ test('опись не несёт секретов: точная форма кл�
     const registry = makeRegistry(manifest);
     await bundleImages(manifest, destination, { run: makeDocker({ registry }).run });
     const raw = JSON.parse(await readFile(path.join(destination, 'image-bundle.json'), 'utf8'));
-    assert.deepEqual(Object.keys(raw).sort(), ['bundleId', 'commit', 'createdAt', 'format', 'images', 'postgresImage', 'release']);
+    assert.deepEqual(Object.keys(raw).sort(), [
+        'bundleId',
+        'commit',
+        'createdAt',
+        'format',
+        'images',
+        'postgresImage',
+        'release',
+    ]);
     for (const name of [...applicationServices, 'postgres']) {
         const entry = name === 'postgres' ? raw.postgresImage : raw.images[name];
         assert.deepEqual(Object.keys(entry).sort(), ['file', 'imageId', 'sha256', 'size']);
