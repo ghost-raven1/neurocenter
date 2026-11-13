@@ -12,6 +12,8 @@ export const AGENT_AUDIT_ACTIONS = [
     'project.chat.agent.handover',
     'project.chat.agent.share',
     'project.chat.agent.system-call',
+    'agent.extensions.experimental-enable',
+    'agent.extensions.experimental-revoke',
 ] as const;
 const actions = new Set<string>(AGENT_AUDIT_ACTIONS);
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -37,13 +39,20 @@ export function agentAuditSnapshot(value: unknown): Record<string, string | numb
         'jobId',
         'mode',
         'hash',
+        'agentId',
+        'assetId',
+        'assetKind',
+        'purpose',
+        'expiresAt',
+        'declaredManifest',
+        'revokedAt',
     ]) {
         if (typeof value[key] === 'string') result[key] = value[key];
     }
-    for (const key of ['version', 'revision']) {
+    for (const key of ['version', 'revision', 'declaredVersion']) {
         if (Number.isSafeInteger(value[key]) && Number(value[key]) >= 0) result[key] = Number(value[key]);
     }
-    for (const key of ['enabled', 'removed', 'overridden', 'archived']) {
+    for (const key of ['enabled', 'removed', 'overridden', 'archived', 'revoked']) {
         if (typeof value[key] === 'boolean') result[key] = value[key];
     }
     if (Array.isArray(value.projects)) result.projectsCount = value.projects.length;

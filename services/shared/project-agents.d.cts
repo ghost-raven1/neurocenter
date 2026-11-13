@@ -26,11 +26,22 @@ export interface IAgentDefinition {
     topP?: number;
     steps?: number;
 }
+export type TAgentExtensionKind = 'mcp' | 'plugin' | 'skill';
+export type TAgentExtensionOrigin = 'approved' | 'experimental';
+/** FR-306: one catalog asset bound to an agent; version + SHA provenance from the approved kit or an active experiment. */
+export interface IAgentExtension {
+    assetId: string;
+    assetKind: TAgentExtensionKind;
+    version: number;
+    manifest: string;
+    origin: TAgentExtensionOrigin;
+}
 export interface IProjectAgent extends IAgentDefinition {
     id: string;
     slug: string;
     version: number;
     enabled: boolean;
+    extensions?: IAgentExtension[];
 }
 export interface IProjectAgentModelMapping {
     agentId: string;
@@ -80,6 +91,7 @@ export interface IProjectAgentReceipt {
     version: number;
     enabled: boolean;
     sha256: string;
+    extensions?: IAgentExtension[];
 }
 export interface IProjectAgentsResult {
     schemaVersion: 2;

@@ -12,6 +12,7 @@ import type { IAgentMethodWorkflowAgent, IAgentMethodWorkflowPayload } from '../
 import { ProjectAgentRepository } from '../agents/project-agent.repository';
 import { agentModelRequirements, agentModelSetupRequired } from '../agents/agent-model-requirements';
 import { agentId } from '../agents/agent-validation';
+import { agentExtensionKits, withExtensionKits } from '../agents/agent-extension-kit';
 import type { IDevice } from '../devices/device-store';
 
 export type TMethodAgentDb = Pick<PoolClient, 'query'>;
@@ -80,6 +81,7 @@ export async function captureMethodAgent(
         bindingId: selection.bindingId,
         instanceId: selection.instanceId,
         ...snapshot,
+        agents: withExtensionKits(snapshot.agents, await agentExtensionKits(source, selection.projectId)),
         modelRequirements,
     });
     const delivered = (

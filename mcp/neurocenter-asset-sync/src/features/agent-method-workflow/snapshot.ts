@@ -11,7 +11,14 @@ export async function snapshotWorkspace(root: string, run: TMethodCommandRunner)
     const result = await run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], true);
     if (result.code !== 0) throw new MethodExecutionError('OBSERVATION_LIMIT');
     const paths = [
-        ...new Set(result.stdout.split('\0').filter((file) => !!file && file !== '.opencode/neurocenter/files.lock')),
+        ...new Set(
+            result.stdout
+                .split('\0')
+                // FR-306: per-agent extension overlays are execution-local and never part of the change set.
+                .filter(
+                    (file) => !!file && file !== '.opencode/neurocenter/files.lock' && !file.startsWith('.nc/agents/'),
+                ),
+        ),
     ].sort();
     if (paths.length > 20000) throw new MethodExecutionError('OBSERVATION_LIMIT');
     const snapshot: TWorkspaceSnapshot = new Map();

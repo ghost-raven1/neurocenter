@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from 'pg';
 import { createProjectAgentsPayload, type IProjectAgent } from '../../../shared/project-agents.cjs';
 import type { IAccessActor } from '../access/access.model';
 import { securityEvent } from '../access/security-events';
+import { agentExtensionKits, withExtensionKits } from './agent-extension-kit';
 import { AgentRepository, agentSummary } from './agent.repository';
 import { agentMutation } from './agent-mutation';
 import { requiredAssetForNative, systemAssetRemovalMessage } from '../catalog/system-assets';
@@ -116,7 +117,7 @@ export class ProjectAgentRepository {
                 bindingId: '0'.repeat(64),
                 instanceId: '00000000-0000-4000-8000-000000000000',
                 revision: Number(next),
-                agents: snapshot.agents,
+                agents: withExtensionKits(snapshot.agents, await agentExtensionKits(db, projectId)),
             });
         } catch {
             throw new BadRequestException(
@@ -191,7 +192,11 @@ export class ProjectAgentRepository {
      *
      * @returns {Promise<{assigned: boolean; reason?: string}>}
      */
-    async assignDefault(projectId: string, id: string, actor = 'system:catalog'): Promise<{ assigned: boolean; reason?: string }> {
+    async assignDefault(
+        projectId: string,
+        id: string,
+        actor = 'system:catalog',
+    ): Promise<{ assigned: boolean; reason?: string }> {
         agentId(id);
         const client = await this.pool.connect();
         try {
@@ -215,7 +220,9 @@ export class ProjectAgentRepository {
                 return { assigned: true };
             }
             // project_agent_sets обязателен для saved() (UPDATE ... RETURNING).
-            await client.query('INSERT INTO project_agent_sets(project_id) VALUES($1) ON CONFLICT DO NOTHING', [projectId]);
+            await client.query('INSERT INTO project_agent_sets(project_id) VALUES($1) ON CONFLICT DO NOTHING', [
+                projectId,
+            ]);
             await client.query(
                 `INSERT INTO project_agents(project_id,agent_id,version,manifest,added_by,updated_by) VALUES($1,$2,$3,$4,$5,$5)
                 ON CONFLICT(project_id,agent_id) DO UPDATE SET version=EXCLUDED.version,manifest=EXCLUDED.manifest,enabled=false,removed=false,updated_by=EXCLUDED.updated_by,updated_at=now()`,

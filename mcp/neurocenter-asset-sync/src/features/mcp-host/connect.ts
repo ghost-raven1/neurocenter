@@ -18,7 +18,7 @@ export const isHostedMcpUrl = (value: unknown): value is string =>
     );
 
 /** Берёт билет хоста у площадки за устройство и одобренный пакет; токен устройства в проект не уходит. */
-export async function requestHostedMcpConnection(projectId: string, pkg: IPackage): Promise<string> {
+export async function requestHostedMcpConnection(projectId: string, pkg: IPackage, agentId?: string): Promise<string> {
     const credentials = await readState<ICredentials>('credentials');
     if (
         !credentials ||
@@ -26,7 +26,9 @@ export async function requestHostedMcpConnection(projectId: string, pkg: IPackag
         typeof credentials.token !== 'string' ||
         !credentials.token ||
         /[\r\n]/.test(credentials.token) ||
-        !projectId
+        !projectId ||
+        // FR-306: агентный билет — только с точным идентификатором агента каталога.
+        (agentId !== undefined && !/^agent-[a-z0-9][a-z0-9-]{0,120}$/.test(agentId))
     ) {
         throw new Error('Хост MCP доступен только подключённому проекту. Проверьте подключение к Нейроцентру.');
     }
@@ -36,8 +38,10 @@ export async function requestHostedMcpConnection(projectId: string, pkg: IPackag
     }
     // AD-3: клиентская сверка — sha256 канонического descriptor-текста собственного пакета;
     // self-referential hash из байтов пакета запрещён.
-    const expectedDescriptorSha256 = runtimeDescriptorDigest(normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts));
-    const body = JSON.stringify({ projectId, pkg });
+    const expectedDescriptorSha256 = runtimeDescriptorDigest(
+        normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts),
+    );
+    const body = JSON.stringify({ projectId, pkg, ...(agentId !== undefined ? { agentId } : {}) });
     return await new Promise<string>((resolve, reject) => {
         let failed = false;
         const fail = (message: string) => {

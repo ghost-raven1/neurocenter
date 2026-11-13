@@ -15,6 +15,7 @@ import { assertLocalFeature } from '../devices/local-change-jobs';
 import { ProjectAgentRepository } from './project-agent.repository';
 import { revision } from './agent-validation';
 import { agentModelRequirements } from './agent-model-requirements';
+import { agentExtensionKits, withExtensionKits } from './agent-extension-kit';
 function context(device: IDevice, projectId: string | undefined, expected: unknown, instance: unknown) {
     assertLocalFeature(device.report, PROJECT_AGENTS_CAPABILITY);
     const bindingId = managedBinding(device.report, projectId);
@@ -54,6 +55,7 @@ export async function agentConfigurationJobPayload(store: DeviceStore, device: I
         projectId: input.projectId!,
         ...target,
         ...snapshot,
+        agents: withExtensionKits(snapshot.agents, await agentExtensionKits(store.pool, input.projectId!)),
         modelRequirements: await agentModelRequirements(store.pool, input.projectId!, snapshot.agents, device),
     });
 }
@@ -77,6 +79,7 @@ export async function assertAgentConfigurationJob(
                 projectId: job.project_id!,
                 ...target,
                 ...snapshot,
+                agents: withExtensionKits(snapshot.agents, await agentExtensionKits(db, job.project_id!)),
                 modelRequirements: await agentModelRequirements(db, job.project_id!, snapshot.agents, device),
             }),
             base,

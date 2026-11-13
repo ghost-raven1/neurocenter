@@ -54,7 +54,7 @@ export class McpHostController {
         if (!auth?.deviceId) {
             throw new UnauthorizedException('MCP не подключён или доступ отозван.');
         }
-        const input = body as { projectId?: unknown; pkg?: unknown } | null;
+        const input = body as { projectId?: unknown; pkg?: unknown; agentId?: unknown } | null;
         if (
             !input ||
             typeof input !== 'object' ||
@@ -63,13 +63,19 @@ export class McpHostController {
             !input.projectId ||
             !input.pkg ||
             typeof input.pkg !== 'object' ||
-            Array.isArray(input.pkg)
+            Array.isArray(input.pkg) ||
+            (input.agentId !== undefined &&
+                !(typeof input.agentId === 'string' && /^agent-[a-z0-9][a-z0-9-]{0,120}$/.test(input.agentId)))
         ) {
             throw new BadRequestException('Некорректный запрос подключения хоста MCP.');
         }
         const response = await axios.post(
             `${this.catalogUrl}/internal/device-channel/mcp-host/authorize`,
-            { projectId: input.projectId, pkg: input.pkg },
+            {
+                projectId: input.projectId,
+                pkg: input.pkg,
+                ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
+            },
             {
                 timeout: 15000,
                 validateStatus: () => true,
@@ -136,7 +142,8 @@ export class McpHostController {
             !validHostedMcpSession(data.session) ||
             data.session.deviceId !== auth.deviceId ||
             data.session.projectId !== input.projectId ||
-            data.session.assetId !== data.assetId
+            data.session.assetId !== data.assetId ||
+            data.session.agentId !== (input.agentId ?? undefined)
         ) {
             throw new BadGatewayException('Сервис хоста MCP ответил некорректно. Повторите позже.');
         }

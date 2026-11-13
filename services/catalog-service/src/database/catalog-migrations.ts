@@ -50,7 +50,7 @@ import { DISCUSSIONS_SCHEMA_SQL } from '../discussions/discussions.schema';
 import { DISCUSSIONS_SCHEMA_ASSERT_SQL } from '../discussions/discussions.schema-verification';
 import { CHAT_RESEARCH_SCHEMA_SQL } from '../model-chat/chat-research.schema';
 import { CHAT_RESEARCH_SCHEMA_ASSERT_SQL } from '../model-chat/chat-research.schema-verification';
-import { AGENT_SCHEMA_SQL } from '../agents/agent-schema';
+import { AGENT_EXTENSION_SCHEMA_SQL, AGENT_SCHEMA_SQL } from '../agents/agent-schema';
 import { BRIDGE_SOURCE_SCHEMA_SQL } from '../asset-sources/bridge-source.schema';
 import { BRIDGE_SOURCE_SCHEMA_ASSERT_SQL } from '../asset-sources/bridge-source.schema-verification';
 import { CATALOG_REQUEST_SCHEMA_SQL } from '../catalog-requests/request.schema';
@@ -346,4 +346,5 @@ export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
         name: 'agent-system-call',
         sql: PROJECT_CHAT_SYSTEM_CALL_SCHEMA_SQL + '\n' + PROJECT_CHAT_SYSTEM_CALL_SCHEMA_ASSERT_SQL,
     },
+    { version: 59, name: 'agent-extension-kit', sql: AGENT_EXTENSION_SCHEMA_SQL },
 ];

@@ -8,6 +8,7 @@ import { readBoundedUtf8 } from '../../bridge/read-bounded.js';
 import { MethodExecutionError, type TMethodCommandRunner } from './process.js';
 import { AGENT_METHOD_VERSIONS, type AgentMethodWorkflowPayload } from './contract.js';
 import { assertOpenSpecRoot } from './completion.js';
+import { prepareAgentKit } from './agent-extensions.js';
 
 export interface IPreparedMethod {
     command: string;
@@ -148,13 +149,32 @@ export async function prepareMethod(
         JSON.stringify(payload.checks) +
         ". Follow the method's own verification steps as required.";
     if (Buffer.byteLength(prompt) > 96 * 1024) throw new MethodExecutionError('OBSERVATION_LIMIT');
-    const selected = payload.agent
-        ? {
-              slug: payload.agent.slug,
-              mode: payload.agent.mode,
-              model: { providerID: payload.agent.model.provider, modelID: payload.agent.model.configKey },
+    let selected:
+        | {
+              slug: string;
+              mode: 'primary' | 'all';
+              model: { providerID: string; modelID: string };
+              agentId?: string;
+              extensions?: unknown[];
+              overlay?: string;
           }
-        : undefined;
+        | undefined;
+    if (payload.agent) {
+        selected = {
+            slug: payload.agent.slug,
+            mode: payload.agent.mode,
+            model: { providerID: payload.agent.model.provider, modelID: payload.agent.model.configKey },
+        };
+        // FR-306: the agent's extension kit is device-local (committed receipt), never part of the 32 KB job payload.
+        const kit = await prepareAgentKit(root, payload);
+        if (kit)
+            selected = {
+                ...selected,
+                agentId: payload.agent.agentId,
+                extensions: kit.extensions,
+                overlay: kit.overlay,
+            };
+    }
     return {
         command: process.execPath,
         args: [

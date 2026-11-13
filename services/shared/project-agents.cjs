@@ -59,6 +59,38 @@ const text = (value, maximum, { empty = false } = {}) =>
     Buffer.from(value, 'utf8').toString('utf8') === value;
 const identity = (value) => text(value, 200) && /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/.test(value);
 const positive = (value) => Number.isSafeInteger(value) && value > 0;
+const EXTENSION_KINDS = ['mcp', 'plugin', 'skill'];
+const EXTENSION_ORIGINS = ['approved', 'experimental'];
+
+/** FR-306: per-agent tool profile entry; identifiers and provenance only, never package bytes. */
+function normalizeAgentExtension(value) {
+    if (
+        !exact(value, ['assetId', 'assetKind', 'version', 'manifest', 'origin']) ||
+        typeof value.assetId !== 'string' ||
+        !value.assetId ||
+        value.assetId.length > 512 ||
+        !EXTENSION_KINDS.includes(value.assetKind) ||
+        !positive(value.version) ||
+        !SHA.test(value.manifest) ||
+        !EXTENSION_ORIGINS.includes(value.origin)
+    )
+        fail();
+    return {
+        assetId: value.assetId,
+        assetKind: value.assetKind,
+        version: value.version,
+        manifest: value.manifest,
+        origin: value.origin,
+    };
+}
+function normalizeAgentExtensions(value) {
+    if (!Array.isArray(value) || value.length > 16) fail();
+    const result = value
+        .map(normalizeAgentExtension)
+        .sort((a, b) => (a.assetKind + ':' + a.assetId < b.assetKind + ':' + b.assetId ? -1 : 1));
+    if (new Set(result.map((item) => item.assetKind + ':' + item.assetId)).size !== result.length) fail();
+    return result;
+}
 
 /** Native OpenCode 1.14.48 uses permission.bash, not the newer shell spelling. */
 function normalizeAgentDefinition(value) {
@@ -102,7 +134,7 @@ function normalizeProjectAgent(value) {
         !exact(
             value,
             ['id', 'slug', 'version', 'enabled', 'description', 'prompt', 'mode', 'permission'],
-            ['model', 'temperature', 'topP', 'steps'],
+            ['model', 'temperature', 'topP', 'steps', 'extensions'],
         ) ||
         !identity(value.id) ||
         typeof value.slug !== 'string' ||
@@ -122,6 +154,7 @@ function normalizeProjectAgent(value) {
                 DEFINITION_FIELDS.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]),
             ),
         ),
+        ...(value.extensions !== undefined ? { extensions: normalizeAgentExtensions(value.extensions) } : {}),
     };
 }
 
@@ -142,6 +175,7 @@ function renderProjectAgent(value) {
     return '---\n' + JSON.stringify(header, null, 2) + '\n---\n\n' + agent.prompt + '\n';
 }
 
+/** Receipts echo the exact per-agent extension set so the device sees exactly what is approved. */
 const resultAgents = (agents) =>
     agents.map((agent) => ({
         id: agent.id,
@@ -149,6 +183,7 @@ const resultAgents = (agents) =>
         version: agent.version,
         enabled: agent.enabled,
         sha256: digest(renderProjectAgent(agent)),
+        ...(agent.extensions ? { extensions: agent.extensions } : {}),
     }));
 
 function payloadBody(value) {
