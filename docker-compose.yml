@@ -94,6 +94,8 @@ services:
         required: false
     environment:
       - NODE_ENV=development
+      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
       - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-1}
       - PORT=4000
       - BIND_HOST=0.0.0.0
@@ -141,6 +143,8 @@ services:
         required: false
     environment:
       - NODE_ENV=development
+      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
       - PORT=4100
       - BIND_HOST=0.0.0.0
       - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
@@ -188,6 +192,8 @@ services:
         required: false
     environment:
       - NODE_ENV=development
+      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
       - PORT=4400
       - BIND_HOST=0.0.0.0
       - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
@@ -220,6 +226,8 @@ services:
         required: false
     environment:
       - NODE_ENV=development
+      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
       - PORT=4200
       - BIND_HOST=0.0.0.0
       - SKILLS_STORAGE_PATH=/app/data/skills
@@ -271,6 +279,8 @@ services:
         required: false
     environment:
       - NODE_ENV=development
+      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
       - PORT=4300
       - BIND_HOST=0.0.0.0
       - RAG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}
