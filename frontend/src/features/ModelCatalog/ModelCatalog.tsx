@@ -1,7 +1,7 @@
 import { ProviderSetupModal } from '../OpenCodeProviders/ProviderSetupModal';
 import { providerKindForModel, providerModelEligible } from '../OpenCodeProviders/model';
 import type { OpenCodeProviderKind } from '../OpenCodeProviders/interfaces';
-import { FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
+import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { useEmbeddingTarget, EmbeddingTargetFields } from '../ProjectEmbedding/EmbeddingTarget';
 import { Alert, Button, Checkbox, Col, Empty, Input, Row, Space, Spin, Tooltip, Typography } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -55,9 +55,6 @@ export function ModelCatalog({
 }: IModelCatalogProps): JSX.Element {
     const { scope, captureOwner } = useAuthRequestOwner();
     const { catalog, loading, error: loadError, refresh } = useModelCatalog(projectId);
-    // After an OpenCode import that leaves a key on the computer, continue into the existing
-    // «Мой доступ» key transfer instead of a dead-end hint (flag-gated, falls back to the hint).
-    const keyTransferContinuation = useFeatureAvailability('opencode_model_sync', 'opencode_personal_key_transfer');
     const embeddingTarget = useEmbeddingTarget(projectId);
     const embedding = useProjectEmbeddingSelection(projectId);
     const reindex = useProjectReindex(projectId, () => {
@@ -598,12 +595,11 @@ export function ModelCatalog({
                         onSaved={async (saved) => {
                             await refresh();
                             // P0-6: общий переход в «Мой доступ», когда провайдер требует личный ключ (authMode).
-                            // Импортная цепочка (connectionHint) продолжается только при включённом переносе ключа
-                            // и ключе, оставшемся на компьютере (продуктовое решение — флаг, OQ-1 аудита).
+                            // Импортная цепочка (connectionHint) продолжается по умолчанию, если ключ остался
+                            // на компьютере (OQ-1: перенос ключа после импорта — дефолт, флаг гейтит только
+                            // кнопку переноса LocalKeyTransfer).
                             if (!saved || saved.authMode === 'none') return;
-                            const continues = connectionHint
-                                ? keyTransferContinuation.enabled && !!connectionHint.hasKey
-                                : true;
+                            const continues = connectionHint ? !!connectionHint.hasKey : true;
                             if (continues)
                                 setProviderAccess({
                                     model: connection,
@@ -686,8 +682,8 @@ export function ModelCatalog({
                         if (!current()) return;
                         // The import modal stays open so several models can be imported in a row;
                         // only a single (non-batch) import opens the one-off provider dialog on top.
-                        // The «provider saved → enter key» continuation happens in onSaved (P0-6 unified chain),
-                        // gated for the import path by connectionHint + the key-transfer flag.
+                        // The «provider saved → enter key» continuation happens in onSaved (P0-6 unified chain):
+                        // for the import path it requires the key to be left on the computer (OQ-1: default).
                         if (!ctx?.batch) {
                             if (hint) setConnectionHint(hint);
                             setConnection(model);
