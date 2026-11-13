@@ -8,7 +8,7 @@ import {
     ReloadOutlined,
 } from '@ant-design/icons';
 import type { ICatalogModel } from './interfaces';
-import { modelHostingLabels } from './modelCatalogState';
+import { modelHostingLabels, unverifiedStatusLabel } from './modelCatalogState';
 import { useModelHosting } from './hooks/useModelHosting';
 import { modelUsesApiConnection } from './modelCatalogState';
 
@@ -29,7 +29,7 @@ export function ModelHosting({ model, canManage, compact, onManage, onSettled, o
         deviceCodex = model.runtime === 'device-codex';
     const label = hosting
         ? (remote || deviceCodex) && hosting.state === 'stopped'
-            ? 'Не проверена'
+            ? unverifiedStatusLabel
             : (remote || deviceCodex) && hosting.state === 'error'
               ? 'Ошибка подключения'
               : modelHostingLabels[hosting.state]
@@ -54,7 +54,7 @@ export function ModelHosting({ model, canManage, compact, onManage, onSettled, o
                 <div className="model-runtime__summary">
                     <span title={message || undefined}>
                         <StatusIcon aria-hidden="true" />
-                        {loading ? 'Проверяем подключение…' : hosting ? label : 'Статус не проверен'}
+                        {loading ? 'Проверяем подключение…' : hosting ? label : unverifiedStatusLabel}
                     </span>
                     <Button
                         type="text"

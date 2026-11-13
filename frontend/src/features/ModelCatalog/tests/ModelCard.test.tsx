@@ -53,7 +53,7 @@ it.each([false, true])('opens provider details directly from the card when canHo
         ),
     );
     const action = [...container.querySelectorAll('button')].find(
-        (button) => button.textContent?.trim() === 'Настроить провайдера и ключ',
+        (button) => button.textContent?.trim() === 'Настроить «Мой доступ»',
     );
     expect(action).toBeDefined();
     expect(action!.closest('details')).toBeNull();
@@ -82,7 +82,7 @@ it('opens provider access setup from the card when onProviderAccess is provided'
         ),
     );
     const action = [...container.querySelectorAll('button')].find(
-        (button) => button.textContent?.trim() === 'Настроить провайдера и ключ',
+        (button) => button.textContent?.trim() === 'Настроить «Мой доступ»',
     );
     expect(action).toBeDefined();
     expect(action!.closest('details')).toBeNull();
@@ -91,6 +91,50 @@ it('opens provider access setup from the card when onProviderAccess is provided'
     expect(onView).not.toHaveBeenCalled();
     expect(onAssign).not.toHaveBeenCalled();
 });
+it.each([
+    ['unknown', true],
+    ['connected', false],
+    ['checking', false],
+    [undefined, false],
+] as Array<['checking' | 'unknown' | 'connected' | undefined, boolean]>)(
+    'shows a sibling connection check when the status is unverified (status=%s, expect check=%s)',
+    async (connectionStatus, expectCheck) => {
+        const onCheckConnection = vi.fn();
+        await act(async () =>
+            root.render(
+                <ModelCard
+                    model={{
+                        ...model,
+                        capability: 'embedding',
+                        dimension: 1536,
+                        modelVersion: '1',
+                        verificationSha256: 'a'.repeat(64),
+                    }}
+                    assigned
+                    projectSelected
+                    canAssign
+                    canHost={false}
+                    busy={false}
+                    connectionStatus={connectionStatus}
+                    onCheckConnection={onCheckConnection}
+                    onAssign={vi.fn()}
+                    onConnect={vi.fn()}
+                    onView={vi.fn()}
+                />,
+            ),
+        );
+        const check = [...container.querySelectorAll('button')].find(
+            (button) => button.textContent?.trim() === 'Проверить подключение',
+        );
+        if (expectCheck) {
+            expect(check).toBeDefined();
+            await act(async () => check!.click());
+            expect(onCheckConnection).toHaveBeenCalledOnce();
+        } else {
+            expect(check).toBeUndefined();
+        }
+    },
+);
 it('does not show remote provider setup on a local model', async () => {
     await act(async () =>
         root.render(
@@ -108,7 +152,7 @@ it('does not show remote provider setup on a local model', async () => {
     );
     expect(
         [...container.querySelectorAll('button')].some(
-            (button) => button.textContent?.trim() === 'Настроить провайдера и ключ',
+            (button) => button.textContent?.trim() === 'Настроить «Мой доступ»',
         ),
     ).toBe(false);
 });

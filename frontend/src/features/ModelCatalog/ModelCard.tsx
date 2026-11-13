@@ -4,7 +4,12 @@ import { CloudOutlined, DatabaseOutlined, DesktopOutlined } from '@ant-design/ic
 import { Button, Space, Tag, Tooltip, Typography } from 'antd';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { eligibleEmbedding } from '../ProjectEmbedding/model';
-import { modelCapabilityLabels, modelLocationLabel, modelUsesApiConnection } from './modelCatalogState';
+import {
+    modelCapabilityLabels,
+    modelLocationLabel,
+    modelUsesApiConnection,
+    unverifiedStatusLabel,
+} from './modelCatalogState';
 import { ModelHosting } from './ModelHosting';
 import type { ICatalogModel } from './interfaces';
 
@@ -25,6 +30,7 @@ interface IProps {
     onConnect?: () => void;
     connectionUnavailableReason?: string;
     connectionStatus?: 'checking' | 'unknown' | 'connected';
+    onCheckConnection?: () => void;
     embeddingSetupHref?: string;
     onChat?: () => void;
     onHostingSettled?: () => Promise<void>;
@@ -52,6 +58,7 @@ export function ModelCard({
     onConnect,
     connectionUnavailableReason,
     connectionStatus,
+    onCheckConnection,
     embeddingSetupHref,
     onChat,
     onHostingSettled,
@@ -97,21 +104,32 @@ export function ModelCard({
         connect: connect && (
             <Tooltip title={connectionUnavailableReason}>
                 <span aria-label={connectionUnavailableReason} tabIndex={connectionUnavailableReason ? 0 : undefined}>
-                    <FeatureButton
-                        features={['model_catalog', 'rag_sync', 'model_hosting']}
-                        type={primary === 'connect' ? 'primary' : 'default'}
-                        loading={busy}
-                        disabled={busy || disabled || !!connectionUnavailableReason || !!connectionStatus}
-                        onClick={onConnect}
-                    >
-                        {connectionStatus === 'connected'
-                            ? 'Модель подключена'
-                            : connectionStatus === 'checking'
-                              ? 'Проверяем подключение'
-                              : connectionStatus === 'unknown'
-                                ? 'Подключение не проверено'
-                                : 'Подключить модель'}
-                    </FeatureButton>
+                    <Space size={8}>
+                        <FeatureButton
+                            features={['model_catalog', 'rag_sync', 'model_hosting']}
+                            type={primary === 'connect' ? 'primary' : 'default'}
+                            loading={busy}
+                            disabled={busy || disabled || !!connectionUnavailableReason || !!connectionStatus}
+                            onClick={onConnect}
+                        >
+                            {connectionStatus === 'connected'
+                                ? 'Модель подключена'
+                                : connectionStatus === 'checking'
+                                  ? 'Проверяем подключение'
+                                  : connectionStatus === 'unknown'
+                                    ? unverifiedStatusLabel
+                                    : 'Подключить модель'}
+                        </FeatureButton>
+                        {connectionStatus === 'unknown' && onCheckConnection && (
+                            <Button
+                                size="small"
+                                aria-label={`Проверить подключение модели ${model.name}`}
+                                onClick={onCheckConnection}
+                            >
+                                Проверить подключение
+                            </Button>
+                        )}
+                    </Space>
                 </span>
             </Tooltip>
         ),
@@ -222,10 +240,10 @@ export function ModelCard({
                     <Button
                         type="primary"
                         disabled={busy || disabled}
-                        aria-label={`Настройка провайдера и ключа модели ${model.name}`}
+                        aria-label={`Настройка «Мой доступ» для модели ${model.name}`}
                         onClick={onProviderAccess ?? onView}
                     >
-                        Настроить провайдера и ключ
+                        Настроить «Мой доступ»
                     </Button>
                 )}
                 {remote &&
@@ -239,7 +257,7 @@ export function ModelCard({
                             aria-label={`Настройка провайдера в OpenCode для модели ${model.name}`}
                             onClick={onSetupProvider}
                         >
-                            Настроить в OpenCode
+                            Настроить провайдера в OpenCode
                         </Button>
                     )}
                 {!assignable && (

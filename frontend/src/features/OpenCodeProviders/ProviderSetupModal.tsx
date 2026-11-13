@@ -1,5 +1,5 @@
 import { Alert, Button, Modal, Select, Space, Steps, Tag, Typography } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 import { artifactTargets } from '../McpBridge/runtimeArtifacts';
 import type { useBridge } from '../McpBridge/hooks/useBridge';
@@ -30,6 +30,7 @@ export interface IProviderSetupModalProps {
     onReloadModels(): void;
     onClose(): void;
     onConfigured?(): void;
+    configuredLabel?: string;
 }
 
 /** Website selects a public intent; credentials and official login stay in the computer's local wizard. */
@@ -118,6 +119,13 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
         canWrite: !writeReason && !supplyReason,
         writeReason: writeReason || supplyReason,
     });
+    // Авто-готовность (P0-4): при открытии и canRead сразу читаем статус, тег не требует ручного клика.
+    const autoChecked = useRef(false);
+    useEffect(() => {
+        if (autoChecked.current || readReason || operation.status || !selection) return;
+        autoChecked.current = true;
+        operation.check();
+    }, [readReason, selection, operation.status]);
     const preparingSupply = kind === 'codex-bridge' && props.canPrepareConnector && supply.supply?.state !== 'ready';
     const supplyBusy = supply.busy || supply.supply?.state === 'building';
     const primaryDisabled = preparingSupply
@@ -377,8 +385,15 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
                                 : 'Настройки сохранены на выбранном компьютере. Успешный запрос к модели проверяется отдельно.'
                         }
                         action={
-                            catalogProvider &&
-                            props.onConfigured && <Button onClick={props.onConfigured}>Вернуться к агентам</Button>
+                            catalogProvider ? (
+                                props.onConfigured ? (
+                                    <Button onClick={props.onConfigured}>
+                                        {props.configuredLabel ?? 'Вернуться к агентам'}
+                                    </Button>
+                                ) : (
+                                    <Button href={modelsUrl}>К модели в каталоге</Button>
+                                )
+                            ) : undefined
                         }
                     />
                 )}

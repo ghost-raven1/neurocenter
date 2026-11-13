@@ -161,20 +161,20 @@ describe('ChatModelSetup', () => {
             canCheck: true,
             canConfigure: true,
         });
-        expect(button('Настроить провайдера и ключ')).toBeDefined();
+        expect(button('Настроить «Мой доступ»')).toBeDefined();
         expect(button('Проверить подключение')).toBeDefined();
     });
 
     it('keeps the key step for a role that cannot verify', async () => {
         await render({ items: [model()], assigned: new Set(['m1']), canAssign: true, canCheck: false });
-        expect(button('Настроить провайдера и ключ')).toBeDefined();
+        expect(button('Настроить «Мой доступ»')).toBeDefined();
         expect(button('Проверить подключение')).toBeUndefined();
         expect(bodyText()).toContain('Проверку подключения после сохранения выполняет главный администратор.');
     });
 
     it('opens the provider and key modal for an unverified remote model', async () => {
         await render({ items: [model()], assigned: new Set(['m1']), canAssign: true });
-        const action = button('Настроить провайдера и ключ');
+        const action = button('Настроить «Мой доступ»');
         expect(action).toBeDefined();
         await click(action!);
         // non-main: shared address is hidden, the personal key stays reachable.
@@ -193,7 +193,7 @@ describe('ChatModelSetup', () => {
             canConfigure: true,
             onRefresh,
         });
-        await click(button('Настроить провайдера и ключ')!);
+        await click(button('Настроить «Мой доступ»')!);
         expect(button('Изменить адрес и настройки провайдера')).toBeDefined();
         await click(button('Изменить адрес и настройки провайдера')!);
         expect(document.querySelector('[data-testid="connection-modal"]')).not.toBeNull();
@@ -275,7 +275,7 @@ describe('ChatModelSetup', () => {
             canConfigure: true,
             onRefresh,
         });
-        await click(button('Настроить провайдера и ключ')!);
+        await click(button('Настроить «Мой доступ»')!);
         await click(button('Изменить адрес и настройки провайдера')!);
         await click(document.querySelector('[data-testid="connection-save"]')!);
         // onRefresh rejected inside onSaved: the modal reports the error and stays open.

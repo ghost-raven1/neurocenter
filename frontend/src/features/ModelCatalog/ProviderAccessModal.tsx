@@ -28,7 +28,7 @@ export function ProviderAccessModal({ model, canConfigure, busy, notice, onConfi
             afterClose={onClose}
             centered
             className="model-details provider-access-modal"
-            title={`Провайдер и ключ · «${model.name}»`}
+            title={`Мой доступ · «${model.name}»`}
             width={640}
             onCancel={close}
             footer={

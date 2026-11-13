@@ -86,6 +86,8 @@ it('preserves manual endpoint and imported hints after a failed save without sub
     const input = document.querySelector<HTMLInputElement>('input[placeholder="https://provider.example/v1"]');
     expect(input?.value).toBe('https://imported.example.test/v1');
     expect(io.configure).not.toHaveBeenCalled();
+    // Единый словарь (P0-1): заголовок общего адреса провайдера — «Подключение».
+    expect(document.body.textContent).toContain('Подключение · «Remote»');
     await act(async () => {
         Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
             input,

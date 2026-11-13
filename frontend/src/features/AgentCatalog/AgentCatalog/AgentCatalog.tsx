@@ -380,7 +380,7 @@ export function AgentCatalog(props: IAgentCatalogProps): JSX.Element {
                                     if (captureOwner()()) setProviderSetup({ scope: providerScope });
                                 }}
                             >
-                                Настроить провайдера
+                                Настроить провайдера в OpenCode
                             </Button>
                         )}
                         {canManage && (

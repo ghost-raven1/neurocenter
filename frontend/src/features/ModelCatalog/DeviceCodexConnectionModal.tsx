@@ -9,10 +9,11 @@ interface IProps {
     model: ICatalogModel;
     onClose: () => void;
     onConfigureOpenCode?: (deviceId: string) => void;
+    onOpenChat?: () => void;
 }
 
 /** Проверяет доступность компьютера без вызова модели и без переноса локального входа. */
-export function DeviceCodexConnectionModal({ model, onClose, onConfigureOpenCode }: IProps): JSX.Element {
+export function DeviceCodexConnectionModal({ model, onClose, onConfigureOpenCode, onOpenChat }: IProps): JSX.Element {
     const { scope, captureOwner } = useAuthRequestOwner();
     const [connection, setConnection] = useState<IDeviceCodexConnection>();
     const [loading, setLoading] = useState(true);
@@ -100,6 +101,7 @@ export function DeviceCodexConnectionModal({ model, onClose, onConfigureOpenCode
                         Эта проверка не обращается к модели. Чтобы проверить ответ Codex, откройте чат и отправьте
                         сообщение.
                     </Typography.Text>
+                    {onOpenChat && <Button onClick={onOpenChat}>Открыть чат</Button>}
                     {onConfigureOpenCode && (
                         <Button onClick={() => onConfigureOpenCode(connection.deviceId)}>Настроить в OpenCode</Button>
                     )}
