@@ -22,10 +22,14 @@ interface IScan {
     warnings: string[];
     expiresAt: string;
 }
+interface IImportContext {
+    /** Part of «Импортировать все»: the caller must not interrupt the open scan with a single-model dialog. */
+    batch?: boolean;
+}
 interface IProps {
     projectId?: string;
     onClose: () => void;
-    onImported: (model: ICatalogModel, hint?: IRemoteConnectionHint) => Promise<void>;
+    onImported: (model: ICatalogModel, hint?: IRemoteConnectionHint, context?: IImportContext) => Promise<void>;
     onConfigureCodex?: (deviceId: string) => void;
 }
 const localCodexCandidate = (candidate: IOpenCodeCandidate): boolean =>
@@ -57,7 +61,7 @@ const scanProblems: Record<string, string> = {
     'source-changed': 'Конфигурация изменилась во время чтения. Повторите проверку.',
 };
 
-/** Чтение — отдельное действие: импорт выбранной записи никогда не переносит ключ с компьютера. */
+/** Чтение — отдельное действие; окно остаётся открытым для нескольких импортов. Ключ переносится отдельным шагом «Мой доступ» после подключения. */
 export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigureCodex }: IProps): JSX.Element {
     const bridge = useBridge(),
         { captureOwner } = useAuthRequestOwner();
@@ -68,8 +72,36 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
         [busy, setBusy] = useState(false),
         [error, setError] = useState('');
     const [scope, setScope] = useState<'global' | 'project'>(projectId ? 'project' : 'global');
+    const [importedIds, setImportedIds] = useState<ReadonlySet<string>>(new Set());
+    const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
+    const [candidateErrors, setCandidateErrors] = useState<Readonly<Record<string, string>>>({});
+    const [batchRunning, setBatchRunning] = useState(false);
     const lock = useRef(false),
-        request = useRef<{ key: string; requestKey: string }>();
+        request = useRef<{ key: string; requestKey: string }>(),
+        importLock = useRef(false),
+        importedRef = useRef<Set<string>>(new Set()),
+        busyRef = useRef<Set<string>>(new Set());
+    const markImported = (id: string): void => {
+        if (!importedRef.current.has(id)) {
+            importedRef.current = new Set(importedRef.current).add(id);
+            setImportedIds(importedRef.current);
+        }
+    };
+    const markBusy = (id: string, busy: boolean): void => {
+        const next = new Set(busyRef.current);
+        if (busy) next.add(id);
+        else next.delete(id);
+        busyRef.current = next;
+        setBusyIds(next);
+    };
+    const resetImportState = (): void => {
+        importedRef.current = new Set();
+        busyRef.current = new Set();
+        setImportedIds(new Set());
+        setBusyIds(new Set());
+        setCandidateErrors({});
+        setBatchRunning(false);
+    };
     const device =
         bridge.devices.find((item) => item.id === selected) ||
         (bridge.devices.length === 1 ? bridge.devices[0] : undefined);
@@ -118,6 +150,16 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
             ? result
             : undefined;
     const scanExpired = !!scan && Date.parse(scan.expiresAt) <= Date.now();
+    const pendingCandidates = scan
+        ? scan.candidates.filter(
+              (candidate) =>
+                  !importedIds.has(candidate.candidateId) &&
+                  (!candidate.blocker ||
+                      (localCodexCandidate(candidate) &&
+                          candidate.blocker === 'codex-local-auth' &&
+                          localCodexAvailable)),
+          )
+        : [];
     const start = async (): Promise<void> => {
         const owns = captureOwner(),
             current = (): boolean => alive.current && owns() && currentContext.current === context;
@@ -132,6 +174,7 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
             (scope === 'project' && (!projectId || !binding?.bindingId || !binding.instanceId))
         )
             return;
+        resetImportState();
         lock.current = true;
         setBusy(true);
         setError('');
@@ -171,27 +214,29 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
             if (alive.current && owns()) setBusy(false);
         }
     };
-    const importCandidate = async (candidate: IOpenCodeCandidate): Promise<void> => {
+    const importCandidate = async (candidate: IOpenCodeCandidate, opts: { batch?: boolean } = {}): Promise<boolean> => {
         const owns = captureOwner(),
             current = (): boolean => alive.current && owns() && currentContext.current === context,
-            localCodex = localCodexCandidate(candidate);
+            localCodex = localCodexCandidate(candidate),
+            batch = !!opts.batch;
         if (
             !current() ||
             !scanAvailability.enabled ||
-            lock.current ||
+            importLock.current ||
             !device ||
             !job ||
             !scan ||
             !bridge.devicesReady ||
+            importedRef.current.has(candidate.candidateId) ||
             (candidate.blocker && !(localCodex && candidate.blocker === 'codex-local-auth' && localCodexAvailable))
         )
-            return;
+            return false;
         if (Date.parse(scan.expiresAt) <= Date.now()) {
-            setError('Снимок конфигурации устарел. Прочитайте OpenCode заново.');
-            return;
+            if (!batch) setError('Снимок конфигурации устарел. Прочитайте OpenCode заново.');
+            return false;
         }
-        lock.current = true;
-        setBusy(true);
+        importLock.current = true;
+        markBusy(candidate.candidateId, true);
         setError('');
         try {
             const { data } = await baseApi.post<{
@@ -207,26 +252,75 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
                 candidateId: candidate.candidateId,
                 ...(localCodex && projectId ? { projectId } : {}),
             });
-            if (!current()) return;
+            if (!current()) return false;
             if (localCodex) {
                 if (data.model.runtime !== 'device-codex' || data.localDeviceConnection?.deviceId !== device.id)
                     throw new Error('Сервер не подтвердил подключение Codex к выбранному компьютеру.');
-                await onImported(data.model);
+                await onImported(data.model, undefined, { batch });
             } else {
                 if (typeof data.baseUrl !== 'string' || data.model.runtime === 'device-codex')
                     throw new Error('Сервер не подтвердил API-подключение модели.');
-                await onImported(data.model, {
-                    baseUrl: data.baseUrl,
-                    hasKey: data.hasKeyOnComputer,
-                    options: data.options,
-                    timeoutMs: data.timeoutMs,
-                });
+                await onImported(
+                    data.model,
+                    {
+                        baseUrl: data.baseUrl,
+                        hasKey: data.hasKeyOnComputer,
+                        options: data.options,
+                        timeoutMs: data.timeoutMs,
+                    },
+                    { batch },
+                );
             }
+            markImported(candidate.candidateId);
+            return true;
         } catch (cause) {
-            if (current()) setError(errorMessage(cause, 'Не удалось импортировать модель.'));
+            if (current()) {
+                const message = errorMessage(cause, 'Не удалось импортировать модель.');
+                if (batch) setCandidateErrors((prev) => ({ ...prev, [candidate.candidateId]: message }));
+                else setError(message);
+            }
+            return false;
         } finally {
-            lock.current = false;
-            if (alive.current && owns()) setBusy(false);
+            importLock.current = false;
+            if (alive.current && owns()) markBusy(candidate.candidateId, false);
+        }
+    };
+    const importAll = async (): Promise<void> => {
+        const owns = captureOwner(),
+            current = (): boolean => alive.current && owns() && currentContext.current === context;
+        if (
+            !current() ||
+            !scanAvailability.enabled ||
+            importLock.current ||
+            batchRunning ||
+            !scan ||
+            !device ||
+            !job ||
+            !bridge.devicesReady
+        )
+            return;
+        if (Date.parse(scan.expiresAt) <= Date.now()) {
+            setError('Снимок конфигурации устарел. Прочитайте OpenCode заново.');
+            return;
+        }
+        const pending = scan.candidates.filter(
+            (candidate) =>
+                !importedRef.current.has(candidate.candidateId) &&
+                (!candidate.blocker ||
+                    (localCodexCandidate(candidate) &&
+                        candidate.blocker === 'codex-local-auth' &&
+                        localCodexAvailable)),
+        );
+        if (pending.length < 2) return;
+        setBatchRunning(true);
+        setError('');
+        try {
+            for (const candidate of pending) {
+                if (!current()) return;
+                await importCandidate(candidate, { batch: true });
+            }
+        } finally {
+            if (alive.current && owns()) setBatchRunning(false);
         }
     };
     const available =
@@ -250,9 +344,10 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
             }
         >
             <Typography.Paragraph type="secondary">
-                Мост прочитает модели, адреса API и поддерживаемые параметры. Импорт выполняется по кнопке и не передаёт
-                ключи с компьютера. Автосинхронизация переносит метаданные. Для серверных запросов настройте личный ключ
-                в разделе «Мой доступ» карточки модели.
+                Мост прочитает модели, адреса API и поддерживаемые параметры. Окно остаётся открытым: импортируйте
+                несколько моделей подряд или нажмите «Импортировать все». Если ключ провайдера остался на компьютере,
+                после сохранения подключения в разделе «Мой доступ» карточки модели его можно перенести кнопкой
+                «Использовать ключ OpenCode с компьютера» или ввести вручную.
             </Typography.Paragraph>
             {error && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
             {bridge.errors.devices && (
@@ -290,6 +385,7 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
                         setScope(value);
                         setSubmitted(undefined);
                         setError('');
+                        resetImportState();
                         request.current = undefined;
                     }}
                     options={[
@@ -312,6 +408,7 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
                             setSelected(value);
                             setSubmitted(undefined);
                             setError('');
+                            resetImportState();
                             request.current = undefined;
                         }}
                         options={bridge.devices.map((item) => ({
@@ -443,42 +540,76 @@ export function OpenCodeImportModal({ projectId, onClose, onImported, onConfigur
                             className="model-catalog__notice"
                         />
                     )}
+                    {pendingCandidates.length >= 2 && (
+                        <FeatureButton
+                            features={['opencode_model_sync', 'computer_connections']}
+                            disabled={busy || busyIds.size > 0 || !bridge.devicesReady || scanExpired}
+                            loading={batchRunning}
+                            onClick={() => {
+                                void importAll();
+                            }}
+                        >
+                            {batchRunning ? 'Импорт моделей…' : 'Импортировать все'}
+                        </FeatureButton>
+                    )}
                     <List
                         dataSource={scan.candidates}
                         locale={{ emptyText: 'В доступной конфигурации нет моделей для импорта.' }}
                         renderItem={(candidate) => {
                             // Older bridges classify the local Codex transport as a generic SDK mismatch.
-                            const localCodex = localCodexCandidate(candidate);
+                            const localCodex = localCodexCandidate(candidate),
+                                imported = importedIds.has(candidate.candidateId),
+                                inProgress = busyIds.has(candidate.candidateId),
+                                itemError = candidateErrors[candidate.candidateId],
+                                canImport =
+                                    !candidate.blocker ||
+                                    (localCodex && candidate.blocker === 'codex-local-auth' && localCodexAvailable);
                             return (
                                 <List.Item className="model-opencode__candidate">
-                                    <OpenCodeCandidatePreview
-                                        candidate={candidate}
-                                        localCodex={localCodex}
-                                        blockerReason={candidate.blocker ? blocker[candidate.blocker] : undefined}
-                                    />
-                                    <FeatureButton
-                                        features={
-                                            localCodex
-                                                ? ['opencode_model_sync', 'codex_connector', 'device_codex_inference']
-                                                : ['opencode_model_sync']
-                                        }
-                                        disabled={
-                                            busy ||
-                                            !bridge.devicesReady ||
-                                            (!!candidate.blocker &&
-                                                !(
-                                                    localCodex &&
-                                                    candidate.blocker === 'codex-local-auth' &&
-                                                    localCodexAvailable
-                                                )) ||
-                                            scanExpired
-                                        }
-                                        onClick={() => {
-                                            void importCandidate(candidate);
-                                        }}
-                                    >
-                                        {localCodex ? 'Подключить Codex' : 'Импортировать'}
-                                    </FeatureButton>
+                                    <div className="model-opencode__candidate-body">
+                                        <OpenCodeCandidatePreview
+                                            candidate={candidate}
+                                            localCodex={localCodex}
+                                            blockerReason={candidate.blocker ? blocker[candidate.blocker] : undefined}
+                                        />
+                                        {itemError && (
+                                            <Typography.Text type="danger" className="model-opencode__candidate-error">
+                                                {itemError}
+                                            </Typography.Text>
+                                        )}
+                                    </div>
+                                    {imported ? (
+                                        <Button disabled>Импортировано</Button>
+                                    ) : inProgress ? (
+                                        <Button disabled loading>
+                                            Импорт…
+                                        </Button>
+                                    ) : (
+                                        <FeatureButton
+                                            features={
+                                                localCodex
+                                                    ? [
+                                                          'opencode_model_sync',
+                                                          'codex_connector',
+                                                          'device_codex_inference',
+                                                      ]
+                                                    : ['opencode_model_sync']
+                                            }
+                                            disabled={
+                                                busy ||
+                                                batchRunning ||
+                                                busyIds.size > 0 ||
+                                                !bridge.devicesReady ||
+                                                !canImport ||
+                                                scanExpired
+                                            }
+                                            onClick={() => {
+                                                void importCandidate(candidate);
+                                            }}
+                                        >
+                                            {localCodex ? 'Подключить Codex' : 'Импортировать'}
+                                        </FeatureButton>
+                                    )}
                                 </List.Item>
                             );
                         }}
