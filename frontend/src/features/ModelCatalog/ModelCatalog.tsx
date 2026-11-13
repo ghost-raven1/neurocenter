@@ -598,8 +598,13 @@ export function ModelCatalog({
                         onSaved={async (saved) => {
                             await refresh();
                             // P0-6: общий переход в «Мой доступ», когда провайдер требует личный ключ (authMode).
-                            // Импортная цепочка (connectionHint) не продолжается в ключ — её ведёт отдельный workstream.
-                            if (saved && saved.authMode !== 'none' && !connectionHint)
+                            // Импортная цепочка (connectionHint) продолжается только при включённом переносе ключа
+                            // и ключе, оставшемся на компьютере (продуктовое решение — флаг, OQ-1 аудита).
+                            if (!saved || saved.authMode === 'none') return;
+                            const continues = connectionHint
+                                ? keyTransferContinuation.enabled && !!connectionHint.hasKey
+                                : true;
+                            if (continues)
                                 setProviderAccess({
                                     model: connection,
                                     notice: 'Провайдер сохранён. Теперь введите ваш личный ключ.',
@@ -681,13 +686,10 @@ export function ModelCatalog({
                         if (!current()) return;
                         // The import modal stays open so several models can be imported in a row;
                         // only a single (non-batch) import opens the one-off provider dialog on top.
+                        // The «provider saved → enter key» continuation happens in onSaved (P0-6 unified chain),
+                        // gated for the import path by connectionHint + the key-transfer flag.
                         if (!ctx?.batch) {
                             if (hint) setConnectionHint(hint);
-                            // Continue the «provider saved → enter key» chain: once the connection is saved,
-                            // open «Мой доступ» (with the key-from-computer transfer) for a model whose key
-                            // is still on the computer, instead of a dead-end text hint.
-                            if (hint?.hasKey && !model.verificationSha256 && keyTransferContinuation.enabled)
-                                setKeyStepAfter(model);
                             setConnection(model);
                         }
                     }}
