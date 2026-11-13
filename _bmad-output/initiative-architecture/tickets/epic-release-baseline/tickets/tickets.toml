@@ -1,5 +1,5 @@
 # Сторис эпика epic-release-baseline. Порядок таблиц = порядок сборки.
-# next_id = 14
+# next_id = 15
 
 [[entry]]
 id = 1
@@ -143,3 +143,14 @@ covers = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8"]
 after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 hitl = true
 risk = "high"
+
+[[entry]]
+id = 14
+type = "story"
+title = "Баг: oauth2-bridge — env_file-override корпоративного CA (latent)"
+description = "Тот же механизм, что зафиксированный CA-баг (d51c49b0): .env.local (host path) переопределяет NODE_EXTRA_CA_CERTS в oauth2-bridge на путь, которого нет в контейнере → UNABLE_TO_VERIFY_LEAF_SIGNATURE на любой outbound к корп-TLS. Latent: в dev SSO off (нет outbound-корп-TLS). Воспроизведётся при включении SSO в dev-стеке. Фикс = тот же однострочный override в environment: compose (CA в образе есть) + drift-тесты (1.12 D2)."
+verify = "oauth2-bridge environment: NODE_EXTRA_CA_CERTS=путь-из-образа; drift-тесты (compose→code, code→compose) 0 dead-env/0 drift; стек стартует без регрессии; корневой сьют без деградации."
+covers = ["R1"]
+after = [2, 3]
+hitl = false
+risk = "low"
