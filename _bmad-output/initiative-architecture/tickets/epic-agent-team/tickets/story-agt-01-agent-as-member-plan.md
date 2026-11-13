@@ -80,8 +80,8 @@ context:
 - [ ] E2E: оба агента в pубличном чате; у каждого роль + контекст (approved) + инструменты каталога + доступ к pубличным чатам.
 - [ ] Device-агент — только через mcp-host-билет (недоверенная сторона); server-агент — доверенная сторона.
 - [ ] Assert: контекст = только approved (FR-502); инструмент вне каталога → недоступен (fail-closed).
-- [ ] Регресс: ProjectChatRunner/AgentToolsLoop без деградации.
-- [ ] Семантический поиск (FR-311) — только доступность инструмента (реализация — epic-project entry 13/14).
+- [x] Регресс: ProjectChatRunner/AgentToolsLoop без деградации.
+- [x] Семантический поиск (FR-311) — только доступность инструмента (реализация — epic-project entry 13/14).
 
 ### Acceptance
 - **Given** server-агент системной роли **when** pубличный чат **then** участвует с ролью/контекстом/инструментами.
@@ -112,6 +112,21 @@ E2E `scripts/test/agent-as-member-e2e.test.mjs` (живой dev-стэк, docker
 НЕ доказано (честно, без done):
 - **Device-агент через mcp-host-билет** — требует bridge-worker runtime устройства: `bind-project` это workspace-job (`workspaceKinds`, devices/workspace-queue.ts), который обрабатывает и завершает worker-процесс устройства; pairing чистый HTTP, но binding без worker не завершится. Форж completion нарушает недоверенную границу — недопустимо. Live-итерация (потребление эпика 2), тест в e2e — skipped-сегмент.
 - **Fail-closed на инструмент вне каталога** — подтверждена доступность capabilities; точный формат отказа на dispatch уточняется по живому стеку (live-итерация).
+
+## Progress (2026-11-13, in-progress)
+
+**Chat-turn e2e добавлен** (субагент, worktree nc-01 → мерж в main, коммит в `5dec548c`): `scripts/test/agent-as-member-e2e.test.mjs` — тест «9.1: chat turn — человек пишет в публичную комнату, server-агент отвечает (роль + одобренный контекст)». Файл: **5 pass / 0 fail / 1 skipped** (2 прогона; на main после мержа перепроверено).
+
+Доказано (сквозной chat turn, I/O-матрица сценарий 1):
+- Человек-участник (`developer`) пишет в `PUBLIC`-комнату, где назначен server-агент; `ProjectChatRunner` завершает задачу.
+- Ответ агента опубликован в комнате: `kind='agent'`, `status='done'`, `room_id` = публичная комната, автор = server-агент (`agentId`/`name`/`definition.description`).
+- Роль применена: `system`-сообщение вызова модели = профиль агента.
+- FR-502 в реальном чат-вызове: одобренное знание (полный конвейер experience→…→activate) в контексте; pending-кандидат — нет.
+- Реализация: self-contained 9.2-style секция в том же файле (disposable `postgres:16` + in-process Catalog из dist + scripted fake OpenAI `model-chat.fixture.mjs`) — работает независимо от доступности dev-стэка; существующие 4 live-stack теста не тронуты.
+
+НЕ доказано (честно, без done) — как в п. 2026-11-12:
+- **Device-агент через mcp-host-билет** (hard-блокер: bridge 0.9.15, в bridge-dist только 0.9.10) — решение: stub device runtime / live-итерация / descope.
+- **Fail-closed точный формат отказа** на инструмент вне каталога (пока capabilities 200) — live-итерация.
 
 ## Verification
 
