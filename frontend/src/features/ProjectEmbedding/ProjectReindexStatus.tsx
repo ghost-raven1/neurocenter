@@ -76,7 +76,7 @@ export function ProjectReindexStatus({ state, canManage, autoCycle }: IProps): J
                                                 void state.start();
                                             }}
                                         >
-                                            Перестроить и подключить
+                                            Подключить модель
                                         </FeatureButton>
                                     )}
                                     {localFailed && (

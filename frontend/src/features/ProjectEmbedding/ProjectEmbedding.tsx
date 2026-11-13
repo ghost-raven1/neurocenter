@@ -99,7 +99,7 @@ export function ProjectEmbeddingContent({
                     }
                 }}
             >
-                {modelId ? 'Подключить модель проекта' : 'Отключить модель проекта'}
+                {modelId ? 'Подключить модель' : 'Отключить модель проекта'}
             </FeatureButton>
         ) : null;
     return (

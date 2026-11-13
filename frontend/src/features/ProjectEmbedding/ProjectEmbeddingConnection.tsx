@@ -83,7 +83,7 @@ export function ConnectEmbeddingAction({
                       ? 'Проверить отправленную индексацию'
                       : scope.indexed
                         ? 'Обновить индекс'
-                        : 'Индексировать проект'}
+                        : 'Подключить модель'}
             </FeatureButton>
             {retrying && !operation.busy && (
                 <Alert
