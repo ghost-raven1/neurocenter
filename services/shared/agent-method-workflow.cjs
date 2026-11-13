@@ -10,15 +10,19 @@ const AGENT_METHOD_VERSIONS = Object.freeze({
     openspec: '1.15.0',
     combined: 'bmad-6.12.4+openspec-1.15.0',
 });
-const uuid = (value) => typeof value === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(value);
-const sha = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
-const text = (value, max) =>
-    typeof value === 'string' && Buffer.byteLength(value) <= max && !/[\x00-\x1f\x7f]/.test(value);
-const exact = (value, required, optional = []) =>
-    object(value) &&
-    required.every((key) => Object.hasOwn(value, key)) &&
-    Object.keys(value).every((key) => required.includes(key) || optional.includes(key));
+const {
+    verificationUuid: uuid,
+    verificationSha256: sha,
+    verificationObject: object,
+    verificationSafeText: text,
+    verificationExact: exact,
+    verificationCheckCommand: checkCommand,
+    verificationRelativePath: relative,
+    normalizeVerificationChecks,
+    normalizeVerificationChanges,
+    normalizeVerificationArtifacts,
+    assertVerificationOutcome,
+} = require('./agent-result-verification.cjs');
 const fail = () => {
     throw new TypeError('Invalid agent method workflow contract.');
 };
@@ -58,18 +62,6 @@ function normalizeSelectedAgent(value) {
         model = normalizeProjectAgentModelMapping(value.model);
     if (model.agentId !== identity.agentId) fail();
     return { ...identity, mode: value.mode, model };
-}
-function checkCommand(value) {
-    if (
-        !exact(value, ['command', 'args']) ||
-        !text(value.command, 128) ||
-        !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(value.command) ||
-        !Array.isArray(value.args) ||
-        value.args.length > 32 ||
-        value.args.some((arg) => !text(arg, 2048))
-    )
-        fail();
-    return { command: value.command, args: [...value.args] };
 }
 /** Immutable accepted intent contains argv only; local environment and absolute folders never cross the wire. */
 function normalizeAgentMethodWorkflowPayload(value) {
@@ -139,12 +131,6 @@ const failureCodes = [
     'QUIRK_STORAGE_INVALID',
     'SELECTED_AGENT_NOT_READY',
 ];
-const relative = (value) =>
-    text(value, 256) &&
-    !!value &&
-    !value.startsWith('/') &&
-    !value.includes('\\') &&
-    !value.split('/').some((part) => !part || part === '.' || part === '..');
 /** Results report observed file hashes and real command exits, never model prose or captured stdout. */
 function normalizeAgentMethodWorkflowResult(value, payload) {
     const fields = [
@@ -169,56 +155,30 @@ function normalizeAgentMethodWorkflowResult(value, payload) {
         value.runtime !== 'opencode' ||
         !['succeeded', 'failed', 'cancelled', 'unknown', 'needs_setup'].includes(value.state) ||
         !['prerequisites', 'execution', 'checks', 'completed'].includes(value.stage) ||
-        typeof value.codeChanged !== 'boolean' ||
-        !Array.isArray(value.changes) ||
-        value.changes.length > 64 ||
-        value.changes.some(
-            (row) =>
-                !exact(row, ['path', 'beforeSha256', 'afterSha256']) ||
-                !relative(row.path) ||
-                !(row.beforeSha256 === null || sha(row.beforeSha256)) ||
-                !(row.afterSha256 === null || sha(row.afterSha256)) ||
-                row.beforeSha256 === row.afterSha256,
-        ) ||
-        !Array.isArray(value.artifacts) ||
-        value.artifacts.length > 64 ||
-        value.artifacts.some((row) => !exact(row, ['path', 'sha256']) || !relative(row.path) || !sha(row.sha256)) ||
-        !Array.isArray(value.checks) ||
-        value.checks.length > 8 ||
-        value.checks.some(
-            (row) =>
-                !exact(row, ['command', 'args', 'exitCode', 'signal', 'state']) ||
-                !['passed', 'failed', 'not_run'].includes(row.state) ||
-                !(row.exitCode === null || Number.isSafeInteger(row.exitCode)) ||
-                !(row.signal === null || text(row.signal, 32)) ||
-                (row.state === 'passed' && (row.exitCode !== 0 || row.signal !== null)) ||
-                (row.state === 'not_run' && (row.exitCode !== null || row.signal !== null)),
-        )
+        typeof value.codeChanged !== 'boolean'
     )
         fail();
-    for (const row of value.checks) checkCommand({ command: row.command, args: row.args });
+    // Check/change/artifact semantics and the outcome invariants are the universal verification contract.
+    let checks;
+    try {
+        normalizeVerificationChanges(value.changes);
+        normalizeVerificationArtifacts(value.artifacts);
+        checks = normalizeVerificationChecks(value.checks);
+        assertVerificationOutcome(
+            value.state,
+            value.stage,
+            checks,
+            value.failure,
+            failureCodes,
+            ['setup-method', 'setup-runtime', 'setup-agent', 'inspect-workspace', 'review-result'],
+        );
+    } catch {
+        fail();
+    }
     if (value.agent !== undefined) {
         if (!exact(value.agent, agentIdentityFields)) fail();
         agentMethodWorkflowAgentIdentity(value.agent);
     }
-    if (
-        value.failure !== undefined &&
-        (!exact(value.failure, ['code', 'action']) ||
-            !failureCodes.includes(value.failure.code) ||
-            !['setup-method', 'setup-runtime', 'setup-agent', 'inspect-workspace', 'review-result'].includes(
-                value.failure.action,
-            ))
-    )
-        fail();
-    if (
-        value.state === 'succeeded' &&
-        (value.stage !== 'completed' ||
-            value.failure ||
-            !value.checks.length ||
-            value.checks.some((row) => row.state !== 'passed'))
-    )
-        fail();
-    if (value.state !== 'succeeded' && !value.failure) fail();
     if (Buffer.byteLength(JSON.stringify(value)) > 65536) fail();
     if (payload) {
         const intent = normalizeAgentMethodWorkflowPayload(payload);
@@ -226,7 +186,7 @@ function normalizeAgentMethodWorkflowResult(value, payload) {
             value.workflowId !== intent.workflowId ||
             value.method !== intent.method ||
             value.methodVersion !== intent.methodVersion ||
-            JSON.stringify(value.checks.map(({ command, args }) => ({ command, args }))) !==
+            JSON.stringify(checks.map(({ command, args }) => ({ command, args }))) !==
                 JSON.stringify(intent.checks)
         )
             fail();

@@ -11,6 +11,7 @@ import { completeGlobalProviders, lockGlobalProvidersCompletionDevice } from './
 import { PROJECT_AGENTS_JOB, PROJECT_AGENTS_NOTE } from '../../../shared/project-agents.cjs';
 import { assertAgentCompletionAccess } from '../agents/agent-completion-access';
 import { assertAgentConfigurationResult } from '../agents/agent-jobs';
+import { assertVerifiedAgentResult } from '../agents/agent-verification';
 import { AGENT_METHOD_WORKFLOW_JOB } from '../../../shared/agent-method-workflow.cjs';
 import { assertAgentMethodResult, assertAgentMethodCompletionAccess } from '../agent-method-workflows/jobs';
 import { publishMethodChatResult } from '../agent-method-workflows/chat-origin';
@@ -159,6 +160,7 @@ export async function completeDeviceJob(pool: Pool, deviceId: string, id: string
         assertRagJobResult(job, input.result, input.state === 'failed');
         assertAgentConfigurationResult(job, input.result, input.state === 'failed');
         assertAgentMethodResult(job, input.result, input.state === 'failed');
+        assertVerifiedAgentResult(job, input.result, input.state === 'failed');
         if (job.kind === PROJECT_CONFIGURATION_JOB) {
             try {
                 normalizeProjectConfigurationReport(input.result, job.payload.descriptor, input.state === 'failed');

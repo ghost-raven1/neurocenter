@@ -3,7 +3,7 @@ title: 'FR-304: Проверяемый результат — верификац
 type: 'feature'
 ticket: '6'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -69,12 +69,12 @@ context:
 ## Tasks & Acceptance
 
 ### Execution
-- [ ] **Verification-контракт** результата агента (универсальный): результат несёт машина-читаемое доказательство (exit-code/покрытие/proof).
-- [ ] «Сделано» без верификации = **не принято** (fail-closed, actionable).
-- [ ] `succeeded` — только после успешных выбранных проверок и завершения (паттерн method-workflow + system-role-mcp).
-- [ ] Явные состояния `not_run`/`unknown`/`failed`/`succeeded`.
-- [ ] Доказательство с провенансом (NFR-4) там, где применимо; сырые stdout/секреты не в результате.
-- [ ] Тесты: результат+exit-code, «сделано» без верификации → отказ, succeeded после проверок, not_run/failed/unknown.
+- [x] **Verification-контракт** результата агента (универсальный): результат несёт машина-читаемое доказательство (exit-code/покрытие/proof).
+- [x] «Сделано» без верификации = **не принято** (fail-closed, actionable).
+- [x] `succeeded` — только после успешных выбранных проверок и завершения (паттерн method-workflow + system-role-mcp).
+- [x] Явные состояния `not_run`/`unknown`/`failed`/`succeeded`.
+- [x] Доказательство с провенансом (NFR-4) там, где применимо; сырые stdout/секреты не в результате.
+- [x] Тесты: результат+exit-code, «сделано» без верификации → отказ, succeeded после проверок, not_run/failed/unknown.
 
 ### Acceptance
 - **Given** результат работы агента **when** завершение **then** несёт машина-читаемое доказательство (exit-code/покрытие/proof).
@@ -104,3 +104,21 @@ node --test scripts/test/verifiable-result.test.mjs 2>/dev/null || true
 1. **Что считать «покрытием» (coverage) для не-кодовых результатов?** Рекомендация: coverage — для кода (тесты); для не-кодовых — proof (квитанция/артефакт+SHA). Обоснование: FR-304 «exit-code/покрытие» — покрытие применимо к коду.
 2. **Единая ли таблица состояний для всех агентов?** Рекомендация: да — succeeded/unknown/failed/not_run (единый контракт). Обоснование: согласуется с system-role-mcp + method-workflow.
 3. **Где хранить доказательство?** Рекомендация: в квитанции результата (с SHA/провенансом), аудит — отдельно. Обоснование: NFR-4 + traceability.
+
+## Progress (2026-11-13, done)
+
+**Архитектура:** универсальный verification-контракт в shared (CJS, потребляется из TS) + fail-closed гейт приёма в device-completion. Device-контракт method-workflow **потребляет** универсальные семантики (рефактор без изменения error-идентичности), а не дублирует их.
+
+**Код:**
+- `services/shared/agent-result-verification.cjs` (+ `.d.cts`) (new) — универсальный контракт, protocol `agent-result-verification-v1`: states `succeeded/failed/cancelled/unknown`; stages `prerequisites/execution/checks/completed`; checks `{command, args, exitCode, signal, state: passed/failed/not_run}`; failure `{code, action}` (универсальные коды; device-контракт передаёт свои). Инварианты: `succeeded` → `completed` + нет failure + ≥1 passed check; `!succeeded` → failure обязателен; размер ≤64KiB; NFR-4: intent-digest (проверки зафиксированы в интенте, результат обязан описать **ровно** объявленные проверки).
+- `services/shared/agent-method-workflow.cjs` (refactor) — device-контракт потребляет универсальные примитивы (uuid/sha/text/exact/checkCommand/relativePath, normalize checks/changes/artifacts, assert outcome); error-идентичность сохранена (те же сообщения).
+- `services/catalog-service/src/agents/agent-verification.ts` (new) — гейт `assertVerifiedAgentResult`: fail-closed, принимает только результат, прошедший универсальную нормализацию + сверку с интентом.
+- `services/catalog-service/src/devices/device-completion.ts` — гейт вызывается после `assertAgentMethodResult`; job kind `AGENT_METHOD_WORKFLOW_JOB` без `payload.verification` — no-op (обратная совместимость).
+
+**Доказано (2026-11-13):**
+- `node --test scripts/test/verifiable-result.test.mjs` — **12/12 pass** (живой PG + собранный dist): method-workflow 1–4 (exit-code/SHA, not_run/failed/unknown, succeeded только после проверок) + универсальный гейт 5–10 (fail-closed без верификации, succeeded после проверок+завершения, NFR-4 intent-digest, размер, сырые stdout не передаются).
+- Юниты `services/catalog-service/src/agent-method-workflows/tests/agent-result-verification.test.ts` — **15/15 pass**; typecheck (tsc) чист; dist пересобран (stamp 3ae211a3).
+- **Корневой сьют ЗЕЛЁНЫЙ (definitive-rerun):** `node --test --test-concurrency=1 <check-tooling-tests.json>` — **1076 tests, 1073 pass, 0 fail, 3 skipped** (exit 0).
+
+Замечание (pre-existing flake, не регресс 9.6):
+- Первый прогон корневого сьюта дал 1 фейл `scripts/test/workspace-check-process.test.mjs` «a denied process probe remains fatal...» (ожидал `[SIGTERM]`, пришло `[SIGTERM, SIGKILL]` — эскалация kill под нагрузкой). Тест проходит **3/3 изолированно**, ноль пересечения с файлами 9.6; definitive-rerun — 0 fail.
