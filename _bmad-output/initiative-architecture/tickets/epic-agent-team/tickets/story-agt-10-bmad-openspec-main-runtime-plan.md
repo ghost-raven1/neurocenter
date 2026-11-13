@@ -3,7 +3,7 @@ title: 'FR-308 [P1]: BMAD → OpenSpec в основном рантайме (з�
 type: 'feature'
 ticket: '10'
 created: '2026-11-09'
-status: ready-for-dev
+status: in-progress
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -96,6 +96,19 @@ context:
 - **Pinned-версии = AGENT_METHOD_VERSIONS:** единый источник (services/shared/agent-method-workflow.cjs). «Скрытых обновлений/установки нет» — исполнитель ничего не скачивает (docs §«Подготовка компьютера»: «Исполнитель ничего не скачивает и автоматически не запускает установщик»).
 - **BMAD→OpenSpec combined:** «закреплённая комбинация bmad-6.12.4+openspec-1.15.0; требуются обе методики и их проектные корни. BMAD используется для недостающих brief/PRD/архитектуры, затем одна реализация через OpenSpec. Принятые документы BMAD переиспользуются; второй BMAD build-цикл не запускается» (docs).
 - **C5-протокол:** фиксируем конкретный проект + BMAD-инициативу + pinned-версии + критерий «принято» — это вход для e2e-приёмки (entry 12, HITL).
+
+## Progress (2026-11-13, in-progress)
+
+**Ядро main-runtime (фаза без e2e) — готово, unit 37/37 green (28 Phase A agt-07 + 9 agt-10), tsc 0 новых ошибок:**
+- `services/catalog-service/src/background-agent/method-preparation.ts` — server-порт device-`prepareMethod` (механика `mcp/neurocenter-asset-sync/.../agent-method-workflow/preparation.ts`): pinned-версии из единого источника `AGENT_METHOD_VERSIONS` (BMAD 6.12.4 / OpenSpec 1.15.0 / OpenCode 1.14.48), mismatch → явная именованная ошибка `MainMethodPreparationError` (RUNTIME_MISSING / METHOD_MISSING / METHOD_VERSION / PROJECT_NOT_INITIALIZED / METHOD_WORKFLOW_MISSING / CHECKS_REQUIRED / OBSERVATION_LIMIT). BMAD: manifest `installation.version` + `render_skill.py` + `uv`; OpenSpec: `openspec/config.yaml` + `context --json` / `list --json`.
+- «Без скрытых обновлений»: `mainMethodEnvironment()` — OPENSPEC_TELEMETRY=0, OPENSPEC_NO_UPDATE_CHECK=1, OPENCODE_CONFIG_CONTENT {autoupdate:false, share:'disabled', permission.external_directory:'deny'}. При отправке задачи исполнитель ничего не скачивает.
+- `buildMainMethodPrompt` — combined-промпт BMAD→OpenSpec: BMAD только для недостающих planning-стадий, переиспользование accepted brief/PRD/architecture, без build-auto/2-го цикла, один OpenSpec-цикл (propose/apply/verify/archive), `openspec validate --all --strict --no-interactive` после изменений. Skills подгружаются из `.opencode/skills`/`.agents/skills` (device parity: `requiredSkills`).
+- Шов `TMainMethodRunner` (инжект исполнителя команд): production — реальные pinned CLIs, тесты — stub'ы вывода.
+- **C5-протокол задокументирован** в `docs/features/agent-method-workflows.md` §«C5-протокол (main-runtime)»: какой проект (реальный пилотный, не toy — фиксация в e2e-приёмке HITL), какая BMAD-инициатива (реальная, в корне проекта), pinned-версии (единый источник `AGENT_METHOD_VERSIONS`, версия сервером), что = «принято» (принятые planning-документы + OpenSpec change `all_done`/архив + `openspec validate --all --strict --no-interactive` + нулевые exit объявленных проверок + провенанс).
+
+**Остаток (деферируется до Фазы B agt-07 = compose-сервис + environment-model, табло 11.1):**
+- Wiring: `prepareMainMethod` в `OpenCodeAgentRuntime` (method='combined' → prepared prompt/env/validate вместо generic), e2e `scripts/test/bmad-openspec-main-runtime.test.mjs` (owned-PG + fixture-проект с pinned BMAD/OpenSpec).
+- Open Questions 1–4: решение зафиксировано в §C5-протокол (проект/инициатива — в e2e-приёмке; «принято» = PASS-критерии docs; OpenCode 1.14.48 единая версия, запуск на сервере).
 
 ## Verification
 
