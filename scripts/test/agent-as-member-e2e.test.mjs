@@ -8,7 +8,11 @@
  * У агента: роль + контекст (только одобренные, FR-502) + инструменты каталога + доступ к публичным чатам.
  * Инструмент вне каталога проекта → недоступен (fail-closed).
  *
- * Harness: HTTP к panel (dev-стэк, nginx: /api → api-gateway, /auth → oauth2-bridge).
+ * Chat-turn (server-агент отвечает в публичном чате) — самодостаточная фикстура:
+ * одноразовый PG 16 (docker) + in-process Catalog (dist) + скриптованный fake OpenAI
+ * (harness 9.2, model-chat.fixture.mjs); не зависит от dev-стека.
+ *
+ * Harness остальных тестов: HTTP к panel (dev-стэк, nginx: /api → api-gateway, /auth → oauth2-bridge).
  * Если стэк недоступен — тесты skip (корневой сьют остаётся зелёным).
  * Запуск: docker compose up, затем  node --test scripts/test/agent-as-member-e2e.test.mjs
  * Оверрайд цели: AGENT_E2E_PANEL (по умолчанию http://127.0.0.1:5173).
@@ -21,6 +25,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import net from 'node:net';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 const PANEL = process.env.AGENT_E2E_PANEL || 'http://127.0.0.1:5173';
@@ -263,6 +269,292 @@ test('9.1: инструменты — только каталог проекта
     const caps = await request('/api/agent-tools/capabilities?projectId=' + projectId);
     assert.equal(caps.status, 200, 'capabilities: ' + JSON.stringify(caps.data));
     // live-итерация: точный формат отказа на инструмент вне каталога (dispatch/complete) уточняется по живому стеку.
+});
+
+// ============================================================================
+// 9.1 (FR-301): chat turn — server-агент реально отвечает в публичном чате.
+// Самодостаточная фикстура, не зависящая от dev-стека: одноразовый PostgreSQL 16
+// (docker) + in-process Catalog (полный app.module из symlink'нутого dist) +
+// скриптованный fake OpenAI (model-chat.fixture.mjs) — harness 9.2.
+// Сценарий 1 I/O-матрицы: человек-участник пишет в PUBLIC-комнату, где назначен
+// агент → ProjectChatRunner публикует ответ агента в комнате (автор = server-агент);
+// в вызове модели — роль (профиль) и контекст = только одобренные знания (FR-502).
+// ============================================================================
+let chatFixture = null,
+    chatContainer = null,
+    chatSkip = false,
+    chatSkipReason = '',
+    chatCalls = [],
+    chatAgent = null,
+    chatRoomId = null,
+    chatModelCard = null;
+
+const chatPort = 55632 + (process.pid % 200);
+const chatWaitForTcp = (host, p, timeoutMs = 30000) =>
+    new Promise((resolve, reject) => {
+        const deadline = Date.now() + timeoutMs;
+        const attempt = () => {
+            const socket = net.connect({ host, port: p });
+            socket.once('connect', () => {
+                socket.destroy();
+                resolve(true);
+            });
+            socket.once('error', () => {
+                socket.destroy();
+                Date.now() > deadline ? reject(new Error('PG not ready: ' + host + ':' + p)) : setTimeout(attempt, 250);
+            });
+        };
+        attempt();
+    });
+const chatWaitUntil = async (sql, params, predicate, label, timeoutMs = 90000) => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        const rows = (await chatFixture.pool.query(sql, params)).rows;
+        if (rows.some(predicate)) return rows.find(predicate);
+        if (Date.now() > deadline) throw new Error('QA timeout: ' + label);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+};
+
+const chatBootstrap = async () => {
+    chatContainer = 'nc-agt01-e2e-' + randomUUID().slice(0, 8);
+    execFileSync(
+        'docker',
+        [
+            'run',
+            '-d',
+            '--rm',
+            '--name',
+            chatContainer,
+            '-e',
+            'POSTGRES_PASSWORD=qa',
+            '-p',
+            '127.0.0.1:' + chatPort + ':5432',
+            'postgres:16',
+        ],
+        { timeout: 60000, stdio: 'pipe' },
+    );
+    await chatWaitForTcp('127.0.0.1', chatPort);
+    // TCP-порт открывается в момент initdb; принимаем подключения только после «accepting connections».
+    const deadline = Date.now() + 120000;
+    for (;;) {
+        try {
+            execFileSync('docker', ['exec', chatContainer, 'pg_isready', '-U', 'postgres'], {
+                timeout: 15000,
+                stdio: 'pipe',
+            });
+            break;
+        } catch {
+            if (Date.now() > deadline) throw new Error('PG readiness timeout: ' + chatContainer);
+            await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+    }
+    const { startModelChatFixture } = await import('./model-chat.fixture.mjs');
+    chatFixture = await startModelChatFixture({
+        adminUrl: 'postgres://postgres:qa@127.0.0.1:' + chatPort + '/postgres',
+    });
+    chatModelCard = chatFixture.cards[0];
+    // Детерминированный ответ; вызовы /chat/completions записываются для assertions роли/контекста.
+    chatFixture.provider.respond = (call) => {
+        if (!call.path.endsWith('/chat/completions')) return {};
+        chatCalls.push(call.body);
+        return { reply: 'FR301-ANSWER: ответ серверного агента.' };
+    };
+    // Server-агент: карточка каталога с ролью (description) и профилем (prompt).
+    const card = await chatFixture.request('main', '/api/agents', {
+        method: 'POST',
+        status: 201,
+        body: {
+            requestKey: randomUUID(),
+            slug: 'nc-agt01-' + randomUUID().slice(0, 8).replaceAll('-', ''),
+            name: 'FR301 server-агент',
+            definition: {
+                description: 'FR301-ROLE: серверный специалист проекта',
+                prompt: 'FR301-PROFILE-AGENT',
+                mode: 'subagent',
+                permission: { read: 'allow', edit: 'deny', bash: 'deny' },
+            },
+        },
+    });
+    chatAgent = {
+        id: card.id,
+        name: 'FR301 server-агент',
+        description: 'FR301-ROLE: серверный специалист проекта',
+    };
+    // Назначение в проект (CAS по ревизии agent-sets) + включение: комната принимает только включённых.
+    let setsRevision = (await chatFixture.request('main', '/api/agents?projectId=' + chatFixture.projectId)).revision;
+    await chatFixture.request('main', '/api/projects/' + chatFixture.projectId + '/agents', {
+        method: 'POST',
+        status: 201,
+        body: {
+            requestKey: randomUUID(),
+            expectedRevision: setsRevision,
+            agentId: card.id,
+            version: card.version,
+            manifest: card.manifest,
+        },
+    });
+    setsRevision += 1;
+    await chatFixture.request('main', '/api/projects/' + chatFixture.projectId + '/agents/' + card.id, {
+        method: 'PATCH',
+        body: { requestKey: randomUUID(), expectedRevision: setsRevision, enabled: true },
+    });
+    // Обучение (FR-502): тот же конвейер, что и в live-stack-сегменте. Одно знание проходит
+    // до approved+activated, второе остаётся candidate (proposed) — в контекст не попадает.
+    const base = '/api/projects/' + chatFixture.projectId + '/learning';
+    let learningRevision = 0;
+    // NestJS: POST без @HttpCode отвечает 201.
+    const learn = (path, body) =>
+        chatFixture.request('main', base + path, {
+            method: 'POST',
+            status: 201,
+            body: { ...body, requestKey: randomUUID(), expectedRevision: learningRevision },
+        });
+    const pipeline = async (key, title, content) => {
+        const exp = await learn('/experiences', {
+            title,
+            summary: title + ' (FR301).',
+            outcome: 'succeeded',
+            evidence: [{ kind: 'human_feedback', status: 'unknown', summary: 'FR301 fixture' }],
+        });
+        learningRevision = exp.revision;
+        const hyp = await learn('/hypotheses', {
+            subject: 'project',
+            title: title + ': гипотеза',
+            statement: 'Гипотеза.',
+            rationale: 'Основание.',
+            verificationPlan: 'Проверка.',
+            experienceIds: [exp.result.experience.id],
+        });
+        learningRevision = hyp.revision;
+        const chk = await learn('/hypotheses/' + hyp.result.hypothesis.id + '/checks', {
+            method: 'human_review',
+            result: 'passed',
+            summary: 'Проверено человеком.',
+            experienceIds: [exp.result.experience.id],
+        });
+        learningRevision = chk.revision;
+        const cand = await learn('/candidates', {
+            hypothesisId: hyp.result.hypothesis.id,
+            checkId: chk.result.check.id,
+            key,
+            kind: 'lesson',
+            title: title + ': знание',
+            content,
+        });
+        learningRevision = cand.revision;
+        return cand.result.candidate.id;
+    };
+    const approvedId = await pipeline('agtm-approved', 'FR301 опыт A', 'AGTM-APPROVED-FACT');
+    const approved = await learn('/candidates/' + approvedId + '/approve', {});
+    learningRevision = approved.revision;
+    const activated = await learn('/candidates/' + approvedId + '/activate', {});
+    learningRevision = activated.revision;
+    await pipeline('agtm-pending', 'FR301 опыт B', 'AGTM-PENDING-FACT');
+    // Публичная комната: агент в составе, выбрана проверенная модель.
+    const room = await chatFixture.request('main', '/api/projects/' + chatFixture.projectId + '/team-chat/rooms', {
+        method: 'POST',
+        status: 201,
+        body: { requestKey: randomUUID(), title: 'FR301 публичный', visibility: 'PUBLIC', memberEmails: [] },
+    });
+    chatRoomId = room.id;
+    // Новая комната стартует с revision 1 (DB DEFAULT), в отличие от дефолтной (виртуальный 0 до первого PUT).
+    await chatFixture.request(
+        'main',
+        '/api/projects/' + chatFixture.projectId + '/team-chat/rooms/' + chatRoomId + '/participants',
+        {
+            method: 'PUT',
+            body: {
+                expectedRevision: 1,
+                modelId: chatModelCard.id,
+                expectedModelPin: chatModelCard.modelPin,
+                agentIds: [chatAgent.id],
+            },
+        },
+    );
+};
+
+try {
+    await chatBootstrap();
+} catch (error) {
+    chatSkip = true;
+    chatSkipReason = String(error && error.message ? error.message : error);
+}
+
+test('9.1: chat turn — человек пишет в публичную комнату, server-агент отвечает (роль + одобренный контекст)', async (t) => {
+    if (chatSkip) {
+        t.skip('bootstrap chat-фикстуры недоступен: ' + chatSkipReason);
+        return;
+    }
+    // Человек-участник (developer) пишет в PUBLIC-комнату, где назначен агент.
+    await chatFixture.request(
+        'developer',
+        '/api/projects/' + chatFixture.projectId + '/team-chat/rooms/' + chatRoomId + '/messages',
+        {
+            method: 'POST',
+            status: 201,
+            body: { requestKey: randomUUID(), prompt: 'FR301-TASK', targetAgentIds: [chatAgent.id] },
+        },
+    );
+    // ProjectChatRunner обработал задачу: сообщение пользователя в финальном статусе.
+    const userRow = await chatWaitUntil(
+        "SELECT * FROM project_chat_messages WHERE project_id=$1 AND room_id=$2 AND kind='user' AND content=$3",
+        [chatFixture.projectId, chatRoomId, 'FR301-TASK'],
+        (row) => row.status === 'done',
+        'task FR301-TASK done',
+    );
+    assert.equal(userRow.author_email, chatFixture.actors.developer.email, 'автор сообщения — человек-участник');
+    const rows = await chatFixture.pool.query(
+        'SELECT * FROM project_chat_messages WHERE project_id=$1 AND source_message_id=$2 ORDER BY position',
+        [chatFixture.projectId, userRow.id],
+    );
+    const answer = rows.rows.find((row) => row.kind === 'agent');
+    assert.ok(answer, 'ответа агента в комнате нет');
+    assert.equal(answer.status, 'done', 'ответ агента не в финальном статусе: ' + JSON.stringify(answer));
+    assert.equal(answer.room_id, chatRoomId, 'ответ опубликован в публичной комнате');
+    // Автор = server-агент: snapshot в строке комнаты.
+    assert.equal(answer.snapshot.agentId, chatAgent.id, 'автор ответа — не server-агент');
+    assert.equal(answer.snapshot.name, chatAgent.name, 'автор ответа');
+    assert.equal(answer.snapshot.definition.description, chatAgent.description, 'роль ответа = роль агента');
+    assert.equal(answer.content, 'FR301-ANSWER: ответ серверного агента.', 'содержимое ответа');
+
+    // Роль и контекст в вызове модели: профиль — системное сообщение, контекст проекта —
+    // только одобренные знания (FR-502).
+    const call = chatCalls.find((item) => JSON.stringify(item.messages).includes('FR301-TASK'));
+    assert.ok(call, 'вызов модели агента по задаче не найден');
+    assert.equal(call.messages[0].role, 'system');
+    assert.equal(call.messages[0].content, 'FR301-PROFILE-AGENT', 'роль = профиль агента');
+    const payload = JSON.stringify(call.messages);
+    assert.ok(payload.includes('agtm-approved'), 'одобренное знание не в контексте агента');
+    assert.ok(payload.includes('AGTM-APPROVED-FACT'), 'содержимое одобренного знания не в контексте');
+    assert.ok(!payload.includes('agtm-pending'), 'неодобренное знание попало в контекст (FR-502)');
+    assert.ok(!payload.includes('AGTM-PENDING-FACT'), 'содержимое неодобренного знания в контексте (FR-502)');
+});
+
+const chatTeardown = async () => {
+    try {
+        if (chatFixture) await chatFixture.close();
+    } catch (error) {
+        console.error('QA chat-fixture cleanup: ' + (error && error.message ? error.message : error));
+    }
+    if (chatContainer)
+        try {
+            execFileSync('docker', ['rm', '-f', chatContainer], { timeout: 30000, stdio: 'pipe' });
+        } catch {
+            /* best effort: контейнер поднят с --rm */
+        }
+};
+test.after(async () => {
+    if (chatFixture || chatContainer) await chatTeardown();
+});
+process.on('exit', () => {
+    if (chatContainer) {
+        try {
+            execFileSync('docker', ['rm', '-f', chatContainer], { timeout: 10000, stdio: 'pipe' });
+        } catch {
+            /* best effort */
+        }
+    }
 });
 
 test(
