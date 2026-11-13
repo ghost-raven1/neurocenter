@@ -181,3 +181,67 @@ it('does not preview a credential-bearing endpoint', async () => {
     await read();
     expect(document.body.textContent).not.toContain('private');
 });
+it('keeps the window open after import and lets the next model be imported in a row', async () => {
+    await render();
+    await read();
+
+    expect(buttons('Импортировать')).toHaveLength(2);
+    expect(buttons('Импортировать все')).toHaveLength(1);
+    await act(async () => buttons('Импортировать')[0].click());
+
+    expect(imported).toHaveBeenCalledTimes(1);
+    expect(imported.mock.calls[0][2]).toEqual({ batch: false });
+    expect(buttons('Импортировано')).toHaveLength(1);
+    expect(buttons('Импортировать')).toHaveLength(1);
+    expect(buttons('Импортировать все')).toHaveLength(0);
+    expect(document.body.textContent).toContain('Модели из OpenCode');
+
+    await act(async () => buttons('Импортировать')[0].click());
+    await act(async () => {});
+
+    expect(imported).toHaveBeenCalledTimes(2);
+    expect(imported.mock.calls[1][2]).toEqual({ batch: false });
+    expect(buttons('Импортировано')).toHaveLength(2);
+    expect(buttons('Импортировать')).toHaveLength(0);
+});
+it('imports every pending model with one «Импортировать все» click, in order and marked as a batch', async () => {
+    await render();
+    await read();
+
+    await act(async () => buttons('Импортировать все')[0].click());
+    await act(async () => {});
+
+    expect(io.post).toHaveBeenNthCalledWith(1, '/api/models/import-opencode', {
+        deviceId: io.deviceId,
+        jobId: 'job',
+        candidateId: 'first',
+    });
+    expect(io.post).toHaveBeenNthCalledWith(2, '/api/models/import-opencode', {
+        deviceId: io.deviceId,
+        jobId: 'job',
+        candidateId: 'second',
+    });
+    expect(imported).toHaveBeenCalledTimes(2);
+    for (const call of imported.mock.calls) expect(call[2]).toEqual({ batch: true });
+    expect(buttons('Импортировано')).toHaveLength(2);
+    expect(buttons('Импортировать')).toHaveLength(0);
+    expect(buttons('Импортировать все')).toHaveLength(0);
+});
+it('tells the parent the key is on the computer so a single import can continue into «Мой доступ»', async () => {
+    io.post.mockResolvedValue({
+        data: {
+            model: { id: 'selected', runtime: 'remote-openai' },
+            baseUrl: candidates[0].baseUrl,
+            hasKeyOnComputer: true,
+        },
+    });
+    await render();
+    await read();
+
+    await act(async () => buttons('Импортировать')[0].click());
+
+    expect(imported).toHaveBeenCalledTimes(1);
+    expect(imported.mock.calls[0][0]).toMatchObject({ id: 'selected', runtime: 'remote-openai' });
+    expect(imported.mock.calls[0][1]).toMatchObject({ baseUrl: candidates[0].baseUrl, hasKey: true });
+    expect(imported.mock.calls[0][2]).toEqual({ batch: false });
+});
