@@ -3,7 +3,7 @@ title: 'FR-305 [P1]: Фоновый агент в opencode-среде на се�
 type: 'feature'
 ticket: '7'
 created: '2026-11-09'
-status: ready-for-dev
+status: in-progress
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -115,3 +115,18 @@ node --test scripts/test/background-agent-server.test.mjs 2>/dev/null || true
 2. **Opencode на сервере — тот же образ/версия, что device?** Рекомендация: да, OpenCode 1.14.48 (единая версия, AGENT_METHOD_VERSIONS/доки). Обоснование: совместимость, docs §«Подготовка компьютера».
 3. **«Через мост — доступ к компьютеру» — скоуп здесь?** Рекомендация: настроить контекст «компьютер» (вызвать мост/опросить opencode на компьютере), но не строить мост/установщики (эпик 2/7). Обоснование: граница эпиков.
 4. **Изоляция фоновых агентов (ресурсы)?** Рекомендация: mem/cpus/pids в compose + model (AD-OP-6, эпик 6). Обоснование: NFR-6/R11.
+
+## Progress (2026-11-13, in-progress)
+
+**Фаза A — переиспользуемое ядро (new files, без конфликта с 11.1) — готово, 28/28 green, tsc 0:**
+- `services/shared/background-agent.cjs` (+`.d.cts`) — immutable-контракт фонового агента: protocol `background-agent-v1`, job `run-background-agent`, payload `{workflowId,requestId,projectId,method,methodVersion(server-fixed из AGENT_METHOD_VERSIONS),instruction,checks(1..8),context?,deadlineAt,runtime='opencode'}`; context-sources фиксированный набор `['project','computer','web']` (дескрипторы ≤4KiB); `backgroundAgentDigest` (sha256 normalized) — idempotency.
+- `src/background-agent/runtime.ts` — **шов `IAgentRuntime`** + `OpenCodeAgentRuntime` (порт `opencode-http-runner`: serve→loopback 127.0.0.1→Basic-auth(random)→deny question/plan_enter/plan_exit→completed assistant turn→выполнение объявленных checks в root с реальными exitCode/signal; stdout не покидает модуль). Ошибки рантайма → универсальные failure-коды FR-304 (EXECUTION_FAILED / SELECTED_AGENT_NOT_READY→PROVENANCE_MISMATCH / TIMEOUT / OUTPUT_LIMIT). Selected-agent introspection (GET /agent) ДО inference. `engine` инжектится (тест = fake-opencode скрипт, speak тот же loopback-протокол).
+- `src/background-agent/context.ts` — **шов провайдеров**: `ProjectContextProvider` (root = PROJECTS_ROOT/<projectId>, `defaultRootForProject` — единый источник root), `ComputerContextProvider` («нет моста → явная ошибка» `BackgroundContextError`, никогда не молча), `WebContextProvider`; `TaskContext.prepare` → descriptors + root, `rootResolver` инжектится.
+- `src/background-agent/worker.ts` — `BackgroundAgentWorker`: admit(normalize) → process(claim → context → runtime → **fail-closed приёмка `assertAgentResultAccepted` (FR-304)** → store.complete + sink.deliver). Швы: `IBackgroundAgentStore` (in-memory; lease/pg — Фаза B) и `IResultSink` (chat-origin публикация — Фаза B). Context-sбой = failed/prerequisites, все checks not_run, EXECUTION_FAILED/new-request.
+- Тесты 28/28 (`src/background-agent/tests/`): contract 5, runtime 9 (succeeded / CHECK_FAILED все checks отчитаны / execution-fail / selected-OK / PROVENANCE_MISMATCH / check-timeout SIGKILL / deadline-expired / missing-cmd / no-orphan), context 7, worker 7 (fail-closed «succeeded» без checks → reject, ничего не delivered/complete). Побочная находка: баг digest-теста контракта (двойной `base()` → разные deadlineAt) — починено.
+
+**Деферируется до коммита 11.1 (Фаза B, паттерн 1.12 D2):**
+- Композ-сервис `background-agent` + **environment-model.json** + **drift-тест** (structuralDrift + compose-drift) + **compose-шапка** dev/prod — shared-файлы `environment-model.json`/`.mjs`/`compose-drift.test.mjs` уже изменены у 11.1 (HITL, ssoModes) и помечены «не трогать» → чистое мержение рискованно.
+- Wiring в controller + pg/lease store + kind `run-background-agent-workflow` в job-машине + chat-origin sink.
+- e2e `scripts/test/background-agent-server.test.mjs` (owned-PG, паттерн verifiable-result.test.mjs).
+- Open Questions 1–4 решены при дизайне (1 сервис/replica; OpenCode 1.14.48 единая версия; компьютер = контекст без мостостроения; изоляция = mem/cpus/pids).
