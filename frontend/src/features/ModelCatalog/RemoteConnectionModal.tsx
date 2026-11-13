@@ -12,7 +12,7 @@ interface IProps {
     model: ICatalogModel;
     hint?: IRemoteConnectionHint;
     onClose: () => void;
-    onSaved: () => Promise<void>;
+    onSaved: (saved: IRemoteConnection | null) => Promise<void>;
 }
 type TValues = Pick<IRemoteConnectionInput, 'baseUrl' | 'requestDimensions' | 'authMode'> & {
     options?: TRemoteModelOptionValues;
@@ -83,6 +83,7 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
         setBusy(true);
         setError('');
         let accepted = saved;
+        let savedConnection: IRemoteConnection | null = null;
         try {
             if (!accepted) {
                 const result = await modelCatalogApi.configure(model.id, {
@@ -99,8 +100,9 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
                 setView(result);
                 setSaved(true);
                 accepted = true;
+                savedConnection = result;
             }
-            await onSaved();
+            await onSaved(savedConnection);
             if (owns() && mounted.current) onClose();
         } catch (cause) {
             if (owns() && mounted.current)
@@ -122,7 +124,7 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
         try {
             await modelCatalogApi.revoke({ ...model, revision: view.modelRevision }, view.revision);
             if (!owns() || !mounted.current) return;
-            await onSaved();
+            await onSaved(null);
             if (owns() && mounted.current) onClose();
         } catch (cause) {
             if (owns() && mounted.current)
@@ -142,7 +144,7 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
             open
             centered
             className="model-details"
-            title={`Провайдер «${model.name}»`}
+            title={`Подключение · «${model.name}»`}
             width={620}
             footer={null}
             onCancel={() => {

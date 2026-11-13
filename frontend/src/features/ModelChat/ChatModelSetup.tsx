@@ -140,7 +140,7 @@ export function ChatModelSetup({
                                             setAccess({ model });
                                         }}
                                     >
-                                        Настроить провайдера и ключ
+                                        Настроить «Мой доступ»
                                     </Button>
                                 )}
                                 {actions.includes('check') && (

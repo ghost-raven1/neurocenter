@@ -69,7 +69,6 @@ export function ModelCatalog({
     const [importing, setImporting] = useState(false);
     const [ggufImport, setGgufImport] = useState(false);
     const [providerAccess, setProviderAccess] = useState<{ model: ICatalogModel; notice?: string } | null>(null);
-    const [keyStepAfter, setKeyStepAfter] = useState<ICatalogModel | null>(null);
     const [providerSetup, setProviderSetup] = useState<{
         scope: string;
         modelId?: string;
@@ -109,7 +108,6 @@ export function ModelCatalog({
         setImporting(false);
         setGgufImport(false);
         setProviderAccess(null);
-        setKeyStepAfter(null);
         setChatId(null);
         setConnectionHint(undefined);
         setError('');
@@ -462,6 +460,9 @@ export function ModelCatalog({
                                     }}
                                     connectionUnavailableReason={assignmentReason(model, true)}
                                     connectionStatus={connectionStatus(model)}
+                                    onCheckConnection={() => {
+                                        void embedding.refresh();
+                                    }}
                                     onEdit={() => setEditing(model)}
                                     onRemove={archived}
                                     onConfigure={() => setConnection(model)}
@@ -546,7 +547,6 @@ export function ModelCatalog({
                             saved.runtime !== 'device-codex' &&
                             !saved.verificationSha256
                         ) {
-                            if (typeof editing === 'string') setKeyStepAfter(saved);
                             setConnection(saved);
                         }
                     }}
@@ -572,6 +572,15 @@ export function ModelCatalog({
                         key={`${formScope}:${connection.id}:${connection.revision}`}
                         model={connection}
                         onConfigureOpenCode={projectId && canManage ? openCodexProvider : undefined}
+                        onOpenChat={
+                            canChat
+                                ? () => {
+                                      const id = connection.id;
+                                      setConnection(null);
+                                      setChatId(id);
+                                  }
+                                : undefined
+                        }
                         onClose={() => setConnection(null)}
                     />
                 ) : (
@@ -582,15 +591,14 @@ export function ModelCatalog({
                         onClose={() => {
                             setConnection(null);
                             setConnectionHint(undefined);
-                            setKeyStepAfter(null);
                         }}
-                        onSaved={async () => {
+                        onSaved={async (saved) => {
                             await refresh();
-                            const next = keyStepAfter;
-                            setKeyStepAfter(null);
-                            if (next && next.id === connection.id)
+                            // P0-6: общий переход в «Мой доступ», когда провайдер требует личный ключ (authMode).
+                            // Импортная цепочка (connectionHint) не продолжается в ключ — её ведёт отдельный workstream.
+                            if (saved && saved.authMode !== 'none' && !connectionHint)
                                 setProviderAccess({
-                                    model: next,
+                                    model: connection,
                                     notice: 'Провайдер сохранён. Теперь введите ваш личный ключ.',
                                 });
                         }}
@@ -645,6 +653,11 @@ export function ModelCatalog({
                     onReloadModels={() => {
                         void refresh();
                     }}
+                    onConfigured={() => {
+                        if (captureOwner()())
+                            setProviderSetup((current) => (current === providerSetup ? undefined : current));
+                    }}
+                    configuredLabel="К модели в каталоге"
                     onClose={() => {
                         if (captureOwner()())
                             setProviderSetup((current) => (current === providerSetup ? undefined : current));

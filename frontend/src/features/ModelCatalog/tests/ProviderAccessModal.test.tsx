@@ -66,6 +66,8 @@ it('non-main: hides the shared-address editor but keeps the personal key', async
     expect(button('Изменить адрес и настройки провайдера')).toBeUndefined();
     expect(bodyText()).toContain('Общий адрес провайдера настраивает главный администратор.');
     expect(document.querySelector('[data-testid="personal-key"]')).not.toBeNull();
+    // Единый словарь (P0-1): заголовок модалки личного ключа — «Мой доступ».
+    expect(bodyText()).toContain('Мой доступ · «Remote»');
 });
 // main: canConfigure=true + onConfigure — кнопка адреса видна и вызывает хэндлер.
 it('main: shows the shared-address editor and wires it to onConfigure', async () => {

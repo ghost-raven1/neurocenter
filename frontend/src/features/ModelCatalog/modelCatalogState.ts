@@ -28,6 +28,9 @@ export const modelHostingLabels: Record<IModelHosting['state'], string> = {
     error: 'Ошибка хостинга',
 };
 
+/** Единый статус «не проверено»: подключение (API/Codex) или хостинг ещё не проверялись. */
+export const unverifiedStatusLabel = 'Подключение не проверено';
+
 /** Неполный ответ не превращает существующие назначения в пустой каталог. */
 export function requireModelCatalog(value: IModelCatalog): IModelCatalog {
     if (

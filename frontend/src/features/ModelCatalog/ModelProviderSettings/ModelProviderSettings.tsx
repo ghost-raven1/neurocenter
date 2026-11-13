@@ -18,9 +18,9 @@ export function ModelProviderSettings({
     // Same gate as RemoteProviderAccess: only users who see «Мой доступ» get a hint about it.
     const personalAccess = !!user && user.userRoles.includes(user.activeRole) && roleLevel(user.activeRole) >= 2;
     return (
-        <section className="model-provider-settings" aria-label="Провайдер и API-ключ">
+        <section className="model-provider-settings" aria-label="Мой доступ">
             <Space direction="vertical" className="model-provider-settings__content">
-                <Typography.Text strong>Провайдер и API-ключ</Typography.Text>
+                <Typography.Text strong>Мой доступ</Typography.Text>
                 <Typography.Text type="secondary">
                     Запросы к этому провайдеру выполняются с сервера Нейроцентра. Личный ключ используется только для
                     вашего доступа.
