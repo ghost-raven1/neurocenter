@@ -101,6 +101,8 @@ import { VERSION_RETIREMENT_SCHEMA_SQL } from '../version-retirement/version-ret
 import { VERSION_RETIREMENT_SCHEMA_ASSERT_SQL } from '../version-retirement/version-retirement.schema-verification';
 import { PROJECT_CHAT_SHARED_SCHEMA_SQL } from '../project-chat/project-chat-shared.schema';
 import { PROJECT_CHAT_SHARED_SCHEMA_ASSERT_SQL } from '../project-chat/project-chat-shared.schema-verification';
+import { PROJECT_CHAT_SYSTEM_CALL_SCHEMA_SQL } from '../project-chat/project-chat-system-call.schema';
+import { PROJECT_CHAT_SYSTEM_CALL_SCHEMA_ASSERT_SQL } from '../project-chat/project-chat-system-call.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
@@ -338,5 +340,10 @@ export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
         version: 57,
         name: 'agent-shared-context-provenance',
         sql: PROJECT_CHAT_SHARED_SCHEMA_SQL + '\n' + PROJECT_CHAT_SHARED_SCHEMA_ASSERT_SQL,
+    },
+    {
+        version: 58,
+        name: 'agent-system-call',
+        sql: PROJECT_CHAT_SYSTEM_CALL_SCHEMA_SQL + '\n' + PROJECT_CHAT_SYSTEM_CALL_SCHEMA_ASSERT_SQL,
     },
 ];

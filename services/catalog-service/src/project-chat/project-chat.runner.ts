@@ -11,6 +11,7 @@ import { securityEvent } from '../access/security-events';
 import { ProjectChatRepository } from './project-chat.repository';
 import { ProjectChatDispatch } from './project-chat-dispatch';
 import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.constants';
+import { projectChatRoomId } from './project-chat.utils';
 import type { IChatAgentSnapshot } from '../model-chat/chat-group.interfaces';
 import {
     PROJECT_CHAT_HANDOVER_ACTION,
@@ -18,6 +19,12 @@ import {
     type IProjectChatHandover,
 } from './project-chat-handover';
 import { PROJECT_CHAT_SHARE_ACTION, parseProjectChatShares, type IProjectChatShare } from './project-chat-share';
+import {
+    PROJECT_CHAT_SYSTEM_CALL_ACTION,
+    parseProjectChatSystemCall,
+    type IProjectChatSystemCall,
+    type IProjectChatSystemCallPort,
+} from './project-chat-system-call';
 import type {
     TProjectChatDb,
     IProjectChatInference,
@@ -71,10 +78,15 @@ export class ProjectChatRunner {
     private readonly dispatch = new ProjectChatDispatch();
     private stopped = false;
     private interval?: ReturnType<typeof setInterval>;
+    private systemCalls?: IProjectChatSystemCallPort;
     constructor(
         readonly repository: ProjectChatRepository,
         private readonly inference: IProjectChatInference,
     ) {}
+    /** FR-310: the system-role call port is attached late (the implementation is wired in the module graph). */
+    attachSystemCalls(impl: IProjectChatSystemCallPort): void {
+        this.systemCalls = impl;
+    }
     async start(): Promise<void> {
         for (const room of await this.repository.recover()) this.schedule(room.projectId, room.roomId);
         this.interval = setInterval(() => {
@@ -209,6 +221,9 @@ export class ProjectChatRunner {
                 // FR-309: shared context elements are durable before any handover re-queue,
                 // so the connected agent sees them in its context.
                 await this.finalizeShares(db, room, job, children);
+                // FR-310: an agent may explicitly invoke a system role; the durable call row and
+                // the audit are stored in this finalization transaction (NFR-4).
+                await this.finalizeSystemCalls(db, room, job, req, children);
                 // FR-302: a handover re-queues the task under a fresh generation; the connected agent
                 // completes it and the final summary is built then, with its answer included.
                 if (await this.finalizeHandovers(db, room, job, req, children)) {
@@ -374,6 +389,110 @@ export class ProjectChatRunner {
             for (const share of parseProjectChatShares(child.content))
                 await this.finalizeShare(db, room, job, child, share);
         }
+    }
+    /**
+     * FR-310: a published agent answer may explicitly invoke a system role (a problem,
+     * a clarification or a recovery). The durable call row and the audit are stored in
+     * this finalization transaction (NFR-4); the role call runs through the durable
+     * system-role pipeline and its terminal outcome is delivered back to this room.
+     * A rejected call posts the actionable error row immediately; malformed directives
+     * never fail the published answers.
+     */
+    private async finalizeSystemCalls(
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        job: IProjectChatJob,
+        req: Request,
+        children: IProjectChatMessageRow[],
+    ): Promise<void> {
+        if (!this.systemCalls) return;
+        for (const child of children) {
+            if (child.kind !== 'agent' || child.status !== 'done' || !child.snapshot) continue;
+            if (!room.agent_ids.includes(child.snapshot.agentId)) continue;
+            const call = parseProjectChatSystemCall(child.content);
+            if (!call) continue;
+            await this.finalizeSystemCall(db, room, job, req, child, call);
+        }
+    }
+    private async finalizeSystemCall(
+        db: TProjectChatDb,
+        room: IProjectChatRoomRow,
+        job: IProjectChatJob,
+        req: Request,
+        child: IProjectChatMessageRow,
+        call: IProjectChatSystemCall,
+    ): Promise<void> {
+        const callId = randomUUID(),
+            snapshot = child.snapshot!,
+            outcome = await this.systemCalls!.invoke({
+                req,
+                projectId: job.projectId,
+                roomId: room.id ?? DEFAULT_PROJECT_CHAT_ROOM,
+                roomVisibility: room.visibility ?? 'PUBLIC',
+                call,
+                snapshot,
+            }),
+            state = outcome.error ? 'rejected' : 'invoked';
+        await db.query(
+            `INSERT INTO project_chat_system_calls(project_id,room_id,call_id,actor_email,actor_role,source_message_id,response_id,response_generation,agent_id,agent_name,snapshot,role_id,reason,question,run_id,request_id,state,error)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16,$17,$18)`,
+            [
+                job.projectId,
+                projectChatRoomId(room),
+                callId,
+                job.actor.email,
+                job.actor.activeRole,
+                job.source.id,
+                child.id,
+                child.generation,
+                snapshot.agentId,
+                snapshot.name,
+                JSON.stringify(outcome.snapshot),
+                call.roleId,
+                call.reason,
+                call.question,
+                outcome.runId ?? null,
+                outcome.requestId ?? null,
+                state,
+                outcome.error ?? null,
+            ],
+        );
+        if (outcome.error)
+            await db.query(
+                `INSERT INTO project_chat_messages(id,project_id,room_id,kind,reply_to_id,source_message_id,status,snapshot,content,generation)
+            VALUES($1,$2,$3,'agent',$4,$5,'done',$6::jsonb,$7,$8)`,
+                [
+                    randomUUID(),
+                    job.projectId,
+                    projectChatRoomId(room),
+                    child.id,
+                    child.id,
+                    JSON.stringify(outcome.snapshot),
+                    '## Вызов системной роли не выполнен\n\n' + outcome.error,
+                    child.generation,
+                ],
+            );
+        await securityEvent(db, {
+            actor: job.actor.email,
+            action: PROJECT_CHAT_SYSTEM_CALL_ACTION,
+            resourceId: callId,
+            before: null,
+            after: {
+                callId,
+                sourceMessageId: job.source.id,
+                responseId: child.id,
+                responseGeneration: child.generation,
+                agentId: snapshot.agentId,
+                agentName: snapshot.name,
+                roleId: call.roleId,
+                reason: call.reason,
+                question: call.question,
+                runId: outcome.runId ?? null,
+                requestId: outcome.requestId ?? null,
+                state,
+                error: outcome.error ?? null,
+            },
+        });
     }
     private async finalizeShare(
         db: TProjectChatDb,

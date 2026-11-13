@@ -50,7 +50,8 @@ import { assertProjectRagAuthorizationSchema } from '../models/project-rag-autho
 import { DEVICE_CODEX_SCHEMA_CONTRACT } from '../models/device-codex.schema-contract';
 import { assertDeviceCodexSchema } from '../models/device-codex.schema-verification';
 import { assertSystemRoleSchema } from '../system-roles/system-role.schema-verification';
-import { CURRENT_PROJECT_CHAT_SHARED_SCHEMA_CONTRACT as PROJECT_CHAT_SCHEMA_CONTRACT } from '../project-chat/project-chat-shared.schema-contract';
+import { CURRENT_PROJECT_CHAT_SYSTEM_CALL_SCHEMA_CONTRACT } from '../project-chat/project-chat-system-call.schema-contract';
+import { assertProjectChatSystemCallSchema } from '../project-chat/project-chat-system-call.schema-verification';
 import { assertProjectChatIsolationSchema as assertProjectChatSchema } from '../project-chat/project-chat-isolation.schema-verification';
 import { CHAT_ACTIVITY_SCHEMA_CONTRACT } from '../chat-activity/chat-activity.schema-contract';
 import { assertChatActivitySchema } from '../chat-activity/chat-activity.schema-verification';
@@ -134,7 +135,7 @@ export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...OPENCODE_MODEL_SYNC_SCHEMA_CONTRACT,
     ...AGENT_READINESS_SCHEMA_CONTRACT,
     ...DISCUSSIONS_SCHEMA_CONTRACT,
-    ...PROJECT_CHAT_SCHEMA_CONTRACT,
+    ...CURRENT_PROJECT_CHAT_SYSTEM_CALL_SCHEMA_CONTRACT,
     ...MODEL_RATE_LIMITS_SCHEMA_CONTRACT,
     ...CHAT_ACTIVITY_SCHEMA_CONTRACT,
     ...PACKAGE_AGENT_CURRENT_SCHEMA_CONTRACT,
@@ -189,4 +190,5 @@ export async function assertCurrentCatalogSchema(db: Pick<Pool, 'query'>): Promi
     await assertProjectDeletionReceiptSchema(db);
     await assertRateLimitWindowsSchema(db);
     await assertVersionRetirementSchema(db);
+    await assertProjectChatSystemCallSchema(db);
 }

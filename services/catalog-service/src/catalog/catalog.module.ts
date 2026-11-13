@@ -25,6 +25,7 @@ import { LearningQuirksController } from '../learning-quirks/learning-quirks.con
 import { LearningQuirksService } from '../learning-quirks/learning-quirks.service';
 import { LearningMemorySyncController } from '../learning-memory-sync/controller';
 import { SystemRoleService } from '../system-roles/system-role.service';
+import { SystemRoleAgentCall } from '../system-roles/system-role.agent-call';
 import { SystemRoleController } from '../system-roles/system-role.controller';
 import { ProjectChatController } from '../project-chat/project-chat.controller';
 import { ChatPresenceController } from '../chat-activity/chat-presence.controller';
@@ -237,6 +238,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         SystemRoleService,
         ChatPresenceService,
         ProjectChatService,
+        SystemRoleAgentCall,
         ProjectChatInferenceService,
         HelpService,
         DiscussionsRepository,

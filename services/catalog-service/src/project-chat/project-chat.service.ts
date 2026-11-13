@@ -22,6 +22,7 @@ import {
     projectChatRoomEmails,
 } from './project-chat-room-access';
 import { ProjectChatRunner } from './project-chat.runner';
+import type { IProjectChatSystemCallPort } from './project-chat-system-call';
 import { resolveProjectChatProject } from './project-chat-project';
 import { DEFAULT_PROJECT_CHAT_ROOM } from './project-chat.constants';
 import { projectChatRoomId, projectChatRoomView } from './project-chat.utils';
@@ -63,6 +64,10 @@ export class ProjectChatService implements OnModuleInit, OnApplicationShutdown {
         this.dialogs = new ProjectChatDialogs(this.repository);
         this.runner = new ProjectChatRunner(this.repository, inference);
         this.activity = new ProjectChatActivityService(this.repository);
+    }
+    /** FR-310: the system-role call port is attached by its implementation (module graph). */
+    attachSystemCalls(impl: IProjectChatSystemCallPort): void {
+        this.runner.attachSystemCalls(impl);
     }
     async onModuleInit(): Promise<void> {
         await this.models.ready();

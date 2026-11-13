@@ -3,7 +3,7 @@ title: 'FR-310: Агент вызывает системного агента + 
 type: 'feature'
 ticket: '5'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -109,3 +109,24 @@ node --test scripts/test/agent-invokes-system-role.test.mjs 2>/dev/null || true
 1. **Какие системные роли может вызвать обычный агент?** Рекомендация: все 5 (через roleCallBudget), кроме ограничений политики роли. Обоснование: FR-310 «агента с системной ролью (FR-303)» — любая.
 2. **Recovery-путь — отдельное состояние или guidance?** Рекомендация: recovery = явный вызов с причиной «нет пути продвижения» + guidance-ответ (следующий шаг). Обоснование: не новая сущность, а сценарий вызова.
 3. **Ответ в «проектном диалоге» — в общей комнате или 1:1?** Рекомендация: в диалог, где был вызов (проектный), с учётом доступов (FR-403). Обоснование: FR-310 «доступен вызвавшему в проектном диалоге».
+
+## Progress (2026-11-13, done)
+
+Реализация завершена. Решил Open Questions: (1) все 5 ролей вызываемы любым агентом (roleCallBudget + политика роли); (2) recovery = вызов с reason='recovery' тем же путём, без новой сущности; (3) ответ — в комнату, где был вызов (публичная комната проекта), с аудитом.
+
+**Код (catalog-service):**
+- `src/system-roles/system-role.agent-call.ts` (new) — `SystemRoleAgentCall.invoke/deliver/reap`: invoke из финализации project-chat (selection `targets: []` — room-чтение вложенной tx = самодедлок на room-row; роль получает question + RAG-индекс проекта), deliver = транзакционная доставка терминального run в комнату вызвавшего + completion call-row ровно один раз (FOR UPDATE + state='invoked'), reap = durable-фолбэк (5 c) по invoked-row.
+- `src/project-chat/project-chat-system-call.{ts,schema.ts,schema-contract.ts,schema-verification.ts}` (new) — схема `project_chat_system_calls` (state invoked|delivered|failed|rejected, run_id, reason, question, error; CHECK, индексы) + контракт/верификация схемы.
+- `src/project-chat/project-chat.runner.ts` — `finalizeSystemCalls` после finalizeShares: парсинг `neurocenter-system-call`-блока из ответа агента → invoke (reason problem|recovery), невалидный reason/неизвестная роль → rejected без запуска, actionable-ошибка в комнату.
+- `src/project-chat/project-chat.service.ts` — attachSystemCalls (подключает agent-call к сервису); `src/system-roles/system-role.service.ts` — prepare/start с consent/pin; `src/agents/agent-audit.ts` — аудит-строк вызова; `src/catalog/catalog.module.ts` — регистрация; `src/database/catalog-migrations.ts` + `current-schema-verification.ts` — миграция + верификация; `deploy/production/retention.json` — retention-политика таблицы.
+
+**Тесты:**
+- Юниты 24/24: `src/system-roles/tests/system-role-agent-call.test.ts` (invoke targets=[]/deliver/reap/бюджет) + `src/project-chat/tests/project-chat-system-call.test.ts` (схема, CAS, rejected-путь).
+- E2E `scripts/test/agent-invokes-system-role.test.mjs` (new, НЕ в check-tooling-tests.json): 5 сценариев на живом PG — delivered+аудит, recovery, невалидный reason (без запуска), неизвестная роль (rejected), невалидный JSON (failed после бюджета) — **6/6 pass** (bootstrap+teardown).
+
+**Ловушки сессии (см. .memlog.md «Ловушки 9.5»):** Nest DI — value-импорты для DI-классов (import type стирает design:paramtypes, ловит только e2e); вложенное room-чтение в finalize = самодедлок (фикс targets=[]); pg extended-протокол — плейсхолдеры позиционные, без пропусков; e2e fake-provider — маркер контракта по сырому контенту (JSON.stringify экранирует кавычки), task-роутинг по lastUser, исключение в respond = phantom-503.
+
+Доказано (2026-11-13):
+- Юниты: **24/24 pass**; контракт схемы: PASS (замерен на живом PG16).
+- **E2E 9.5: 6/6 pass** (сценарии ~1–3 c; до фикса роутинга fake-провайдера — 90 c hang).
+- **Корневой сьют: 1070 pass, 0 fail, 3 skipped (exit 0)** на dist d2828a89… — без деградации.

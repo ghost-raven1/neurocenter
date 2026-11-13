@@ -37,6 +37,7 @@ import { SystemRolePolicy } from './system-role.policy';
 import { SystemRoleTargets } from './system-role.targets';
 import { SystemRoleRunner, SystemRoleStepTimeout } from './system-role.runner';
 import { systemRoleFailureMessage } from './system-role.failure';
+import type { SystemRoleAgentCall } from './system-role.agent-call';
 import { ModelChatProjectContext } from '../model-chat/chat-project-context';
 import { SystemRoleApplication } from './system-role.apply';
 import { notifyRoleOperations } from './system-role.operations';
@@ -60,6 +61,7 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
     private readonly active = new Map<string, AbortController>();
     private readonly lanes = new Set<TRoleExecutionLane>();
     private readonly tasks = new Set<Promise<void>>();
+    private agentCall?: SystemRoleAgentCall;
     private timer?: ReturnType<typeof setInterval>;
     private drainTask?: Promise<void>;
     private draining = false;
@@ -103,13 +105,22 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
         );
         this.application = new SystemRoleApplication(this.repository, this.policy, this.targets);
     }
+    /** FR-310: the agent-initiated call port attaches itself at module wiring time. */
+    attachAgentCall(impl: SystemRoleAgentCall): void {
+        this.agentCall = impl;
+    }
     async onModuleInit(): Promise<void> {
         await this.models.ready();
         await this.repository.expire();
         this.timer = setInterval(() => {
             void this.repository
                 .expire()
-                .then(() => this.wake())
+                .then(() => {
+                    this.wake();
+                    // FR-310: durable fallback for agent-initiated system-role calls whose delivery
+                    // hook was lost (service restart / hook failure).
+                    void this.agentCall?.reap();
+                })
                 .catch(() => undefined);
         }, 5000);
         this.timer.unref();
@@ -429,6 +440,9 @@ export class SystemRoleService implements OnModuleInit, OnApplicationShutdown {
             clearTimeout(timeout);
             this.active.delete(row.id);
             void notifyRoleOperations();
+            // FR-310: deliver the terminal outcome of an agent-initiated call (the five-second
+            // reaper is the durable fallback if this hook is lost).
+            void this.agentCall?.deliver(row.id).catch(() => undefined);
         }
     }
     private async fail(row: IRoleRunRow, interrupted: boolean, cause?: unknown): Promise<void> {

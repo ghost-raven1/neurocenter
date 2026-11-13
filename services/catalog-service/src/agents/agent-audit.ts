@@ -11,6 +11,7 @@ export const AGENT_AUDIT_ACTIONS = [
     'project.agents.connect',
     'project.chat.agent.handover',
     'project.chat.agent.share',
+    'project.chat.agent.system-call',
 ] as const;
 const actions = new Set<string>(AGENT_AUDIT_ACTIONS);
 const object = (value: unknown): value is Record<string, unknown> =>
