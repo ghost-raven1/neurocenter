@@ -3,7 +3,7 @@ title: 'FR-305: Отказоустойчивость background-агента (cr
 type: 'feature'
 ticket: '11'
 created: '2026-11-09'
-status: ready-for-dev
+status: in-progress
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -117,6 +117,19 @@ context:
 - **Crash-политика ≠ «захватить и жить дальше»:** эпик 6 entry 10 прямо запрещает «захватить и жить дальше» — controlled exit + перезапуск docker-политикой. Retry/dead-letter — на уровне **задания** (job-lifecycle), не «проглотить исключение в процессе».
 - **NFR-2 + NFR-3/R8:** «нет молчаливых падений: crash-политика + запись ошибки; контролируемые отказы (fail-closed); видимость ошибки» (NFR-2) + «для каждого failure mode — recovery-путь» (NFR-3/R8). Crash-политика + error-store + recovery-путь (retry/dead-letter/`unknown`) закрывают оба.
 - **Бюджет (NFR-6):** идемпотентность бюджета — «повтор не дублирует списание» — через контракт epic-8 entry 12 + существующие model-token-quotas/rate-limits. Не новый бюджет-механизм.
+
+## Progress (2026-11-13, in-progress)
+
+**Ядро отказоустойчивости готово (2 новых файла, Phase A core НЕ тронут): `resilience.ts` + 10 тестов. 38/38 green на main (28 Phase A + 10), tsc baseline (0 новых ошибок), ESLint/Prettier чистые.**
+- `CrashResilientBackgroundWorker` — job-level политика: retry с backoff → dead-letter → явная остановка. Crash **rejects** с `BackgroundCrashError` — «catch and live on» структурно невозможен (controlled exit + docker-restart, AD-O5). Named-константы `BACKGROUND_AGENT_RESILIENCE` (maxAttempts 3, backoff 500ms×2 capped 30s, stack-hint 4KB/top-20, level critical) + per-job override.
+- Идемпотентность = контракт epic-8 entry 12 (request_key/phase), применён к эффектам: `execution` (journaled **до** dispatch — paid step не повторяется), `result` (recorded **до** ACK), `publish` (ACK-based, lost-ACK → redelivery **той же** квитанции).
+- Recovery (docs §«Отмена и восстановление»): started-marker без результата → `unknown` **без повторного исполнения** (no automatic paid retry); settled job → idempotent re-process к той же записанной квитанции.
+- Observability: crash → error store (AD-O5) + security/ops event (AD-O7, реальный `access/security-events.ts:securityEvent`). AD-O8: в события — только фиксированные классификаторы + digest/счётчики, raw error/инструкция не переходят. Best-effort (PG-down не блокирует crash path).
+- Шов `IBackgroundAgentResilienceStore` (sibling; in-memory; pg/lease — Фаза B), декоратор `ResilientAgentRuntime` (оборачивает Phase A `IAgentRuntime`).
+
+**Отклонения (обоснованы):** (1) `error_events` в main ещё не существует (AD-O5-стория ready-for-dev) — модуль целится в frozen AD-O5 column-контракт, не изобретает таблиц; wiring — строка при лэнде AD-O5. (2) backoff-политика на уровне job-lifecycle (process() recovery passes), процессный exit — за AD-O5 crash-handler. (3) `publish` ACK-checkpointed (redelivery той же квитанции — поведение docs на lost-ACK).
+
+**Остаток (Фаза B / e2e, после compose-сервиса):** real kill -9 compose-сервиса (durable pg/lease store + AD-O5 crash-handler + container restart policy), real OOM mid-turn с реальным OpenCode, PG-down best-effort path, dead-letter alert channel (entry 13), корневой сьют.
 
 ## Verification
 
