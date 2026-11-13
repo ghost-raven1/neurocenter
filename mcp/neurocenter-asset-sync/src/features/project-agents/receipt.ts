@@ -67,7 +67,7 @@ export function parseAgentsReceipt(raw: string): TAgentsReceipt {
         throw damaged();
     for (const item of value.agents) {
         if (
-            !exact(item, ['id', 'slug', 'version', 'enabled', 'sha256']) ||
+            !exact(item, ['id', 'slug', 'version', 'enabled', 'sha256'], ['extensions']) ||
             typeof item.id !== 'string' ||
             !item.id ||
             item.id.length > 200 ||
@@ -81,6 +81,31 @@ export function parseAgentsReceipt(raw: string): TAgentsReceipt {
             !/^[a-f0-9]{64}$/.test(item.sha256)
         )
             throw damaged();
+        // FR-306: extensions are optional identifiers; exact keys, canonical kind/origin, provenance hashes.
+        if (item.extensions !== undefined) {
+            if (
+                !Array.isArray(item.extensions) ||
+                item.extensions.length > 16 ||
+                item.extensions.some(
+                    (entry) =>
+                        !exact(entry, ['assetId', 'assetKind', 'version', 'manifest', 'origin']) ||
+                        typeof entry.assetId !== 'string' ||
+                        !entry.assetId ||
+                        entry.assetId.length > 512 ||
+                        typeof entry.assetKind !== 'string' ||
+                        !['mcp', 'plugin', 'skill'].includes(entry.assetKind) ||
+                        !Number.isSafeInteger(entry.version) ||
+                        Number(entry.version) < 1 ||
+                        typeof entry.manifest !== 'string' ||
+                        !/^[a-f0-9]{64}$/.test(entry.manifest) ||
+                        typeof entry.origin !== 'string' ||
+                        !['approved', 'experimental'].includes(entry.origin),
+                )
+            )
+                throw damaged();
+            const seen = new Set(item.extensions.map((entry) => entry.assetKind + ':' + entry.assetId));
+            if (seen.size !== item.extensions.length) throw damaged();
+        }
     }
     if (
         new Set(value.agents.map((item) => item.id)).size !== value.agents.length ||

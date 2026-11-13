@@ -32,6 +32,8 @@ export interface IHostedMcpSession {
     assetId: string;
     version: number;
     manifest: string;
+    /** FR-306: when present the MCP must belong to this agent's resolved extension kit. */
+    agentId?: string;
 }
 /** A signed host ticket identifies a revocable device and one immutable project assignment. */
 export function validHostedMcpSession(value: unknown): value is IHostedMcpSession {
@@ -40,13 +42,17 @@ export function validHostedMcpSession(value: unknown): value is IHostedMcpSessio
         !!session &&
         typeof session === 'object' &&
         !Array.isArray(session) &&
-        Object.keys(session).sort().join(',') === 'assetId,deviceId,manifest,projectId,version' &&
+        ['assetId,deviceId,manifest,projectId,version', 'agentId,assetId,deviceId,manifest,projectId,version'].includes(
+            Object.keys(session).sort().join(','),
+        ) &&
         ['deviceId', 'projectId', 'assetId'].every(
             (key) =>
                 typeof session[key as keyof IHostedMcpSession] === 'string' &&
                 String(session[key as keyof IHostedMcpSession]).length > 0 &&
                 String(session[key as keyof IHostedMcpSession]).length <= 200,
         ) &&
+        (session.agentId === undefined ||
+            (typeof session.agentId === 'string' && /^agent-[a-z0-9][a-z0-9-]{0,120}$/.test(session.agentId))) &&
         Number.isSafeInteger(session.version) &&
         Number(session.version) > 0 &&
         typeof session.manifest === 'string' &&

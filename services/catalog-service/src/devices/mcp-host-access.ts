@@ -5,6 +5,7 @@ import type { IPackage } from '../catalog/bundle-package';
 import { verifyPackage } from '../catalog/bundle-package';
 import { projectAssetColumns, checkedProjectPackage, type IProjectPinRow } from '../catalog/project-asset-pins';
 import { ROLES, type IAccessClaims } from '../access/access.model';
+import { assertAgentKitMembership } from '../agents/agent-extension-kit';
 import { hasDeviceJobPermission } from './device-job-access';
 import { assertContractBridge, assertManagedBridge, managedBinding } from './device-compatibility';
 import { normalizeRuntimeArtifacts, runtimeDescriptorDigest } from '../../../shared/runtime-artifacts.cjs';
@@ -17,6 +18,8 @@ export interface IHostedMcpSession {
     assetId: string;
     version: number;
     manifest: string;
+    /** FR-306: when present the asset must belong to this agent's resolved extension kit. */
+    agentId?: string;
 }
 interface ISessionInput extends IHostedMcpSession {
     artifactSha256: string;
@@ -26,6 +29,8 @@ const uuid = (value: unknown): value is string =>
 const text = (value: unknown, max: number): value is string =>
     typeof value === 'string' && value.length > 0 && value.length <= max && !/[\x00-\x20\x7f]/.test(value);
 const sha = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const agentIdOk = (value: unknown): value is string =>
+    typeof value === 'string' && /^agent-[a-z0-9][a-z0-9-]{0,120}$/.test(value);
 const mismatch = () =>
     new ConflictException(
         'Пакет хоста изменился или больше не назначен проекту. Повторите установку актуальной версии.',
@@ -37,14 +42,18 @@ export function hostedMcpSessionInput(value: unknown): ISessionInput {
         !body ||
         typeof body !== 'object' ||
         Array.isArray(body) ||
-        Object.keys(body).sort().join(',') !== 'artifactSha256,assetId,deviceId,manifest,projectId,version' ||
+        ![
+            'artifactSha256,assetId,deviceId,manifest,projectId,version',
+            'agentId,artifactSha256,assetId,deviceId,manifest,projectId,version',
+        ].includes(Object.keys(body).sort().join(',')) ||
         !uuid(body.deviceId) ||
         !text(body.projectId, 200) ||
         !text(body.assetId, 512) ||
         !Number.isSafeInteger(body.version) ||
         Number(body.version) < 1 ||
         !sha(body.manifest) ||
-        !sha(body.artifactSha256)
+        !sha(body.artifactSha256) ||
+        (body.agentId !== undefined && !agentIdOk(body.agentId))
     )
         throw new BadRequestException('Нужна точная сессия управляемого MCP. Повторите установку.');
     return body as ISessionInput;
@@ -114,10 +123,10 @@ async function approvedPackage(
     // AD-16: retired-версия не стартует в mcp-host — и при новом authorize, и в live re-check
     // (authorizeHostedMcpSession), билет уже запущенной сессии гаснет при следующем re-check.
     const versionStatus = (
-        await db.query<{ status: string }>('SELECT status FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2', [
-            assetId,
-            version,
-        ])
+        await db.query<{ status: string }>(
+            'SELECT status FROM ai_plugin_versions WHERE ai_plugin_id=$1 AND version=$2',
+            [assetId, version],
+        )
     ).rows[0];
     if (!versionStatus) throw mismatch();
     if (versionStatus.status === 'retired')
@@ -173,14 +182,15 @@ async function transaction<T>(store: DeviceStore, action: (db: PoolClient) => Pr
 }
 /** New installation admits only the current project pin and an explicitly server-hosted, parameter-free runtime. */
 export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, value: unknown) {
-    const body = value as { projectId?: unknown; pkg?: IPackage } | null;
+    const body = value as { projectId?: unknown; pkg?: IPackage; agentId?: unknown } | null;
     if (
         !body ||
         typeof body !== 'object' ||
         Array.isArray(body) ||
-        Object.keys(body).sort().join(',') !== 'pkg,projectId' ||
+        !['pkg,projectId', 'agentId,pkg,projectId'].includes(Object.keys(body).sort().join(',')) ||
         !text(body.projectId, 200) ||
-        !body.pkg
+        !body.pkg ||
+        (body.agentId !== undefined && !agentIdOk(body.agentId))
     )
         throw new BadRequestException('Нужны проект и закреплённый пакет MCP.');
     let valid = false;
@@ -193,6 +203,8 @@ export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, va
     // Версия фиксируется при issuance: head (undefined) не выпускает билет — перезапрос с версией.
     if (!Number.isSafeInteger(body.pkg.plugin.version) || Number(body.pkg.plugin.version) < 1)
         throw new NotFoundException('Пакет хоста MCP требует явной версии. Перезапросите дескриптор с версией.');
+    // FR-306: captured before the transaction so the narrowing survives the closure.
+    const sessionAgentId = agentIdOk(body.agentId) ? body.agentId : undefined;
     return transaction(store, async (db) => {
         await deviceProject(db, device.id, body.projectId as string);
         await requireFeaturesEnabled(['tool_installation']);
@@ -205,6 +217,17 @@ export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, va
             ),
             pkg = approved.package,
             artifact = await hostArtifact(db, pkg);
+        // FR-306: an agent-scoped ticket may only expose an MCP that belongs to that agent's kit.
+        if (sessionAgentId)
+            await assertAgentKitMembership(
+                db,
+                body.projectId as string,
+                sessionAgentId,
+                pkg.plugin.id,
+                'mcp',
+                pkg.plugin.version,
+                pkg.manifest.sha256,
+            );
         // AD-13: сверка версии контракта и capability-диапазонов — здесь, на устройстве; рассогласование — 409 actionable.
         assertContractBridge(device.report, {
             contractVersion: approved.contractVersion,
@@ -212,13 +235,16 @@ export async function authorizeHostedMcp(store: DeviceStore, device: IDevice, va
             bridgeProtocol: 2,
         });
         // AD-3: сервер выдаёт sha256 канонического descriptor-текста одобренного пакета.
-        const descriptorSha256 = runtimeDescriptorDigest(normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts));
+        const descriptorSha256 = runtimeDescriptorDigest(
+            normalizeRuntimeArtifacts(pkg.config?.extra?.runtimeArtifacts),
+        );
         const session: IHostedMcpSession = {
             deviceId: device.id,
             projectId: body.projectId as string,
             assetId: pkg.plugin.id,
             version: pkg.plugin.version,
             manifest: pkg.manifest.sha256,
+            ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
         };
         return {
             assetId: pkg.plugin.id,
@@ -237,7 +263,19 @@ export async function authorizeHostedMcpSession(store: DeviceStore, value: unkno
         await deviceProject(db, input.deviceId, input.projectId);
         const approved = await approvedPackage(db, input.projectId, input.assetId, input.version, input.manifest);
         await hostArtifact(db, approved.package, input.artifactSha256);
-        if (approved.package.config?.extra?.researchMcp) await requireFeaturesEnabled(['research_tools', 'tool_catalog']);
+        // FR-306: an agent-scoped ticket keeps the kit membership gate on every re-check.
+        if (input.agentId)
+            await assertAgentKitMembership(
+                db,
+                input.projectId,
+                input.agentId,
+                input.assetId,
+                'mcp',
+                input.version,
+                input.manifest,
+            );
+        if (approved.package.config?.extra?.researchMcp)
+            await requireFeaturesEnabled(['research_tools', 'tool_catalog']);
         return { ok: true };
     });
 }

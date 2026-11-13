@@ -428,6 +428,8 @@ class McpHostService {
             session.assetId,
             session.version,
             session.manifest,
+            // FR-306: agent-scoped tickets must not share a cache entry with the project-level session.
+            session.agentId ?? null,
             artifactSha256,
         ]);
     }
@@ -522,10 +524,7 @@ function isHostDomainError(error: unknown): error is Error & { status: number } 
  */
 function hostChannelMessage(error: unknown): string {
     if (isHostDomainError(error)) return error.message;
-    console.error(
-        '[api-gateway] mcp-host channel error:',
-        error instanceof Error ? error.message : String(error),
-    );
+    console.error('[api-gateway] mcp-host channel error:', error instanceof Error ? error.message : String(error));
     return 'Хост MCP недоступен.';
 }
 
