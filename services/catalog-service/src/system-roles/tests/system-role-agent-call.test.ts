@@ -339,8 +339,9 @@ describe('SystemRoleAgentCall.deliver', () => {
         expect(content).toContain('- Проверьте журнал');
         expect(params[7]).toBe('gen-1');
         const update = recorded.find((row) => /UPDATE project_chat_system_calls SET state/.test(row.sql));
-        expect(update!.params[1]).toBe('delivered');
-        expect(update!.params[2]).toBe('succeeded');
+        // params — 0-based: $1=state, $2=run_state, $3=project_id, $4=room_id, $5=call_id.
+        expect(update!.params[0]).toBe('delivered');
+        expect(update!.params[1]).toBe('succeeded');
         expect(recorded.some((row) => /INSERT INTO security_events/.test(row.sql))).toBe(true);
         expect(recorded.some((row) => /pg_advisory_xact_lock/.test(row.sql))).toBe(true);
         expect(recorded[recorded.length - 1].sql).toBe('COMMIT');
@@ -356,8 +357,8 @@ describe('SystemRoleAgentCall.deliver', () => {
         expect(content).toContain('## Вызов системной роли «Координатор» не завершён');
         expect(content).toContain('Модель не ответила. Проверьте подключение.');
         const update = recorded.find((row) => /UPDATE project_chat_system_calls SET state/.test(row.sql));
+        expect(update!.params[0]).toBe('failed');
         expect(update!.params[1]).toBe('failed');
-        expect(update!.params[2]).toBe('failed');
     });
 
     it('marks an awaiting_review outcome as delivered with a human-confirmation notice', async () => {
@@ -369,8 +370,8 @@ describe('SystemRoleAgentCall.deliver', () => {
         const insert = recorded.find((row) => /INSERT INTO project_chat_messages/.test(row.sql));
         expect(insert!.params[6]).toContain('Результат требует подтверждения человека (запуск run-1).');
         const update = recorded.find((row) => /UPDATE project_chat_system_calls SET state/.test(row.sql));
-        expect(update!.params[1]).toBe('delivered');
-        expect(update!.params[2]).toBe('awaiting_review');
+        expect(update!.params[0]).toBe('delivered');
+        expect(update!.params[1]).toBe('awaiting_review');
     });
 });
 
