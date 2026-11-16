@@ -103,6 +103,8 @@ import { PROJECT_CHAT_SHARED_SCHEMA_SQL } from '../project-chat/project-chat-sha
 import { PROJECT_CHAT_SHARED_SCHEMA_ASSERT_SQL } from '../project-chat/project-chat-shared.schema-verification';
 import { PROJECT_CHAT_SYSTEM_CALL_SCHEMA_SQL } from '../project-chat/project-chat-system-call.schema';
 import { PROJECT_CHAT_SYSTEM_CALL_SCHEMA_ASSERT_SQL } from '../project-chat/project-chat-system-call.schema-verification';
+import { BACKGROUND_AGENT_SCHEMA_SQL } from '../background-agent/background-agent.schema';
+import { BACKGROUND_AGENT_SCHEMA_ASSERT_SQL } from '../background-agent/background-agent.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
@@ -352,5 +354,10 @@ export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
         version: 61,
         name: 'project-embedding-target',
         sql: 'ALTER TABLE project_embedding_settings ADD COLUMN IF NOT EXISTS embedding_target JSONB;',
+    },
+    {
+        version: 62,
+        name: 'server-background-agent-job-store',
+        sql: BACKGROUND_AGENT_SCHEMA_SQL + '\n' + BACKGROUND_AGENT_SCHEMA_ASSERT_SQL,
     },
 ];
