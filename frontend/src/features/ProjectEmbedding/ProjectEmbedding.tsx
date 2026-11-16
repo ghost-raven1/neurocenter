@@ -1,17 +1,25 @@
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { useEmbeddingTarget, EmbeddingTargetFields } from './EmbeddingTarget';
 import { Alert, Button, Card, Select, Space, Spin, Typography } from 'antd';
+import { useEffect, useState } from 'react';
 import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
 import { useSelector } from 'react-redux';
 import type { TRootState } from '../../store';
 import type { IRagIndexProfile } from '../../core/api/interfaces';
-import { projectRoleLevel } from '../UserBlock/roles';
-import { eligibleEmbedding, embeddingNeedsRepair, sameEmbeddingProfile, sha } from './model';
+import { isMainAdminRole, projectRoleLevel } from '../UserBlock/roles';
+import { eligibleEmbedding, embeddingNeedsRepair, sameEmbeddingProfile, selectedEmbeddingMatches, sha } from './model';
+import { embeddingTargetConnected } from './connection';
 import { useProjectReindex } from './hooks/useProjectReindex';
 import { useRagAutoCycle } from './hooks/useRagAutoCycle';
 import { ProjectReindexStatus } from './ProjectReindexStatus';
 import { useProjectEmbedding } from './hooks/useProjectEmbedding';
 import { ConnectEmbeddingAction } from './ProjectEmbeddingConnection';
+import { RemoteConnectionModal } from '../ModelCatalog/RemoteConnectionModal';
+import { ProviderAccessModal } from '../ModelCatalog/ProviderAccessModal';
+import type { ICatalogModel } from '../ModelCatalog/interfaces';
+import { useConnectSequence, type IConnectRunResult } from '../ModelCatalog/hooks/useConnectSequence';
+import { connectionTargetLabel, observeConnectRun, planConnectStep } from '../ModelCatalog/hooks/connectPlan';
+import { unverifiedStatusLabel } from '../ModelCatalog/modelCatalogState';
 import './ProjectEmbedding.less';
 import type { IRagUiPreference } from '../McpBridge/ragUi/ragUiPreference';
 
@@ -32,6 +40,7 @@ export function ProjectEmbedding(props: IProps): JSX.Element {
             {...props}
             canManage={level >= 3}
             canConnect={level >= 2}
+            isMain={isMainAdminRole(user?.activeRole)}
         />
     );
 }
@@ -41,13 +50,51 @@ export function ProjectEmbeddingContent({
     serverHasData,
     canManage,
     canConnect,
+    isMain = false,
     onPreferRagUi,
-}: IProps & { canManage: boolean; canConnect: boolean }): JSX.Element {
+}: IProps & { canManage: boolean; canConnect: boolean; isMain?: boolean }): JSX.Element {
     const state = useProjectEmbedding(projectId),
         target = useEmbeddingTarget(projectId);
     const reindex = useProjectReindex(projectId, state.applied);
     const autoCycle = useRagAutoCycle(reindex);
     const { selection, catalog, modelId } = state;
+    /** Шаг «Готовность» единого потока: смена модели проекта (на сервер и выбранную установку). */
+    const connect = async (model: ICatalogModel): Promise<IConnectRunResult> => {
+        if (!state.selection)
+            return { ok: false, error: 'Не удалось подготовить подключение модели. Повторите попытку.' };
+        return await reindex.request(model, state.selection.revision, canConnect ? target.value : undefined);
+    };
+    /** Единый адаптивный поток подключения: подключение → ключ (при authMode) → готовность. */
+    const sequence = useConnectSequence({
+        plan: (model: ICatalogModel) => planConnectStep(model, isMain),
+        run: connect,
+    });
+    const [connection, setConnection] = useState<ICatalogModel | null>(null);
+    const [providerAccess, setProviderAccess] = useState<{ model: ICatalogModel; notice?: string } | null>(null);
+    const connectionReady = (model: ICatalogModel): boolean =>
+        selectedEmbeddingMatches(selection, model) &&
+        (target.mode === 'server' ||
+            (!!target.value && target.ready && embeddingTargetConnected(target.bridge.jobs, selection, target.value)));
+    useEffect(() => {
+        if (sequence.phase === 'connection' && sequence.model) setConnection(sequence.model);
+        else if (sequence.phase === 'access' && sequence.model)
+            setProviderAccess({
+                model: sequence.model,
+                notice: 'Провайдер требует личный ключ. Введите ключ, чтобы завершить подключение.',
+            });
+    }, [sequence.phase, sequence.model]);
+    useEffect(() => {
+        if (sequence.phase !== 'run' || !sequence.model) return;
+        const outcome = observeConnectRun(sequence.model, {
+            connected: connectionReady(sequence.model),
+            plan: reindex.plan,
+            reindexError: reindex.error,
+            pending: reindex.pending,
+        });
+        if (outcome.state === 'ready') sequence.markReady();
+        else if (outcome.state === 'failed')
+            sequence.markFailed(outcome.message ?? 'Не удалось подключить модель. Повторите попытку.');
+    });
     const assigned = new Set(catalog?.assignedModelIds ?? []);
     const models = selection
         ? (catalog?.items.filter(
@@ -93,7 +140,7 @@ export function ProjectEmbeddingContent({
                 onClick={() => {
                     if (selected) {
                         if (canConnect && target.blocked) return;
-                        void reindex.request(selected, selection.revision, canConnect ? target.value : undefined);
+                        void sequence.begin(selected);
                     } else {
                         void state.save();
                     }
@@ -258,7 +305,75 @@ export function ProjectEmbeddingContent({
                                 description="Подключите выбранную модель: система подготовит перестройку существующих фрагментов и покажет последствия до начала работы."
                             />
                         )}
-                        <ProjectReindexStatus state={reindex} canManage={canManage} autoCycle={autoCycle} />
+                        <ProjectReindexStatus
+                            state={reindex}
+                            canManage={canManage}
+                            autoCycle={autoCycle}
+                            onConfirm={(plan) => {
+                                if (sequence.model?.id !== plan.data.modelId || sequence.phase !== 'run') {
+                                    const model = catalog?.items.find((item) => item.id === plan.data.modelId);
+                                    if (model) void sequence.begin(model, 'run', true);
+                                }
+                                void reindex.start();
+                            }}
+                        />
+                        {sequence.model && sequence.phase === 'run' && (
+                            <Alert
+                                role="status"
+                                type="info"
+                                showIcon
+                                message={`Подключаем модель «${sequence.model.name}»…`}
+                                description="Проверяем подключение и готовим индекс проекта."
+                            />
+                        )}
+                        {sequence.model && sequence.phase === 'ready' && (
+                            <Alert
+                                role="status"
+                                type="success"
+                                showIcon
+                                message={`Модель «${sequence.model.name}» готова`}
+                                description={`Подключение: ${connectionTargetLabel(target.mode, target.device?.name)}.`}
+                                action={
+                                    <Button
+                                        onClick={() => {
+                                            sequence.close();
+                                        }}
+                                    >
+                                        Понятно
+                                    </Button>
+                                }
+                            />
+                        )}
+                        {sequence.model && sequence.phase === 'failed' && (
+                            <Alert
+                                role="alert"
+                                type="error"
+                                showIcon
+                                message={sequence.error || unverifiedStatusLabel}
+                                description="Подключение не подтверждено."
+                                action={
+                                    <Space wrap>
+                                        {sequence.origin === 'reindex' && (
+                                            <Button
+                                                type="primary"
+                                                onClick={() => {
+                                                    sequence.retry();
+                                                }}
+                                            >
+                                                Повторить
+                                            </Button>
+                                        )}
+                                        <Button
+                                            onClick={() => {
+                                                void state.refresh();
+                                            }}
+                                        >
+                                            Проверить подключение
+                                        </Button>
+                                    </Space>
+                                }
+                            />
+                        )}
                         {selection.model &&
                             selection.modelPin &&
                             selection.profile &&
@@ -288,6 +403,16 @@ export function ProjectEmbeddingContent({
                                         state.catalogAccessDenied
                                     }
                                     onPreferRagUi={onPreferRagUi}
+                                    onSubmitted={() => {
+                                        if (selected) void sequence.begin(selected, 'run', true);
+                                    }}
+                                    onResult={(result) => {
+                                        if (result.ok) sequence.markReady();
+                                        else
+                                            sequence.markFailed(
+                                                result.error || 'Не удалось подключить модель. Повторите попытку.',
+                                            );
+                                    }}
                                 />
                             )}
                     </>
@@ -312,6 +437,55 @@ export function ProjectEmbeddingContent({
                         Подключение к OpenCodeRAG использует только проверенный выбор проекта.
                     </Typography.Paragraph>
                 </details>
+                {isMain && connection && (
+                    <RemoteConnectionModal
+                        key={`${connection.id}:${connection.revision}`}
+                        model={connection}
+                        onClose={() => {
+                            setConnection(null);
+                            // Отмена формы до сохранения завершает поток; после onSaved шаг уже следующий.
+                            sequence.settle(connection.id, 'connection', 'closed');
+                        }}
+                        onSaved={async (saved) => {
+                            const inSequence =
+                                sequence.model?.id === connection.id &&
+                                (sequence.phase === 'connection' || sequence.phase === 'access');
+                            if (!saved || saved.authMode === 'none') {
+                                if (inSequence) sequence.advance('done');
+                                return;
+                            }
+                            setProviderAccess({
+                                model: connection,
+                                notice: 'Провайдер сохранён. Теперь введите ваш личный ключ.',
+                            });
+                            if (inSequence) sequence.advance('access');
+                        }}
+                    />
+                )}
+                {providerAccess && (
+                    <ProviderAccessModal
+                        model={providerAccess.model}
+                        canConfigure={isMain}
+                        busy={state.saving || reindex.busy}
+                        notice={providerAccess.notice}
+                        onConfigure={
+                            isMain
+                                ? () => {
+                                      // «Изменить адрес» в потоке возвращается в шаг «Подключение».
+                                      if (sequence.model?.id === providerAccess.model.id && sequence.phase === 'access')
+                                          sequence.advance('connection');
+                                      setConnection(providerAccess.model);
+                                      setProviderAccess(null);
+                                  }
+                                : undefined
+                        }
+                        onClose={() => {
+                            setProviderAccess(null);
+                            // Закрытие «Мой доступ» завершает шаг «Ключ»: переходим к подключению.
+                            sequence.settle(providerAccess.model.id, 'access', 'done');
+                        }}
+                    />
+                )}
             </Space>
         </Card>
     );

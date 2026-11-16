@@ -2,14 +2,17 @@ import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Progress, Space, Typography } from 'antd';
 import type { useProjectReindex } from './hooks/useProjectReindex';
 import type { IRagAutoCycleState } from './hooks/useRagAutoCycle';
+import type { IProjectReindexPlan } from './reindex';
 
 interface IProps {
     state: ReturnType<typeof useProjectReindex>;
     canManage: boolean;
     autoCycle?: IRagAutoCycleState;
+    /** Единый поток подключения: подтверждение запускает переиндексацию и продолжает наблюдение за готовностью. */
+    onConfirm?: (plan: IProjectReindexPlan) => void;
 }
 /** Подтверждение требуется только для перестройки существующих данных; пустой проект переключается автоматически. */
-export function ProjectReindexStatus({ state, canManage, autoCycle }: IProps): JSX.Element | null {
+export function ProjectReindexStatus({ state, canManage, autoCycle, onConfirm }: IProps): JSX.Element | null {
     const plan = state.plan;
     if (!plan && !state.error) return null;
     const confirm = plan?.state === 'needs_input',
@@ -73,7 +76,8 @@ export function ProjectReindexStatus({ state, canManage, autoCycle }: IProps): J
                                             type="primary"
                                             loading={state.busy}
                                             onClick={() => {
-                                                void state.start();
+                                                if (onConfirm) onConfirm(plan);
+                                                else void state.start();
                                             }}
                                         >
                                             Подключить модель

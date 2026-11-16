@@ -1,6 +1,6 @@
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Progress, Space, Typography } from 'antd';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useBridge } from '../McpBridge/hooks/useBridge';
 import { useLocalJob } from '../McpBridge/hooks/useLocalJob';
 import type { IBridgeJob } from '../McpBridge/api';
@@ -17,6 +17,8 @@ export function ConnectEmbeddingAction({
     bridge,
     disabled,
     consent,
+    onSubmitted,
+    onResult,
 }: {
     input: TEmbeddingConnectionInput;
     selection: IProjectEmbedding;
@@ -24,6 +26,10 @@ export function ConnectEmbeddingAction({
     disabled: boolean;
     consent: string;
     onPreferRagUi?: (value: IRagUiPreference) => void;
+    /** Единый поток подключения: задание принято мостом — начато наблюдение за готовностью. */
+    onSubmitted?: () => void;
+    /** Единый поток подключения: локальный индекс подтверждён или операция завершилась ошибкой. */
+    onResult?: (result: { ok: boolean; error?: string }) => void;
 }): JSX.Element {
     const { scope: owner, captureOwner } = useAuthRequestOwner();
     const operation = useLocalJob(bridge);
@@ -51,6 +57,19 @@ export function ConnectEmbeddingAction({
     if (verified || embeddingConnected(local, selection)) scope.indexed = true;
     const job = retrying || operation.busy ? undefined : history.find(isPending) || local || verified;
     const success = embeddingConnected(job, selection);
+    const callbacks = useRef({ onSubmitted, onResult });
+    callbacks.current = { onSubmitted, onResult };
+    const reported = useRef({ success: false, failed: false });
+    useEffect(() => {
+        if (success && !reported.current.success) {
+            reported.current.success = true;
+            callbacks.current.onResult?.({ ok: true });
+        }
+        if (job?.state === 'failed' && !reported.current.failed) {
+            reported.current.failed = true;
+            callbacks.current.onResult?.({ ok: false, error: job.message });
+        }
+    }, [success, job]);
     const blocked = disabled || operation.busy || !bridge.jobsReady || (!retrying && (isPending(job) || pending));
     const reindex = job?.result?.reindex as { rowCount: number } | undefined;
     return (
@@ -74,7 +93,9 @@ export function ConnectEmbeddingAction({
                     if (currentScope.current !== scope || !captureOwner()() || blocked || (!retrying && !confirmed))
                         return;
                     setApproval({ scope, checked: false });
-                    void operation.submit(input);
+                    void operation.submit(input).then((started) => {
+                        if (started) callbacks.current.onSubmitted?.();
+                    });
                 }}
             >
                 {operation.busy

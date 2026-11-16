@@ -29,9 +29,11 @@ import { DeviceCodexConnectionModal } from './DeviceCodexConnectionModal';
 import { GgufImportModal } from '../GgufImport/GgufImportModal';
 import { ModelChatModal } from '../ModelChat/ModelChatModal';
 import { modelChatUnavailableReason } from '../ModelChat/model';
-import { filterCatalogModels } from './modelCatalogState';
+import { filterCatalogModels, unverifiedStatusLabel } from './modelCatalogState';
 import type { ICatalogModel, IRemoteConnectionHint } from './interfaces';
 import { useModelCatalog } from './hooks/useModelCatalog';
+import { useConnectSequence, type IConnectRunResult } from './hooks/useConnectSequence';
+import { connectionTargetLabel, observeConnectRun, planConnectStep } from './hooks/connectPlan';
 import './ModelCatalog.less';
 import { projectRagCatalogUrl } from '../../modules/Projects/projectNavigation';
 
@@ -211,45 +213,39 @@ export function ModelCatalog({
         connectionContext.current.formScope === formScope &&
         connectionContext.current.connectionTarget === connectionTarget &&
         providerContext.current.canManage;
-    const connect = async (model: ICatalogModel): Promise<void> => {
+    /** Шаг «Готовность» единого потока: подготовка переиндексации; готовность подтверждает наблюдение за планом. */
+    const connect = async (model: ICatalogModel): Promise<IConnectRunResult> => {
         const owns = captureOwner(),
             ticket = mutationVersion.current,
-            current = () => owns() && ticket === mutationVersion.current && currentConnectionContext();
-        if (
-            !current() ||
-            lock.current ||
-            loading ||
-            loadError ||
-            !catalog ||
-            reindex.pending ||
-            reindex.busy ||
-            reindex.plan?.state === 'needs_input'
-        )
-            return;
-        if (
-            !projectId ||
-            !canManage ||
-            !assigned.has(model.id) ||
-            !eligibleEmbedding(model) ||
-            model.archivedAt ||
-            embeddingTarget.blocked ||
-            connectionStatus(model)
-        )
-            return;
+            current = () => owns() && ticket === mutationVersion.current && currentConnectionContext(),
+            fail = (error: string): IConnectRunResult => ({ ok: false, error });
+        if (!current() || lock.current || loading || loadError || !catalog)
+            return fail('Не удалось подготовить подключение модели. Повторите попытку.');
+        if (reindex.pending || reindex.busy) return fail('Дождитесь завершения подключения модели и переиндексации.');
+        if (reindex.plan?.state === 'needs_input') return fail('Подтвердите или отмените подготовленную смену модели.');
+        if (!projectId || !canManage) return fail('Подключить модель может менеджер проекта.');
+        if (!assigned.has(model.id)) return fail('Сначала добавьте модель в проект.');
+        if (!eligibleEmbedding(model)) return fail('Эта модель недоступна для индексации проекта.');
+        if (model.archivedAt) return fail('Модель убрана из каталога.');
+        if (connectionStatus(model) === 'connected') return { ok: true, connected: true };
+        if (connectionStatus(model) === 'checking') return fail('Дождитесь завершения проверки подключения.');
+        if (embeddingTarget.blocked)
+            return fail('Выберите, куда подключить модель: сервер или конкретную установку OpenCodeRAG.');
         lock.current = true;
         setBusy(model.id);
         setError('');
         try {
             const selection = await projectEmbeddingApi.read(projectId);
-            if (!current()) return;
+            if (!current()) return fail('Не удалось подготовить подключение модели. Повторите попытку.');
             if (connected(model, selection)) {
                 void embedding.refresh();
-                return;
+                return { ok: true, connected: true };
             }
-            await reindex.request(model, undefined, embeddingTarget.value);
+            return await reindex.request(model, undefined, embeddingTarget.value);
         } catch (cause) {
-            if (current())
-                setError(errorMessage(cause, 'Не удалось подготовить подключение модели. Повторите попытку.'));
+            const error = errorMessage(cause, 'Не удалось подготовить подключение модели. Повторите попытку.');
+            if (current()) setError(error);
+            return { ok: false, error };
         } finally {
             if (ticket === mutationVersion.current) {
                 lock.current = false;
@@ -257,6 +253,31 @@ export function ModelCatalog({
             }
         }
     };
+    /** Единый адаптивный поток подключения: подключение → ключ (при authMode) → готовность. */
+    const sequence = useConnectSequence({
+        plan: (model: ICatalogModel) => planConnectStep(model, isMain),
+        run: connect,
+    });
+    useEffect(() => {
+        if (sequence.phase === 'connection' && sequence.model) setConnection(sequence.model);
+        else if (sequence.phase === 'access' && sequence.model)
+            setProviderAccess({
+                model: sequence.model,
+                notice: 'Провайдер требует личный ключ. Введите ключ, чтобы завершить подключение.',
+            });
+    }, [sequence.phase, sequence.model]);
+    useEffect(() => {
+        if (sequence.phase !== 'run' || !sequence.model) return;
+        const outcome = observeConnectRun(sequence.model, {
+            connected: connected(sequence.model),
+            plan: reindex.plan,
+            reindexError: reindex.error,
+            pending: reindex.pending,
+        });
+        if (outcome.state === 'ready') sequence.markReady();
+        else if (outcome.state === 'failed')
+            sequence.markFailed(outcome.message ?? 'Не удалось подключить модель. Повторите попытку.');
+    });
     const mutate = async (model: ICatalogModel): Promise<void> => {
         const owns = captureOwner(),
             ticket = mutationVersion.current,
@@ -424,7 +445,74 @@ export function ModelCatalog({
                                 disabled={!!busy || reindex.busy || reindex.pending}
                             />
                         )}
-                    <ProjectReindexStatus state={reindex} canManage={canManage && !loadError && !loading} />
+                    {sequence.model && sequence.phase === 'run' && (
+                        <Alert
+                            role="status"
+                            type="info"
+                            showIcon
+                            message={`Подключаем модель «${sequence.model.name}»…`}
+                            description="Проверяем подключение и готовим индекс проекта."
+                        />
+                    )}
+                    {sequence.model && sequence.phase === 'ready' && (
+                        <Alert
+                            role="status"
+                            type="success"
+                            showIcon
+                            message={`Модель «${sequence.model.name}» готова`}
+                            description={`Подключение: ${connectionTargetLabel(embeddingTarget.mode, embeddingTarget.device?.name)}.`}
+                            action={
+                                <Button
+                                    onClick={() => {
+                                        sequence.close();
+                                    }}
+                                >
+                                    Понятно
+                                </Button>
+                            }
+                        />
+                    )}
+                    {sequence.model && sequence.phase === 'failed' && (
+                        <Alert
+                            role="alert"
+                            type="error"
+                            showIcon
+                            message={sequence.error || unverifiedStatusLabel}
+                            description="Подключение не подтверждено."
+                            action={
+                                <Space wrap>
+                                    {sequence.origin === 'reindex' && (
+                                        <Button
+                                            type="primary"
+                                            onClick={() => {
+                                                sequence.retry();
+                                            }}
+                                        >
+                                            Повторить
+                                        </Button>
+                                    )}
+                                    <Button
+                                        onClick={() => {
+                                            void embedding.refresh();
+                                        }}
+                                    >
+                                        Проверить подключение
+                                    </Button>
+                                </Space>
+                            }
+                        />
+                    )}
+                    <ProjectReindexStatus
+                        state={reindex}
+                        canManage={canManage && !loadError && !loading}
+                        onConfirm={(plan) => {
+                            if (sequence.model?.id !== plan.data.modelId || sequence.phase !== 'run') {
+                                const model = catalog?.items.find((item) => item.id === plan.data.modelId);
+                                if (model) void sequence.begin(model, 'run', true);
+                            }
+                            void reindex.start();
+                        }}
+                    />
                 </div>
             )}
             {!catalog && loading ? (
@@ -456,7 +544,7 @@ export function ModelCatalog({
                                         setViewId(model.id);
                                     }}
                                     onConnect={() => {
-                                        void connect(model);
+                                        void sequence.begin(model);
                                     }}
                                     connectionUnavailableReason={assignmentReason(model, true)}
                                     connectionStatus={connectionStatus(model)}
@@ -591,14 +679,30 @@ export function ModelCatalog({
                         onClose={() => {
                             setConnection(null);
                             setConnectionHint(undefined);
+                            // Отмена формы до сохранения завершает поток; после onSaved шаг уже следующий.
+                            sequence.settle(connection.id, 'connection', 'closed');
                         }}
                         onSaved={async (saved) => {
                             await refresh();
+                            const inSequence =
+                                sequence.model?.id === connection.id &&
+                                (sequence.phase === 'connection' || sequence.phase === 'access');
+                            if (!saved || saved.authMode === 'none') {
+                                if (inSequence) sequence.advance('done');
+                                return;
+                            }
+                            if (inSequence) {
+                                setProviderAccess({
+                                    model: connection,
+                                    notice: 'Провайдер сохранён. Теперь введите ваш личный ключ.',
+                                });
+                                sequence.advance('access');
+                                return;
+                            }
                             // P0-6: общий переход в «Мой доступ», когда провайдер требует личный ключ (authMode).
                             // Импортная цепочка (connectionHint) продолжается по умолчанию, если ключ остался
                             // на компьютере (OQ-1: перенос ключа после импорта — дефолт, флаг гейтит только
                             // кнопку переноса LocalKeyTransfer).
-                            if (!saved || saved.authMode === 'none') return;
                             const continues = connectionHint ? !!connectionHint.hasKey : true;
                             if (continues)
                                 setProviderAccess({
@@ -617,12 +721,19 @@ export function ModelCatalog({
                     onConfigure={
                         isMain
                             ? () => {
+                                  // «Изменить адрес» в потоке возврата в шаг «Подключение», а не в подключение.
+                                  if (sequence.model?.id === providerAccess.model.id && sequence.phase === 'access')
+                                      sequence.advance('connection');
                                   setConnection(providerAccess.model);
                                   setProviderAccess(null);
                               }
                             : undefined
                     }
-                    onClose={() => setProviderAccess(null)}
+                    onClose={() => {
+                        setProviderAccess(null);
+                        // Закрытие «Мой доступ» завершает шаг «Ключ»: переходим к подключению.
+                        sequence.settle(providerAccess.model.id, 'access', 'done');
+                    }}
                 />
             )}
             {chatting && canChat && (!projectId || assigned.has(chatting.id)) && (
