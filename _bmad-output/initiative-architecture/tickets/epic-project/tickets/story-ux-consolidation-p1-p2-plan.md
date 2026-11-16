@@ -3,7 +3,7 @@ title: 'UX консолидация форм подключения моделе
 type: 'feature'
 ticket: '19'
 created: '2026-11-13'
-status: ready-for-dev
+status: in-progress
 baseline_revision: 'd51c49b05da8b4b68096ff3e7d6ab78d6b688559'
 route: 'auto'
 route_source: 'auto'
@@ -76,8 +76,15 @@ context:
 ## Tasks & Acceptance
 
 ### Execution (по OQ-решениям, после P0)
-- [ ] P1-1…P1-6 (см. Intent) — по одному решению OQ на под-задачу.
-- [ ] P2-1…P2-4 (см. Intent) — по одному решению OQ на под-задачу.
+- [x] **P1 (все 6) — done, в main (merge c2f46f3f, 2026-11-16):**
+  - P1-1 единый адаптивный поток (хук `useConnectSequence` + `connectPlan.ts`, 4 точки входа сходятся в одну цепочку: подключение → ключ при authMode ≠ none → авто-check; OQ-8 адаптивность).
+  - P1-2 один раздел ключей в «Мой доступ»: личный / перенос с компьютера / legacy `<Tag>` (mark-only, OQ-3).
+  - P1-3 перист «Куда подключить» В ПРОЕКТ (OQ-7): серверное `project_embedding_settings.embedding_target` JSONB, миграция **61** (renumber с 60 при мерже — 60 занял agt-09 agent-onboarding), PATCH-эндпоинт, хук `useEmbeddingTarget`, 3 селектора читают/пишут одно значение.
+  - P1-4 проектный провайдер канон + глобальный fallback (OQ-2: fallback только при `state==='missing'`, тег «глобальный», дубль в OpenCodeModelSyncSettings удалён).
+  - P1-5 единые подписи операции подключения (словарь P0-1).
+  - P1-6/item0 перенос ключа после импорта по умолчанию (без гейта флагом, OQ-1).
+  - Предупреждение 8.18 (`nameUnverified`) сохранено внутри потока (RemoteConnectionModal).
+- [ ] P2-1…P2-4 (см. Intent) — по одному решению OQ на под-задачу (OQ-4/5 решения зафиксированы, реализация — отдельный запуск).
 - [ ] Каждая под-задача: тесты (frontend + backend для P2-3), tsc 0 новых, prettier, корневой сьют без деградации.
 
 ### Acceptance
@@ -113,3 +120,14 @@ cd services/catalog-service && npm test -- remote-connection   # P2-3
 8. **Единый поток (P1-1) — 3 шага фиксированы или адаптивные (под authMode)?** **РЕШЕНО: адаптивные** — authMode без ключа → 2 шага (подключение → готовность, без шага ключа).
 
 **Статус OQ: все продуктовые решения приняты (2026-11-13) — P1 разблокирован.**
+
+## Progress
+
+**2026-11-16 — P1 (все 6 пунктов) в main (merge c2f46f3f, ветка nc-ux-p1, 6 коммитов f97722c5→ed0354b1). Oстаток: P2 (4 пункта) + корневой сьют (final gate после 11.1).**
+- P1-1 (77571b56): хук `useConnectSequence` (фазы connection|access|run|ready|failed, origins reindex|local) + `connectPlan.ts` (planConnectStep/observeConnectRun/connectionTargetLabel); 4 точки входа: ModelCatalog, ConnectEmbeddingAction, ProjectReindexStatus, RemoteConnectionModal.
+- P1-2 (2f36fb6e): RemoteProviderAccess — одна ключевая область (личный / перенос с компьютера / legacy `<Tag>legacy</Tag>` mark-only); ModelDetails/ModelProviderSettings read-only статус через `useProviderAccessStatus`.
+- P1-3 (3861461f): backend — миграция **61** `project-embedding-target` (ALTER TABLE project_embedding_settings ADD COLUMN IF NOT EXISTS embedding_target JSONB; renumber 60→61 при мерже: 60 = agent-onboarding agt-09), `PATCH /api/projects/:id/embedding/target` (транзакция + securityEvent), fail-closed валидация; frontend — `useEmbeddingTarget(projectId, persisted?)` (write-effect с guard resettable), 3 селектора (ModelCatalog/ProjectEmbedding/OpenCodeRagUi) на одном источнике.
+- P1-4 (ed0354b1): `globalProviderInventory`/`globalProviderFallback` (OpenCodeProviders/model.ts — fallback только при `state==='missing'`, первый eligible глобальный); ProviderSetupModal — решение + тег «глобальный» + разъяснение каноничности; дубль «Подключение» из OpenCodeModelSyncSettings удалён (остались контролы автосинхронизации).
+- P1-5 (38e0fa33) + item0 (f97722c5): подписи + импорт-перенос по умолчанию.
+- Тесты: frontend full **394/394** (до: 338), catalog full **369/369** (+18 P1-3 backend), tsc 0 (frontend + catalog), prettier clean. 8.18-warning `nameUnverified` в потоке сохранён.
+- Осознанные границы: P2-2 backend-вариант («один job-kind/сканер») не делался — решение OQ-2 закрывается UI-разъяснителем + fallback, контракт job-kind не менялся; P1-6 deep-link/редиректы — вне скоупа.
