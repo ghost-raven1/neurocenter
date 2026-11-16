@@ -18,8 +18,14 @@ import { readFeatures } from '../../../shared/feature-client.cjs';
 import { AgentTrialPolicy, agentTrialPin } from './agent-readiness.policy';
 import { AgentTrialRepository, trialPending, type ITrialRow } from './agent-readiness.repository';
 import { AgentTrialRunner, AGENT_TRIAL_FEATURES } from './agent-readiness.runner';
+import { AgentOpenCodeTrialRunner, NoOpenCodeProbe, type IOpenCodeReadinessProbe } from './agent-readiness-opencode';
 import { startAgentTrial, trialHash } from './agent-readiness.validation';
-import type { IAgentTrial, IAgentTrialOverview, IAgentTrialReceipt } from './agent-readiness.interfaces';
+import type {
+    IAgentTrial,
+    IAgentTrialOverview,
+    IAgentTrialReceipt,
+    TAgentTrialSurface,
+} from './agent-readiness.interfaces';
 
 /** Private bounded diagnostics: metadata reads and lease recovery never start a model call. */
 @Injectable()
@@ -32,13 +38,18 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
         { abort: AbortController; row: ITrialRow; receipt: IAgentTrialReceipt; settled: Promise<void> }
     >();
     private timer?: NodeJS.Timeout;
+    readonly opencodeProbe: IOpenCodeReadinessProbe;
+    private readonly opencodeRunner: AgentOpenCodeTrialRunner;
     constructor(
         private readonly models: ModelsService,
         runtime: ModelRuntime,
+        probe?: IOpenCodeReadinessProbe,
     ) {
         this.policy = new AgentTrialPolicy(models);
         this.repository = new AgentTrialRepository(models.pool);
         this.runner = new AgentTrialRunner(this.policy, runtime);
+        this.opencodeProbe = probe ?? new NoOpenCodeProbe();
+        this.opencodeRunner = new AgentOpenCodeTrialRunner(this.opencodeProbe);
     }
     async onModuleInit(): Promise<void> {
         await this.models.ready();
@@ -137,12 +148,24 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
                             ...(tool.reason ? { reason: tool.reason } : {}),
                         },
                     ],
+                    opencode: this.opencodeEligibility(features),
                 },
                 latestTrial: latestRow ? await this.view(req, latestRow) : null,
             });
         }
         await this.policy.actor(req, projectId);
         return { executionSurface: 'server_chat', items };
+    }
+    /** opencode surface eligibility: the contentful probe is only runnable when a runtime is wired in. */
+    private opencodeEligibility(features: Awaited<ReturnType<typeof readFeatures>>): {
+        available: boolean;
+        reason?: string;
+    } {
+        if (!features.flags.agents)
+            return { available: false, reason: 'Проверка агентов отключена главным администратором.' };
+        if (!this.opencodeProbe.available)
+            return { available: false, reason: 'Runtime OpenCode не подключён (следующий шаг: setup-runtime).' };
+        return { available: true };
     }
     async start(req: Request, projectId: string, id: string, raw: unknown): Promise<IAgentTrial> {
         agentId(id);
@@ -155,10 +178,13 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
             this.same(previous, hash);
             return this.view(req, previous);
         }
-        await requireFeaturesEnabled([
-            ...AGENT_TRIAL_FEATURES,
-            ...(input.tool === 'project_search' ? ['project_search' as const] : []),
-        ]);
+        const surface: TAgentTrialSurface = input.executionSurface ?? 'server_chat';
+        if (surface === 'opencode') await requireFeaturesEnabled(['agents']);
+        else
+            await requireFeaturesEnabled([
+                ...AGENT_TRIAL_FEATURES,
+                ...(input.tool === 'project_search' ? ['project_search' as const] : []),
+            ]);
         const saved = await this.repository.transaction(async (db) => {
             await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', ['agent-trial:' + actor.email]);
             await this.policy.authorize(db, actor, projectId);
@@ -178,42 +204,64 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
             const assignment = await this.policy.assignment(projectId, id, db),
                 pin = agentTrialPin(assignment);
             if (pin !== input.expectedAgentPin) throw new ConflictException('Промпт или настройки агента изменились.');
-            const model = await this.policy.model(req, projectId, assignment, input.modelId, undefined, db);
-            if (projectEmbeddingPin(model) !== input.expectedModelPin)
-                throw new ConflictException('Модель испытания изменилась.');
-            let toolPin: string | null = null;
-            if (input.tool === 'project_search') {
-                const tool = await this.policy.tool(projectId, assignment, db);
-                if (!tool.available || (tool.requiresConsent && !input.toolConsent))
-                    throw new ConflictException(
-                        tool.reason ?? 'Подтвердите разрешение на чтение проекта для этого испытания.',
-                    );
-                toolPin = tool.pin;
-            }
-            const receipt: IAgentTrialReceipt = {
+            const base = {
                 agentVersion: assignment.version,
                 agentManifest: assignment.manifest,
                 agentPin: pin,
                 promptSha256: createHash('sha256').update(assignment.effective.prompt).digest('hex'),
                 configSha256: trialHash(assignment.effective),
-                modelId: model.id,
-                modelName: model.name,
-                modelPin: input.expectedModelPin,
-                toolMode: input.tool,
-                checks: [
-                    { kind: 'prompt_sent', status: 'not_run', message: 'Промпт ещё не отправлен модели.' },
-                    { kind: 'model_response', status: 'not_run', message: 'Тестовое задание ещё не выполнено.' },
-                    ...(input.tool === 'project_search'
-                        ? [
-                              {
-                                  kind: 'project_search' as const,
-                                  status: 'not_run' as const,
-                                  message: 'Поиск по проекту ещё не выполнен.',
-                              },
-                          ]
-                        : []),
-                ],
             };
+            let toolPin: string | null = null;
+            let receipt: IAgentTrialReceipt;
+            if (surface === 'opencode') {
+                // Contentful probe: no project model, no project tool. The receipt carries null model
+                // identity and the opencode surface marker so assertCurrent/launch route to the probe.
+                receipt = {
+                    ...base,
+                    modelId: null,
+                    modelName: null,
+                    modelPin: null,
+                    toolMode: 'none',
+                    executionSurface: 'opencode',
+                    checks: [
+                        { kind: 'opencode_probe', status: 'not_run', message: 'Проба ещё не выполнена.' },
+                        { kind: 'model_response', status: 'not_run', message: 'Тестовое задание ещё не выполнено.' },
+                    ],
+                };
+            } else {
+                const model = await this.policy.model(req, projectId, assignment, input.modelId!, undefined, db);
+                if (projectEmbeddingPin(model) !== input.expectedModelPin!)
+                    throw new ConflictException('Модель испытания изменилась.');
+                if (input.tool === 'project_search') {
+                    const tool = await this.policy.tool(projectId, assignment, db);
+                    if (!tool.available || (tool.requiresConsent && !input.toolConsent))
+                        throw new ConflictException(
+                            tool.reason ?? 'Подтвердите разрешение на чтение проекта для этого испытания.',
+                        );
+                    toolPin = tool.pin;
+                }
+                receipt = {
+                    ...base,
+                    modelId: model.id,
+                    modelName: model.name,
+                    modelPin: input.expectedModelPin,
+                    toolMode: input.tool,
+                    executionSurface: 'server_chat',
+                    checks: [
+                        { kind: 'prompt_sent', status: 'not_run', message: 'Промпт ещё не отправлен модели.' },
+                        { kind: 'model_response', status: 'not_run', message: 'Тестовое задание ещё не выполнено.' },
+                        ...(input.tool === 'project_search'
+                            ? [
+                                  {
+                                      kind: 'project_search' as const,
+                                      status: 'not_run' as const,
+                                      message: 'Поиск по проекту ещё не выполнен.',
+                                  },
+                              ]
+                            : []),
+                    ],
+                };
+            }
             const row = await this.repository.insert(db, {
                 id: randomUUID(),
                 owner: actor.email,
@@ -293,7 +341,14 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
                         signal.throwIfAborted();
                         return model;
                     });
-                await this.runner.run(req, row, receipt, signal, checkpoint);
+                const opencode = receipt.executionSurface === 'opencode';
+                if (opencode) await this.opencodeRunner.run(row, receipt, signal);
+                else
+                    await this.runner.run(req, row, receipt, signal, async (next) => {
+                        const model = await checkpoint(next);
+                        if (!model) throw new ConflictException('Модель испытания изменилась.');
+                        return model;
+                    });
                 await this.repository.transaction(async (db) => {
                     signal.throwIfAborted();
                     const current = await this.repository.owned(
@@ -311,7 +366,9 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
                         current,
                         'succeeded',
                         receipt,
-                        'Тестовое задание выполнено в чате Нейроцентра.',
+                        opencode
+                            ? 'Содержательная проба OpenCode выполнена.'
+                            : 'Тестовое задание выполнено в чате Нейроцентра.',
                     );
                 });
             } catch (error) {
@@ -358,7 +415,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
             id: row.id,
             requestId: row.request_id,
             revision: row.revision,
-            executionSurface: 'server_chat',
+            executionSurface: row.receipt.executionSurface ?? 'server_chat',
             status: row.status,
             message: row.message,
             createdAt: new Date(row.created_at).toISOString(),

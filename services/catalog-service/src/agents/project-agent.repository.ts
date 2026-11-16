@@ -5,6 +5,7 @@ import { createProjectAgentsPayload, type IProjectAgent } from '../../../shared/
 import type { IAccessActor } from '../access/access.model';
 import { securityEvent } from '../access/security-events';
 import { agentExtensionKits, withExtensionKits } from './agent-extension-kit';
+import { persistAgentOnboarding, resolveAgentOnboarding } from './agent-onboarding';
 import { AgentRepository, agentSummary } from './agent.repository';
 import { agentMutation } from './agent-mutation';
 import { requiredAssetForNative, systemAssetRemovalMessage } from '../catalog/system-assets';
@@ -162,12 +163,15 @@ export class ProjectAgentRepository {
                 ).rows[0];
                 if (old && !old.removed)
                     throw new ConflictException('Агент уже добавлен в проект. Измените существующие настройки.');
+                // FR-307 self-onboarding: the add auto-enables the agent (public-chat access) so no
+                // operator step is required after the (initiating, non-operator) assignment.
                 await db.query(
-                    `INSERT INTO project_agents(project_id,agent_id,version,manifest,added_by,updated_by) VALUES($1,$2,$3,$4,$5,$5)
-                ON CONFLICT(project_id,agent_id) DO UPDATE SET version=EXCLUDED.version,manifest=EXCLUDED.manifest,enabled=false,removed=false,updated_by=EXCLUDED.updated_by,updated_at=now()`,
+                    `INSERT INTO project_agents(project_id,agent_id,version,manifest,enabled,added_by,updated_by) VALUES($1,$2,$3,$4,true,$5,$5)
+                ON CONFLICT(project_id,agent_id) DO UPDATE SET version=EXCLUDED.version,manifest=EXCLUDED.manifest,enabled=true,removed=false,updated_by=EXCLUDED.updated_by,updated_at=now()`,
                     [projectId, id, input.version, input.manifest, actor.email],
                 );
                 const result = await this.saved(db, projectId, id);
+                await this.onboard(db, projectId, id, result, actor.email);
                 await securityEvent(db, {
                     actor: actor.email,
                     action: 'project.agent.assign',
@@ -177,13 +181,47 @@ export class ProjectAgentRepository {
                         ...agentSummary(card),
                         projectId,
                         revision: result.revision,
-                        enabled: false,
+                        enabled: true,
                         removed: false,
                     },
                 });
                 return result;
             },
         );
+    }
+    /**
+     * FR-307 self-onboarding snapshot: resolve role/context/tools/public-chat from the pinned card,
+     * the approved learning bundle and the agt-08 kit, record the t0 anchor, and leave an audit row.
+     * Runs in the caller's transaction so onboarding is atomic with the assignment.
+     */
+    private async onboard(
+        db: TDb,
+        projectId: string,
+        id: string,
+        saved: { revision: number; assignment: IProjectAgentAssignment },
+        actorEmail: string,
+    ): Promise<void> {
+        const config = await resolveAgentOnboarding(db, this.pool, projectId, id, saved.assignment);
+        await persistAgentOnboarding(db, projectId, id, saved.assignment, config, actorEmail);
+        await securityEvent(db, {
+            actor: actorEmail,
+            action: 'project.agent.onboard',
+            resourceId: id,
+            before: null,
+            after: {
+                projectId,
+                agentId: id,
+                revision: saved.revision,
+                role: config.role,
+                roleSource: config.roleSource,
+                contextStatus: config.context.status,
+                contextDigest: config.context.digest,
+                contextEntries: config.context.entries,
+                toolsCount: config.tools.count,
+                publicChatEnabled: config.publicChat.enabled,
+                publicChatStatus: config.publicChat.status,
+            },
+        });
     }
     /**
      * Внутреннее назначение системного агента по head-версии (Epic 12, 12.1).
@@ -223,12 +261,15 @@ export class ProjectAgentRepository {
             await client.query('INSERT INTO project_agent_sets(project_id) VALUES($1) ON CONFLICT DO NOTHING', [
                 projectId,
             ]);
+            // FR-307 self-onboarding: system agents are auto-enabled and onboarded the same way as
+            // operator-added agents (initiation, not operator intervention).
             await client.query(
-                `INSERT INTO project_agents(project_id,agent_id,version,manifest,added_by,updated_by) VALUES($1,$2,$3,$4,$5,$5)
-                ON CONFLICT(project_id,agent_id) DO UPDATE SET version=EXCLUDED.version,manifest=EXCLUDED.manifest,enabled=false,removed=false,updated_by=EXCLUDED.updated_by,updated_at=now()`,
+                `INSERT INTO project_agents(project_id,agent_id,version,manifest,enabled,added_by,updated_by) VALUES($1,$2,$3,$4,true,$5,$5)
+                ON CONFLICT(project_id,agent_id) DO UPDATE SET version=EXCLUDED.version,manifest=EXCLUDED.manifest,enabled=true,removed=false,updated_by=EXCLUDED.updated_by,updated_at=now()`,
                 [projectId, id, head.version, head.manifest, actor],
             );
             const result = await this.saved(client, projectId, id);
+            await this.onboard(client, projectId, id, result, actor);
             await securityEvent(client, {
                 actor,
                 action: 'project.agent.system-assign',
@@ -238,7 +279,7 @@ export class ProjectAgentRepository {
                     ...agentSummary(head),
                     projectId,
                     revision: result.revision,
-                    enabled: false,
+                    enabled: true,
                     removed: false,
                 },
             });
