@@ -22,6 +22,30 @@ CREATE TRIGGER neurocenter_retired_reference_guard BEFORE INSERT OR UPDATE OF pr
 CREATE TRIGGER neurocenter_retired_reference_guard BEFORE INSERT OR UPDATE OF project_id ON agent_extension_experiments FOR EACH ROW EXECUTE FUNCTION neurocenter_retired_reference_guard();
 `;
 /** Frozen migration 7: native agent cards, immutable templates and project desired state. */
+/**
+ * FR-307: operator-free self-onboarding. The record captures the agent's auto-configured role,
+ * approved-knowledge context (FR-502), catalog tool profile (FR-306/agt-08 kit) and public-chat
+ * access at assign time. Applied by a dedicated migration because the frozen historical migration
+ * checksums must stay byte-identical for existing deployments (same pattern as AGENT_EXTENSION_SCHEMA_SQL).
+ * onboarded_at is the C2 t0 anchor; the first useful operation t1 is derived at read time from the
+ * first completed project-chat response (model_chat_agent_responses), never written by this table.
+ */
+export const AGENT_ONBOARDING_SCHEMA_SQL = `
+CREATE TABLE agent_onboarding (
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,agent_id TEXT NOT NULL,
+    agent_version INTEGER NOT NULL CHECK(agent_version>0),agent_manifest TEXT NOT NULL CHECK(agent_manifest ~ '^[a-f0-9]{64}$'),
+    role TEXT NOT NULL CHECK(role IN ('primary','subagent','all')),role_source TEXT NOT NULL DEFAULT 'pinned-card' CHECK(role_source IN ('pinned-card')),
+    context_status TEXT NOT NULL CHECK(context_status IN ('approved','empty','blocked')),
+    context_digest TEXT CHECK(context_digest IS NULL OR context_digest ~ '^[a-f0-9]{64}$'),
+    context_revision INTEGER CHECK(context_revision IS NULL OR context_revision>=0),context_entries INTEGER NOT NULL DEFAULT 0 CHECK(context_entries>=0),
+    tools_count INTEGER NOT NULL DEFAULT 0 CHECK(tools_count>=0),tools JSONB NOT NULL DEFAULT '[]'::jsonb CHECK(jsonb_typeof(tools)='array'),
+    public_chat_enabled BOOLEAN NOT NULL DEFAULT true,public_chat_status TEXT NOT NULL CHECK(public_chat_status IN ('active','disabled')),
+    onboarded_at TIMESTAMPTZ NOT NULL DEFAULT now(),added_by TEXT NOT NULL,
+    PRIMARY KEY(project_id,agent_id));
+CREATE INDEX agent_onboarding_project ON agent_onboarding(project_id,onboarded_at DESC);
+CREATE TRIGGER neurocenter_retired_reference_guard BEFORE INSERT OR UPDATE OF project_id ON agent_onboarding FOR EACH ROW EXECUTE FUNCTION neurocenter_retired_reference_guard();
+`;
+/** Frozen migration 7: native agent cards, immutable templates and project desired state. */
 export const AGENT_SCHEMA_SQL = `
 CREATE TABLE agent_catalog (
     id TEXT PRIMARY KEY,slug TEXT NOT NULL UNIQUE,name TEXT NOT NULL,definition JSONB NOT NULL CHECK(jsonb_typeof(definition)='object'),

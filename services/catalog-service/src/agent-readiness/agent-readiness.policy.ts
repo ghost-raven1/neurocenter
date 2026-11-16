@@ -157,26 +157,28 @@ export class AgentTrialPolicy {
         };
     }
     /** Share locks fence role, assignment and model edits through the terminal receipt commit. */
-    async assertCurrent(req: Request, row: ITrialRow, db: TTrialDb): Promise<IModel> {
+    async assertCurrent(req: Request, row: ITrialRow, db: TTrialDb): Promise<IModel | null> {
         const actor = await this.actor(req, row.project_id);
         if (actor.email !== row.owner_email) throw new ForbiddenException('Владелец испытания изменился.');
         await this.authorize(db, actor, row.project_id);
         await db.query('SELECT id FROM projects WHERE id=$1 FOR SHARE', [row.project_id]);
         await db.query('SELECT project_id FROM project_agent_sets WHERE project_id=$1 FOR SHARE', [row.project_id]);
         await db.query('SELECT id FROM agent_catalog WHERE id=$1 FOR SHARE', [row.agent_id]);
+        const agent = await this.assignment(row.project_id, row.agent_id, db);
+        if (agentTrialPin(agent) !== row.snapshot.agentPin)
+            throw new ConflictException('Промпт или настройки агента изменились.');
+        // The opencode surface is a contentful probe, not a project-model call: no model pin to fence.
+        if (row.receipt.executionSurface === 'opencode') return null;
         await db.query('SELECT model_id FROM project_models WHERE project_id=$1 AND model_id=$2 FOR SHARE', [
             row.project_id,
             row.receipt.modelId,
         ]);
         const current = (
-            await db.query<IModelRow>('SELECT * FROM model_catalog WHERE id=$1 FOR SHARE', [row.receipt.modelId])
+            await db.query<IModelRow>('SELECT * FROM model_catalog WHERE id=$1 FOR SHARE', [row.receipt.modelId!])
         ).rows[0];
         if (!current || projectEmbeddingPin(modelFromRow(current)) !== row.receipt.modelPin)
             throw new ConflictException('Модель испытания изменилась.');
-        const agent = await this.assignment(row.project_id, row.agent_id, db);
-        if (agentTrialPin(agent) !== row.snapshot.agentPin)
-            throw new ConflictException('Промпт или настройки агента изменились.');
-        const model = await this.model(req, row.project_id, agent, row.receipt.modelId, undefined, db);
+        const model = await this.model(req, row.project_id, agent, row.receipt.modelId!, undefined, db);
         if (projectEmbeddingPin(model) !== row.receipt.modelPin)
             throw new ConflictException('Модель испытания изменилась.');
         if (row.request.tool === 'project_search') {

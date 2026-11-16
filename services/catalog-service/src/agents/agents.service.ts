@@ -1,5 +1,5 @@
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
-import { Injectable, OnApplicationShutdown, OnModuleInit, ForbiddenException } from '@nestjs/common';
+import { Injectable, OnApplicationShutdown, OnModuleInit, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Request } from 'express';
 import { canReadCommon, projectLevel } from '../access/access.model';
 import { ModelsService } from '../models/models.service';
@@ -9,7 +9,8 @@ import { notifyModelCatalogChange } from '../models/model-events';
 import { PROJECT_AGENTS_JOB } from '../../../shared/project-agents.cjs';
 import { AgentRepository } from './agent.repository';
 import { ProjectAgentRepository } from './project-agent.repository';
-import { object, request, revision } from './agent-validation';
+import { object, request, revision, agentId } from './agent-validation';
+import { firstUsefulChatAt, measureFirstUsefulOperation, readAgentOnboarding } from './agent-onboarding';
 import type { IAgentList } from './agent.interfaces';
 /** Native templates and project desired state share the existing trusted actor and project access boundary. */
 @Injectable()
@@ -60,6 +61,37 @@ export class AgentsService implements OnModuleInit, OnApplicationShutdown {
         const card = allowed.items.find((row) => row.id === id);
         if (!card) throw new ForbiddenException('Агент не назначен доступному проекту.');
         return card;
+    }
+    /**
+     * FR-307 onboarding status + C2 measurement. Read-only: the onboarding snapshot (t0) is recorded
+     * at assign; the first useful operation (t1) is the first completed project-chat response. The
+     * delta is computed here from already-recorded events (no write, no modal).
+     */
+    async onboarding(req: Request, id: string, agentIdValue: string) {
+        const actor = await this.access.actor(req),
+            project = await this.access.resolveProject(req, id, 1, actor);
+        agentId(agentIdValue);
+        const db = await this.pool.connect();
+        try {
+            await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+            const record = await readAgentOnboarding(db, project.id, agentIdValue);
+            const firstUseful = await firstUsefulChatAt(db, project.id, agentIdValue);
+            await db.query('COMMIT');
+            if (!record)
+                throw new NotFoundException(
+                    'Онбординг агента не найден. Добавьте агента в проект, чтобы запустить самонастройку.',
+                );
+            return {
+                onboarding: record,
+                firstUsefulAt: firstUseful ? new Date(firstUseful).toISOString() : null,
+                c2: measureFirstUsefulOperation(record.onboardedAt, firstUseful),
+            };
+        } catch (error) {
+            await db.query('ROLLBACK').catch(() => undefined);
+            throw error;
+        } finally {
+            db.release();
+        }
     }
     async create(req: Request, raw: unknown) {
         const actor = await this.access.actor(req);

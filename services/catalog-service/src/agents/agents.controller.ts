@@ -20,6 +20,13 @@ export class AgentsController {
     @Post('projects/:id/agents') assign(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
         return this.agents.assign(req, id, body);
     }
+    @Get('projects/:id/agents/:agentId/onboarding') onboarding(
+        @Req() req: Request,
+        @Param('id') id: string,
+        @Param('agentId') agentId: string,
+    ) {
+        return this.agents.onboarding(req, id, agentId);
+    }
     @Patch('projects/:id/agents/:agentId') configure(
         @Req() req: Request,
         @Param('id') id: string,

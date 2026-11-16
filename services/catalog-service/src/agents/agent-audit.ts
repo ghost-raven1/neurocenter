@@ -6,6 +6,7 @@ export const AGENT_AUDIT_ACTIONS = [
     'agent.import',
     'agent.snapshot',
     'project.agent.assign',
+    'project.agent.onboard',
     'project.agent.update',
     'project.agent.remove',
     'project.agents.connect',
