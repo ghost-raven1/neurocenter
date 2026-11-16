@@ -3,7 +3,7 @@ title: 'FR-306 [P1]: Расширения только из одобренног
 type: 'feature'
 ticket: '8'
 created: '2026-11-09'
-status: ready-for-dev
+status: in-progress
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -69,11 +69,12 @@ context:
 ## Tasks & Acceptance
 
 ### Execution
-- [ ] **Per-agent tool-profile (AP02)**: набор плагинов/скиллов/MCP opencode агента — только из одобренного каталога проекта (точный комплект, FR-202).
-- [ ] Расширение вне каталога → отказ (fail-closed, actionable).
-- [ ] **Экспериментальный режим**: локальные расширения с устройства строго для тестирования возможностей; не входят в одобренный комплект; **запись в аудит**.
-- [ ] **Per-agent изоляция**: набор расширений агента A не виден агенту B.
-- [ ] Тесты: из каталога (доступ), вне каталога (отказ), экспериментальный (аудит+не в комплекте), изоляция, точный комплект.
+- [x] **Per-agent tool-profile (AP02)**: набор плагинов/скиллов/MCP opencode агента — только из одобренного каталога проекта (точный комплект, FR-202).
+- [x] Расширение вне каталога → отказ (fail-closed, actionable; mcp-whitelist: только receipt-доказанные approved, прочие `{enabled: false}`).
+- [x] **Экспериментальный режим**: локальные расширения с устройства строго для тестирования возможностей; не входят в одобренный комплект; **запись в аудит**.
+- [x] **Per-agent изоляция**: набор расширений агента A не виден агенту B (manifest + overlay).
+- [x] Тесты: из каталога (доступ), вне каталога (отказ), экспериментальный (аудит+не в комплекте), изоляция, точный комплект (mcp 1925/20skip, catalog kit 20/20, tsc 0).
+- [ ] e2e: полный device-флоу (prepare → run → receipt) с реальным бинарником opencode 1.14.48 (native acceptance) — **остаток, после 11.1**.
 
 ### Acceptance
 - **Given** плагин/скилл/MCP из одобренного каталога **when** назначение агенту **then** доступен (точный комплект, FR-202).
@@ -103,3 +104,11 @@ node --test scripts/test/catalog-only-extensions.test.mjs 2>/dev/null || true
 1. **Граница «строго для тестирования возможностей»?** Рекомендация: экспериментальный режим = явный opt-in + аудит + срок/флаг (не production-комплект). Обоснование: FR-306 «строго для тестирования».
 2. **Экспериментальный режим — per-agent или per-project?** Рекомендация: per-agent (с аудитом), не поднимается в project-комплект без одобрения. Обоснование: изоляция + не в комплекте.
 3. **Какие типы расширений (плагин/скилл/MCP) в профиле?** Рекомендация: все три (единый tool-profile). Обоснование: FR-306 «плагины/скиллы/MCP».
+
+## Progress
+
+**2026-11-16 — код в main (merge 256e64ff, cf327151, 21 файл +1712/−73); остаток = device-e2e с реальным бинарником.**
+- Реализация: `agent-extension-kit.ts` (ядро: per-agent kit, sha256 self-proof overlay, экспериментальный режим с транзакционным аудитом), миграция 59 (`AGENT_EXTENSION_SCHEMA_SQL` — отдельный блок, не append: checksum-ловушка `validateMigrationHistory`), `mcpOverride` в overlay (pre-computed mcp-изоляция, runner ре-верифицирует byte-exact), опциональный `agentId` в MCP-ticket (`^agent-[a-z0-9][a-z0-9-]{0,120}$`, `assertAgentKitMembership`, обратно совместимо).
+- Тесты: mcp full (sequential) 1925 passed / 20 skipped, catalog agent-extension-kit 20/20, tsc 0 (mcp + catalog), prettier OK. Параллельный vitest-прогон даёт 5с-таймаут-флейки в worker-project-agents/project-agents-apply под CPU-нагрузкой — sequential детерминированно зелёный (проверено на main после мержа: 162/162+skip).
+- Оставшийся e2e: device-флоу (prepare → run → receipt) с opencode 1.14.48 — после 11.1 (нужен бинарник в среде).
+- Новые OQ из отчёта: (a) REST-эндпоинты pin/experiment-управления — нужны или управление через существующие flow? (b) кто наполняет device-local `.nc/agents/<agentId>/experimental/<assetId>` (capability-test?).

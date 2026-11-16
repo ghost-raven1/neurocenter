@@ -3,7 +3,7 @@ title: 'Баг: имя remote-модели без префикса провай�
 type: 'bugfix'
 ticket: '18'
 created: '2026-11-13'
-status: ready-for-dev
+status: done
 baseline_revision: 'd51c49b05da8b4b68096ff3e7d6ab78d6b688559'
 route: 'auto'
 route_source: 'auto'
@@ -62,11 +62,15 @@ context:
 ## Tasks & Acceptance
 
 ### Execution
-- [ ] `remote-model-client.ts`: метод `listModels(baseUrl, credential)` → GET /v1/models (degraded: 404/нет списка → null).
-- [ ] `remote-connection.service.ts`: на save/PATCH при `authMode != none` — сверка имени модели с listModels: mismatch → ошибка с доступными именами (или warning, решение OQ 1); нет списка → warning.
-- [ ] `PATCH /api/models/:id` (смена `model`) — та же валидация.
-- [ ] Frontend: показ ошибки/предупреждения с доступными именами (единый статус/next-step, UX-аудит P0-3).
-- [ ] Тесты: mismatch → ошибка/предупреждение (матрица выше, все 6 строк); /v1/models degraded → warning; authMode none → skip; существующие check/verification — не деградируют.
+- [x] `remote-model-client.ts`: метод `listModels(baseUrl, credential)` → GET /v1/models (degraded: 404/нет списка → null).
+- [x] `remote-connection.service.ts`: на save/PATCH при `authMode != none` — сверка имени модели с listModels: mismatch → ошибка с доступными именами (fail-closed, OQ-1); нет списка → warning.
+- [x] `PATCH /api/models/:id` (смена `model`) — та же валидация (`ModelsService.update` → `assertRenamedRemoteModel`).
+- [x] Frontend: показ предупреждения `nameUnverified` в RemoteConnectionModal (Alert warning); mismatch — ошибка от server с доступными именами.
+- [x] Тесты: `remote-model-name-check.test.ts` (10 кейсов: none-skip, match, mismatch, null-warning, пустой список, legacy stored/env, revoked head, db-sбой, corrupted secret) + frontend warning-кейс.
+
+## Progress
+
+**2026-11-16 — done (в main, 654258fd).** Реализовано: `remote-model-name-check.ts` (ядро сверки: personal key → legacy stored/env key, fail-closed mismatch с `REMOTE_MODEL_NAME_MISMATCH` + список имён, degraded → `REMOTE_MODEL_NAME_UNVERIFIED` warning), `RemoteModelClient.listModels` (GET /v1/models, null = недоступен, [] = явный пустой список = mismatch), интеграция в `RemoteConnectionService.save` (до записи, warning пробрасывается в view `nameUnverified`) и `ModelsService.update` (PATCH смены имени, тот же поток). OQ-1 решён как fail-closed (mismatch блокирует; только degraded — warning). OQ-2: все имена в ошибке. Тесты: catalog 10/10 (remote-model-name-check), frontend ModelCatalog 33/33, tsc 0. Примечание: 3 pre-existing faila в `system-roles` (system-role-agent-call) — на baseline 632b622e ДО agt-08, не связаны с тикетом (отдельный баг).
 
 ### Acceptance
 - **Given** имя `Qwen3.8-27B-FP8`, gateway знает `Qwen/Qwen3.8-27B-FP8` **when** сохранение/PATCH **then** явная ошибка с доступными именами (не тихое сохранение + 404 позже).
