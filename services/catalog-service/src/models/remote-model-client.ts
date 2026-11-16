@@ -184,6 +184,80 @@ export class RemoteModelClient {
         };
     }
 
+    /**
+     * Список моделей шлюза (GET /v1/models) для сверки имени модели на входе.
+     * Возвращает null, когда список недоступен (нет endpoint, отказ в доступе, сеть/TLS), —
+     * деградация: имя не верифицируемо, но это не несовпадение имени.
+     * Пустой массив — работающий шлюз вернул явный пустой список: имя точно отсутствует.
+     */
+    async listModels(baseUrl: string, credential?: string, signal?: AbortSignal): Promise<string[] | null> {
+        signal?.throwIfAborted();
+        const url = remoteModelBaseUrl(baseUrl) + '/models';
+        const deadline = AbortSignal.any([
+            AbortSignal.timeout(this.options.timeoutMs ?? 15000),
+            ...(signal ? [signal] : []),
+        ]);
+        let response: Response;
+        try {
+            response = await (this.options.fetch ?? fetch)(url, {
+                method: 'GET',
+                redirect: 'error',
+                signal: deadline,
+                headers: {
+                    ...(credential ? { authorization: 'Bearer ' + credential } : {}),
+                },
+            });
+        } catch {
+            signal?.throwIfAborted();
+            return null;
+        }
+        let names: string[] | null = null;
+        try {
+            const contentType = response.headers.get('content-type') ?? '';
+            if (response.ok && response.body && /^application\/(?:[a-z0-9.+-]+\+)?json(?:;|$)/i.test(contentType)) {
+                let size = 0;
+                const chunks: Uint8Array[] = [];
+                let oversized = false;
+                for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+                    size += chunk.length;
+                    if (size > (this.options.maximumBytes ?? 16 * 1024 * 1024)) {
+                        oversized = true;
+                        break;
+                    }
+                    chunks.push(chunk);
+                }
+                if (!oversized) {
+                    let value: unknown;
+                    try {
+                        value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                    } catch {
+                        value = undefined;
+                    }
+                    if (object(value) && !value.error) names = this.modelNames(value);
+                }
+            }
+        } finally {
+            await response.body?.cancel();
+        }
+        return names;
+    }
+    private modelNames(value: TJson): string[] | null {
+        const source = Array.isArray(value.data) ? value.data : Array.isArray(value.models) ? value.models : null;
+        if (source === null) return null;
+        const names: string[] = [];
+        for (const entry of source) {
+            const name = object(entry)
+                ? typeof entry.id === 'string'
+                    ? entry.id
+                    : typeof entry.name === 'string'
+                      ? entry.name
+                      : ''
+                : '';
+            if (name && !names.includes(name)) names.push(name);
+        }
+        return names;
+    }
+
     private tokens(value: unknown): number | null {
         return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
     }

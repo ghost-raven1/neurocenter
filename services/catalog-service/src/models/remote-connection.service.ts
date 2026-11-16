@@ -5,7 +5,9 @@ import type { IModelHosting } from './hosting.interfaces';
 import { ModelsService } from './models.service';
 import { RemoteConnectionRepository } from './remote-connection.repository';
 import { RemoteModelClient, RemoteModelError } from './remote-model-client';
+import { checkRemoteModelName } from './remote-model-name-check';
 import { remoteConnectionInput, remoteVerificationDigest } from './remote-model-validation';
+import type { IRemoteConnectionInput } from './remote-model.interfaces';
 import { isRemoteModel } from './remote-model.utils';
 import { notifyModelCatalogChange } from './model-events';
 import { ModelUsageService } from '../model-usage/model-usage.service';
@@ -42,10 +44,35 @@ export class RemoteConnectionService {
     }
     async save(id: string, value: unknown, actor: string, authorize: () => Promise<unknown>) {
         await requireFeaturesEnabled(['personal_remote_provider_credentials']);
-        await this.remote(id);
-        const saved = await this.repository.save(id, remoteConnectionInput(value), actor, authorize);
+        const model = await this.remote(id);
+        const input = remoteConnectionInput(value);
+        // 8.18: сверка имени с GET /v1/models до записи: mismatch — ошибка, недоступный список — предупреждение.
+        const check = await this.checkModelName(id, model, input, actor);
+        const saved = await this.repository.save(id, input, actor, authorize);
         await notifyModelCatalogChange();
-        return saved;
+        return check.warning ? { ...saved, nameUnverified: check.warning } : saved;
+    }
+    /** authMode 'none' — проверка невозможна (нет ключа); mismatch блокирует сохранение, деградация — предупреждение. */
+    private async checkModelName(
+        id: string,
+        model: IModel,
+        input: IRemoteConnectionInput,
+        actor: string,
+    ): Promise<{ warning?: string }> {
+        // Та же резолуция режима, что пишет repository.save: legacy без authMode — required при наличии ключа.
+        const authMode = input.authMode ?? (input.credential === 'none' ? 'none' : 'required');
+        if (authMode === 'none') return {};
+        const head = await this.repository.head(id);
+        return checkRemoteModelName({
+            pool: this.models.pool,
+            client: this.client,
+            model,
+            modelName: model.model,
+            baseUrl: input.baseUrl,
+            authMode,
+            actor,
+            head,
+        });
     }
     async revoke(id: string, value: unknown, actor: string, authorize: () => Promise<unknown>): Promise<{ ok: true }> {
         await this.remote(id);
