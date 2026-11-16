@@ -1,312 +1,388 @@
-# Состав осознанный: dev-стек — 9 сервисов (model-runtime, frontend, oauth2-bridge, api-gateway,
-# catalog-service, feature-flags-service, skills-service, postgres, rag-sync-service).
-# Production (compose.production.yml) — 13: те же 9 + capacity-collector, database-init (one-shot),
+# Состав осознанный: dev-стек — 10 сервисов (model-runtime, frontend, oauth2-bridge, api-gateway,
+# catalog-service, background-agent, feature-flags-service, skills-service, postgres, rag-sync-service).
+# Production (compose.production.yml) — 14: те же 10 + capacity-collector, database-init (one-shot),
 # bootstrap-admin (one-shot), node_exporter (host-метрики, AD-OP-8; целевой состав 15 с мониторингом ep6 e12).
 services:
-  # Runtime starts empty; model installation uses imported asset supply.
-  model-runtime:
-    image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
-    restart: unless-stopped
-    init: true
-    security_opt: [no-new-privileges:true]
-    mem_limit: 5g
-    cpus: 4
-    environment:
-      OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_NO_CLOUD: '1'
-      OLLAMA_CONTEXT_LENGTH: ${MODEL_CHAT_CONTEXT_WINDOW_TOKENS:-4096}
-      OLLAMA_NUM_PARALLEL: '1'
-      OLLAMA_MAX_LOADED_MODELS: '1'
-      OLLAMA_MAX_QUEUE: '8'
-      OLLAMA_KEEP_ALIVE: 5m
-    volumes: ['./data/embedding:/root/.ollama']
-    healthcheck:
-      test: [CMD, ollama, list]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 20s
+    # Runtime starts empty; model installation uses imported asset supply.
+    model-runtime:
+        image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
+        restart: unless-stopped
+        init: true
+        security_opt: [no-new-privileges:true]
+        mem_limit: 5g
+        cpus: 4
+        environment:
+            OLLAMA_HOST: 0.0.0.0:11434
+            OLLAMA_NO_CLOUD: '1'
+            OLLAMA_CONTEXT_LENGTH: ${MODEL_CHAT_CONTEXT_WINDOW_TOKENS:-4096}
+            OLLAMA_NUM_PARALLEL: '1'
+            OLLAMA_MAX_LOADED_MODELS: '1'
+            OLLAMA_MAX_QUEUE: '8'
+            OLLAMA_KEEP_ALIVE: 5m
+        volumes: ['./data/embedding:/root/.ollama']
+        healthcheck:
+            test: [CMD, ollama, list]
+            interval: 10s
+            timeout: 5s
+            retries: 6
+            start_period: 20s
 
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-      args:
-        NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
-        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
-        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
-        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
-    ports:
-      - "127.0.0.1:${NEUROCENTER_PORT:-5173}:8080"
-    depends_on:
-      api-gateway:
-        condition: service_started
-      oauth2-bridge:
-        condition: service_started
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://127.0.0.1:8080/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+    frontend:
+        build:
+            context: .
+            dockerfile: frontend/Dockerfile
+            args:
+                NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+                NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+                NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+                NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+        ports:
+            - '127.0.0.1:${NEUROCENTER_PORT:-5173}:8080'
+        depends_on:
+            api-gateway:
+                condition: service_started
+            oauth2-bridge:
+                condition: service_started
+        healthcheck:
+            test: ['CMD', 'wget', '--spider', 'http://127.0.0.1:8080/health']
+            interval: 10s
+            timeout: 3s
+            retries: 5
 
-  # SSO/Blitz login (NestJS), /auth — только internal-сеть (auth идёт через gateway).
-  oauth2-bridge:
-    build:
-      context: .
-      dockerfile: services/oauth2-bridge/Dockerfile
-      args:
-        NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
-        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
-        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
-        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
-    env_file:
-      - .env
-      - path: .env.local
-        required: false
-    environment:
-      # Dev-стек = development: production-guard (validateProduction в shared/runtime.cjs)
-      # не должен срабатывать на dev-настройках (.env: SSO_DISABLE=true и т.п.).
-      # Dockerfile ставит ENV NODE_ENV=production как production-дефолт — переопределяем.
-      - NODE_ENV=development
-      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
-      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
-      - PORT=22222
-      - CATALOG_SERVICE_URL=http://catalog-service:4100
-      - BIND_HOST=0.0.0.0
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:22222/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+    # SSO/Blitz login (NestJS), /auth — только internal-сеть (auth идёт через gateway).
+    oauth2-bridge:
+        build:
+            context: .
+            dockerfile: services/oauth2-bridge/Dockerfile
+            args:
+                NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+                NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+                NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+                NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+        env_file:
+            - .env
+            - path: .env.local
+              required: false
+        environment:
+            # Dev-стек = development: production-guard (validateProduction в shared/runtime.cjs)
+            # не должен срабатывать на dev-настройках (.env: SSO_DISABLE=true и т.п.).
+            # Dockerfile ставит ENV NODE_ENV=production как production-дефолт — переопределяем.
+            - NODE_ENV=development
+            # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+            - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
+            - PORT=22222
+            - CATALOG_SERVICE_URL=http://catalog-service:4100
+            - BIND_HOST=0.0.0.0
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'node',
+                    '-e',
+                    "require('http').get('http://127.0.0.1:22222/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+                ]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 20s
 
-  # Front-facing: /api/* → fan-out на микросервисы, /socket.io → real-time, auth-guard
-  api-gateway:
-    build:
-      context: .
-      dockerfile: services/api-gateway/Dockerfile
-      args:
-        NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
-        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
-        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
-        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
-    env_file:
-      - .env
-      - path: .env.local
-        required: false
-    environment:
-      - NODE_ENV=development
-      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
-      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
-      - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-1}
-      - PORT=4000
-      - BIND_HOST=0.0.0.0
-      - BRIDGE_TEMPLATES_DIR=/app/bridge-dist
-      - CATALOG_SERVICE_URL=http://catalog-service:4100
-      - SKILLS_SERVICE_URL=http://skills-service:4200
-      - RAG_SERVICE_URL=http://rag-sync-service:4300
-      - FEATURE_FLAGS_SERVICE_URL=http://feature-flags-service:4400
-      - AUTH_SERVICE_URL=http://oauth2-bridge:22222
-      - AUTH_GUARD_ENABLED=true
-      # AD-6 (entry 9): PG-счётчики pairing-окон (rate_limit_windows) — общая с catalog база.
-      - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:${GATEWAY_PORT:-4000}:4000"
-    volumes:
-      - ./bridge-dist:/app/bridge-dist:ro
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+    # Front-facing: /api/* → fan-out на микросервисы, /socket.io → real-time, auth-guard
+    api-gateway:
+        build:
+            context: .
+            dockerfile: services/api-gateway/Dockerfile
+            args:
+                NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+                NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+                NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+                NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+        env_file:
+            - .env
+            - path: .env.local
+              required: false
+        environment:
+            - NODE_ENV=development
+            # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+            - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
+            - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-1}
+            - PORT=4000
+            - BIND_HOST=0.0.0.0
+            - BRIDGE_TEMPLATES_DIR=/app/bridge-dist
+            - CATALOG_SERVICE_URL=http://catalog-service:4100
+            - SKILLS_SERVICE_URL=http://skills-service:4200
+            - RAG_SERVICE_URL=http://rag-sync-service:4300
+            - FEATURE_FLAGS_SERVICE_URL=http://feature-flags-service:4400
+            - AUTH_SERVICE_URL=http://oauth2-bridge:22222
+            - AUTH_GUARD_ENABLED=true
+            # AD-6 (entry 9): PG-счётчики pairing-окон (rate_limit_windows) — общая с catalog база.
+            - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
+        depends_on:
+            postgres:
+                condition: service_healthy
+        ports:
+            - '127.0.0.1:${GATEWAY_PORT:-4000}:4000'
+        volumes:
+            - ./bridge-dist:/app/bridge-dist:ro
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'node',
+                    '-e',
+                    "require('http').get('http://127.0.0.1:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+                ]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 20s
 
-  # Каталог: проекты/версии/пакеты/операции/аудит/maintenance — internal-only (RBAC = доверие x-bridge-* от gateway).
-  catalog-service:
-    # Mandatory package startup runs inside bwrap, including nested PID/network namespaces.
-    cap_drop: [ALL]
-    security_opt:
-      - no-new-privileges:true
-      - seccomp:./docker/seccomp/catalog-packager.json
-    build:
-      context: .
-      dockerfile: services/catalog-service/Dockerfile
-      args:
-        NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
-        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
-        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
-        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
-    env_file:
-      - .env
-      - path: .env.local
-        required: false
-    environment:
-      - NODE_ENV=development
-      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
-      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
-      - PORT=4100
-      - BIND_HOST=0.0.0.0
-      - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
-      - RAG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}
-      - RAG_SERVICE_URL=http://rag-sync-service:4300
-      - PROJECTS_ROOT=/data/projects
-      - SKILLS_SERVICE_URL=http://skills-service:4200
-      - RUNTIME_ARTIFACT_DIR=/app/runtime-artifacts
-      - ASSET_SOURCE_MODE=${ASSET_SOURCE_MODE:-online}
-      - BACKUP_DIR=/app/backups
-      - FEATURE_FLAGS_SERVICE_URL=http://feature-flags-service:4400
-      - MODEL_RUNTIME_URL=http://model-runtime:11434
-      - MODEL_CHAT_CONTEXT_WINDOW_TOKENS=${MODEL_CHAT_CONTEXT_WINDOW_TOKENS:-4096}
-      - MODEL_STORAGE_PATH=/data/models
-      - MODEL_HOSTING_ENABLED=${MODEL_HOSTING_ENABLED:-true}
-    volumes:
-      - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
-      - runtime-artifacts:/app/runtime-artifacts
-      - ./services/catalog-service/content/help:/app/content/help
-      - backup-data:/app/backups
-      - ./data/embedding:/data/models:rw
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4100/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+    # Каталог: проекты/версии/пакеты/операции/аудит/maintenance — internal-only (RBAC = доверие x-bridge-* от gateway).
+    catalog-service:
+        # Mandatory package startup runs inside bwrap, including nested PID/network namespaces.
+        cap_drop: [ALL]
+        security_opt:
+            - no-new-privileges:true
+            - seccomp:./docker/seccomp/catalog-packager.json
+        build:
+            context: .
+            dockerfile: services/catalog-service/Dockerfile
+            args:
+                NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+                NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+                NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+                NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+        env_file:
+            - .env
+            - path: .env.local
+              required: false
+        environment:
+            - NODE_ENV=development
+            # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+            - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
+            - PORT=4100
+            - BIND_HOST=0.0.0.0
+            - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
+            - RAG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}
+            - RAG_SERVICE_URL=http://rag-sync-service:4300
+            - PROJECTS_ROOT=/data/projects
+            - SKILLS_SERVICE_URL=http://skills-service:4200
+            - RUNTIME_ARTIFACT_DIR=/app/runtime-artifacts
+            - ASSET_SOURCE_MODE=${ASSET_SOURCE_MODE:-online}
+            - BACKUP_DIR=/app/backups
+            - FEATURE_FLAGS_SERVICE_URL=http://feature-flags-service:4400
+            - MODEL_RUNTIME_URL=http://model-runtime:11434
+            - MODEL_CHAT_CONTEXT_WINDOW_TOKENS=${MODEL_CHAT_CONTEXT_WINDOW_TOKENS:-4096}
+            - MODEL_STORAGE_PATH=/data/models
+            - MODEL_HOSTING_ENABLED=${MODEL_HOSTING_ENABLED:-true}
+        volumes:
+            - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
+            - runtime-artifacts:/app/runtime-artifacts
+            - ./services/catalog-service/content/help:/app/content/help
+            - backup-data:/app/backups
+            - ./data/embedding:/data/models:rw
+        depends_on:
+            postgres:
+                condition: service_healthy
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'node',
+                    '-e',
+                    "require('http').get('http://127.0.0.1:4100/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+                ]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 20s
 
-  # Флаги функций используют каталог PostgreSQL и не получают внешнего порта.
-  feature-flags-service:
-    build:
-      context: .
-      dockerfile: services/feature-flags-service/Dockerfile
-      args:
-        NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
-        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
-        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
-        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
-    env_file:
-      - .env
-      - path: .env.local
-        required: false
-    environment:
-      - NODE_ENV=development
-      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
-      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
-      - PORT=4400
-      - BIND_HOST=0.0.0.0
-      - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
-      - CATALOG_SERVICE_URL=http://catalog-service:4100
-    depends_on:
-      postgres:
-        condition: service_healthy
-      catalog-service:
-        condition: service_started
-    healthcheck:
-      test: [CMD, node, -e, "require('http').get('http://127.0.0.1:4400/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+    # Фоновый агент (FR-305): фоновое opencode-исполнение задач в отдельном контейнере (не блокирует чат).
+    # Движок — bin/opencode-probe из автономного пакета в volume background-agent-runtime (ro);
+    # без пакета сервис не проходит healthcheck (явная ошибка предусловия).
+    background-agent:
+        build:
+            context: .
+            dockerfile: services/catalog-service/Dockerfile
+            args:
+                NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+                NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+                NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+                NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+        env_file:
+            - .env
+            - path: .env.local
+              required: false
+        environment:
+            - NODE_ENV=development
+            # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+            - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
+            - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
+            - PROJECTS_ROOT=/data/projects
+            - BACKGROUND_AGENT_RUNTIME_ROOT=/app/background-agent-runtime
+        command: [node, dist/background-agent/background-agent.cli.js]
+        volumes:
+            - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
+            - background-agent-runtime:/app/background-agent-runtime:ro
+        depends_on:
+            postgres:
+                condition: service_healthy
+        mem_limit: 1g
+        cpus: 2
+        healthcheck:
+            test: [CMD, node, dist/background-agent/background-agent.cli.js, --check]
+            interval: 15s
+            timeout: 10s
+            retries: 4
+            start_period: 30s
 
-  # Скиллы — internal-only (RBAC = доверие x-bridge-* от gateway).
-  skills-service:
-    build:
-      context: .
-      dockerfile: services/skills-service/Dockerfile
-      args:
-        NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
-        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
-        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
-        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
-    env_file:
-      - .env
-      - path: .env.local
-        required: false
-    environment:
-      - NODE_ENV=development
-      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
-      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
-      - PORT=4200
-      - BIND_HOST=0.0.0.0
-      - SKILLS_STORAGE_PATH=/app/data/skills
-      - CATALOG_SERVICE_URL=http://catalog-service:4100
-    volumes:
-      - ./data/skills:/app/data/skills
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4200/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+    # Флаги функций используют каталог PostgreSQL и не получают внешнего порта.
+    feature-flags-service:
+        build:
+            context: .
+            dockerfile: services/feature-flags-service/Dockerfile
+            args:
+                NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+                NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+                NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+                NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+        env_file:
+            - .env
+            - path: .env.local
+              required: false
+        environment:
+            - NODE_ENV=development
+            # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+            - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
+            - PORT=4400
+            - BIND_HOST=0.0.0.0
+            - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
+            - CATALOG_SERVICE_URL=http://catalog-service:4100
+        depends_on:
+            postgres:
+                condition: service_healthy
+            catalog-service:
+                condition: service_started
+        healthcheck:
+            test:
+                [
+                    CMD,
+                    node,
+                    -e,
+                    "require('http').get('http://127.0.0.1:4400/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+                ]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 20s
 
-  # Postgres + pgvector: develop-версия RAG-индекса (хранит rag_chunks, role-gated sync)
-  postgres:
-    image: pgvector/pgvector:pg16
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-rag}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rag}
-      - POSTGRES_DB=${POSTGRES_DB:-rag}
-    # Локальный dev: dev.sh поднимает node-сервисы на хосте — им нужен 127.0.0.1:5432.
-    # Публикуем только на loopback. Внутри docker-compose-стека сервисы ходят по имени `postgres`.
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      - pgvector-data:/var/lib/postgresql/data
-      - ./services/rag-sync-service/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-rag}"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+    # Скиллы — internal-only (RBAC = доверие x-bridge-* от gateway).
+    skills-service:
+        build:
+            context: .
+            dockerfile: services/skills-service/Dockerfile
+            args:
+                NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+                NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+                NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+                NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+        env_file:
+            - .env
+            - path: .env.local
+              required: false
+        environment:
+            - NODE_ENV=development
+            # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+            - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
+            - PORT=4200
+            - BIND_HOST=0.0.0.0
+            - SKILLS_STORAGE_PATH=/app/data/skills
+            - CATALOG_SERVICE_URL=http://catalog-service:4100
+        volumes:
+            - ./data/skills:/app/data/skills
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'node',
+                    '-e',
+                    "require('http').get('http://127.0.0.1:4200/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+                ]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 20s
 
-  # RAG-дельта-синхронизация: postgres+pgvector, role-gated (x-bridge-roles) — internal-only.
-  rag-sync-service:
-    build:
-      context: .
-      dockerfile: services/rag-sync-service/Dockerfile
-      args:
-        NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
-        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
-        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
-        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
-    env_file:
-      - .env
-      - path: .env.local
-        required: false
-    environment:
-      - NODE_ENV=development
-      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
-      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
-      - PORT=4300
-      - BIND_HOST=0.0.0.0
-      - RAG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}
-      - CATALOG_SERVICE_URL=http://catalog-service:4100
-      - RAG_SERVICE_URL=http://rag-sync-service:4300
-      - PROJECTS_ROOT=/data/projects
-      # MCP-мост зашит в образ; пути — внутри контейнера (переопределяют host-значения из .env)
-      - ASSET_SYNC_NODE_BIN=/usr/local/bin/node
-      - ASSET_SYNC_MCP_BIN=/app/mcp/neurocenter-asset-sync/dist/index.js
-    volumes:
-      - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4300/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
+    # Postgres + pgvector: develop-версия RAG-индекса (хранит rag_chunks, role-gated sync)
+    postgres:
+        image: pgvector/pgvector:pg16
+        restart: unless-stopped
+        environment:
+            - POSTGRES_USER=${POSTGRES_USER:-rag}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rag}
+            - POSTGRES_DB=${POSTGRES_DB:-rag}
+        # Локальный dev: dev.sh поднимает node-сервисы на хосте — им нужен 127.0.0.1:5432.
+        # Публикуем только на loopback. Внутри docker-compose-стека сервисы ходят по имени `postgres`.
+        ports:
+            - '127.0.0.1:5432:5432'
+        volumes:
+            - pgvector-data:/var/lib/postgresql/data
+            - ./services/rag-sync-service/init:/docker-entrypoint-initdb.d:ro
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-rag} -d ${POSTGRES_DB:-rag}']
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 20s
 
-  # Дальше — микросервисы под задачи: packages-service, operations-service, mcp-service, ...
+    # RAG-дельта-синхронизация: postgres+pgvector, role-gated (x-bridge-roles) — internal-only.
+    rag-sync-service:
+        build:
+            context: .
+            dockerfile: services/rag-sync-service/Dockerfile
+            args:
+                NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+                NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+                NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+                NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+        env_file:
+            - .env
+            - path: .env.local
+              required: false
+        environment:
+            - NODE_ENV=development
+            # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+            - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
+            - PORT=4300
+            - BIND_HOST=0.0.0.0
+            - RAG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/${POSTGRES_DB:-rag}
+            - CATALOG_SERVICE_URL=http://catalog-service:4100
+            - RAG_SERVICE_URL=http://rag-sync-service:4300
+            - PROJECTS_ROOT=/data/projects
+            # MCP-мост зашит в образ; пути — внутри контейнера (переопределяют host-значения из .env)
+            - ASSET_SYNC_NODE_BIN=/usr/local/bin/node
+            - ASSET_SYNC_MCP_BIN=/app/mcp/neurocenter-asset-sync/dist/index.js
+        volumes:
+            - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
+        depends_on:
+            postgres:
+                condition: service_healthy
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'node',
+                    '-e',
+                    "require('http').get('http://127.0.0.1:4300/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+                ]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+            start_period: 20s
+
+    # Дальше — микросервисы под задачи: packages-service, operations-service, mcp-service, ...
 
 volumes:
-  pgvector-data:
-  runtime-artifacts:
-  backup-data:
+    pgvector-data:
+    runtime-artifacts:
+    backup-data:
+    background-agent-runtime:

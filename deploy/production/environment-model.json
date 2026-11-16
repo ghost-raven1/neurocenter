@@ -147,6 +147,38 @@
                 "BOOTSTRAP_ADMIN_EMAIL": "bootstrap-admin.cli.ts бросает исключение при старте без почты первого администратора; compose помечает переменную :?"
             }
         },
+        "background-agent": {
+            "image": "neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
+            "networks": ["backend"],
+            "networkMode": null,
+            "memLimit": "1g",
+            "cpus": 2,
+            "pidsLimit": 256,
+            "readOnly": false,
+            "capDrop": ["ALL"],
+            "capAdd": null,
+            "seccomp": null,
+            "secrets": ["catalog_url", "internal_token"],
+            "ports": [],
+            "volumes": ["background-agent-runtime:/app/background-agent-runtime:ro", "projects:/data/projects"],
+            "env": {
+                "NODE_ENV": "production",
+                "NEUROCENTER_SERVICE": "background-agent",
+                "PANEL_URL": "${PANEL_URL:?Заполните PANEL_URL}",
+                "NEUROCENTER_INTERNAL_TOKEN_FILE": "/run/secrets/internal_token",
+                "CATALOG_PG_URL_FILE": "/run/secrets/catalog_url",
+                "BACKGROUND_AGENT_RUNTIME_ROOT": "/app/background-agent-runtime"
+            },
+            "codeRoots": ["services/catalog-service/src/background-agent"],
+            "requiredEnv": {
+                "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
+                "NEUROCENTER_SERVICE": "override ENV образа catalog-service (services/catalog-service/Dockerfile): без переменной CLI валидируется как catalog-service и требует SKILLS_SERVICE_URL и RAG_PG_URL, которых у фонового агента нет",
+                "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
+                "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
+                "CATALOG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД каталога (секретный файл _FILE); без переменной сервис не стартует",
+                "BACKGROUND_AGENT_RUNTIME_ROOT": "background-agent/engine.ts: корень автономного пакета с bin/opencode-probe (runtime.json + sha256, pin OpenCode 1.14.48); без переменной старт отклонён — явная ошибка предусловия (OQ-2)"
+            }
+        },
         "catalog-service": {
             "image": "neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}",
             "networks": ["backend"],
