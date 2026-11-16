@@ -6,8 +6,6 @@ import baseApi from '../../core/api/base';
 import { errorMessage } from '../../common/utils/errorMessage';
 import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
 import { modelCatalogApi } from './api';
-import { RemoteConnectionModal } from './RemoteConnectionModal';
-import type { ICatalogModel } from './interfaces';
 import { FeatureAvailabilityNotice, FeatureButton, useFeatureAvailability } from '../FeatureFlags/FeatureAvailability';
 
 interface ISource {
@@ -65,7 +63,6 @@ export function OpenCodeModelSyncSettings({
         [settings, setSettings] = useState<ISettings>(),
         [busy, setBusy] = useState(false),
         [error, setError] = useState('');
-    const [connection, setConnection] = useState<ICatalogModel>();
     const [notice, setNotice] = useState('');
     const lock = useRef(false);
     const path = '/api/devices/' + encodeURIComponent(deviceId) + '/opencode-model-sync';
@@ -102,22 +99,6 @@ export function OpenCodeModelSyncSettings({
         } catch (cause) {
             if (owns())
                 setError(errorMessage(cause, 'Не удалось сохранить настройку. Обновите данные перед повтором.'));
-        } finally {
-            lock.current = false;
-            if (owns()) setBusy(false);
-        }
-    };
-    const configure = async (id: string): Promise<void> => {
-        const owns = captureOwner();
-        if (!owns() || lock.current) return;
-        lock.current = true;
-        setBusy(true);
-        setError('');
-        try {
-            const model = await modelCatalogApi.get(id);
-            if (owns()) setConnection(model);
-        } catch (cause) {
-            if (owns()) setError(errorMessage(cause, 'Модель больше недоступна.'));
         } finally {
             lock.current = false;
             if (owns()) setBusy(false);
@@ -228,38 +209,27 @@ export function OpenCodeModelSyncSettings({
                                     renderItem={(source) => (
                                         <List.Item
                                             actions={
-                                                source.modelId
+                                                source.modelId &&
+                                                source.needsCheck &&
+                                                !source.revoked &&
+                                                !source.archivedAt
                                                     ? [
-                                                          <Button
-                                                              key="connection"
+                                                          <FeatureButton
+                                                              features={['model_hosting']}
+                                                              key="check"
                                                               size="small"
-                                                              disabled={busy || !!source.archivedAt}
+                                                              disabled={
+                                                                  busy ||
+                                                                  ['pending', 'unavailable'].includes(
+                                                                      source.credentialStatus,
+                                                                  )
+                                                              }
                                                               onClick={() => {
-                                                                  void configure(source.modelId!);
+                                                                  void check(source.modelId!);
                                                               }}
                                                           >
-                                                              Подключение
-                                                          </Button>,
-                                                          ...(source.needsCheck && !source.revoked && !source.archivedAt
-                                                              ? [
-                                                                    <FeatureButton
-                                                                        features={['model_hosting']}
-                                                                        key="check"
-                                                                        size="small"
-                                                                        disabled={
-                                                                            busy ||
-                                                                            ['pending', 'unavailable'].includes(
-                                                                                source.credentialStatus,
-                                                                            )
-                                                                        }
-                                                                        onClick={() => {
-                                                                            void check(source.modelId!);
-                                                                        }}
-                                                                    >
-                                                                        Проверить
-                                                                    </FeatureButton>,
-                                                                ]
-                                                              : []),
+                                                              Проверить
+                                                          </FeatureButton>,
                                                       ]
                                                     : []
                                             }
@@ -319,14 +289,6 @@ export function OpenCodeModelSyncSettings({
                         )
                     )}
                 </Modal>
-            )}
-            {connection && (
-                <RemoteConnectionModal
-                    key={connection.id + ':' + connection.revision}
-                    model={connection}
-                    onClose={() => setConnection(undefined)}
-                    onSaved={load}
-                />
             )}
         </>
     );
