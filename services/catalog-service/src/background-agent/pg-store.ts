@@ -111,10 +111,19 @@ export class PgBackgroundAgentStore implements IBackgroundAgentStore, IBackgroun
 
     /**
      * Claim one admitted task by request id: the atomic pending→running transition with a fresh
-     * lease; a task in backoff (next_attempt_at in the future) or already settled is not claimable.
+     * lease; a task in backoff (next_attempt_at in the future) is not claimable. A settled job whose
+     * receipt was never acknowledged (lost ACK) is re-claimable WITHOUT a state change and without a
+     * lease — the delivery phase: the worker re-delivers the same recorded receipt, never a new
+     * result, and a settled row never re-enters the reaper (no lease).
      * Returns the normalized payload (undefined when the task is absent or not claimable).
      */
     async claim(requestId: string): Promise<IBackgroundAgentPayload | undefined> {
+        const settled = await this.pool.query<{ payload: IBackgroundAgentPayload }>(
+            `SELECT payload FROM background_agent_jobs
+             WHERE request_id=$1::uuid AND state IN ('succeeded','failed') AND delivered=false`,
+            [requestId],
+        );
+        if (settled.rows[0]) return normalizeBackgroundAgentPayload(settled.rows[0].payload);
         const { rows } = await this.pool.query<{ payload: IBackgroundAgentPayload }>(
             `UPDATE background_agent_jobs
              SET state='running', lease_token=$2::uuid, lease_until=now()+$3::interval, heartbeat_at=now(), updated_at=now()
@@ -129,7 +138,8 @@ export class PgBackgroundAgentStore implements IBackgroundAgentStore, IBackgroun
     }
 
     /**
-     * Complete: the verified result settles the job (running→succeeded/failed). Idempotent by the
+     * Complete: the verified result settles the job (running→succeeded/failed) and releases the
+     * lease in the same statement (CHECK: a non-running row carries no lease). Idempotent by the
      * state guard: a settled job is not re-settled (a lost-ACK re-delivery settles to the same
      * recorded receipt through the resilience path, never through a second state transition).
      */
@@ -137,7 +147,7 @@ export class PgBackgroundAgentStore implements IBackgroundAgentStore, IBackgroun
         await this.pool.query(
             `UPDATE background_agent_jobs
              SET state=CASE WHEN $2::jsonb->>'state'='succeeded' THEN 'succeeded' ELSE 'failed' END,
-                 result=$2::jsonb, completed_at=now(), updated_at=now()
+                 result=$2::jsonb, lease_token=NULL, lease_until=NULL, completed_at=now(), updated_at=now()
              WHERE request_id=$1::uuid AND state='running'`,
             [requestId, JSON.stringify(result)],
         );
@@ -215,7 +225,9 @@ export class PgBackgroundAgentStore implements IBackgroundAgentStore, IBackgroun
 
     async markDelivered(requestKey: string): Promise<IBackgroundAgentJobState> {
         const { rows } = await this.pool.query<IJobRow>(
-            "UPDATE background_agent_jobs SET delivered=true, publish_state='published', updated_at=now() WHERE request_key=$1 RETURNING *",
+            `UPDATE background_agent_jobs
+             SET delivered=true, publish_state=CASE WHEN publish_state='withheld' THEN 'withheld' ELSE 'published' END, updated_at=now()
+             WHERE request_key=$1 RETURNING *`,
             [requestKey],
         );
         if (!rows[0]) throw new Error(`Фоновая задача ${requestKey} не найдена.`);
@@ -239,48 +251,44 @@ export class PgBackgroundAgentStore implements IBackgroundAgentStore, IBackgroun
     }
 
     // ── Supervisor loop helpers (phase B, block 4) ────────────────────────────────────────────────
+    // The Phase A claim (above) is the ONLY claim: the supervisor scans read-only and lets the
+    // worker's atomic claim do the transition, so a row is ever claimed by exactly one holder.
 
-    /** The row the supervisor claims next (FIFO over pending, backoff-eligible), or undefined. */
-    async claimNext(): Promise<{ requestId: string; requestKey: string; leaseToken: string } | undefined> {
-        const leaseToken = randomUUID();
-        const { rows } = await this.pool.query<{ request_id: string; request_key: string }>(
-            `WITH picked AS (
-                SELECT request_id, request_key
-                FROM background_agent_jobs
-                WHERE state='pending' AND (next_attempt_at IS NULL OR next_attempt_at<=now())
-                ORDER BY created_at
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-             )
-             UPDATE background_agent_jobs j
-             SET state='running', lease_token=$1::uuid, lease_until=now()+$2::interval, heartbeat_at=now(), updated_at=now()
-             FROM picked
-             WHERE j.request_key=picked.request_key
-             RETURNING j.request_id, j.request_key`,
-            [leaseToken, LEASE_SQL(BACKGROUND_AGENT_LEASE.leaseMs)],
+    /**
+     * Read-only scan of processable tasks (FIFO): backoff-eligible pending runs first, then settled
+     * receipts whose delivery was never acknowledged (lost-ACK re-delivery). The worker's claim is
+     * the only transition; this scan never mutates a row.
+     */
+    async processableRequestIds(limit = 1): Promise<string[]> {
+        const { rows } = await this.pool.query<{ request_id: string }>(
+            `SELECT request_id FROM background_agent_jobs
+             WHERE (state='pending' AND (next_attempt_at IS NULL OR next_attempt_at<=now()))
+                OR (state IN ('succeeded','failed') AND delivered=false)
+             ORDER BY (state<>'pending') ASC, created_at
+             LIMIT $1`,
+            [limit],
         );
-        if (!rows[0]) return;
-        return { requestId: rows[0].request_id, requestKey: rows[0].request_key, leaseToken };
+        return rows.map((row) => row.request_id);
     }
 
     /** Renew the in-flight lease (the supervisor keeps a long run alive while it is in flight). */
-    async renewLease(requestId: string, leaseToken: string): Promise<boolean> {
+    async renewLease(requestId: string): Promise<boolean> {
         const { rowCount } = await this.pool.query(
             `UPDATE background_agent_jobs
-             SET lease_until=now()+$3::interval, heartbeat_at=now()
-             WHERE request_id=$1::uuid AND state='running' AND lease_token=$2::uuid`,
-            [requestId, leaseToken, LEASE_SQL(BACKGROUND_AGENT_LEASE.leaseMs)],
+             SET lease_until=now()+$2::interval, heartbeat_at=now()
+             WHERE request_id=$1::uuid AND state='running'`,
+            [requestId, LEASE_SQL(BACKGROUND_AGENT_LEASE.leaseMs)],
         );
         return (rowCount ?? 0) > 0;
     }
 
-    /** Release a claim without settling (the run was interrupted before any effect). */
-    async releaseLease(requestId: string, leaseToken: string): Promise<void> {
+    /** Release a claim without settling (backoff not yet due / interruption before any effect). */
+    async releaseLease(requestId: string): Promise<void> {
         await this.pool.query(
             `UPDATE background_agent_jobs
              SET state='pending', lease_token=NULL, lease_until=NULL, updated_at=now()
-             WHERE request_id=$1::uuid AND state='running' AND lease_token=$2::uuid`,
-            [requestId, leaseToken],
+             WHERE request_id=$1::uuid AND state='running'`,
+            [requestId],
         );
     }
 

@@ -28,6 +28,9 @@ import { SystemRoleService } from '../system-roles/system-role.service';
 import { SystemRoleAgentCall } from '../system-roles/system-role.agent-call';
 import { SystemRoleController } from '../system-roles/system-role.controller';
 import { ProjectChatController } from '../project-chat/project-chat.controller';
+import { BackgroundAgentController } from '../background-agent/controller';
+import { BackgroundAgentService } from '../background-agent/service';
+import { PgBackgroundAgentStore } from '../background-agent/pg-store';
 import { ChatPresenceController } from '../chat-activity/chat-presence.controller';
 import { ChatPresenceService } from '../chat-activity/chat-presence.service';
 import { ProjectChatService } from '../project-chat/project-chat.service';
@@ -166,6 +169,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         SystemRoleController,
         ChatPresenceController,
         ProjectChatController,
+        BackgroundAgentController,
         HelpController,
         DiscussionsController,
         CatalogReactionsController,
@@ -239,6 +243,12 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         SystemRoleService,
         ChatPresenceService,
         ProjectChatService,
+        {
+            provide: PgBackgroundAgentStore,
+            inject: [ModelsService],
+            useFactory: (models: ModelsService) => new PgBackgroundAgentStore(models.pool),
+        },
+        BackgroundAgentService,
         SystemRoleAgentCall,
         ProjectChatInferenceService,
         HelpService,

@@ -227,6 +227,21 @@ async function runChecks(
 }
 
 /**
+ * OQ-2 engine pin: the worker dispatches with empty options, so the validated autonomous-package
+ * engine (assertBackgroundAgentEngine) must be baked into the runtime the worker receives. The
+ * global opencode from PATH is never used by the server agent.
+ */
+export class PinnedEngineRuntime implements IAgentRuntime {
+    constructor(
+        private readonly inner: IAgentRuntime,
+        private readonly enginePath: string,
+    ) {}
+    run(input: IRuntimeInput, options?: IAgentRuntimeOptions): Promise<IRuntimeResult> {
+        return this.inner.run(input, { ...(options ?? {}), engine: this.enginePath });
+    }
+}
+
+/**
  * The default runtime (FR-305): drives a private opencode server on loopback for one completed
  * assistant turn, then executes the declared checks in root and reports their real outcomes.
  */
