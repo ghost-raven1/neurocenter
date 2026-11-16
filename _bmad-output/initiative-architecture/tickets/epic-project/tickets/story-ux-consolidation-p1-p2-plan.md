@@ -84,8 +84,13 @@ context:
   - P1-5 единые подписи операции подключения (словарь P0-1).
   - P1-6/item0 перенос ключа после импорта по умолчанию (без гейта флагом, OQ-1).
   - Предупреждение 8.18 (`nameUnverified`) сохранено внутри потока (RemoteConnectionModal).
-- [ ] P2-1…P2-4 (см. Intent) — по одному решению OQ на под-задачу (OQ-4/5 решения зафиксированы, реализация — отдельный запуск).
-- [ ] Каждая под-задача: тесты (frontend + backend для P2-3), tsc 0 новых, prettier, корневой сьют без деградации.
+- [x] **P2 — done, в main (ff-merge до d3f95ac4, 2026-11-16):**
+  - P2-1 (d6ebd228): панель «Статус подключения» на карточке модели (`ModelConnectionStatusPanel` + `useModelConnectionView`): общее подключение / мой ключ / проверка API / локальный провайдер OpenCode (условно) / план reindex (условно); каждая строка с next-step на существующий поток.
+  - P2-2: **закрыт P1-4** (проектный провайдер канон + глобальный fallback + UI-разъяснитель) — backend-вариант (один job-kind/сканер) намеренно не делался.
+  - P2-3 (2be5b268): event-driven авто-проверка — `model-auto-verification.ts` (idempotency `inFlight` Set, timeout 3 мин, fire-and-forget), хуки: после save remote-connection, PUT/DELETE my-access, передача OpenCode-ключа; результат — через существующие view (verify → state ready → socket-рефетч), нового фронтенд-кода 0.
+  - P2-4 (d3f95ac4): единый deep-link `/operations?operation=<id>&return=<path>` (`operationLinks.ts`) + кнопка «Вернуться в исходный раздел» в OperationsQueue; все 4 источника ссылок на одном формате.
+  - Тесты: frontend **421/421** (+27), catalog **379/379** (+10), tsc 0 (frontend + catalog), prettier clean (P2-3/P2-4 файлы).
+- [ ] Каждая под-задача: корневой сьют без деградации (final gate после 11.1).
 
 ### Acceptance
 - **Given** любая точка входа «подключить модель» **when** пользователь проходит цепочку **then** единый поток (P1-1), один словарь (P1-5), ключ в одном месте (P1-2), выбор цели персистится (P1-3).
@@ -131,3 +136,13 @@ cd services/catalog-service && npm test -- remote-connection   # P2-3
 - P1-5 (38e0fa33) + item0 (f97722c5): подписи + импорт-перенос по умолчанию.
 - Тесты: frontend full **394/394** (до: 338), catalog full **369/369** (+18 P1-3 backend), tsc 0 (frontend + catalog), prettier clean. 8.18-warning `nameUnverified` в потоке сохранён.
 - Осознанные границы: P2-2 backend-вариант («один job-kind/сканер») не делался — решение OQ-2 закрывается UI-разъяснителем + fallback, контракт job-kind не менялся; P1-6 deep-link/редиректы — вне скоупа.
+
+## Progress
+
+**2026-11-16 — P2 (все 4 пункта) в main (ff-merge до d3f95ac4, ветка nc-ux-p2, 3 коммита d6ebd228/2be5b268/d3f95ac4). Остаток тикета: корневой сьют (final gate после 11.1).**
+- P2-1 (d6ebd228): `ModelConnectionStatusPanel` на карточке remote-моделей (подменяет компактный ModelHosting) + `useModelConnectionView` (GET /:id/connection, main-only, AbortController + section-updates); строки: общее подключение / мой ключ (useProviderAccessStatus, лейблы P1-2) / проверка API (hosting-state, «Проверить подключение» → operate('check')) / локальный провайдер OpenCode (условно, статус из bridge.jobs) / план reindex (условно). ModelHosting.tsx разбит на чистый view + обёртку (ModelDetails без изменений, без двойного GET /hosting). +8 frontend-тестов.
+- P2-2: закрыт P1-4 (OQ-2 UI-разъяснитель + fallback); backend-вариант (один job-kind/сканер) намеренно не делался — контракт job-kind не менялся.
+- P2-3 (2be5b268): `model-auto-verification.ts` — `@Injectable() ModelAutoVerification.schedule(modelId, actor)`: idempotency через `inFlight` Set (слот в finally), fire-and-forget (не блокирует HTTP), AbortController 3 мин, claims «Главный админ» (иначе тихий пропуск), `withModelUsage({purpose:'verification'})`; хуки в контроллерах мутаций (не в сервисе — круг DI): remote-connection.controller (save), remote-provider.controller (PUT/DELETE my-access), opencode-personal-key/service.ts (передача ключа, 4-й опциональный параметр конструктора). Результат: verify → verificationSha256 → state ready → notifyModelCatalogChange → socket-рефетч существующих хуков; нового фронтенда 0. +10 catalog-тестов (включая идемпотентность в-полёте, fake-timer таймаут, wiring).
+- P2-4 (d3f95ac4): `operationLinks.ts` — единый конструктор deep-link `/operations?operation=<id>&return=<urlencoded path>` (operationId: `bridge-<jobId>` / `rag-reindex-<planId>` / `tool-build-<uuid>`, return = текущая локация на момент постройки ссылки); OperationsQueue: валидация `?return` (isApplicationPath) + кнопка «Вернуться в исходный раздел» (replace на чистый /operations → push returnTo); переключены: ProjectEmbeddingConnection, EmbeddingTarget (блокер inspection), CatalogRebuildStatus/catalogRebuildActions (3-й опциональный параметр returnTo — back-compat). +19 frontend-тестов.
+- Тесты: frontend **421/421** (60 файлов, было 394), catalog **379/379** (41 файл, было 369), tsc 0 (frontend + catalog), prettier clean на всех P2-файлах. Pre-existing: `format:check` в catalog-service падает на 21 файле вне P2 (не чинить).
+- Worktree nc-ux-p2 удалить после подтверждения мержа и push.
