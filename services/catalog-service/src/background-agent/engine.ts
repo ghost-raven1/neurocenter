@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { BACKGROUND_AGENT_OPENCODE_VERSION } from '../../../shared/background-agent.cjs';
+
+export { BACKGROUND_AGENT_OPENCODE_VERSION };
 
 /**
  * FR-305 (agt-07, OQ-2): the server agent executes the pinned OpenCode runtime from the
@@ -10,8 +13,10 @@ import path from 'node:path';
  * mcp/neurocenter-asset-sync/src/bridge/runtime-engine.ts). The global opencode from PATH is never
  * used: a missing or corrupt package is an explicit prerequisite failure at startup (I/O row 3:
  * «нет компонента → явная ошибка»), not a fallback.
+ *
+ * The version itself is re-exported from the shared contract (single source of truth for both the
+ * job payload audit column and the engine pin).
  */
-export const BACKGROUND_AGENT_OPENCODE_VERSION = '1.14.48';
 
 /** Startup prerequisite failure: the message is a fixed classifier (AD-O8), no paths or values. */
 export class BackgroundEngineError extends Error {}
