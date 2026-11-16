@@ -4,13 +4,16 @@ import { CloudOutlined, DatabaseOutlined, DesktopOutlined } from '@ant-design/ic
 import { Button, Space, Tag, Tooltip, Typography } from 'antd';
 import { ArchiveAssetButton } from '../AssetManagement/ArchiveAssetButton';
 import { eligibleEmbedding } from '../ProjectEmbedding/model';
+import type { useBridge } from '../McpBridge/hooks/useBridge';
 import {
     modelCapabilityLabels,
     modelLocationLabel,
     modelUsesApiConnection,
     unverifiedStatusLabel,
 } from './modelCatalogState';
-import { ModelHosting } from './ModelHosting';
+import { ModelHostingView } from './ModelHosting';
+import { ModelConnectionStatusPanel, type IConnectionStatusReindex } from './ModelConnectionStatusPanel';
+import { useModelHosting } from './hooks/useModelHosting';
 import type { ICatalogModel } from './interfaces';
 
 interface IProps {
@@ -37,6 +40,11 @@ interface IProps {
     chatUnavailableReason?: string;
     onSetupProvider?: () => void;
     onProviderAccess?: () => void;
+    /** Панель статуса подключения для удалённых моделей (8.19 P2-1). */
+    bridge?: ReturnType<typeof useBridge>;
+    projectId?: string;
+    reindex?: IConnectionStatusReindex;
+    personalAccess?: boolean;
     feedback?: ReactNode;
 }
 
@@ -65,10 +73,16 @@ export function ModelCard({
     chatUnavailableReason,
     onSetupProvider,
     onProviderAccess,
+    bridge,
+    projectId,
+    reindex,
+    personalAccess,
     feedback,
 }: IProps): JSX.Element {
     const remote = modelUsesApiConnection(model),
         deviceCodex = model.runtime === 'device-codex';
+    // Единый хостинг на карточку: и панель статуса, и компактный вид читают одно состояние (P2-1).
+    const hosting = useModelHosting(model, onHostingSettled);
     const assignable = projectSelected && canAssign,
         chat = model.capability !== 'embedding' && !!onChat;
     const connect = assignable && assigned && !!onConnect && eligibleEmbedding(model) && !model.archivedAt;
@@ -225,14 +239,29 @@ export function ModelCard({
                 {model.dimension && <span>{model.dimension} измерений</span>}
                 {model.archivedAt && <Tag>Убрана из общего каталога</Tag>}
             </div>
-            <ModelHosting
-                model={model}
-                canManage={canHost && !disabled && !model.archivedAt}
-                compact
-                onSettled={onHostingSettled}
-                onManage={onConfigure ?? onView}
-                onSetupAccess={onProviderAccess}
-            />
+            {remote ? (
+                <ModelConnectionStatusPanel
+                    model={model}
+                    canManage={canHost && !disabled && !model.archivedAt}
+                    personalAccess={personalAccess}
+                    hosting={hosting}
+                    onConfigure={onConfigure}
+                    onProviderAccess={onProviderAccess}
+                    onSetupProvider={onSetupProvider}
+                    bridge={bridge}
+                    projectId={projectId}
+                    reindex={reindex}
+                />
+            ) : (
+                <ModelHostingView
+                    model={model}
+                    canManage={canHost && !disabled && !model.archivedAt}
+                    state={hosting}
+                    compact
+                    onManage={onConfigure ?? onView}
+                    onSetupAccess={onProviderAccess}
+                />
+            )}
             {feedback}
             <div className="model-card__actions">
                 {primary && actions[primary]}

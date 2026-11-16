@@ -12,18 +12,27 @@ import { modelHostingLabels, unverifiedStatusLabel } from './modelCatalogState';
 import { useModelHosting } from './hooks/useModelHosting';
 import { modelUsesApiConnection } from './modelCatalogState';
 
-interface IProps {
+export type TModelHostingState = ReturnType<typeof useModelHosting>;
+
+interface IViewProps {
     model: ICatalogModel;
     canManage: boolean;
+    state: TModelHostingState;
     compact?: boolean;
     onManage?: () => void;
-    onSettled?: () => Promise<void>;
     onSetupAccess?: () => void;
 }
 
 /** Прогресс и содержательная проверка отделены от назначения модели проекту. */
-export function ModelHosting({ model, canManage, compact, onManage, onSettled, onSetupAccess }: IProps): JSX.Element {
-    const { hosting, loading, busy, error, refresh, operate } = useModelHosting(model, onSettled);
+export function ModelHostingView({
+    model,
+    canManage,
+    state,
+    compact,
+    onManage,
+    onSetupAccess,
+}: IViewProps): JSX.Element {
+    const { hosting, loading, busy, error, refresh, operate } = state;
     const operation = hosting?.operation;
     const remote = modelUsesApiConnection(model),
         deviceCodex = model.runtime === 'device-codex';
@@ -39,18 +48,18 @@ export function ModelHosting({ model, canManage, compact, onManage, onSettled, o
     const percent =
         typeof operation?.progress === 'number' ? Math.max(0, Math.min(100, operation.progress)) : undefined;
     if (compact) {
-        const state = hosting?.state;
+        const stateName = hosting?.state;
         const StatusIcon =
             loading || busy
                 ? LoadingOutlined
-                : state === 'ready'
+                : stateName === 'ready'
                   ? CheckCircleOutlined
-                  : state === 'missing' || state === 'stopped'
+                  : stateName === 'missing' || stateName === 'stopped'
                     ? ClockCircleOutlined
                     : ExclamationCircleOutlined;
         const message = error || (operation?.state === 'failed' && operation.message) || hosting?.message;
         return (
-            <div className={`model-runtime model-runtime_${state || 'unknown'}`}>
+            <div className={`model-runtime model-runtime_${stateName || 'unknown'}`}>
                 <div className="model-runtime__summary">
                     <span title={message || undefined}>
                         <StatusIcon aria-hidden="true" />
@@ -91,20 +100,24 @@ export function ModelHosting({ model, canManage, compact, onManage, onSettled, o
                 )}
                 {!error &&
                     operation?.state !== 'failed' &&
-                    (state === 'unavailable' || state === 'error') &&
+                    (stateName === 'unavailable' || stateName === 'error') &&
                     message && <div className="model-runtime__reason">{message}</div>}
-                {canManage && !busy && !remote && !deviceCodex && (state === 'missing' || state === 'stopped') && (
-                    <FeatureButton
-                        features={['model_hosting']}
-                        size="small"
-                        onClick={() => {
-                            void operate('start');
-                        }}
-                    >
-                        {state === 'missing' ? 'Подготовить модель' : 'Запустить'}
-                    </FeatureButton>
-                )}
-                {canManage && !busy && remote && state === 'stopped' && (
+                {canManage &&
+                    !busy &&
+                    !remote &&
+                    !deviceCodex &&
+                    (stateName === 'missing' || stateName === 'stopped') && (
+                        <FeatureButton
+                            features={['model_hosting']}
+                            size="small"
+                            onClick={() => {
+                                void operate('start');
+                            }}
+                        >
+                            {stateName === 'missing' ? 'Подготовить модель' : 'Запустить'}
+                        </FeatureButton>
+                    )}
+                {canManage && !busy && remote && stateName === 'stopped' && (
                     <FeatureButton
                         features={['model_hosting']}
                         size="small"
@@ -115,7 +128,7 @@ export function ModelHosting({ model, canManage, compact, onManage, onSettled, o
                         Проверить подключение
                     </FeatureButton>
                 )}
-                {canManage && !busy && !remote && !deviceCodex && state === 'error' && onManage && (
+                {canManage && !busy && !remote && !deviceCodex && stateName === 'error' && onManage && (
                     <FeatureButton features={['model_catalog']} size="small" onClick={onManage}>
                         Проверить подключение
                     </FeatureButton>
@@ -217,5 +230,29 @@ export function ModelHosting({ model, canManage, compact, onManage, onSettled, o
                 </Button>
             </Space>
         </Space>
+    );
+}
+
+interface IProps {
+    model: ICatalogModel;
+    canManage: boolean;
+    compact?: boolean;
+    onManage?: () => void;
+    onSettled?: () => Promise<void>;
+    onSetupAccess?: () => void;
+}
+
+/** Обёртка над useModelHosting для экранов, где состояние хостинга не нужен выше карточки. */
+export function ModelHosting({ model, canManage, compact, onManage, onSettled, onSetupAccess }: IProps): JSX.Element {
+    const state = useModelHosting(model, onSettled);
+    return (
+        <ModelHostingView
+            model={model}
+            canManage={canManage}
+            state={state}
+            compact={compact}
+            onManage={onManage}
+            onSetupAccess={onSetupAccess}
+        />
     );
 }

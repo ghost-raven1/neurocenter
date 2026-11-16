@@ -301,6 +301,51 @@
         margin-top: 8px;
     }
 }
+.model-connection-status {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid #edf1f5;
+    font-size: 12px;
+    &__row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 3px 0;
+    }
+    &__label {
+        flex-shrink: 0;
+        color: #617387;
+    }
+    &__value {
+        min-width: 0;
+        text-align: right;
+        overflow-wrap: anywhere;
+    }
+    &__hint {
+        color: #617387;
+    }
+    &__ok {
+        color: #237804;
+    }
+    &__error {
+        color: #a61d24;
+        overflow-wrap: anywhere;
+    }
+    &__action {
+        margin-left: 4px;
+    }
+    &__check {
+        margin-top: 8px;
+    }
+    &__plan-actions {
+        margin: 4px 0;
+    }
+    &__progress {
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+    }
+}
 .model-hosting {
     width: 100%;
     margin-bottom: 18px;

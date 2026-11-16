@@ -5,7 +5,21 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ModelCard } from '../ModelCard';
 import type { ICatalogModel } from '../interfaces';
 
-vi.mock('../ModelHosting', () => ({ ModelHosting: () => null }));
+vi.mock('../ModelHosting', () => ({ ModelHosting: () => null, ModelHostingView: () => null }));
+vi.mock('../hooks/useModelHosting', () => ({
+    useModelHosting: () => ({
+        hosting: null,
+        loading: false,
+        busy: false,
+        error: '',
+        refresh: async () => undefined,
+        operate: async () => undefined,
+    }),
+}));
+vi.mock('../hooks/useModelConnectionView', () => ({
+    useModelConnectionView: () => ({ view: null, loading: false, error: '' }),
+}));
+vi.mock('../../../core/socket/hooks/useSectionUpdates', () => ({ useSectionUpdates: () => undefined }));
 const model: ICatalogModel = {
     id: 'remote-model',
     name: 'Remote',

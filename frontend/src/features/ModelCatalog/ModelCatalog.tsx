@@ -17,6 +17,9 @@ import { useProjectEmbeddingSelection } from '../ProjectEmbedding/hooks/useProje
 import { embeddingTargetConnected } from '../ProjectEmbedding/connection';
 import { useProjectReindex } from '../ProjectEmbedding/hooks/useProjectReindex';
 import { ProjectReindexStatus } from '../ProjectEmbedding/ProjectReindexStatus';
+import { roleLevel } from '../UserBlock/roles';
+import { useSelector } from 'react-redux';
+import type { TRootState } from '../../store';
 import { modelCatalogApi } from './api';
 import { ModelCard } from './ModelCard';
 import { CatalogFeedback } from '../Discussions';
@@ -56,6 +59,9 @@ export function ModelCatalog({
     canChat = isMain,
 }: IModelCatalogProps): JSX.Element {
     const { scope, captureOwner } = useAuthRequestOwner();
+    const user = useSelector((state: TRootState) => state.userBlock.user);
+    // Тот же порог, что в «Мой доступ» (P1-2): статус личного ключа виден роли 2+.
+    const personalAccess = !!user && user.userRoles.includes(user.activeRole) && roleLevel(user.activeRole) >= 2;
     const { catalog, loading, error: loadError, refresh } = useModelCatalog(projectId);
     const embedding = useProjectEmbeddingSelection(projectId);
     const embeddingTarget = useEmbeddingTarget(projectId, embedding.selection?.target);
@@ -559,6 +565,16 @@ export function ModelCatalog({
                                     }
                                     onProviderAccess={() => setProviderAccess({ model })}
                                     onHostingSettled={refresh}
+                                    bridge={embeddingTarget.bridge}
+                                    projectId={projectId}
+                                    reindex={{
+                                        plan: reindex.plan,
+                                        busy: reindex.busy,
+                                        start: reindex.start,
+                                        retry: reindex.retry,
+                                        cancel: reindex.cancel,
+                                    }}
+                                    personalAccess={personalAccess}
                                     onChat={() => setChatId(model.id)}
                                     chatUnavailableReason={modelChatUnavailableReason(
                                         model,
