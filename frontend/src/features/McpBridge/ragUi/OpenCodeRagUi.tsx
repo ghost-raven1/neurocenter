@@ -20,6 +20,8 @@ import {
     ragUiPreferenceKey,
     type IRagUiPreference,
 } from './ragUiPreference';
+import { projectEmbeddingApi, type IProjectEmbeddingTarget } from '../../ProjectEmbedding/model';
+import type { TRagUiInstallation } from './ragUiState';
 import './OpenCodeRagUi.less';
 
 interface IProps {
@@ -27,10 +29,11 @@ interface IProps {
     projectId: string;
     canWrite: boolean;
     preferred?: IRagUiPreference;
+    persisted?: IProjectEmbeddingTarget | null;
 }
 
 /** Окно открывает установленный мост на выбранном компьютере; сайт не получает локальный URL. */
-export function OpenCodeRagUi({ bridge, projectId, canWrite, preferred }: IProps): JSX.Element {
+export function OpenCodeRagUi({ bridge, projectId, canWrite, preferred, persisted }: IProps): JSX.Element {
     const { scope: owner, captureOwner } = useAuthRequestOwner();
     const binding = bridge.device?.report.bindings?.find(
         (item) => item.projectId === projectId && item.valid !== false,
@@ -52,13 +55,20 @@ export function OpenCodeRagUi({ bridge, projectId, canWrite, preferred }: IProps
     if (selection.scope !== scope) setSelection({ scope, key: '' });
     const selected = selection.scope === scope ? selection.key : '';
     const usePreferred = !!preferred && !selected;
+    const persistedInstallation = persisted?.mode === 'computer' ? persisted.installation : undefined;
+    const matchesPersisted = (item: TRagUiInstallation): boolean =>
+        !!persistedInstallation &&
+        item.deviceId === persistedInstallation.deviceId &&
+        item.assetKind === persistedInstallation.assetKind &&
+        item.assetId === persistedInstallation.assetId &&
+        item.version === persistedInstallation.version &&
+        item.manifest === persistedInstallation.expectedManifest;
     const installation = selected
         ? choices.find((item) => ragUiInstallationKey(item) === selected)
         : preferred
           ? choices.find((item) => matchesRagUiPreference(item, preferred))
-          : choices.length === 1
-            ? choices[0]
-            : undefined;
+          : choices.find(matchesPersisted) || (choices.length === 1 ? choices[0] : undefined);
+    const fromPersisted = !selected && !preferred && !!installation && matchesPersisted(installation);
     const preferenceReason = usePreferred
         ? ragUiPreferenceBlocker(preferred!, owner, projectId, bridge.device, binding)
         : '';
@@ -107,7 +117,22 @@ export function OpenCodeRagUi({ bridge, projectId, canWrite, preferred }: IProps
             pending
         )
             return;
-        if (choices.some((item) => ragUiInstallationKey(item) === key)) setSelection({ scope, key });
+        const item = choices.find((value) => ragUiInstallationKey(value) === key);
+        if (!item) return;
+        setSelection({ scope, key });
+        // Селектор делит с подключением модели один персист проекта.
+        void projectEmbeddingApi
+            .saveTarget(projectId, {
+                mode: 'computer',
+                installation: {
+                    deviceId: item.deviceId,
+                    assetId: item.assetId,
+                    assetKind: item.assetKind,
+                    version: item.version,
+                    expectedManifest: item.manifest,
+                },
+            })
+            .catch(() => undefined);
     };
     return (
         <Space id={ragUiAnchorId(projectId)} direction="vertical" size={12} className="rag-ui">
@@ -124,6 +149,11 @@ export function OpenCodeRagUi({ bridge, projectId, canWrite, preferred }: IProps
                     {bridge.devices.find((item) => item.id === preferred.request.deviceId)?.name ||
                         preferred.request.deviceId}
                     .
+                </Typography.Text>
+            )}
+            {fromPersisted && (
+                <Typography.Text type="secondary">
+                    Подключение модели проекта использует выбранную установку.
                 </Typography.Text>
             )}
             {(choices.length > 1 || preferred || selected) && (

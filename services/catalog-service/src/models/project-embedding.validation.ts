@@ -5,6 +5,8 @@ import { validateModelId } from './model-validation';
 import type {
     IDeviceEmbeddingContext,
     IDeviceEmbeddingInput,
+    IProjectEmbeddingTarget,
+    IProjectEmbeddingTargetInstallation,
     IProjectEmbeddingUpdate,
 } from './project-embedding.interfaces';
 
@@ -68,6 +70,40 @@ export function projectEmbeddingUpdate(value: unknown): IProjectEmbeddingUpdate 
         expectedRevision: input.expectedRevision,
         modelId: input.modelId === null ? null : validateModelId(input.modelId),
     };
+}
+/** null сбрасывает персист; компьютерный режим требует полной стабильной идентичности установки. */
+export function projectEmbeddingTarget(value: unknown): IProjectEmbeddingTarget | null {
+    if (value === null) return null;
+    const target = body(value, ['installation', 'mode']);
+    if (!['server', 'computer'].includes(String(target.mode)))
+        throw new BadRequestException('Выберите область подключения модели: сервер или OpenCodeRAG на компьютере.');
+    if (target.mode === 'server') {
+        if (target.installation !== undefined)
+            throw new BadRequestException('Серверная база знаний не требует установки OpenCodeRAG.');
+        return { mode: 'server', installation: null };
+    }
+    const item = target.installation as Record<string, unknown> | undefined;
+    if (
+        !item ||
+        typeof item !== 'object' ||
+        Array.isArray(item) ||
+        Object.keys(item).sort().join(',') !== 'assetId,assetKind,deviceId,expectedManifest,version' ||
+        typeof item.deviceId !== 'string' ||
+        !item.deviceId ||
+        item.deviceId.length > 256 ||
+        /[\x00-\x20\x7f]/.test(item.deviceId) ||
+        typeof item.assetId !== 'string' ||
+        !item.assetId ||
+        item.assetId.length > 512 ||
+        /[\x00-\x20\x7f]/.test(item.assetId) ||
+        !['mcp', 'plugin'].includes(String(item.assetKind)) ||
+        !integer(item.version, 1) ||
+        !sha(item.expectedManifest)
+    )
+        throw new BadRequestException(
+            'Нужна точная установка OpenCodeRAG: компьютер, пакет, версия и проверенный снимок.',
+        );
+    return { mode: 'computer', installation: item as unknown as IProjectEmbeddingTargetInstallation };
 }
 export function deviceEmbeddingInput(
     value: unknown,

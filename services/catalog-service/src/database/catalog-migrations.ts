@@ -347,4 +347,9 @@ export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
         sql: PROJECT_CHAT_SYSTEM_CALL_SCHEMA_SQL + '\n' + PROJECT_CHAT_SYSTEM_CALL_SCHEMA_ASSERT_SQL,
     },
     { version: 59, name: 'agent-extension-kit', sql: AGENT_EXTENSION_SCHEMA_SQL },
+    {
+        version: 60,
+        name: 'project-embedding-target',
+        sql: 'ALTER TABLE project_embedding_settings ADD COLUMN IF NOT EXISTS embedding_target JSONB;',
+    },
 ];

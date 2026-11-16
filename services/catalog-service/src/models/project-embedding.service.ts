@@ -2,8 +2,12 @@ import { ConflictException, Injectable, type OnModuleInit } from '@nestjs/common
 import type { Request } from 'express';
 import { ModelsService } from './models.service';
 import { ProjectEmbeddingRepository } from './project-embedding.repository';
-import { projectEmbeddingUpdate } from './project-embedding.validation';
-import type { IConfiguredProjectEmbedding, IProjectEmbeddingSelection } from './project-embedding.interfaces';
+import { projectEmbeddingTarget, projectEmbeddingUpdate } from './project-embedding.validation';
+import type {
+    IConfiguredProjectEmbedding,
+    IProjectEmbeddingSelection,
+    IProjectEmbeddingTarget,
+} from './project-embedding.interfaces';
 import { ProjectRagCoordinator } from './project-rag-coordinator';
 
 /** Внутренние callers сначала проверяют права проекта; сервис не зависит от устройств и очереди. */
@@ -43,6 +47,15 @@ export class ProjectEmbeddingService implements OnModuleInit {
         return this.repository.clear(project.id, body.expectedRevision, actor.email, async (db) => {
             await this.models.resolveProject(request, project.id, 3);
             await this.coordinator.requireIdle(db, project.id);
+        });
+    }
+    /** Персист «Куда подключить модель» меняет только выбор цели, не запуская индексацию. */
+    async updateTarget(request: Request, id: string, input: unknown): Promise<IProjectEmbeddingTarget | null> {
+        const target = projectEmbeddingTarget(input);
+        const actor = await this.models.actor(request);
+        const project = await this.models.resolveProject(request, id, 2, actor);
+        return this.repository.saveTarget(project.id, target, actor.email, async (db) => {
+            await this.models.resolveProject(request, project.id, 2);
         });
     }
     /** Возврат старого контекста не перенаправляет запрос после CAS-смены модели или снятия назначения. */

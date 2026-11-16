@@ -2,7 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
-import type { IProjectEmbeddingSelection } from './project-embedding.interfaces';
+import type { IProjectEmbeddingSelection, IProjectEmbeddingTarget } from './project-embedding.interfaces';
 import { assertProjectEmbeddingModel, projectEmbeddingPin } from './project-embedding.validation';
 import { readPinnedModel } from './model-history';
 
@@ -15,6 +15,7 @@ interface IRow {
     active_generation: string;
     active_snapshot: string | null;
     data_revision: number | string;
+    embedding_target?: IProjectEmbeddingTarget | null;
 }
 type TQueryable = Pick<PoolClient, 'query'>;
 
@@ -43,6 +44,7 @@ export class ProjectEmbeddingRepository {
             activeGeneration: row?.active_generation ?? initialGeneration(projectId),
             activeSnapshot: row?.active_snapshot ?? null,
             dataRevision: Number(row?.data_revision ?? 0),
+            target: row?.embedding_target ?? null,
         };
         if (!row?.model_id) return { ...result, blocker: 'Выберите embedding-модель проекта.' };
         if (!current) return { ...result, blocker: 'Выбранная модель удалена из каталога. Выберите модель заново.' };
@@ -117,6 +119,54 @@ export class ProjectEmbeddingRepository {
             const result = await this.selection(client, projectId, saved.rows[0]);
             await client.query('COMMIT');
             return result;
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+    async readTarget(projectId: string): Promise<IProjectEmbeddingTarget | null> {
+        const { rows } = await this.pool.query<{ embedding_target: IProjectEmbeddingTarget | null }>(
+            'SELECT embedding_target FROM project_embedding_settings WHERE project_id=$1',
+            [projectId],
+        );
+        return rows[0]?.embedding_target ?? null;
+    }
+    /** Персист «Куда подключить модель» не трогает выбор модели и ревизию; null сбрасывает выбор. */
+    async saveTarget(
+        projectId: string,
+        target: IProjectEmbeddingTarget | null,
+        actor: string,
+        authorize: (db: TQueryable) => Promise<unknown>,
+    ): Promise<IProjectEmbeddingTarget | null> {
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            if (!(await client.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE', [projectId])).rows.length)
+                throw new NotFoundException('Проект удалён.');
+            await authorize(client);
+            const previous = (
+                await client.query<IRow>(
+                    'SELECT embedding_target FROM project_embedding_settings WHERE project_id=$1 FOR UPDATE',
+                    [projectId],
+                )
+            ).rows[0];
+            const saved = await client.query<IRow>(
+                `INSERT INTO project_embedding_settings(project_id,revision,embedding_target,updated_by,active_generation)
+                VALUES($1,1,$2::jsonb,$3,$4) ON CONFLICT(project_id) DO UPDATE SET
+                embedding_target=EXCLUDED.embedding_target,updated_by=EXCLUDED.updated_by,updated_at=now() RETURNING *`,
+                [projectId, JSON.stringify(target), actor, initialGeneration(projectId)],
+            );
+            await securityEvent(client, {
+                actor,
+                action: 'project.embedding.target.update',
+                resourceId: projectId,
+                before: previous?.embedding_target ?? null,
+                after: target,
+            });
+            await client.query('COMMIT');
+            return saved.rows[0]?.embedding_target ?? null;
         } catch (error) {
             await client.query('ROLLBACK').catch(() => undefined);
             throw error;

@@ -57,8 +57,8 @@ export function ModelCatalog({
 }: IModelCatalogProps): JSX.Element {
     const { scope, captureOwner } = useAuthRequestOwner();
     const { catalog, loading, error: loadError, refresh } = useModelCatalog(projectId);
-    const embeddingTarget = useEmbeddingTarget(projectId);
     const embedding = useProjectEmbeddingSelection(projectId);
+    const embeddingTarget = useEmbeddingTarget(projectId, embedding.selection?.target);
     const reindex = useProjectReindex(projectId, () => {
         void refresh();
         void embedding.refresh();

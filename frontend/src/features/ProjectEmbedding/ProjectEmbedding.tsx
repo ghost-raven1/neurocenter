@@ -54,7 +54,7 @@ export function ProjectEmbeddingContent({
     onPreferRagUi,
 }: IProps & { canManage: boolean; canConnect: boolean; isMain?: boolean }): JSX.Element {
     const state = useProjectEmbedding(projectId),
-        target = useEmbeddingTarget(projectId);
+        target = useEmbeddingTarget(projectId, state.selection?.target);
     const reindex = useProjectReindex(projectId, state.applied);
     const autoCycle = useRagAutoCycle(reindex);
     const { selection, catalog, modelId } = state;
