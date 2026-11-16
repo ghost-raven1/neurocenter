@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../../../common/utils/errorMessage';
+import type { IConnectRunResult } from '../../ModelCatalog/hooks/useConnectSequence';
 import type { ICatalogModel } from '../../ModelCatalog/interfaces';
 import { useAuthRequestOwner } from '../../UserBlock/hooks/useAuthRequestOwner';
 import { projectEmbeddingApi, sha } from '../model';
@@ -113,11 +114,20 @@ export function useProjectReindex(projectId: string | undefined, onApplied?: () 
             clearInterval(timer);
         };
     }, [plan?.id, plan?.state, plan?.local?.state, projectId, captureOwner, accept]);
-    const request = async (model: ICatalogModel, revision?: number, connection?: IReindexConnectionTarget) => {
+    /** Операция подключения шага «Готовность»: готовность подтверждает наблюдение за планом, а не ответ POST. */
+    const request = async (
+        model: ICatalogModel,
+        revision?: number,
+        connection?: IReindexConnectionTarget,
+    ): Promise<IConnectRunResult> => {
         const owns = captureOwner(),
             ticket = generation.current,
-            current = () => alive.current && ticket === generation.current && owns();
-        if (!projectId || !current() || lock.current || reindexPending(plan) || plan?.state === 'needs_input') return;
+            current = () => alive.current && ticket === generation.current && owns(),
+            fail = (error: string): IConnectRunResult => ({ ok: false, error });
+        if (!projectId || !current() || lock.current)
+            return fail('Не удалось подготовить подключение модели. Повторите попытку.');
+        if (reindexPending(plan)) return fail('Дождитесь завершения подключения модели и переиндексации.');
+        if (plan?.state === 'needs_input') return fail('Подтвердите или отмените подготовленную смену модели.');
         lock.current = true;
         version.current++;
         setBusy(true);
@@ -133,7 +143,7 @@ export function useProjectReindex(projectId: string | undefined, onApplied?: () 
                 JSON.stringify(previous?.connection) !== JSON.stringify(connection)
             ) {
                 const expectedRevision = revision ?? (await projectEmbeddingApi.read(projectId)).revision;
-                if (!current()) return;
+                if (!current()) return fail('Не удалось подготовить подключение модели. Повторите попытку.');
                 draft.current = {
                     modelId: model.id,
                     modelPin: model.modelPin,
@@ -142,7 +152,8 @@ export function useProjectReindex(projectId: string | undefined, onApplied?: () 
                     ...(connection ? { connection } : {}),
                 };
             }
-            if (!current() || !draft.current) return;
+            if (!current() || !draft.current)
+                return fail('Не удалось подготовить подключение модели. Повторите попытку.');
             const input = draft.current;
             const next = await projectReindexApi.create(projectId, {
                 expectedSelectionRevision: input.revision,
@@ -152,9 +163,11 @@ export function useProjectReindex(projectId: string | undefined, onApplied?: () 
                 ...(input.connection ? { connection: input.connection } : {}),
             });
             if (current()) accept(next);
+            return { ok: true };
         } catch (cause) {
-            if (current())
-                setError(errorMessage(cause, 'Не удалось подготовить смену модели. Повтор использует прежний intent.'));
+            const error = errorMessage(cause, 'Не удалось подготовить смену модели. Повтор использует прежний intent.');
+            if (current()) setError(error);
+            return { ok: false, error };
         } finally {
             if (current()) {
                 lock.current = false;

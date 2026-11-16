@@ -5,6 +5,8 @@ import { artifactTargets } from '../McpBridge/runtimeArtifacts';
 import type { useBridge } from '../McpBridge/hooks/useBridge';
 import type { ICatalogModel } from '../ModelCatalog/interfaces';
 import {
+    globalProviderFallback,
+    globalProviderInventory,
     providerKindForModel,
     providerModelCompatibilityReason,
     providerModelEligible,
@@ -119,6 +121,10 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
         canWrite: !writeReason && !supplyReason,
         writeReason: writeReason || supplyReason,
     });
+    // Проект → глобальный fallback: без проектной конфигурации эффективен глобальный провайдер из /start.
+    const globalInventory =
+        target.target && bridge.jobsReady ? globalProviderInventory(bridge.jobs, target.target.deviceId) : undefined;
+    const globalFallback = globalProviderFallback(operation.status, globalInventory);
     // Авто-готовность (P0-4): при открытии и canRead сразу читаем статус, тег не требует ручного клика.
     const autoChecked = useRef(false);
     useEffect(() => {
@@ -261,6 +267,7 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
                               ? 'Требуется локальная настройка'
                               : 'Готовность ещё не проверена'}
                     </Tag>
+                    {globalFallback && <Tag color="blue">глобальный</Tag>}
                     {operation.status && (
                         <Typography.Text type="secondary">
                             {operation.status.state === 'conflict'
@@ -270,6 +277,13 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
                                   : operation.status.state === 'unavailable'
                                     ? 'Локальная проверка недоступна. Проверьте мост и повторите.'
                                     : ''}
+                        </Typography.Text>
+                    )}
+                    {globalFallback && (
+                        <Typography.Text type="secondary">
+                            Проектной конфигурации нет: OpenCode использует глобальный провайдер «{globalFallback.id}»
+                            из шага «Провайдеры» подключения компьютера. Настройка в проекте создаёт каноническую
+                            проектную конфигурацию — она перекрывает глобальную.
                         </Typography.Text>
                     )}
                 </div>
@@ -402,8 +416,10 @@ export function ProviderSetupModal(props: IProviderSetupModalProps): JSX.Element
                     <Space direction="vertical" size={12} className="provider-setup__content">
                         {catalogProvider ? (
                             <Typography.Paragraph type="secondary">
-                                Карточка и серверное API общие. Здесь настраивается отдельный локальный провайдер
-                                OpenCode: ключ с сервера не переносится.
+                                Карточка и серверное API общие. Здесь настраивается проектный провайдер OpenCode —
+                                каноническая конфигурация папки проекта: ключ с сервера не переносится. Глобальные файлы
+                                компьютера (шаг «Провайдеры» в подключении) — отдельный источник: пока проектной
+                                конфигурации нет, OpenCode использует их, и проект помечается «глобальный».
                             </Typography.Paragraph>
                         ) : (
                             <Typography.Paragraph type="secondary">

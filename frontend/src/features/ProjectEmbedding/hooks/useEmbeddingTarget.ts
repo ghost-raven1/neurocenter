@@ -2,15 +2,20 @@ import { useAuthRequestOwner } from '../../UserBlock/hooks/useAuthRequestOwner';
 import { useBridge } from '../../McpBridge/hooks/useBridge';
 import { embeddingInstallations, pendingEmbeddingInspection } from '../connection';
 import { useEmbeddingInstallation } from './useEmbeddingInstallation';
-import { sha } from '../model';
+import { sha, projectEmbeddingApi, targetInstallationKey, type IProjectEmbeddingTarget } from '../model';
 import { uuid } from '../../McpBridge/operationHelpers';
 import type { IReindexConnectionTarget } from '../reindex';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSelector } from 'react-redux';
+import type { TRootState } from '../../../store';
+import { projectRoleLevel } from '../../UserBlock/roles';
 import type { TTargetBlocker } from './useEmbeddingTarget.interfaces';
 
 /** A model intent captures exactly the computer/installation visible to the user. */
-export function useEmbeddingTarget(projectId: string | undefined) {
-    const [mode, setMode] = useState<'server' | 'computer'>('computer');
+export function useEmbeddingTarget(projectId: string | undefined, persisted?: IProjectEmbeddingTarget | null) {
+    const user = useSelector((state: TRootState) => state.userBlock.user);
+    const [mode, setModeState] = useState<'server' | 'computer'>(() => persisted?.mode ?? 'computer');
+    const modeTouched = useRef(false);
     const bridge = useBridge(!!projectId),
         { scope } = useAuthRequestOwner(),
         device = bridge.device;
@@ -21,10 +26,28 @@ export function useEmbeddingTarget(projectId: string | undefined) {
           )
         : [];
     const ready = bridge.devicesReady && bridge.jobsReady && bridge.installationsReady;
+    const persistedInstallation =
+        persisted?.mode === 'computer' && persisted.installation ? persisted.installation : undefined;
+    // Персист проекта задаёт компьютер, на котором ждёт модель; выбор глобального моста подгоняется один раз.
+    const wantedDeviceId = mode === 'computer' && ready && persistedInstallation?.deviceId;
+    useEffect(() => {
+        if (!wantedDeviceId || device?.id === wantedDeviceId) return;
+        if (!bridge.devices.some((item) => item.id === wantedDeviceId)) return;
+        void bridge.choose(wantedDeviceId);
+    }, [wantedDeviceId, device?.id, bridge.devices, bridge]);
+    // Непрочитанный серверный персист догоняет локальный режим, пока пользователь не тронул выбор.
+    useEffect(() => {
+        if (!modeTouched.current && persisted && persisted.mode !== mode) setModeState(persisted.mode);
+    }, [persisted, mode]);
+    const setMode = (next: 'server' | 'computer'): void => {
+        modeTouched.current = true;
+        setModeState(next);
+    };
     const installation = useEmbeddingInstallation(
         JSON.stringify([scope, projectId, device?.id, device?.report.root, binding?.bindingId, binding?.instanceId]),
         choices,
         ready,
+        persistedInstallation && targetInstallationKey(persistedInstallation),
     );
     const item = installation.item;
     const inspection =
@@ -73,6 +96,39 @@ export function useEmbeddingTarget(projectId: string | undefined) {
                   expectedInstanceId: binding.instanceId!,
               }
             : undefined;
+    // Селектор каталога, RAG-вкладки и OpenCodeRAG читают один серверный персист проекта.
+    const canPersist = !!projectId && projectRoleLevel(user, projectId) >= 2;
+    const payload: IProjectEmbeddingTarget | null =
+        mode === 'server'
+            ? { mode: 'server', installation: null }
+            : value
+              ? {
+                    mode: 'computer',
+                    installation: {
+                        deviceId: value.deviceId,
+                        assetId: value.assetId,
+                        assetKind: value.assetKind,
+                        version: value.version,
+                        expectedManifest: value.expectedManifest,
+                    },
+                }
+              : null;
+    const written = useRef<string | undefined>(undefined);
+    const payloadKey = JSON.stringify(payload);
+    // Сброс перлиста пишется только при определённом состоянии; офлайн-мост и пересборка не затирают выбор.
+    const resettable = mode === 'server' || !!value || ['binding', 'installation', 'selection'].includes(blocker ?? '');
+    useEffect(() => {
+        if (!projectId || !canPersist || !ready || bridge.error || persisted === undefined || !resettable) return;
+        if (written.current === payloadKey) return;
+        if (JSON.stringify(persisted) === payloadKey) {
+            written.current = payloadKey;
+            return;
+        }
+        written.current = payloadKey;
+        void projectEmbeddingApi.saveTarget(projectId, payload).catch(() => {
+            written.current = undefined;
+        });
+    }, [projectId, canPersist, ready, bridge.error, persisted, resettable, payloadKey, payload]);
     return {
         projectId,
         bridge,

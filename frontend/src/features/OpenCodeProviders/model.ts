@@ -1,3 +1,9 @@
+import {
+    normalizeGlobalProvidersResult,
+    OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
+    type IGlobalProvider,
+    type IOpenCodeGlobalProvidersInventory,
+} from '@neurocenter/opencode-local-providers';
 import type { TProviderReport } from './model.interfaces';
 import type { ICatalogModel } from '../ModelCatalog/interfaces';
 import { catalogInferenceModelReady } from '../ModelCatalog/availability';
@@ -226,4 +232,39 @@ export function latestProviderStatus(
         return;
     return providerReport(job, { ...selection, kind: 'get-opencode-provider-status', requestKey: job.id }) as
         OpenCodeProviderStatus | undefined;
+}
+/** Latest confirmed global inventory from the already-loaded bridge queue; never dispatches a new job. */
+export function globalProviderInventory(
+    jobs: IBridgeJob[],
+    deviceId: string,
+): IOpenCodeGlobalProvidersInventory | undefined {
+    const row = jobs
+        .filter(
+            (item) =>
+                item.deviceId === deviceId &&
+                item.kind === OPENCODE_GLOBAL_PROVIDERS_READ_JOB &&
+                item.state === 'succeeded',
+        )
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
+    if (!row?.result) return undefined;
+    try {
+        const result = normalizeGlobalProvidersResult(row.result, {
+            deviceId,
+            jobId: row.id,
+            kind: OPENCODE_GLOBAL_PROVIDERS_READ_JOB,
+        });
+        return (result.status === 'checked' || result.status === 'partial') && 'inventory' in result
+            ? result.inventory
+            : undefined;
+    } catch {
+        return undefined;
+    }
+}
+/** Project → global fallback: only when the project folder has no configuration of its own. */
+export function globalProviderFallback(
+    status: Pick<OpenCodeProviderStatus, 'state'> | undefined,
+    inventory: IOpenCodeGlobalProvidersInventory | undefined,
+): IGlobalProvider | undefined {
+    if (!status || status.state !== 'missing' || !inventory) return undefined;
+    return inventory.providers.find((row) => row.enabled && row.hasConfiguration);
 }

@@ -43,43 +43,55 @@ function PersonalProviderAccess({ modelId }: { modelId: string }): JSX.Element {
                     {view.authMode === 'none' ? (
                         <Typography.Paragraph type="secondary">Этому API ключ не отправляется.</Typography.Paragraph>
                     ) : (
-                        <>
-                            <Typography.Paragraph type="secondary">
-                                {view.authMode === 'required'
-                                    ? 'Для запросов используется только ваш API-ключ.'
-                                    : 'Ключ необязателен: без него запрос отправляется анонимно.'}
-                            </Typography.Paragraph>
-                            {!view.canStoreKey && (
-                                <Alert
-                                    showIcon
-                                    type="warning"
-                                    message="Хранилище личных ключей не настроено. Обратитесь к администратору."
+                        <div className="remote-provider-access__options">
+                            <section className="remote-provider-access__option" aria-label="Личный ключ">
+                                <Typography.Text strong>Личный ключ</Typography.Text>
+                                <Typography.Paragraph type="secondary">
+                                    {view.authMode === 'required'
+                                        ? 'Для запросов используется только ваш API-ключ.'
+                                        : 'Ключ необязателен: без него запрос отправляется анонимно.'}
+                                </Typography.Paragraph>
+                                {!view.canStoreKey && (
+                                    <Alert
+                                        showIcon
+                                        type="warning"
+                                        message="Хранилище личных ключей не настроено. Обратитесь к администратору."
+                                    />
+                                )}
+                                <label htmlFor={`personal-provider-key-${modelId}`}>Мой API-ключ</label>
+                                <Input.Password
+                                    id={`personal-provider-key-${modelId}`}
+                                    value={value.secret}
+                                    autoComplete="new-password"
+                                    disabled={value.busy || (!!pending && pending.action === 'delete')}
+                                    placeholder={view.hasKey ? 'Введите новый ключ для замены' : 'Введите свой ключ'}
+                                    onChange={(event) => value.setSecret(event.target.value)}
                                 />
-                            )}
-                            <label htmlFor={`personal-provider-key-${modelId}`}>Мой API-ключ</label>
-                            <Input.Password
-                                id={`personal-provider-key-${modelId}`}
-                                value={value.secret}
-                                autoComplete="new-password"
-                                disabled={value.busy || (!!pending && pending.action === 'delete')}
-                                placeholder={view.hasKey ? 'Введите новый ключ для замены' : 'Введите свой ключ'}
-                                onChange={(event) => value.setSecret(event.target.value)}
-                            />
-                        </>
+                            </section>
+                            <section className="remote-provider-access__option" aria-label="Перенос с компьютера">
+                                <Typography.Text strong>Перенос с компьютера</Typography.Text>
+                                <LocalKeyTransfer
+                                    view={view}
+                                    manualPending={!!pending}
+                                    busy={value.busy}
+                                    onUpdated={value.read}
+                                />
+                            </section>
+                        </div>
                     )}
                     {view.legacySharedKeyRetained && (
-                        <details>
-                            <summary>Прежняя настройка</summary>
-                            <Typography.Text type="secondary">
+                        <section className="remote-provider-access__option" aria-label="Старый общий ключ">
+                            <Space size={8}>
+                                <Typography.Text strong>Старый общий ключ</Typography.Text>
+                                <Tag>legacy</Tag>
+                            </Space>
+                            <Typography.Paragraph type="secondary">
                                 Общий ключ прежней установки сохранён в истории. Новые запросы используют только личный
                                 доступ.
-                            </Typography.Text>
-                        </details>
+                            </Typography.Paragraph>
+                        </section>
                     )}
                 </>
-            )}
-            {view && view.authMode !== 'none' && (
-                <LocalKeyTransfer view={view} manualPending={!!pending} busy={value.busy} onUpdated={value.read} />
             )}
             <Space wrap>
                 {pending ? (

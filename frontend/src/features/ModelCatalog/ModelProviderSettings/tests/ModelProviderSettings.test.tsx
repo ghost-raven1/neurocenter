@@ -9,7 +9,7 @@ import type { IEvaluatedFeatureFlags } from '../../../FeatureFlags/interfaces';
 import type { ICatalogModel } from '../../interfaces';
 import type { IPersonalProviderView } from '../../../RemoteProviderAccess/model';
 
-const boundary = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), receipt: vi.fn(), role: 'Разработчик' }));
+const boundary = vi.hoisted(() => ({ read: vi.fn(), role: 'Разработчик' }));
 vi.mock('../../../RemoteProviderAccess/api', () => ({ personalProviderApi: boundary }));
 vi.mock('react-redux', () => ({
     useSelector: (select: (state: unknown) => unknown) =>
@@ -25,11 +25,7 @@ vi.mock('react-redux', () => ({
             },
         }),
 }));
-vi.mock('../../../UserBlock/hooks/useAuthRequestOwner', () => {
-    const captureOwner = () => () => true;
-    return { useAuthRequestOwner: () => ({ scope: 'owner', captureOwner }) };
-});
-vi.mock('../../../../core/api', () => ({ baseApi: { defaults: { baseURL: 'https://neurocenter.example.test' } } }));
+
 const model: ICatalogModel = {
     id: 'remote-model',
     name: 'Remote',
@@ -59,14 +55,12 @@ const access: IPersonalProviderView = {
 let root: Root;
 let container: HTMLDivElement;
 const configure = vi.fn();
+const openAccess = vi.fn();
 beforeEach(() => {
     vi.clearAllMocks();
     boundary.role = 'Разработчик';
     boundary.read.mockResolvedValue(access);
-    boundary.receipt.mockResolvedValue(null);
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-    vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-4111-8111-111111111111');
-    localStorage.clear();
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
@@ -74,7 +68,6 @@ beforeEach(() => {
 afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
-    vi.restoreAllMocks();
     vi.unstubAllGlobals();
 });
 async function render(canManage = false, enabled = true): Promise<void> {
@@ -93,7 +86,13 @@ async function render(canManage = false, enabled = true): Promise<void> {
             <FeatureAvailabilityContext.Provider
                 value={{ data, loading: false, error: null, refresh: async () => undefined }}
             >
-                <ModelProviderSettings model={model} canManage={canManage} busy={false} onConfigure={configure} />
+                <ModelProviderSettings
+                    model={model}
+                    canManage={canManage}
+                    busy={false}
+                    onConfigure={configure}
+                    onProviderAccess={openAccess}
+                />
             </FeatureAvailabilityContext.Provider>,
         ),
     );
@@ -106,79 +105,49 @@ async function click(label: string): Promise<void> {
     expect(target, label).toBeDefined();
     await act(async () => target!.click());
 }
-async function enterSecret(secret: string): Promise<void> {
-    const input = container.querySelector<HTMLInputElement>('input');
-    expect(input).not.toBeNull();
-    await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, secret);
-        input!.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-}
-it('opens personal access read-only for a member and separates administrator settings', async () => {
+it('показывает read-only статус и единственное вход «Мой доступ» (без inline-ключа)', async () => {
     await render();
     expect(boundary.read).toHaveBeenCalledWith(model.id, expect.any(AbortSignal));
-    expect(container.textContent).toContain(access.providerUrl);
+    expect(container.querySelector('input')).toBeNull();
+    expect(container.textContent).toContain('Нужен ваш API-ключ');
     expect(button('Общие настройки провайдера')).toBeUndefined();
-    expect(boundary.write).not.toHaveBeenCalled();
+    await click('Мой доступ');
+    expect(openAccess).toHaveBeenCalledOnce();
     expect(configure).not.toHaveBeenCalled();
+});
+it('показывает статус сохранённого личного ключа', async () => {
+    boundary.read.mockResolvedValue({ ...access, hasKey: true });
+    await render();
+    expect(container.textContent).toContain('Личный ключ сохранён');
+});
+it('главный администратор сохраняет доступ к общим настройкам рядом с входом в «Мой доступ»', async () => {
     boundary.role = 'Главный админ';
     await render(true);
+    expect(button('Мой доступ')).toBeDefined();
     await click('Общие настройки провайдера');
     expect(configure).toHaveBeenCalledOnce();
-    expect(boundary.write).not.toHaveBeenCalled();
+    expect(openAccess).not.toHaveBeenCalled();
 });
-it('does not expose personal credential controls to an observer', async () => {
+it('наблюдателю не доступны ни статус, ни вход в «Мой доступ»', async () => {
     boundary.role = 'Наблюдатель';
     await render();
     expect(container.querySelector('input')).toBeNull();
     expect(boundary.read).not.toHaveBeenCalled();
-    expect(boundary.write).not.toHaveBeenCalled();
+    expect(button('Мой доступ')).toBeUndefined();
 });
-it('explains unavailable key storage and prevents saving', async () => {
-    boundary.read.mockResolvedValue({ ...access, canStoreKey: false });
-    await render();
-    await enterSecret('private-secret');
-    expect(container.textContent).toContain('Хранилище личных ключей не настроено');
-    expect(button('Сохранить мой ключ')?.disabled).toBe(true);
-    expect(boundary.write).not.toHaveBeenCalled();
-});
-it('offers a read retry after a missing endpoint and never configures it automatically', async () => {
+it('ошибка чтения статуса не показывает контролы ключа', async () => {
     boundary.read.mockRejectedValueOnce({
         response: { status: 404, data: { message: 'Адрес провайдера не настроен' } },
     });
     await render(true);
     expect(container.querySelector('input')).toBeNull();
-    expect(button('Обновить сведения')).toBeDefined();
-    await click('Обновить сведения');
-    expect(container.textContent).toContain(access.providerUrl);
+    expect(container.textContent).toContain('Не удалось проверить личный доступ');
+    expect(button('Мой доступ')).toBeDefined();
     expect(configure).not.toHaveBeenCalled();
-    expect(boundary.write).not.toHaveBeenCalled();
 });
-it('preserves entered key after a write failure without persisting the secret', async () => {
-    boundary.write.mockRejectedValueOnce(new Error('Connection lost'));
-    await render();
-    await enterSecret('private-secret');
-    await click('Сохранить мой ключ');
-    expect(boundary.write).toHaveBeenCalledWith(
-        model.id,
-        expect.objectContaining({ action: 'save' }),
-        'private-secret',
-        expect.any(AbortSignal),
-    );
-    expect(container.querySelector<HTMLInputElement>('input')?.value).toBe('private-secret');
-    const persisted = Object.keys(localStorage)
-        .map((key) => localStorage.getItem(key))
-        .join('');
-    expect(persisted).not.toContain('private-secret');
-    expect(button('Проверить сохранение')).toBeDefined();
-});
-it('keeps recipient information readable with the flag off while disabling key writes', async () => {
-    boundary.role = 'Главный админ';
+it('с выключенным флагом статус не читается и вход скрыт', async () => {
     await render(true, false);
-    expect(button('Общие настройки провайдера')?.disabled).toBe(false);
-    expect(boundary.read).toHaveBeenCalledOnce();
-    expect(container.textContent).toContain(access.providerUrl);
-    await enterSecret('private-secret');
-    expect(button('Сохранить мой ключ')?.disabled).toBe(true);
-    expect(boundary.write).not.toHaveBeenCalled();
+    expect(boundary.read).not.toHaveBeenCalled();
+    expect(button('Мой доступ')).toBeUndefined();
+    expect(button('Общие настройки провайдера')).toBeDefined();
 });

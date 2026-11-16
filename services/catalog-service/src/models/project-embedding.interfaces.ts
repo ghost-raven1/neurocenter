@@ -5,6 +5,19 @@ export interface IProjectEmbeddingProfile {
     model: string;
     dimension: number;
 }
+/** Стабильная идентичность установки OpenCodeRAG; волатильные binding/instance не персистируются. */
+export interface IProjectEmbeddingTargetInstallation {
+    deviceId: string;
+    assetId: string;
+    assetKind: 'mcp' | 'plugin';
+    version: number;
+    expectedManifest: string;
+}
+/** Персист «Куда подключить модель», общий для команды; не содержит ключ и локальные пути. */
+export interface IProjectEmbeddingTarget {
+    mode: 'server' | 'computer';
+    installation: IProjectEmbeddingTargetInstallation | null;
+}
 /** Выбор проекта не содержит адрес runtime, ключ или локальные пути. */
 export interface IProjectEmbeddingSelection {
     projectId: string;
@@ -17,6 +30,7 @@ export interface IProjectEmbeddingSelection {
     activeSnapshot: string | null;
     dataRevision: number;
     blocker?: string;
+    target?: IProjectEmbeddingTarget | null;
 }
 /** Каталог — единственный владелец указателя; в RAG DB нет конкурирующего active head. */
 export interface IProjectRagContext {

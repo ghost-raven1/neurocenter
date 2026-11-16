@@ -8,11 +8,18 @@ interface ISelection {
     item?: IBridgeInstallation;
 }
 
-/** Единственный пакет закрепляется в текущей папке; соседние установки не меняют уже выбранное действие. */
-export function useEmbeddingInstallation(scope: string, choices: IBridgeInstallation[], ready: boolean) {
+/** Единственный пакет закрепляется в текущей папке; персист проекта имеет приоритет над соседними установками. */
+export function useEmbeddingInstallation(
+    scope: string,
+    choices: IBridgeInstallation[],
+    ready: boolean,
+    persistedKey?: string,
+) {
     const sole = ready && choices.length === 1 ? choices[0] : undefined;
-    const [saved, setSaved] = useState<ISelection>(() => ({ scope, item: sole }));
-    let selection = saved.scope === scope ? saved : { scope, item: sole };
+    const seed = (): IBridgeInstallation | undefined =>
+        (persistedKey && choices.find((item) => embeddingInstallationKey(item) === persistedKey)) || sole;
+    const [saved, setSaved] = useState<ISelection>(() => ({ scope, item: seed() }));
+    let selection = saved.scope === scope ? saved : { scope, item: seed() };
     if (!selection.item && sole) selection = { scope, item: sole };
     // Корректировка собственного state до дочернего render сохраняет его request key при изменении списка.
     if (selection !== saved) setSaved(selection);

@@ -14,6 +14,7 @@ import { projectRagCatalogUrl, projectRagSetupUrl } from '../projectNavigation';
 import { ragSummaryState } from './ragSummaryState';
 import { projectReadUnavailable } from '../projectReadError';
 import { ProjectEmbedding } from '../../../features/ProjectEmbedding/ProjectEmbedding';
+import { projectEmbeddingApi, type IProjectEmbeddingTarget } from '../../../features/ProjectEmbedding/model';
 import { useAuthRequestOwner } from '../../../features/UserBlock/hooks/useAuthRequestOwner';
 import { ragUiPreferenceKey, type IRagUiPreference } from '../../../features/McpBridge/ragUi/ragUiPreference';
 import './RagTab.less';
@@ -24,6 +25,7 @@ const SemanticRag: FC<{ projectKey: string }> = ({ projectKey }) => {
     const [summary, setSummary] = useState<IRagSummary | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [persistedTarget, setPersistedTarget] = useState<IProjectEmbeddingTarget | null | undefined>(undefined);
     const generation = useRef(0);
     const user = useSelector((state: TRootState) => state.userBlock.user);
     const canWrite = projectRoleLevel(user, projectKey) >= 2;
@@ -60,6 +62,13 @@ const SemanticRag: FC<{ projectKey: string }> = ({ projectKey }) => {
             owns = captureOwner();
         const current = (): boolean => request === generation.current && owns();
         setLoading(true);
+        // Персист «Куда подключить модель» обновляется вместе со сводкой для блока OpenCodeRAG.
+        void projectEmbeddingApi
+            .read(projectKey)
+            .then((value) => {
+                if (current()) setPersistedTarget(value.target ?? null);
+            })
+            .catch(() => undefined);
         bffApi
             .getRagSummary(projectKey)
             .then((value) => {
@@ -221,6 +230,7 @@ const SemanticRag: FC<{ projectKey: string }> = ({ projectKey }) => {
                     serverReady={serverState?.verified}
                     connection
                     preferred={preferred}
+                    persistedTarget={persistedTarget}
                 />
                 <details className="project-rag__help-details">
                     <summary>О синхронизации и восстановлении</summary>

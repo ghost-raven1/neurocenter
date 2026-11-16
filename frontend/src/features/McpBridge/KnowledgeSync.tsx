@@ -18,6 +18,7 @@ import { durableJournalOwner } from '../UserBlock/durableJournalOwner';
 import { baseApi } from '../../core/api';
 import { projectBindingUrl } from '../../modules/Projects/projectNavigation';
 import type { IRagUiPreference } from './ragUi/ragUiPreference';
+import type { IProjectEmbeddingTarget } from '../ProjectEmbedding/model';
 
 /** Синхронизация с локальной LanceDB выполняется привязанным MCP, не процессом сервера. */
 export const KnowledgeSync: FC<{
@@ -26,7 +27,8 @@ export const KnowledgeSync: FC<{
     connection?: boolean;
     serverReady?: boolean;
     preferred?: IRagUiPreference;
-}> = ({ projectId, canWrite, connection, serverReady, preferred }) => {
+    persistedTarget?: IProjectEmbeddingTarget | null;
+}> = ({ projectId, canWrite, connection, serverReady, preferred, persistedTarget }) => {
     const { scope: ownerScope, captureOwner } = useAuthRequestOwner();
     const bridge = useBridge();
     const user = useSelector((state: TRootState) => state.userBlock.user);
@@ -340,7 +342,13 @@ export const KnowledgeSync: FC<{
             )}
             <details>
                 <summary>Дополнительные инструменты OpenCodeRAG</summary>
-                <OpenCodeRagUi bridge={bridge} projectId={projectId} canWrite={canWrite} preferred={preferred} />
+                <OpenCodeRagUi
+                    bridge={bridge}
+                    projectId={projectId}
+                    canWrite={canWrite}
+                    preferred={preferred}
+                    persisted={persistedTarget}
+                />
             </details>
             {bridge.device && bridgeError && !bridgeOperationBlocker(bridge.device) && (
                 <Alert

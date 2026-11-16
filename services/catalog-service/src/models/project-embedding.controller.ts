@@ -12,4 +12,8 @@ export class ProjectEmbeddingController {
     @Patch(':id/embedding') update(@Req() req: Request, @Param('id') id: string, @Body() input: unknown) {
         return this.embedding.update(req, id, input);
     }
+    /** Персист «Куда подключить модель» общий для команды; чтение идёт в составе GET /embedding. */
+    @Patch(':id/embedding/target') updateTarget(@Req() req: Request, @Param('id') id: string, @Body() input: unknown) {
+        return this.embedding.updateTarget(req, id, input);
+    }
 }

@@ -13,7 +13,24 @@ export interface IProjectEmbedding {
     activeGeneration: string;
     activeSnapshot: string | null;
     dataRevision: number;
+    target?: IProjectEmbeddingTarget | null;
 }
+/** Стабильная идентичность установки OpenCodeRAG; binding/instance не персистируются. */
+export interface IProjectEmbeddingTargetInstallation {
+    deviceId: string;
+    assetId: string;
+    assetKind: 'mcp' | 'plugin';
+    version: number;
+    expectedManifest: string;
+}
+/** Персист «Куда подключить модель», общий для команды. */
+export interface IProjectEmbeddingTarget {
+    mode: 'server' | 'computer';
+    installation: IProjectEmbeddingTargetInstallation | null;
+}
+/** Ключ совпадает с embeddingInstallationKey: kind, id, версия и проверенный снимок. */
+export const targetInstallationKey = (installation: IProjectEmbeddingTargetInstallation): string =>
+    JSON.stringify([installation.assetKind, installation.assetId, installation.version, installation.expectedManifest]);
 export const sha = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export const eligibleEmbedding = (model: ICatalogModel, dimension?: number): boolean =>
     model.capability === 'embedding' &&
@@ -47,6 +64,36 @@ export function selectedEmbeddingMatches(
     );
 }
 
+const incompleteTarget = (): never => {
+    throw new Error('Сервер вернул неполный выбор подключения. Обновите сведения.');
+};
+/** Неполный персист не становится управляющим состоянием всех трёх селекторов. */
+export function requireProjectEmbeddingTarget(value: unknown): IProjectEmbeddingTarget | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== 'object' || Array.isArray(value)) incompleteTarget();
+    const target = value as { mode?: unknown; installation?: unknown };
+    if (target.mode === 'server') {
+        if (target.installation !== undefined && target.installation !== null) incompleteTarget();
+        return { mode: 'server', installation: null };
+    }
+    if (target.mode !== 'computer') incompleteTarget();
+    const item = target.installation as Record<string, unknown> | undefined;
+    if (
+        !item ||
+        typeof item !== 'object' ||
+        Array.isArray(item) ||
+        typeof item.deviceId !== 'string' ||
+        !item.deviceId ||
+        typeof item.assetId !== 'string' ||
+        !item.assetId ||
+        (item.assetKind !== 'mcp' && item.assetKind !== 'plugin') ||
+        !Number.isSafeInteger(item.version) ||
+        Number(item.version) < 1 ||
+        !sha(item.expectedManifest)
+    )
+        incompleteTarget();
+    return { mode: 'computer', installation: item as unknown as IProjectEmbeddingTargetInstallation };
+}
 /** Неполный ответ не подменяет подтверждённый выбор пустой моделью. */
 export function requireProjectEmbedding(value: IProjectEmbedding, projectId: string): IProjectEmbedding {
     if (
@@ -85,6 +132,7 @@ export function requireProjectEmbedding(value: IProjectEmbedding, projectId: str
     ) {
         throw new Error('Сервер вернул неполный выбор модели. Обновите сведения.');
     }
+    if (value.target !== undefined) requireProjectEmbeddingTarget(value.target);
     return value;
 }
 /** Повторное закрепление той же модели исправляет устаревший pin; очистка снимает удалённую модель. */
@@ -102,6 +150,11 @@ export const projectEmbeddingApi = {
                 modelId,
             })
             .then((response) => requireProjectEmbedding(response.data, id)),
+    /** Персист «Куда подключить модель»; null сбрасывает выбор установки. */
+    saveTarget: (id: string, target: IProjectEmbeddingTarget | null): Promise<IProjectEmbeddingTarget | null> =>
+        api
+            .patch<unknown>(`/api/projects/${encodeURIComponent(id)}/embedding/target`, target)
+            .then((response) => requireProjectEmbeddingTarget(response.data)),
 };
 export function sameEmbeddingProfile(left: IRagIndexProfile, right: IRagIndexProfile): boolean {
     return left.provider === right.provider && left.model === right.model && left.dimension === right.dimension;
