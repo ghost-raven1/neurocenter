@@ -2,8 +2,10 @@ import { useEmbeddingTarget } from './hooks/useEmbeddingTarget';
 export { useEmbeddingTarget } from './hooks/useEmbeddingTarget';
 
 import { Alert, Button, Select, Space, Typography } from 'antd';
+import { useLocation } from 'react-router-dom';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { projectBindingUrl, projectRagCatalogUrl } from '../../modules/Projects/projectNavigation';
+import { bridgeJobOperationId, operationsDeepLink } from '../../modules/Operations/operationLinks';
 
 import { embeddingInstallationKey } from './hooks/useEmbeddingInstallation';
 
@@ -20,6 +22,8 @@ export function EmbeddingTargetFields({
         value: embeddingInstallationKey(value),
         label: `${value.name} · ${value.assetKind === 'mcp' ? 'MCP' : 'плагин'} · ${value.version}`,
     }));
+    // Возврат ведёт на текущую страницу, где открыты настройки подключения модели.
+    const location = useLocation();
     if (target.item && !target.installation.eligible)
         options.unshift({
             value: embeddingInstallationKey(target.item),
@@ -53,7 +57,13 @@ export function EmbeddingTargetFields({
                 </Button>
             )}
             {target.blocker === 'inspection' && (
-                <Button href="/operations" disabled={disabled}>
+                <Button
+                    href={operationsDeepLink(
+                        target.inspection ? bridgeJobOperationId(target.inspection.id) : undefined,
+                        location.pathname + location.search,
+                    )}
+                    disabled={disabled}
+                >
                     Ход проверки
                 </Button>
             )}

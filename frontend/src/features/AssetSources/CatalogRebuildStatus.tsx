@@ -1,7 +1,9 @@
 import { Button, Space, Tag, Typography } from 'antd';
+import { useLocation } from 'react-router-dom';
 import type { IBundledSourcePlan, ICatalogRebuild, ICatalogRebuildItem } from './interfaces';
 import { catalogRebuildAction, type ICatalogRebuildAction } from './catalogRebuildActions';
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
+import { operationsDeepLink } from '../../modules/Operations/operationLinks';
 import './CatalogRebuildStatus.less';
 
 const itemLabels: Record<ICatalogRebuildItem['state'], string> = {
@@ -25,10 +27,13 @@ export function CatalogRebuildStatus({
     onImportArchive?: () => void;
     archiveBlocked?: boolean;
 }): JSX.Element | null {
+    // Ссылки на операции ведут на текущую страницу как исходный раздел для возврата.
+    const location = useLocation();
+    const returnTo = location.pathname + location.search;
     if (!rebuild && !error) return null;
     // Готовые к обновлению: позиция «Подготовить обновление» из общих правил действий по позициям.
     const readyUpdates = (rebuild?.items ?? [])
-        .map((item) => catalogRebuildAction(item, plans))
+        .map((item) => catalogRebuildAction(item, plans, returnTo))
         .filter((action): action is ICatalogRebuildAction => !!action && action.kind === 'prepare');
     const waiting = rebuild?.state === 'preparing' && rebuild.items.length === 0;
     const title = waiting
@@ -44,7 +49,7 @@ export function CatalogRebuildStatus({
                 <Typography.Text strong role="status">
                     {rebuild ? title : 'Сведения об исходниках'}
                 </Typography.Text>
-                <Typography.Link href="/operations">Операции</Typography.Link>
+                <Typography.Link href={operationsDeepLink(undefined, returnTo)}>Операции</Typography.Link>
             </Space>
             {error && <Typography.Text type="warning">{error}</Typography.Text>}
             {rebuild && rebuild.state === 'attention' && readyUpdates.length > 0 && (
@@ -69,7 +74,7 @@ export function CatalogRebuildStatus({
                     {rebuild.message && <Typography.Paragraph>{rebuild.message}</Typography.Paragraph>}
                     <ul>
                         {rebuild.items.map((item) => {
-                            const action = catalogRebuildAction(item, plans);
+                            const action = catalogRebuildAction(item, plans, returnTo);
                             return (
                                 <li key={item.id}>
                                     <Space wrap>

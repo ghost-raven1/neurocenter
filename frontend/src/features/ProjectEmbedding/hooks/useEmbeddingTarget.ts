@@ -135,6 +135,7 @@ export function useEmbeddingTarget(projectId: string | undefined, persisted?: IP
         device,
         binding,
         item,
+        inspection,
         choices,
         installation,
         ready,

@@ -1,4 +1,5 @@
 import { sourcePlanPreparation } from './sourcePlanPreparation';
+import { operationsDeepLink } from '../../modules/Operations/operationLinks';
 import type { IBundledSourcePlan, ICatalogRebuildItem } from './interfaces';
 
 export interface ICatalogRebuildAction {
@@ -11,6 +12,7 @@ export interface ICatalogRebuildAction {
 export function catalogRebuildAction(
     item: ICatalogRebuildItem,
     plans: readonly IBundledSourcePlan[] = [],
+    returnTo?: string,
 ): ICatalogRebuildAction | undefined {
     if (item.state === 'ready') return;
     const importId = item.importId ?? (item.id.startsWith('inline:') ? item.operationId : undefined);
@@ -29,7 +31,7 @@ export function catalogRebuildAction(
         return {
             kind: 'operation',
             label: 'Открыть операцию',
-            href: '/operations?' + new URLSearchParams({ operation }),
+            href: operationsDeepLink(operation, returnTo),
         };
     }
     if (item.state === 'archive-required')

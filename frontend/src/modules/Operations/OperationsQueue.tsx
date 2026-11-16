@@ -1,11 +1,12 @@
 import { roleName } from '../../features/SystemRoles/utils';
 import { rolePhaseLabel } from '../../features/SystemRoles/RoleRunContent';
-import { ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Grid, List, Pagination, Select, Table, Typography } from 'antd';
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Grid, List, Pagination, Select, Space, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useId, useRef } from 'react';
 import type { FC } from 'react';
 import { useSelector } from 'react-redux';
+import { useHistory, useLocation } from 'react-router-dom';
 
 import type { IOperation, TOperationState } from '../../core/api/interfaces';
 import type { TRootState } from '../../store';
@@ -21,6 +22,7 @@ import {
     operationTypeLabel,
     shortOperationId,
 } from './operationPresentation';
+import { isApplicationPath } from './operationLinks';
 import { useOperationActions } from './hooks/useOperationActions';
 import { useOperationsQueue } from './hooks/useOperationsQueue';
 import { useOperationDeepLink } from './hooks/useOperationDeepLink';
@@ -39,6 +41,21 @@ const OperationsQueue: FC<IOperationsQueueProps> = ({ projectId }) => {
     const queue = useOperationsQueue(projectId);
     const deepLink = useOperationDeepLink(queue.select, !projectId);
     const user = useSelector((state: TRootState) => state.userBlock.user);
+    const location = useLocation();
+    const history = useHistory();
+    // Возврат в исходный раздел: только относительные пути приложения, внешние URL отбрасываются.
+    const returnParam = new URLSearchParams(location.search).get('return');
+    const returnTo = isApplicationPath(returnParam) ? returnParam : undefined;
+    const backToSource = (): void => {
+        if (!returnTo) {
+            return;
+        }
+        const search = new URLSearchParams(location.search);
+        search.delete('operation');
+        search.delete('return');
+        history.replace(location.pathname + (search.size ? '?' + search.toString() : '') + location.hash);
+        history.push(returnTo);
+    };
     const screens = Grid.useBreakpoint();
     const filterId = useId();
     const detailTrigger = useRef<HTMLElement | null>(null);
@@ -150,10 +167,17 @@ const OperationsQueue: FC<IOperationsQueueProps> = ({ projectId }) => {
             )}
             <div className="operations-queue__heading">
                 <Text strong>{projectId ? 'Операции проекта' : 'Все доступные операции'}</Text>
-                <Text type="secondary">
-                    {queue.state ? 'Найдено: ' : 'Всего: '}
-                    <b>{queue.total}</b>
-                </Text>
+                <Space size={12}>
+                    {returnTo && (
+                        <Button size="small" icon={<ArrowLeftOutlined />} onClick={backToSource}>
+                            Вернуться в исходный раздел
+                        </Button>
+                    )}
+                    <Text type="secondary">
+                        {queue.state ? 'Найдено: ' : 'Всего: '}
+                        <b>{queue.total}</b>
+                    </Text>
+                </Space>
             </div>
             <div className="operations-queue__toolbar">
                 <div className="operations-queue__filter">

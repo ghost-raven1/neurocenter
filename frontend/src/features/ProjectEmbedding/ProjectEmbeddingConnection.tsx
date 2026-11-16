@@ -1,10 +1,12 @@
 import { FeatureButton } from '../FeatureFlags/FeatureAvailability';
 import { Alert, Button, Checkbox, Progress, Space, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useBridge } from '../McpBridge/hooks/useBridge';
 import { useLocalJob } from '../McpBridge/hooks/useLocalJob';
 import type { IBridgeJob } from '../McpBridge/api';
 import { isPending } from '../McpBridge/installationHelpers';
+import { bridgeJobOperationId, operationsDeepLink } from '../../modules/Operations/operationLinks';
 import { embeddingConnected, pendingEmbeddingAction, type TEmbeddingConnectionInput } from './connection';
 import type { IProjectEmbedding } from './model';
 import { useAuthRequestOwner } from '../UserBlock/hooks/useAuthRequestOwner';
@@ -32,6 +34,7 @@ export function ConnectEmbeddingAction({
     onResult?: (result: { ok: boolean; error?: string }) => void;
 }): JSX.Element {
     const { scope: owner, captureOwner } = useAuthRequestOwner();
+    const location = useLocation();
     const operation = useLocalJob(bridge);
     const scopeKey = JSON.stringify([owner, input]);
     const currentScope = useRef({ key: scopeKey, indexed: false });
@@ -132,7 +135,16 @@ export function ConnectEmbeddingAction({
             {pending && !isPending(job) && !retrying && (
                 <Typography.Text type="secondary">Дождитесь завершения текущего действия с папкой.</Typography.Text>
             )}
-            {(isPending(job) || pending) && <Button href="/operations">Ход операции</Button>}
+            {(isPending(job) || pending) && (
+                <Button
+                    href={operationsDeepLink(
+                        job ? bridgeJobOperationId(job.id) : undefined,
+                        location.pathname + location.search,
+                    )}
+                >
+                    Ход операции
+                </Button>
+            )}
             {job?.state === 'queued' && (
                 <Typography.Text type="secondary">
                     Ожидающее задание можно отменить в разделе «Операции».

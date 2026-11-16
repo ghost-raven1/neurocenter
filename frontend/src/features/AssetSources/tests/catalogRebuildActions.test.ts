@@ -21,6 +21,11 @@ describe('catalog rebuild recovery destinations', () => {
             '/operations?operation=tool-build-' + id,
         );
     });
+    it('adds the source section to the operation link for the return', () => {
+        expect(catalogRebuildAction({ ...item, id: 'recipe', operationId: id }, [], '/assets?tab=store')?.href).toBe(
+            '/operations?operation=tool-build-' + id + '&return=' + encodeURIComponent('/assets?tab=store'),
+        );
+    });
     it('does not invent an operation for an invalid inline receipt or an already ready result', () => {
         expect(catalogRebuildAction({ ...item, operationId: 'unknown' })).toBeUndefined();
         expect(catalogRebuildAction({ ...item, importId: id, state: 'ready' })).toBeUndefined();
