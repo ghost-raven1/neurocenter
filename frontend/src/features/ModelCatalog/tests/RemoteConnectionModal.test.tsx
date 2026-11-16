@@ -110,3 +110,47 @@ it('preserves manual endpoint and imported hints after a failed save without sub
     expect(onSaved).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
 });
+it('8.18: показывает предупреждение, когда имя модели не сверено со списком шлюза (degraded)', async () => {
+    const onSaved = vi.fn(),
+        onClose = vi.fn();
+    const connection = {
+        modelId: model.id,
+        modelRevision: 1,
+        revision: 0,
+        baseUrl: 'https://provider.example.test/v1',
+        requestDimensions: false,
+        authMode: 'required',
+        credential: 'none',
+        options: {},
+        timeoutMs: 90000,
+    };
+    io.connection.mockResolvedValue(connection);
+    io.configure.mockResolvedValue({ ...connection, revision: 1, nameUnverified: 'Имя модели не проверено' });
+    const flags = Object.fromEntries(featureDefinitions.map(({ key }) => [key, true])) as IEvaluatedFeatureFlags['flags'];
+    const data: IEvaluatedFeatureFlags = {
+        flags,
+        configured: flags,
+        blockedBy: Object.fromEntries(
+            featureDefinitions.map(({ key }) => [key, [] as IEvaluatedFeatureFlags['blockedBy'][typeof key]]),
+        ) as IEvaluatedFeatureFlags['blockedBy'],
+    };
+    await act(async () =>
+        root.render(
+            <FeatureAvailabilityContext.Provider
+                value={{ data, loading: false, error: null, refresh: async () => undefined }}
+            >
+                <RemoteConnectionModal model={model} onSaved={onSaved} onClose={onClose} />
+            </FeatureAvailabilityContext.Provider>,
+        ),
+    );
+    const save = [...document.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === 'Сохранить провайдера',
+    );
+    await act(async () => {
+        save!.click();
+    });
+    // Предупреждение показано, но сохранение не заблокировано (degraded, не mismatch).
+    expect(document.body.textContent).toContain('Имя модели не проверено');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalled();
+});

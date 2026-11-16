@@ -17,6 +17,11 @@ import type { IModel, IModelList, IModelVerification } from './model.interfaces'
 import { notifyModelCatalogChange } from './model-events';
 import { validateModelId } from './model-validation';
 import { ModelsRepository } from './models.repository';
+import { checkRemoteModelName } from './remote-model-name-check';
+import { RemoteModelClient } from './remote-model-client';
+import { RemoteConnectionRepository } from './remote-connection.repository';
+import { isRemoteModel } from './remote-model.utils';
+import { remoteAuthMode } from '../remote-providers/remote-provider.identity';
 
 /** Реестр моделей не зависит от моста и не передаёт его установщику новые типы инструментов. */
 @Injectable()
@@ -26,6 +31,8 @@ export class ModelsService implements OnModuleInit, OnApplicationShutdown {
         'models',
     );
     private readonly repository = new ModelsRepository(this.pool);
+    private readonly connections = new RemoteConnectionRepository(this.pool);
+    private readonly nameProbe = new RemoteModelClient();
 
     constructor(
         private readonly catalog: CatalogService,
@@ -144,9 +151,31 @@ export class ModelsService implements OnModuleInit, OnApplicationShutdown {
     create(raw: unknown, actor: string, requestKey?: string): Promise<IModel> {
         return this.repository.create(raw, actor, requestKey);
     }
-    update(id: string, raw: unknown, actor: string): Promise<IModel> {
+    async update(id: string, raw: unknown, actor: string): Promise<IModel> {
         validateModelId(id);
+        await this.assertRenamedRemoteModel(id, raw, actor);
         return this.repository.update(id, raw, actor);
+    }
+    /** 8.18: смена имени модели (PATCH) проходит ту же сверку с GET /v1/models, что и сохранение подключения. */
+    private async assertRenamedRemoteModel(id: string, raw: unknown, actor: string): Promise<void> {
+        const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
+        const renamed = body?.model;
+        if (typeof renamed !== 'string' || !renamed.trim()) return;
+        const current = await this.repository.get(id);
+        if (!current || current.archivedAt || renamed === current.model || !isRemoteModel(current)) return;
+        const head = await this.connections.head(id);
+        if (!head || head.revoked_at || remoteAuthMode(head) === 'none') return;
+        const result = await checkRemoteModelName({
+            pool: this.pool,
+            client: this.nameProbe,
+            model: current,
+            modelName: renamed,
+            baseUrl: head.base_url,
+            authMode: remoteAuthMode(head),
+            actor,
+            head,
+        });
+        if (result.warning) console.warn(`[catalog-service] ${id}: ${result.warning} (PATCH model='${renamed}')`);
     }
     /** Доверенные метаданные runtime фиксируются до инвалидации клиентского каталога. */
     async pinVerified(

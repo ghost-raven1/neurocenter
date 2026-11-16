@@ -50,6 +50,8 @@ export interface IRemoteConnectionView {
     checkedAt: string | null;
     verified: boolean;
     canStoreKey: boolean;
+    /** 8.18: имя не удалось сверить со списком шлюза (degraded) — предупреждение, не ошибка. */
+    nameUnverified?: string;
 }
 
 export interface IRemoteConnectionInput {

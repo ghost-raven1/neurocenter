@@ -35,6 +35,7 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
         [loading, setLoading] = useState(true),
         [busy, setBusy] = useState(false),
         [error, setError] = useState(''),
+        [warning, setWarning] = useState(''),
         [saved, setSaved] = useState(false);
     const mounted = useRef(false),
         lock = useRef(false);
@@ -43,6 +44,7 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
             at = ownerKey;
         setLoading(true);
         setError('');
+        setWarning('');
         const active = () => owns() && mounted.current && currentOwner.current === at;
         try {
             const value = await modelCatalogApi.connection(model.id);
@@ -82,6 +84,7 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
         lock.current = true;
         setBusy(true);
         setError('');
+        setWarning('');
         let accepted = saved;
         let savedConnection: IRemoteConnection | null = null;
         try {
@@ -98,6 +101,7 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
                 });
                 if (!owns() || !mounted.current) return;
                 setView(result);
+                setWarning(result.nameUnverified ?? '');
                 setSaved(true);
                 accepted = true;
                 savedConnection = result;
@@ -197,6 +201,9 @@ function ProviderConnectionForm({ model, hint, onClose, onSaved }: IProps): JSX.
                                 description="Локальная авторизация OpenCode не переносится на сервер."
                                 className="model-catalog__notice"
                             />
+                        )}
+                        {warning && (
+                            <Alert showIcon type="warning" message={warning} className="model-catalog__notice" />
                         )}
                         <Form.Item
                             name="baseUrl"

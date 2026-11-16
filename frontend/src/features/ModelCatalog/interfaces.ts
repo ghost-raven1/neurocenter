@@ -80,6 +80,8 @@ export interface IRemoteConnection {
     canStoreKey: boolean;
     options: IRemoteModelOptions;
     timeoutMs: number;
+    /** 8.18: имя не удалось сверить со списком шлюза (degraded) — предупреждение, не ошибка. */
+    nameUnverified?: string;
 }
 export interface IRemoteConnectionInput {
     authMode?: 'none' | 'optional' | 'required';
