@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { ModelsService } from './models.service';
+import { ModelAutoVerification } from './model-auto-verification';
 import { RemoteConnectionService } from './remote-connection.service';
 import { OpenCodeModelImport } from './opencode-model-import';
 import type { IRemoteConnectionInput } from './remote-model.interfaces';
@@ -12,6 +13,7 @@ export class RemoteConnectionController {
         private readonly models: ModelsService,
         private readonly remote: RemoteConnectionService,
         private readonly opencode: OpenCodeModelImport,
+        private readonly verification: ModelAutoVerification,
     ) {}
     @Post('import-opencode')
     import(@Req() request: Request, @Body() body: unknown) {
@@ -27,7 +29,10 @@ export class RemoteConnectionController {
     @Put(':id/connection')
     async save(@Param('id') id: string, @Body() body: IRemoteConnectionInput, @Req() request: Request) {
         const actor = await this.models.requireMain(request);
-        return this.remote.save(id, body, actor, () => this.models.requireMain(request));
+        const result = await this.remote.save(id, body, actor, () => this.models.requireMain(request));
+        // 8.19 P2-3: подключение сохранено — сервер сам повторяет проверку, без ручного «Проверить».
+        this.verification.schedule(id, actor);
+        return result;
     }
     @Delete(':id/connection')
     async revoke(@Param('id') id: string, @Body() body: unknown, @Req() request: Request) {

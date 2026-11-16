@@ -13,6 +13,7 @@ import { DeviceStore, digest } from '../devices/device-store';
 import type { IJob } from '../devices/device-job.model';
 import { freshGlobalProvidersAccess } from '../devices/global-provider-jobs';
 import { ModelsService } from '../models/models.service';
+import { ModelAutoVerification } from '../models/model-auto-verification';
 import { RemoteProviderAccessService } from '../remote-providers/remote-provider.service';
 import { remoteProviderMutation } from '../remote-providers/remote-provider.identity';
 import type { IRemoteProviderActor, IRemoteProviderReceipt } from '../remote-providers/remote-provider.interfaces';
@@ -28,6 +29,7 @@ export class OpenCodePersonalKeyService {
         private readonly devices: DeviceStore,
         private readonly models: ModelsService,
         private readonly personal: RemoteProviderAccessService,
+        private readonly verification?: ModelAutoVerification,
     ) {}
     private input(raw: unknown, save = false) {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw))
@@ -179,6 +181,8 @@ export class OpenCodePersonalKeyService {
                 await personalKeyTarget(db, fresh.actor, fresh.payload, false);
             },
         });
+        // 8.19 P2-3: личный ключ передан — сервер сам повторяет проверку; права актора сверятся внутри.
+        this.verification?.schedule(current.payload.modelId, current.actor.email);
         return this.projection(input.jobId, current.payload, result);
     }
     async receipt(bearer: string, raw: unknown) {

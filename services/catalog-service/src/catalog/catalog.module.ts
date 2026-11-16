@@ -80,6 +80,7 @@ import { OpenCodeModelSyncController } from '../models/opencode-model-sync.contr
 import { OpenCodeModelSyncService } from '../models/opencode-model-sync.service';
 import { RemoteConnectionController } from '../models/remote-connection.controller';
 import { RemoteConnectionService } from '../models/remote-connection.service';
+import { ModelAutoVerification } from '../models/model-auto-verification';
 import { DeviceCodexController } from '../models/device-codex.controller';
 import { DeviceCodexService } from '../models/device-codex.service';
 import { ModelRuntime } from '../models/model-runtime';
@@ -284,6 +285,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         OpenCodeModelImport,
         AssetManagementService,
         RemoteConnectionService,
+        ModelAutoVerification,
         ModelRuntime,
         AssetSourcesService,
         MaintenanceService,
