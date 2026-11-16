@@ -3,7 +3,7 @@ title: 'FR-307 [P1]: Onboarding агента без оператора — пе�
 type: 'feature'
 ticket: '9'
 created: '2026-11-09'
-status: ready-for-dev
+status: in-progress
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
@@ -72,10 +72,11 @@ context:
 ## Tasks & Acceptance
 
 ### Execution
-- [ ] **Self-onboarding без оператора**: добавление агента → автоматическая настройка роли/контекста (approved)/инструментов из каталога/доступа к публичным чатам (потребляем entry 1/8).
-- [ ] **Первая полезная операция за минуты (C2)**: измерение + обеспечение (baseline Q7).
-- [ ] **Readiness**: расширить agent-readiness на **opencode** (содержательная проба, не только server_chat); `needs_setup` → actionable следующий шаг.
-- [ ] Tесты: onboarding без оператора (0 ручных шагов), первая полезная операция ≤ целевого, readiness opencode, контекст=approved.
+- [x] **Self-onboarding без оператора**: добавление агента → автоматическая настройка роли/контекста (approved)/инструментов из каталога/доступа к публичным чатам (потребляем entry 1/8).
+- [x] **Первая полезная операция за минуты (C2)**: измерение + обеспечение (baseline Q7) — interim ≤ 5 мин, константа `C2_INTERIM_TARGET_MS`.
+- [x] **Readiness**: расширить agent-readiness на **opencode** (содержательная проба, не только server_chat); `needs_setup` → actionable следующий шаг.
+- [x] Tесты: onboarding без оператора (0 ручных шагов), первая полезная операция ≤ целевого, readiness opencode, контекст=approved (32 новых, full catalog 351/351).
+- [ ] Корневой сьют — без деградации (final gate после 11.1).
 
 ### Acceptance
 - **Given** добавление агента в проект **when** onboarding **then** самонастройка (роль/контекст approved/инструменты/доступ к публичным чатам), 0 ручных шагов оператора (R2 counter).
@@ -105,3 +106,12 @@ node --test scripts/test/onboarding-no-operator.test.mjs 2>/dev/null || true
 1. **Целевое время «за минуты» — сколько секунд?** Рекомендация: фиксировать в baseline Q7 (целевое время onboarding); interim — ≤ 5 минут. Обоснование: Q7 — источник целевых значений.
 2. **Readiness opencode — полная сессия или проба инструмента?** Рекомендация: содержательная проба (запустить инструмент/команду в opencode-среде), не просто «карточка». Обоснование: «карточка ≠ работающая обработка».
 3. **Onboarding device-агента — здесь или эпик 7?** Рекомендация: здесь — self-onboarding (роль/контекст/инструменты/чаты); pairing/установщик — эпик 7. Обоснование: границы эпиков.
+
+## Progress
+
+**2026-11-16 — код в main (merge 73885a6a, коммит 19afcddc, 14 файлов +1229/−63). Full catalog suite 351/351, tsc 0, eslint/prettier clean. Остаток = корневой сьют (final gate после 11.1).**
+- **Self-onboarding** (Task 1): `agent-onboarding.ts` — один транзакционный шаг в assign: `project_agents INSERT enabled=true` (access в публичный чат сразу) + `agent_onboarding ON CONFLICT DO NOTHING` (снапшот: роль из pinned-card `assignment.effective.mode`, context = approved learning-бандл FR-502 с agent-scoping и digest, tools = kit agt-08 `resolveAgentExtensionKit`, publicChat) + 2 audit-события (`project.agent.assign` + новое `project.agent.onboard`). Роль/контекст/каталог provisioning — только потребление существующего.
+- **C2-измерение** (Task 2): t0 = `onboarded_at`; t1 = первый **completed** (`status='done'`) ответ агента в project-чате (read-only вычисление, пишется никогда — не нарушает trigger иммутабельности); `measureFirstUsefulOperation` + `C2_INTERIM_TARGET_MS = 5min`; read-only эндпоинт `GET /api/projects/:id/agents/:agentId/onboarding` (REPEATABLE READ READ ONLY).
+- **Readiness opencode** (Task 3): `IOpenCodeReadinessProbe` (инъекция; default `NoOpenCodeProbe` → `OpenCodeNeedsSetupException` 409 + actionable `setup-runtime`); `AgentOpenCodeTrialRunner` — содержательная проба: SHA-256 нормализованного результата + detail ≤ 512Б; обратная совместимость (legacy receipt → server_chat-путь, `executionSurface` в jsonb без миграции).
+- **Миграция 60**: отдельный блок `AGENT_ONBOARDING_SCHEMA_SQL` (паттерн agt-08/migration 59 — checksum-ловушка validateMigrationHistory).
+- ОQ из отчёта: (1) финальная цель C2 — в baseline Q7, interim-константа в одном месте; (2) реальный `IOpenCodeReadinessProbe` предоставит epic 7 (device/pairing) в DI; (3) schema-контракты не обновлены (паттерн agt-08 — assertAgentSchema expected→actual, лишние таблицы не ломают).
