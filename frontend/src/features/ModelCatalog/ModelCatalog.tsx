@@ -612,6 +612,11 @@ export function ModelCatalog({
                         setConnection(viewing);
                         setViewId(null);
                     }}
+                    onProviderAccess={() => {
+                        // Единое место ввода ключа: детали ведут в модалку «Мой доступ» (8.19 P1-2).
+                        setProviderAccess({ model: viewing });
+                        setViewId(null);
+                    }}
                 />
             )}
             {isMain && editing && (

@@ -20,6 +20,7 @@ interface IProps {
     onEdit: () => void;
     onRemove: () => void;
     onConfigure?: () => void;
+    onProviderAccess?: () => void;
 }
 
 export function ModelDetails({
@@ -32,6 +33,7 @@ export function ModelDetails({
     onEdit,
     onRemove,
     onConfigure,
+    onProviderAccess,
 }: IProps): JSX.Element {
     const [open, setOpen] = useState(true);
     // Keep the Modal mounted until AntD restores focus; the parent removes Details in afterClose.
@@ -58,7 +60,13 @@ export function ModelDetails({
             {error && <Alert showIcon type="error" message={error} className="model-catalog__notice" />}
             <Typography.Paragraph>{model.description || 'Описание пока не добавлено.'}</Typography.Paragraph>
             {remote && (
-                <ModelProviderSettings model={model} canManage={canManage} busy={busy} onConfigure={onConfigure} />
+                <ModelProviderSettings
+                    model={model}
+                    canManage={canManage}
+                    busy={busy}
+                    onConfigure={onConfigure}
+                    onProviderAccess={onProviderAccess}
+                />
             )}
             <ModelHosting
                 model={model}
