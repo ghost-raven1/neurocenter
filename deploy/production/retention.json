@@ -1,7 +1,7 @@
 {
     "schema": "neurocenter-retention-v1",
     "ad": "AD-D3",
-    "updated": "2026-11-12",
+    "updated": "2026-11-17",
     "description": "Единая retention-таблица (AD-D3): ресурс → режим (ttl / rolling-n / manual / project-scoped / none) + TTL одним решением. Значения TTL фиксируются здесь и не дублируются в коде/документах; идентичность значений в коде проверяет scripts/test/retention-inventory.test.mjs. Prune исполняет story 8 (maintenance-tick); project-scoped — каскад удаления проекта (story 11).",
     "modes": ["ttl", "rolling-n", "manual", "project-scoped", "none"],
     "databases": {
@@ -618,6 +618,56 @@
             "pruneLocation": "project deletion cascade (story 11)",
             "ownerService": "catalog-service",
             "ddl": ["services/catalog-service/src/agent-tools/agent-tools.schema.ts"]
+        },
+        {
+            "resource": "agent_extension_pins",
+            "db": "catalog",
+            "kind": "table",
+            "mode": "project-scoped",
+            "cascadeRef": "project_id REFERENCES projects(id) ON DELETE CASCADE; approved kit mirrors project_assets (FR-202/FR-306, agt-08)",
+            "pruneLocation": "project deletion cascade (story 11)",
+            "ownerService": "catalog-service",
+            "ddl": ["services/catalog-service/src/agents/agent-schema.ts"]
+        },
+        {
+            "resource": "agent_extension_experiments",
+            "db": "catalog",
+            "kind": "table",
+            "mode": "project-scoped",
+            "cascadeRef": "project_id REFERENCES projects(id) ON DELETE CASCADE; device-local capability tests, audited, never part of approved kit (FR-306, agt-08; expires_at/revoked_at)",
+            "pruneLocation": "project deletion cascade (story 11)",
+            "ownerService": "catalog-service",
+            "ddl": ["services/catalog-service/src/agents/agent-schema.ts"]
+        },
+        {
+            "resource": "agent_onboarding",
+            "db": "catalog",
+            "kind": "table",
+            "mode": "project-scoped",
+            "cascadeRef": "project_id REFERENCES projects(id) ON DELETE CASCADE; FR-307 self-onboarding snapshot (C2 t0 anchor, agt-09)",
+            "pruneLocation": "project deletion cascade (story 11)",
+            "ownerService": "catalog-service",
+            "ddl": ["services/catalog-service/src/agents/agent-schema.ts"]
+        },
+        {
+            "resource": "background_agent_jobs",
+            "db": "catalog",
+            "kind": "table",
+            "mode": "project-scoped",
+            "cascadeRef": "project_id REFERENCES projects(id) ON DELETE CASCADE; (project_id,source_message_id) REFERENCES project_chat_messages ON DELETE SET NULL (FR-305, agt-07)",
+            "pruneLocation": "project deletion cascade (story 11)",
+            "ownerService": "catalog-service",
+            "ddl": ["services/catalog-service/src/background-agent/background-agent.schema.ts"]
+        },
+        {
+            "resource": "background_agent_effects",
+            "db": "catalog",
+            "kind": "table",
+            "mode": "project-scoped",
+            "cascadeRef": "request_key REFERENCES background_agent_jobs(request_key) ON DELETE CASCADE (project-scoped через jobs, FR-305, agt-07)",
+            "pruneLocation": "project deletion cascade (story 11)",
+            "ownerService": "catalog-service",
+            "ddl": ["services/catalog-service/src/background-agent/background-agent.schema.ts"]
         },
         {
             "resource": "maintenance_settings",
