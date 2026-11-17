@@ -1,19 +1,21 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import type { IBackgroundAgentCheck } from '../../../shared/background-agent.cjs';
+import type { IBackgroundAgentCheck, TBackgroundAgentMethod } from '../../../shared/background-agent.cjs';
 import {
     AGENT_RESULT_VERIFICATION_PROTOCOL,
     VERIFICATION_FAILURE_ACTIONS,
     VERIFICATION_FAILURE_CODES,
 } from '../../../shared/agent-result-verification.cjs';
+import { MainMethodPreparationError, prepareMainMethod, type IPreparedMainMethod } from './method-preparation';
 
 /**
  * FR-305 runtime seam: runs a background task in `root` and produces the universal verified result
  * (FR-304 contract, agent-result-verification-v1). The OpenCode runtime below is the default
  * implementation, ported from the device opencode-http-runner (serve → loopback → Basic-auth →
- * denied question/plan → completed assistant turn → declared checks). Future entries decorate this
- * interface, not the implementation: entry 10 (BMAD→OpenSpec main runtime) and entry 11
- * (crash-resilience wrapper) are injected as IAgentRuntime implementations.
+ * denied question/plan → completed assistant turn → declared checks). Entry 10 (FR-308,
+ * BMAD→OpenSpec main runtime) is wired inside it: a 'combined' run goes through prepareMainMethod
+ * (pinned prerequisites, no-hidden-updates env, method prompt, OpenSpec validate gate) instead of
+ * the generic prompt/env/check flow. Entry 11 (crash-resilience wrapper) decorates this interface.
  *
  * Only fixed metadata and real check outcomes leave this module: model text, tools, server logs
  * and credentials stay private (FR-304: raw stdout/секреты не передаются).
@@ -57,6 +59,12 @@ export interface IRuntimeInput {
     deadlineAt: string;
     /** Optional explicitly selected agent; the runtime introspection must confirm it before inference. */
     selected?: ISelectedRuntimeAgent;
+    /** The server workflow id (the FR-308 method prompt header). */
+    workflowId?: string;
+    /** FR-308: the server-pinned method of the task; a 'combined' (BMAD→OpenSpec) run goes through prepareMainMethod. */
+    method?: TBackgroundAgentMethod;
+    /** FR-308: the server-pinned method version (AGENT_METHOD_VERSIONS, single source). */
+    methodVersion?: string;
 }
 
 export interface IAgentRuntimeOptions {
@@ -74,6 +82,8 @@ export interface IAgentRuntime {
 
 const OUTPUT_LIMIT = 1024 * 1024;
 const TURN_TIMEOUT_MS = 15 * 60 * 1000;
+/** Each pinned-CLI prerequisite probe is bounded by a fixed budget (a runaway CLI never holds the run). */
+const MAIN_METHOD_PROBE_TIMEOUT_MS = 30 * 1000;
 type TRuntimeFailureCode = 'EXECUTION_FAILED' | 'OUTPUT_LIMIT' | 'TIMEOUT' | 'SELECTED_AGENT_NOT_READY';
 class RuntimeFailure extends Error {
     code: TRuntimeFailureCode;
@@ -177,12 +187,61 @@ const outcome = (
     state: exitCode === 0 && signal === null ? 'passed' : 'failed',
 });
 
-/** Run one declared check in root with a bounded budget; stdout/stderr are dropped (never cross the wire). */
-function runCheck(root: string, check: IBackgroundAgentCheck, budgetMs: number): Promise<IRuntimeCheckOutcome> {
+/**
+ * FR-308 production main-method runner: the real pinned method CLIs run in the bound project root
+ * (cwd), so `openspec context --json` resolves the project's own root. Output is bounded (a runaway
+ * CLI never feeds the prompt) and every probe is bounded by a fixed budget. The same function is the
+ * default for the OpenCodeAgentRuntime seam; tests inject stubs instead.
+ */
+export function runMainMethodCommand(
+    root: string,
+    command: string,
+    args: string[],
+): Promise<{ code: number; stdout: string }> {
     return new Promise((resolve) => {
         let child: ChildProcess;
         try {
-            child = spawn(check.command, check.args, { cwd: root, stdio: 'ignore' });
+            child = spawn(command, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch {
+            resolve({ code: 1, stdout: '' });
+            return;
+        }
+        const kill = setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        }, MAIN_METHOD_PROBE_TIMEOUT_MS);
+        let stdout = '';
+        let done = false;
+        const finish = (code: number): void => {
+            if (!done) {
+                done = true;
+                clearTimeout(kill);
+                resolve({ code, stdout });
+            }
+        };
+        const stdoutStream = child.stdout;
+        if (!stdoutStream) {
+            finish(1);
+            return;
+        }
+        stdoutStream.on('data', (chunk: Buffer) => {
+            if (stdout.length < OUTPUT_LIMIT) stdout += chunk.toString('utf8');
+        });
+        child.once('error', () => finish(1));
+        child.once('close', (exitCode, signal) => finish(signal ? 1 : (exitCode ?? 1)));
+    });
+}
+
+/** Run one declared check in root with a bounded budget; stdout/stderr are dropped (never cross the wire). */
+function runCheck(
+    root: string,
+    check: IBackgroundAgentCheck,
+    budgetMs: number,
+    env: NodeJS.ProcessEnv = process.env,
+): Promise<IRuntimeCheckOutcome> {
+    return new Promise((resolve) => {
+        let child: ChildProcess;
+        try {
+            child = spawn(check.command, check.args, { cwd: root, stdio: 'ignore', env });
         } catch {
             resolve({ command: check.command, args: [...check.args], exitCode: null, signal: null, state: 'failed' });
             return;
@@ -246,6 +305,18 @@ export class PinnedEngineRuntime implements IAgentRuntime {
  * assistant turn, then executes the declared checks in root and reports their real outcomes.
  */
 export class OpenCodeAgentRuntime implements IAgentRuntime {
+    /**
+     * FR-308 main-method runner seam: production runs the real pinned CLIs (runMainMethodCommand);
+     * tests inject a stub. Bound to the project root per run by the class.
+     */
+    constructor(
+        private readonly mainMethodRunner: (
+            root: string,
+            command: string,
+            args: string[],
+        ) => Promise<{ code: number; stdout: string }> = runMainMethodCommand,
+    ) {}
+
     async run(input: IRuntimeInput, options: IAgentRuntimeOptions = {}): Promise<IRuntimeResult> {
         const deadline = Date.parse(input.deadlineAt);
         if (!Number.isFinite(deadline) || deadline <= Date.now())
@@ -256,8 +327,40 @@ export class OpenCodeAgentRuntime implements IAgentRuntime {
                 checks: input.checks.map(notRun),
                 failure: FAILURE.TIMEOUT,
             };
+        // FR-308: a BMAD→OpenSpec (combined) main run is prepared by the pinned method — pinned
+        // prerequisites (explicit named error on any mismatch, never a silent substitution), the
+        // no-hidden-updates environment and the method prompt replace the generic prompt/env/validate.
+        let prepared: IPreparedMainMethod | undefined;
+        if (input.method === 'combined') {
+            try {
+                prepared = await prepareMainMethod(
+                    input.root,
+                    {
+                        workflowId: input.workflowId ?? 'background-agent',
+                        method: input.method,
+                        methodVersion: input.methodVersion ?? '',
+                        instruction: input.prompt,
+                        checks: input.checks,
+                    },
+                    (command, args) => this.mainMethodRunner(input.root, command, args),
+                    options.engine ?? 'opencode',
+                );
+            } catch (error) {
+                // A pinned prerequisite is missing or mismatched: fail-closed before execution, with a
+                // fixed classifier (the named MainMethodPreparationError code; never raw error text).
+                if (error instanceof MainMethodPreparationError)
+                    console.error(JSON.stringify({ event: 'method-preparation-failed', code: error.code }));
+                return {
+                    protocol: AGENT_RESULT_VERIFICATION_PROTOCOL,
+                    state: 'failed',
+                    stage: 'prerequisites',
+                    checks: input.checks.map(notRun),
+                    failure: FAILURE.EXECUTION_FAILED,
+                };
+            }
+        }
         try {
-            await this.runTurn(input, options);
+            await this.runTurn({ ...input, prompt: prepared?.prompt ?? input.prompt }, options, prepared?.environment);
         } catch (error) {
             const code: TRuntimeFailureCode = error instanceof RuntimeFailure ? error.code : 'EXECUTION_FAILED';
             return {
@@ -268,12 +371,35 @@ export class OpenCodeAgentRuntime implements IAgentRuntime {
                 failure: FAILURE[code],
             };
         }
-        const { outcomes, deadlineExceeded } = await runChecks(
-            input.root,
-            input.checks,
-            deadline,
-            options.checkTimeoutMs ?? 5 * 60 * 1000,
-        );
+        // FR-308 I/O row 7: the OpenSpec strict validation gate (device parity) runs after the turn and
+        // before the declared checks; not passed → failed, the declared checks are explicitly not_run.
+        const checkTimeoutMs = options.checkTimeoutMs ?? 5 * 60 * 1000;
+        if (prepared?.validate) {
+            const remaining = deadline - Date.now();
+            if (remaining <= 0)
+                return {
+                    protocol: AGENT_RESULT_VERIFICATION_PROTOCOL,
+                    state: 'failed',
+                    stage: 'checks',
+                    checks: input.checks.map(notRun),
+                    failure: FAILURE.TIMEOUT,
+                };
+            const validation = await runCheck(
+                input.root,
+                { command: prepared.validate.command, args: prepared.validate.args },
+                Math.min(checkTimeoutMs, remaining),
+                prepared.environment,
+            );
+            if (validation.state !== 'passed')
+                return {
+                    protocol: AGENT_RESULT_VERIFICATION_PROTOCOL,
+                    state: 'failed',
+                    stage: 'checks',
+                    checks: input.checks.map(notRun),
+                    failure: { code: 'CHECK_FAILED', action: 'review-result' },
+                };
+        }
+        const { outcomes, deadlineExceeded } = await runChecks(input.root, input.checks, deadline, checkTimeoutMs);
         if (deadlineExceeded)
             return {
                 protocol: AGENT_RESULT_VERIFICATION_PROTOCOL,
@@ -299,7 +425,11 @@ export class OpenCodeAgentRuntime implements IAgentRuntime {
     }
 
     /** serve → loopback → Basic-auth → (selected-agent introspection) → denied question/plan → completed turn. */
-    private async runTurn(input: IRuntimeInput, options: IAgentRuntimeOptions): Promise<void> {
+    private async runTurn(
+        input: IRuntimeInput,
+        options: IAgentRuntimeOptions,
+        baseEnv: NodeJS.ProcessEnv = process.env,
+    ): Promise<void> {
         const engine = options.engine ?? 'opencode';
         const startupTimeoutMs = options.startupTimeoutMs ?? 15_000;
         const turnBudget = Math.min(TURN_TIMEOUT_MS, Date.parse(input.deadlineAt) - Date.now());
@@ -312,7 +442,7 @@ export class OpenCodeAgentRuntime implements IAgentRuntime {
         process.once('SIGINT', abort);
         const server = spawn(engine, ['serve', '--hostname', '127.0.0.1', '--port', '0'], {
             cwd: input.root,
-            env: { ...process.env, OPENCODE_SERVER_USERNAME: username, OPENCODE_SERVER_PASSWORD: password },
+            env: { ...baseEnv, OPENCODE_SERVER_USERNAME: username, OPENCODE_SERVER_PASSWORD: password },
             shell: false,
             detached: false,
             stdio: ['ignore', 'pipe', 'pipe'],

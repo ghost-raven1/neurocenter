@@ -449,4 +449,23 @@ describe('CrashResilientBackgroundWorker (FR-305 agt-11: crash policy, idempoten
             JSON.stringify({ attempts: 1, nextAttemptAt: 500 }),
         ]);
     });
+
+    it('(FR-308) the server-pinned method fields reach the runtime input (combined wiring)', async () => {
+        const store = new MemoryJobStore();
+        const resilience = new MemoryBackgroundAgentResilienceStore();
+        const sink = new RecordingSink();
+        let captured: IRuntimeInput | undefined;
+        const runtime: IAgentRuntime = {
+            async run(input: IRuntimeInput): Promise<IRuntimeResult> {
+                captured = input;
+                return succeeded();
+            },
+        };
+        const w = makeWorker({ store, runtime, resilience, sink });
+        await w.admit(payload({ method: 'combined', methodVersion: 'bmad-6.12.4+openspec-1.15.0' }));
+        await w.process(REQUEST_ID);
+        expect(captured?.method).toBe('combined');
+        expect(captured?.methodVersion).toBe('bmad-6.12.4+openspec-1.15.0');
+        expect(captured?.workflowId).toBe('11111111-1111-4111-8111-111111111111');
+    });
 });

@@ -110,6 +110,28 @@ context:
 - Wiring: `prepareMainMethod` в `OpenCodeAgentRuntime` (method='combined' → prepared prompt/env/validate вместо generic), e2e `scripts/test/bmad-openspec-main-runtime.test.mjs` (owned-PG + fixture-проект с pinned BMAD/OpenSpec).
 - Open Questions 1–4: решение зафиксировано в §C5-протокол (проект/инициатива — в e2e-приёмке; «принято» = PASS-критерии docs; OpenCode 1.14.48 единая версия, запуск на сервере).
 
+## Progress (2026-11-17, wiring + e2e завершены на ветке nc-agt10, base f00b8e41)
+
+**Wiring FR-308 в main-runtime — готово (коммиты agt-10 B1/B2, worktree nc-wt/agt10):**
+- `services/catalog-service/src/background-agent/runtime.ts` — `OpenCodeAgentRuntime.run`: при `input.method === 'combined'` вызывается `prepareMainMethod` (frozen core) — prepared prompt + no-hidden-updates env заменяют generic prompt/env; prepared `validate` (`openspec validate --all --strict --no-interactive`) — гейт после turn и перед объявленными проверками (device parity, executor.ts:308). Непрохождение гейта → `failed`, `stage: 'checks'`, объявленные проверки явно `not_run`, `failure: CHECK_FAILED/review-result` (гейт — не проверяемая строка результата, FR-304: результат описывает ровно объявленные проверки). Ошибка подготовки → fail-closed `stage: 'prerequisites'`, все проверки `not_run`, `EXECUTION_FAILED/new-request`; именованный код `MainMethodPreparationError` логируется фиксированным классификатором `{"event":"method-preparation-failed","code":...}` (без сырого текста ошибки). Production-раннер pinned CLIs — `runMainMethodCommand` (cwd = bound project root, stdout ≤ 1 MiB, 30 s SIGKILL budget); шов `mainMethodRunner` в конструкторе (тесты инжéктируют stub'ы). `IRuntimeInput` += `workflowId`/`method`/`methodVersion`.
+- **Регрессия-баг (найдено e2e):** production CLI-путь идёт через `CrashResilientBackgroundWorker.runAttempt` (`resilience.ts`), а не `BackgroundAgentWorker` (`worker.ts`) — без прокидки method-полей в `resilience.ts` e2e видел generic-промпт. Оба места теперь передают `workflowId/method/methodVersion` из `checked` payload.
+- Scope-решение (deviation-заметка): prepare активируется **только** для `method === 'combined'` (буквальное чтение тикета: обязательный режим BMAD→OpenSpec); одиночные `bmad`/`openspec`-задачи main-runtime остаются generic — это сохраняет e2e agt-07 (`background-agent-server.test.mjs`, methods 'openspec'/'bmad') зелёным.
+- Unit: `runtime.test.ts` +4 (happy combined: prepared prompt+env дошли до движка; mismatch → prerequisites/not_run; validate-гейт → CHECK_FAILED/not_run; non-combined — generic без method-промпта), `resilience.test.ts` +1 (method-поля доходят до runtime input — регрессия). Fake engine отвечает на `--version` (prepare дёргает пиннуемый движок).
+
+**E2E `scripts/test/bmad-openspec-main-runtime.test.mjs` (agt-10 B2) — 6/6 green, зарегистрирован в `scripts/workspace/check-tooling-tests.json`:**
+- Паттерн `background-agent-server.test.mjs`: owned-PG container `nc-agt10-e2e-*` (порт 56032 + pid%200), реальный executor CLI `node dist/background-agent/background-agent.cli.js`, fake «автономный пакет» (runtime.json pin OpenCode 1.14.48 + sha256, loopback-протокол), teardown.
+- 3 fixture-проекта с pinned-валидацией (BMAD manifest `installation.version 6.12.4` + `render_skill.py` + `uv`; OpenSpec `openspec/config.yaml` + change layout + skills в `.opencode/skills`): `prj-10-main` (happy), `prj-10-mismatch` (manifest «5.0.0» → METHOD_VERSION), `prj-10-validate-fail` (маркер-файл → гейт падает).
+- Сценарии I/O: 1,3,4,5 (combined → prepared BMAD→OpenSpec-промпт: шапка workflowId, `Method combined bmad-6.12.4+openspec-1.15.0`, переиспользование accepted brief/PRD/architecture, запрет build-auto/2-го цикла, skills из проекта, OpenSpec-гейт реально прогнан в bound root → `succeeded`, `runtime_version === '1.14.48'`); 2 (pinned-версии = AGENT_METHOD_VERSIONS + env движка «без скрытых обновлений»: OPENSPEC_TELEMETRY=0, OPENSPEC_NO_UPDATE_CHECK=1, autoupdate false / share disabled / external_directory deny); 2-mismatch (явная `METHOD_VERSION`, prerequisites, checks not_run, фиксированный лог-классификатор); 7 (validate не пройден → failed, declared checks not_run).
+- **Stub-CLIs и почему:** в CI-окружении реальных pinned CLIs (`bmad` 6.12.4, `openspec` 1.15.0, `uv`) нет — e2e подставляет stub-исполняемые файлы в PATH-dir (ответы `--version` pinned-версиями, `openspec context --json` → `{"root":{"path":cwd}}`, `validate` логирует cwd и падает по маркер-файлу). Покрывается этим всё, что e2e проверяет на сервере (prepare-проверки, prompt/env/гейт, result-контракт); реальные CLIs в прогон не входят. **C5 на реальном пилотном проекте** (реальные BMAD/OpenSpec, HITL) остаётся за e2e-приёмкой agt-12 — см. §C5-протокол.
+
+**Числа (2026-11-17, Node 24.22.0):**
+- e2e `bmad-openspec-main-runtime`: **6/6** (bootstrap + 4 сценария + teardown).
+- `services/catalog-service` unit: полный сьют **402/402** (43 файла); `src/background-agent` **74/74** (включая +4 runtime wiring, +1 resilience-регрессия); `resilience.test.ts` 11/11; `method-preparation` 13/13; `agent-method-workflows` 15/15 — без деградации.
+- tsc: **0 новых ошибок** (2 предсуществующие ошибки в `snapshots`/`system-roles` тест-файлах есть на base f00b8e41 — проверено stash-прогоном, не трогал).
+- prettier/eslint — чисто по изменённым TS/JS/JSON; compose и root-сьют не тронуты.
+
+**Остаток:** C5-приёмка на реальном пилотном проекте (реальные pinned CLIs + `uv` на сервере, HITL) — agt-12; merge в main — после ревью.
+
 ## Verification
 
 ```bash
