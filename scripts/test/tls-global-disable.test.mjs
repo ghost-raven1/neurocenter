@@ -97,8 +97,8 @@ test('Вывод из флага закреплён во всех Dockerfile, co
     }
     const dev = await source('docker-compose.yml'),
         prod = await source('compose.production.yml');
-    assert.equal((dev.match(/NEUROCENTER_TLS_DISABLE: \$\{NEUROCENTER_TLS_DISABLE:-0\}/g) ?? []).length, 7);
-    assert.equal((dev.match(/NEUROCENTER_NPM_STRICT_SSL: \$\{NEUROCENTER_NPM_STRICT_SSL:-true\}/g) ?? []).length, 7);
+    assert.equal((dev.match(/NEUROCENTER_TLS_DISABLE: \$\{NEUROCENTER_TLS_DISABLE:-0\}/g) ?? []).length, 8);
+    assert.equal((dev.match(/NEUROCENTER_NPM_STRICT_SSL: \$\{NEUROCENTER_NPM_STRICT_SSL:-true\}/g) ?? []).length, 8);
     assert.equal((dev.match(/NODE_TLS_REJECT_UNAUTHORIZED=\$\{NODE_TLS_REJECT_UNAUTHORIZED:-1\}/g) ?? []).length, 1);
     assert.equal((prod.match(/NEUROCENTER_TLS_DISABLE: "\$\{NEUROCENTER_TLS_DISABLE:-0\}"/g) ?? []).length, 8);
     assert.equal((prod.match(/NEUROCENTER_NPM_STRICT_SSL: "\$\{NEUROCENTER_NPM_STRICT_SSL:-true\}"/g) ?? []).length, 8);
