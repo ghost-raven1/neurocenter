@@ -13,6 +13,8 @@
  */
 import { BackgroundAgentChatSink } from './chat-sink';
 import { TaskContext } from './context';
+import { installCrashHandler } from './crash-handler';
+import { writeDeadLetterAlert } from './dead-letter-alert';
 import { BackgroundEngineError, assertBackgroundAgentEngine, type IBackgroundAgentEngine } from './engine';
 import { BACKGROUND_AGENT_LEASE, PgBackgroundAgentStore } from './pg-store';
 import { BackgroundCrashError, CatalogCrashObservability, CrashResilientBackgroundWorker } from './resilience';
@@ -135,6 +137,11 @@ async function runLoop(): Promise<void> {
     let currentRequestId: string | null = null;
     const timers: { poll?: NodeJS.Timeout; renew?: NodeJS.Timeout; reap?: NodeJS.Timeout } = {};
 
+    // The AD-O5 crash handler for this process boundary (agt-11): uncaught exception / unhandled
+    // rejection → log → error store → job-level crash record (attempts + backoff) → controlled
+    // exit(1). docker restarts the container; the NEXT pass applies the job-level policy.
+    installCrashHandler({ client: pool, store, inFlight: () => currentRequestId });
+
     const shutdown = async (code: number, waitForRun = true): Promise<void> => {
         if (stopping) return;
         stopping = true;
@@ -159,8 +166,28 @@ async function runLoop(): Promise<void> {
             const [requestId] = await store.processableRequestIds(1);
             if (!requestId) return;
             currentRequestId = requestId;
+            log({ event: 'dispatch', requestId });
+            // E2E fault injection (agt-11): a REAL uncaughtException on the dispatch pass — before
+            // the claim and the paid step — so the process-boundary crash handler (installed above)
+            // is exercised end-to-end: structured log → error store → job-level crash record →
+            // controlled exit(1) → the restart applies the job-level policy. Gated by an env the
+            // production environment never sets (the compose environment-model would flag it as
+            // drift); the injected error is the only synthetic part — the handler, the stores and
+            // the exit are the real production path.
+            if (process.env.BACKGROUND_AGENT_E2E_CRASH_DISPATCH) {
+                process.emit('uncaughtException', new Error('e2e crash injection (dispatch pass)'));
+                await new Promise<void>(() => {}); // the tick stops here; the handler exits the process
+            }
+            const before = await store.findRow(requestId);
             await worker.process(requestId);
             log({ event: 'processed', requestId });
+            // The dead-letter alert channel (epic 6 entry 13): alerted exactly once on the
+            // → dead_letter transition (re-processing a dead-lettered job does not re-alert).
+            const after = await store.findRow(requestId);
+            if (after?.state === 'dead_letter' && before?.state !== 'dead_letter') {
+                await writeDeadLetterAlert({ requestKey: after.request_key, requestId });
+                log({ event: 'dead-letter-alerted', requestId });
+            }
         } catch (error) {
             if (error instanceof BackgroundCrashError) {
                 // The crash policy already settled the row (attempts + backoff or dead letter);
