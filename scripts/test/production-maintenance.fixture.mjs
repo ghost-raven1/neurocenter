@@ -19,7 +19,8 @@ export async function verifyProductionMaintenance({ check, request, query }) {
         assert.equal(capacity.data.reserveBytes, 1073741824);
         assert.deepEqual(
             Object.keys(capacity.data.resources).sort(),
-            ['postgres', 'wal', 'skills', 'projects', 'backups', 'runtime-artifacts'].sort(),
+            // Список = services/shared/capacity.cjs (resources) — источник истины коллектора.
+            ['postgres', 'wal', 'skills', 'projects', 'backups', 'runtime-artifacts', 'model-weights'].sort(),
         );
         for (const item of Object.values(capacity.data.resources)) {
             assert.equal(item.available, true);

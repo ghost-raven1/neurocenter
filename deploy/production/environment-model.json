@@ -4,6 +4,7 @@
         "SSO_DISABLE": "false",
         "RAG_AUTH_DISABLED": "false"
     },
+    "ssoModes": ["local-idp", "corporate"],
     "compose": {
         "base": "compose.production.yml",
         "overlays": ["compose.chat-storage.yml", "compose.web-restore.yml"]
@@ -30,18 +31,40 @@
                 "OLLAMA_NUM_PARALLEL": "1",
                 "OLLAMA_MAX_LOADED_MODELS": "1",
                 "OLLAMA_MAX_QUEUE": "8",
-                "OLLAMA_KEEP_ALIVE": "5m"
+                "OLLAMA_KEEP_ALIVE": "5m",
+                "NO_PROXY": "localhost,127.0.0.1,::1,0.0.0.0",
+                "no_proxy": "localhost,127.0.0.1,::1,0.0.0.0"
             },
             "codeRoots": [],
             "requiredEnv": {},
             "envNotes": {
-                "OLLAMA_HOST": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" },
-                "OLLAMA_NO_CLOUD": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" },
-                "OLLAMA_CONTEXT_LENGTH": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" },
-                "OLLAMA_NUM_PARALLEL": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" },
-                "OLLAMA_MAX_LOADED_MODELS": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" },
-                "OLLAMA_MAX_QUEUE": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" },
-                "OLLAMA_KEEP_ALIVE": { "external": "образ ollama/ollama читает переменные OLLAMA_* сам" }
+                "OLLAMA_HOST": {
+                    "external": "образ ollama/ollama читает переменные OLLAMA_* сам"
+                },
+                "OLLAMA_NO_CLOUD": {
+                    "external": "образ ollama/ollama читает переменные OLLAMA_* сам"
+                },
+                "OLLAMA_CONTEXT_LENGTH": {
+                    "external": "образ ollama/ollama читает переменные OLLAMA_* сам"
+                },
+                "OLLAMA_NUM_PARALLEL": {
+                    "external": "образ ollama/ollama читает переменные OLLAMA_* сам"
+                },
+                "OLLAMA_MAX_LOADED_MODELS": {
+                    "external": "образ ollama/ollama читает переменные OLLAMA_* сам"
+                },
+                "OLLAMA_MAX_QUEUE": {
+                    "external": "образ ollama/ollama читает переменные OLLAMA_* сам"
+                },
+                "OLLAMA_KEEP_ALIVE": {
+                    "external": "образ ollama/ollama читает переменные OLLAMA_* сам"
+                },
+                "NO_PROXY": {
+                    "external": "образ ollama/ollama (Go HTTP-клиент) читает NO_PROXY при dial 0.0.0.0:11434"
+                },
+                "no_proxy": {
+                    "external": "образ ollama/ollama (Go HTTP-клиент) читает no_proxy (lowercase первым) при dial 0.0.0.0:11434"
+                }
             }
         },
         "postgres": {
@@ -67,10 +90,18 @@
             "codeRoots": [],
             "requiredEnv": {},
             "envNotes": {
-                "POSTGRES_USER": { "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам" },
-                "POSTGRES_DB": { "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам" },
-                "POSTGRES_PASSWORD_FILE": { "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам" },
-                "POSTGRES_INITDB_ARGS": { "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам" }
+                "POSTGRES_USER": {
+                    "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам"
+                },
+                "POSTGRES_DB": {
+                    "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам"
+                },
+                "POSTGRES_PASSWORD_FILE": {
+                    "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам"
+                },
+                "POSTGRES_INITDB_ARGS": {
+                    "external": "образ pgvector/pgvector читает переменные POSTGRES_* сам"
+                }
             }
         },
         "capacity-collector": {
@@ -216,7 +247,9 @@
                 "CHAT_S3_PERSONAL_BUCKET": "${CHAT_S3_PERSONAL_BUCKET:?Configure private personal attachment bucket}",
                 "CHAT_S3_ACCESS_KEY_FILE": "/run/secrets/chat_s3_access_key",
                 "CHAT_S3_SECRET_KEY_FILE": "/run/secrets/chat_s3_secret_key",
-                "RESTORE_RUNNER_TOKEN_FILE": "/run/secrets/restore_runner_token"
+                "RESTORE_RUNNER_TOKEN_FILE": "/run/secrets/restore_runner_token",
+                "NO_PROXY": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test",
+                "no_proxy": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test"
             },
             "codeRoots": ["services/catalog-service/src"],
             "requiredEnv": {
@@ -226,6 +259,14 @@
                 "CATALOG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД каталога (секретный файл _FILE); без переменной сервис не стартует",
                 "RAG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД RAG (секретный файл _FILE); без переменной сервис не стартует",
                 "SKILLS_SERVICE_URL": "services/shared/runtime.cjs: validateProduction требует адрес skills-service без пути и секретов; без переменной сервис не стартует"
+            },
+            "envNotes": {
+                "NO_PROXY": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает NO_PROXY при межсервисных вызовах — код сервиса переменную не читает"
+                },
+                "no_proxy": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает no_proxy (lowercase читается первым) при межсервисных вызовах — код сервиса переменную не читает; без явного значения compose инжект демона (короткий список) заслоняет NO_PROXY"
+                }
             }
         },
         "feature-flags-service": {
@@ -250,7 +291,9 @@
                 "NEUROCENTER_METRICS_TOKEN_FILE": "/run/secrets/metrics_token",
                 "PORT": "4400",
                 "CATALOG_PG_URL_FILE": "/run/secrets/catalog_url",
-                "CATALOG_SERVICE_URL": "http://catalog-service:4100"
+                "CATALOG_SERVICE_URL": "http://catalog-service:4100",
+                "NO_PROXY": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test",
+                "no_proxy": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test"
             },
             "codeRoots": ["services/feature-flags-service/src"],
             "requiredEnv": {
@@ -259,6 +302,14 @@
                 "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
                 "CATALOG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД каталога (секретный файл _FILE); без переменной сервис не стартует",
                 "CATALOG_SERVICE_URL": "services/shared/runtime.cjs: validateProduction требует адрес catalog-service без пути и секретов; без переменной сервис не стартует"
+            },
+            "envNotes": {
+                "NO_PROXY": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает NO_PROXY при межсервисных вызовах — код сервиса переменную не читает"
+                },
+                "no_proxy": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает no_proxy (lowercase читается первым) при межсервисных вызовах — код сервиса переменную не читает; без явного значения compose инжект демона (короткий список) заслоняет NO_PROXY"
+                }
             }
         },
         "skills-service": {
@@ -285,13 +336,23 @@
                 "PORT": "4200",
                 "SKILLS_STORAGE_PATH": "/app/data/skills",
                 "CATALOG_SERVICE_URL": "http://catalog-service:4100",
-                "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400"
+                "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400",
+                "NO_PROXY": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test",
+                "no_proxy": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test"
             },
             "codeRoots": ["services/skills-service/src"],
             "requiredEnv": {
                 "NODE_ENV": "services/shared/runtime.cjs: validateProduction работает только при production; без переменной сервис стартует без production-проверок",
                 "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
                 "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует"
+            },
+            "envNotes": {
+                "NO_PROXY": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает NO_PROXY при межсервисных вызовах — код сервиса переменную не читает"
+                },
+                "no_proxy": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает no_proxy (lowercase читается первым) при межсервисных вызовах — код сервиса переменную не читает; без явного значения compose инжект демона (короткий список) заслоняет NO_PROXY"
+                }
             }
         },
         "rag-sync-service": {
@@ -322,7 +383,9 @@
                 "RAG_PG_URL_FILE": "/run/secrets/rag_url",
                 "RAG_PROVISION_PG_URL_FILE": "/run/secrets/rag_provision_url",
                 "CATALOG_SERVICE_URL": "http://catalog-service:4100",
-                "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400"
+                "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400",
+                "NO_PROXY": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test",
+                "no_proxy": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test"
             },
             "codeRoots": ["services/rag-sync-service/src"],
             "requiredEnv": {
@@ -332,6 +395,14 @@
                 "RAG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к БД RAG (секретный файл _FILE); без переменной сервис не стартует",
                 "RAG_PROVISION_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует безопасное подключение к provisioning-БД RAG (секретный файл _FILE); без переменной сервис не стартует",
                 "RAG_AUTH_DISABLED": "services/shared/runtime.cjs: в production обязателен RAG_AUTH_DISABLED=false; без переменной включено обходное отключение auth и старт отклонён"
+            },
+            "envNotes": {
+                "NO_PROXY": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает NO_PROXY при межсервисных вызовах — код сервиса переменную не читает"
+                },
+                "no_proxy": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает no_proxy (lowercase читается первым) при межсервисных вызовах — код сервиса переменную не читает; без явного значения compose инжект демона (короткий список) заслоняет NO_PROXY"
+                }
             }
         },
         "oauth2-bridge": {
@@ -361,7 +432,9 @@
                 "SSO_CLIENT_SECRET_FILE": "/run/secrets/sso_client_secret",
                 "REDIRECT_URI": "${REDIRECT_URI:?Заполните callback Blitz}",
                 "SSO_SCOPE": "${SSO_SCOPE:-openid profile email}",
-                "CATALOG_SERVICE_URL": "http://catalog-service:4100"
+                "CATALOG_SERVICE_URL": "http://catalog-service:4100",
+                "NO_PROXY": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test",
+                "no_proxy": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test"
             },
             "codeRoots": ["services/oauth2-bridge/src"],
             "requiredEnv": {
@@ -369,10 +442,18 @@
                 "PANEL_URL": "services/shared/runtime.cjs: validateProduction требует доверенный HTTPS PANEL_URL (только origin); без переменной сервис не стартует",
                 "NEUROCENTER_INTERNAL_TOKEN_FILE": "services/shared/runtime.cjs: validateProduction требует внутренний токен (секретный файл _FILE); без переменной сервис не стартует",
                 "SSO_DISABLE": "services/shared/runtime.cjs: в production обязателен SSO_DISABLE=false; без переменной включён обход SSO и старт отклонён",
-                "SSO_HOST": "services/shared/runtime.cjs: validateProduction требует адрес Blitz (HTTPS); без переменной сервис не стартует",
+                "SSO_HOST": "services/shared/runtime.cjs: validateProduction требует адрес IdP (центральный Blitz или локальный IdP в контуре, режим — ssoModes), HTTPS; без переменной сервис не стартует",
                 "SSO_CLIENT_ID": "services/shared/runtime.cjs: validateProduction требует Client ID Blitz; без переменной сервис не стартует",
                 "SSO_CLIENT_SECRET_FILE": "services/shared/runtime.cjs: validateProduction требует секрет клиента Blitz (секретный файл _FILE); без переменной сервис не стартует",
                 "REDIRECT_URI": "services/shared/runtime.cjs: validateProduction требует REDIRECT_URI = PANEL_URL/auth/callback; без переменной сервис не стартует"
+            },
+            "envNotes": {
+                "NO_PROXY": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает NO_PROXY при межсервисных вызовах — код сервиса переменную не читает"
+                },
+                "no_proxy": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает no_proxy (lowercase читается первым) при межсервисных вызовах — код сервиса переменную не читает; без явного значения compose инжект демона (короткий список) заслоняет NO_PROXY"
+                }
             }
         },
         "api-gateway": {
@@ -406,7 +487,9 @@
                 "FEATURE_FLAGS_SERVICE_URL": "http://feature-flags-service:4400",
                 "BRIDGE_TEMPLATES_DIR": "/app/bridge-dist",
                 "NEUROCENTER_MCP_HOST_DIR": "/data/gateway/mcp-host",
-                "CATALOG_PG_URL_FILE": "/run/secrets/catalog_url"
+                "CATALOG_PG_URL_FILE": "/run/secrets/catalog_url",
+                "NO_PROXY": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test",
+                "no_proxy": "localhost,127.0.0.1,::1,0.0.0.0,postgres,catalog-service,api-gateway,skills-service,rag-sync-service,feature-flags-service,oauth2-bridge,model-runtime,frontend,background-agent,blitz-fixture,blitz.test,panel.test"
             },
             "codeRoots": ["services/api-gateway/src"],
             "requiredEnv": {
@@ -417,6 +500,14 @@
                 "BRIDGE_TEMPLATES_DIR": "потребляется bridge.controller.ts (api-gateway): в production-образе fallback резолвится в /bridge-dist, которого нет — шаблоны образ несёт в /app/bridge-dist (Dockerfile: COPY bridge-dist/ /app/bridge-dist/); без переменной /api/bridge/* отвечает 404",
                 "NEUROCENTER_MCP_HOST_DIR": "потребляется artifact-cache.ts (api-gateway): корень кэша MCP-артефактов на volume artifact-cache; per-project MCP-artifact cache с LRU-квотой (AD-D2); без переменной кэш уезжает в tmpdir и сгорает при рестарте gateway",
                 "CATALOG_PG_URL_FILE": "services/shared/runtime.cjs: validateProduction требует строку подключения к каталогной БД (секретный файл _FILE); PG-счётчики pairing-окон rate_limit_windows (AD-6, entry 2.9); без переменной сервис не стартует"
+            },
+            "envNotes": {
+                "NO_PROXY": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает NO_PROXY при межсервисных вызовах — код сервиса переменную не читает"
+                },
+                "no_proxy": {
+                    "builtin": "axios (зависимость proxy-from-env в node_modules) читает no_proxy (lowercase читается первым) при межсервисных вызовах — код сервиса переменную не читает; без явного значения compose инжект демона (короткий список) заслоняет NO_PROXY"
+                }
             }
         },
         "frontend": {
@@ -432,8 +523,18 @@
             "seccomp": null,
             "secrets": ["tls_cert", "tls_key"],
             "ports": [
-                { "target": 8080, "published": 80, "hostIp": null, "protocol": null },
-                { "target": 8443, "published": 443, "hostIp": null, "protocol": null }
+                {
+                    "target": 8080,
+                    "published": 80,
+                    "hostIp": null,
+                    "protocol": null
+                },
+                {
+                    "target": 8443,
+                    "published": 443,
+                    "hostIp": null,
+                    "protocol": null
+                }
             ],
             "volumes": [],
             "env": {
@@ -442,7 +543,9 @@
             "codeRoots": [],
             "requiredEnv": {},
             "envNotes": {
-                "NEUROCENTER_HOST": { "consumedBy": "command" }
+                "NEUROCENTER_HOST": {
+                    "consumedBy": "command"
+                }
             }
         },
         "node_exporter": {

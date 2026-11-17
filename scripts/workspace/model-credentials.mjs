@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
-import { open, writeFile, link, rm, lstat } from 'node:fs/promises';
+import { open, writeFile, link, rm, lstat, chmod } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { safeDirectory } from '../models/bundle-files.mjs';
@@ -16,7 +16,9 @@ async function readOnce(filename) {
         handle = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
         const before = await handle.stat();
         if (before.isFile() && before.nlink === 2) throw publishing();
-        if (!before.isFile() || before.nlink !== 1 || before.size > 128 || before.mode & 0o077) throw invalid();
+        // 0o022: запрещаем group/other-WRITE; world/group-read (0o444) обязателен — production
+        // читает ключ через bind-mount file-secret compose v2 в non-root/cap-drop сервисе.
+        if (!before.isFile() || before.nlink !== 1 || before.size > 128 || before.mode & 0o022) throw invalid();
         const bytes = await handle.readFile(),
             after = await handle.stat(),
             named = await lstat(filename);
@@ -27,8 +29,8 @@ async function readOnce(filename) {
             named.nlink !== 1 ||
             !named.isFile() ||
             after.nlink !== 1 ||
-            after.mode & 0o077 ||
-            named.mode & 0o077 ||
+            after.mode & 0o022 ||
+            named.mode & 0o022 ||
             after.size !== before.size ||
             after.mtimeMs !== before.mtimeMs
         )
@@ -97,10 +99,10 @@ export async function modelCredentialIdentity(directory, { allowMissing = false 
     if (marker !== undefined && marker !== keyId + '\n') throw invalid();
     return { filename, keyId, markerPresent: marker !== undefined };
 }
-async function create(filename, value) {
+async function create(filename, value, mode = 0o444) {
     const temporary = filename + '.' + randomBytes(8).toString('hex') + '.tmp';
     try {
-        await writeFile(temporary, value, { flag: 'wx', mode: 0o600, flush: true });
+        await writeFile(temporary, value, { flag: 'wx', mode, flush: true });
         try {
             await link(temporary, filename);
         } catch (error) {
@@ -133,6 +135,9 @@ export async function ensureModelCredentialKey(directory) {
         if (previous !== undefined) throw invalid();
         await create(filename, randomBytes(32).toString('base64') + '\n');
         value = await read(filename);
+    } else {
+        // Нормализация режима прежнего ключа (0o600 → 0o444) для bind-mount file-secret compose v2.
+        await chmod(filename, 0o444);
     }
     const keyId = identity(value),
         expected = keyId + '\n';

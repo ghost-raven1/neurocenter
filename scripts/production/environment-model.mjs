@@ -9,10 +9,22 @@ export const MODEL_FILE = 'deploy/production/environment-model.json';
 export const MODEL_SCHEMA = 'neurocenter-environment-model-v1';
 export const RUNTIME_SECRET_NAMES_FILE = 'services/shared/runtime.cjs';
 export const SHARED_CODE_ROOT = 'services/shared';
+/** Supported-auth-режимы production-конфига (AD-OP-5, 11.1): локальный Blitz-совместимый IdP в контуре / центральный Blitz. */
+export const SSO_MODES = ['local-idp', 'corporate'];
 
 const CODE_FILE_EXTENSIONS = new Set(['.ts', '.cts', '.mts', '.js', '.mjs', '.cjs']);
 const EXCLUDED_DIRECTORIES = new Set(['node_modules', 'dist', 'integration']);
 const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+/**
+ * Стандартные POSIX-прокси-переменные: axios (proxy-from-env), Go net/http и curl
+ * читают их preferentially в lowercase, а Docker-демон может инжектить их во все
+ * контейнеры (proxies.default в ~/.docker/config.json) — поэтому lowercase-форма
+ * допустима рядом с uppercase-правилом.
+ */
+const STANDARD_PROXY_ENV_NAMES = new Set(['no_proxy', 'http_proxy', 'https_proxy', 'all_proxy']);
+function isEnvName(name) {
+    return ENV_NAME_PATTERN.test(name) || STANDARD_PROXY_ENV_NAMES.has(name);
+}
 const CODE_ROOT_PATTERN = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 
 /** Поля сервисной модели, которые drift-тест сверяет с compose. */
@@ -127,7 +139,7 @@ function normalizeEnvironment(environment) {
         return resolved;
     }
     for (const [name, value] of Object.entries(environment)) {
-        if (!ENV_NAME_PATTERN.test(name)) throw new Error('Некорректное имя env в Compose: ' + name);
+        if (!isEnvName(name)) throw new Error('Некорректное имя env в Compose: ' + name);
         resolved[name] = value === null ? '' : String(value);
     }
     return resolved;
@@ -226,6 +238,17 @@ export function validateModelShape(model) {
             }
         }
     }
+    if (model.ssoModes !== undefined) {
+        if (
+            !Array.isArray(model.ssoModes) ||
+            model.ssoModes.length === 0 ||
+            model.ssoModes.some((mode) => typeof mode !== 'string')
+        ) {
+            throw new Error(
+                'Некорректная модель окружения: ssoModes — ожидается непустой массив строк (допустимые значения — SSO_MODES)',
+            );
+        }
+    }
     for (const [name, service] of Object.entries(model.services)) {
         for (const field of SERVICE_FIELDS) {
             if (!Object.hasOwn(service, field)) throw new Error(`Некорректная модель окружения: ${name}.${field}`);
@@ -241,7 +264,7 @@ export function validateModelShape(model) {
             throw new Error(`Некорректная модель окружения: ${name}.requiredEnv`);
         }
         for (const [envName, reason] of Object.entries(service.requiredEnv)) {
-            if (!ENV_NAME_PATTERN.test(envName)) {
+            if (!isEnvName(envName)) {
                 throw new Error(`Некорректная модель окружения: ${name}.requiredEnv.${envName} — недопустимое имя env`);
             }
             if (typeof reason !== 'string' || !reason.trim()) {
@@ -350,7 +373,7 @@ export function collectCodeFiles(root, codeRoots = []) {
  * (чистые присваивания не считаются чтением) или производное NAME_FILE из secretNames.
  */
 export function envReadInCode(name, codeFiles, secretNames = []) {
-    if (!ENV_NAME_PATTERN.test(name)) throw new Error('Некорректное имя env: ' + name);
+    if (!isEnvName(name)) throw new Error('Некорректное имя env: ' + name);
     if (name.endsWith('_FILE') && secretNames.includes(name.slice(0, -'_FILE'.length))) {
         return { mechanism: 'secret-file', file: RUNTIME_SECRET_NAMES_FILE };
     }
@@ -485,6 +508,18 @@ export function productionConstraintViolations(model) {
         }
     }
     return violations;
+}
+
+/**
+ * Декларация supported-auth-режимов (AD-OP-5, 11.1): production-модель обязана
+ * называть поддерживаемые режимы auth (local-idp / corporate), чтобы локальный
+ * auth пилота читался как supported-конфигурация, а не dev-обход.
+ * Возвращает [{problem, value?}]: поле отсутствует / пустое / значение вне enum.
+ */
+export function ssoModeViolations(model) {
+    if (model.ssoModes === undefined) return [{ problem: 'missing' }];
+    if (!Array.isArray(model.ssoModes) || model.ssoModes.length === 0) return [{ problem: 'empty' }];
+    return model.ssoModes.filter((mode) => !SSO_MODES.includes(mode)).map((value) => ({ problem: 'invalid', value }));
 }
 
 /** Тег образа: часть после последнего двоеточия, если оно после последнего слэша. */

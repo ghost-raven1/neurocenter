@@ -15,6 +15,7 @@ import {
     parseSecretNames,
     productionConstraintViolations,
     requiredEnvironmentDrift,
+    ssoModeViolations,
     structuralDrift,
 } from '../production/environment-model.mjs';
 
@@ -62,6 +63,7 @@ async function fixture(t, { mutateCompose, mutateModel } = {}) {
                 required: requiredEnvironmentDrift(checked, services, { root, secretNames }),
                 constraintViolations: productionConstraintViolations(checked),
                 latestViolations: latestTagViolations(checked),
+                ssoModeViolations: ssoModeViolations(checked),
             };
         },
     };
@@ -375,10 +377,36 @@ test('возврат BRIDGE_DIST в production compose ловится как dea
 
 test('production-матрица ограничений: текущая модель без dev-обходов и latest-тегов (AD-OP-5)', async (t) => {
     const f = await fixture(t);
-    const { checked, constraintViolations, latestViolations } = await f.report();
+    const { checked, constraintViolations, latestViolations, ssoModeViolations: ssoModes } = await f.report();
     assert.deepEqual(checked.productionEnvConstraints, { SSO_DISABLE: 'false', RAG_AUTH_DISABLED: 'false' });
     assert.deepEqual(constraintViolations, []);
     assert.deepEqual(latestViolations, []);
+    // 11.1 (AD-OP-5): supported-auth-режимы декларируются в модели; оба режима — 0 нарушений.
+    assert.deepEqual(checked.ssoModes, ['local-idp', 'corporate']);
+    assert.deepEqual(ssoModes, []);
+});
+
+test('11.1: декларация ssoModes обязательна — отсутствие поля или значение вне enum фэйлит', async (t) => {
+    const missing = await fixture(t, {
+        mutateModel: (model) => {
+            delete model.ssoModes;
+        },
+    });
+    assert.deepEqual((await missing.report()).ssoModeViolations, [{ problem: 'missing' }]);
+
+    const invalid = await fixture(t, {
+        mutateModel: (model) => {
+            model.ssoModes = ['local-idp', 'dev-bypass'];
+        },
+    });
+    assert.deepEqual((await invalid.report()).ssoModeViolations, [{ problem: 'invalid', value: 'dev-bypass' }]);
+
+    const empty = await fixture(t, {
+        mutateModel: (model) => {
+            model.ssoModes = [];
+        },
+    });
+    await assert.rejects(empty.report(), /ssoModes/);
 });
 
 test('dev-обход SSO_DISABLE=true в env любого сервиса production-модели фэйлит с сервисом, переменной и значением', async (t) => {

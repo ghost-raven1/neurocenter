@@ -29,7 +29,7 @@ test('Сборщик получает отдельный секрет метри
         assert.notEqual(metrics, await readFile(path.join(directory, 'secrets/internal_token'), 'utf8'));
         await configureProduction(fixture(), directory);
         assert.equal(await readFile(path.join(directory, 'secrets/metrics_token'), 'utf8'), metrics);
-        assert.equal((await stat(path.join(directory, 'secrets/metrics_token'))).mode & 0o777, 0o600);
+        assert.equal((await stat(path.join(directory, 'secrets/metrics_token'))).mode & 0o777, 0o444);
         const modelKey = await readFile(path.join(directory, 'secrets/model_credential_key'), 'utf8');
         assert.match(modelKey, /^[A-Za-z0-9+/]{43}=\n$/);
         assert.ok(!(await readFile(path.join(directory, '.env'), 'utf8')).includes(modelKey.trim()));
@@ -144,9 +144,10 @@ test('Повторная настройка сохраняет пароли БД
         const before = await readFile(filename, 'utf8');
         await configureProduction({ ...fixture(), ssoClientSecret: undefined }, directory);
         assert.equal(await readFile(filename, 'utf8'), before);
-        for (const filename of ['.env', 'secrets/catalog_url', 'secrets/internal_token', 'secrets/sso_client_secret']) {
-            assert.equal((await stat(path.join(directory, filename))).mode & 0o777, 0o600);
+        for (const filename of ['secrets/catalog_url', 'secrets/internal_token', 'secrets/sso_client_secret']) {
+            assert.equal((await stat(path.join(directory, filename))).mode & 0o777, 0o444);
         }
+        assert.equal((await stat(path.join(directory, '.env'))).mode & 0o777, 0o600);
         assert.equal((await stat(directory)).mode & 0o777, 0o700);
         const env = await readFile(path.join(directory, '.env'), 'utf8');
         assert.ok(env.includes("BOOTSTRAP_ADMIN_EMAIL='admin@example.test'"));

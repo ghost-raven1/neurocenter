@@ -133,13 +133,20 @@ async function safeFile(filename) {
     }
 }
 
-/** Атомарная запись с закрытыми правами; не следует по ссылкам. */
-async function privateWrite(filename, value) {
+/** Атомарная запись с закрытыми правами; не следует по ссылкам. mode: 0o600 (.env) или 0o444 (секрет-файлы). */
+async function privateWrite(filename, value, mode = 0o600) {
     await safeFile(filename);
     const temporary = filename + '.' + randomBytes(8).toString('hex') + '.tmp';
-    await writeFile(temporary, value, { mode: 0o600, flag: 'wx' });
+    await writeFile(temporary, value, { mode, flag: 'wx' });
     await rename(temporary, filename);
 }
+
+/**
+ * Compose v2 реализует file secrets как bind-mount host-файла с сохранением его прав:
+ * non-root (USER node) и cap-drop сервисы читают секрет только при world-readable режиме.
+ * Конфиденциальность на хосте сохраняет 0700 production-каталог (только владелец проходит путь).
+ */
+const SECRET_FILE_MODE = 0o444;
 
 /** Дополняет прежний приватный конфиг отдельным ключом сборщика без ротации рабочих секретов. */
 export async function ensureMetricsToken(directory) {
@@ -154,7 +161,7 @@ export async function ensureMetricsToken(directory) {
         const temporary = filename + '.' + randomBytes(8).toString('hex') + '.tmp';
         try {
             await writeFile(temporary, randomBytes(32).toString('hex') + '\n', {
-                mode: 0o600,
+                mode: SECRET_FILE_MODE,
                 flag: 'wx',
                 flush: true,
             });
@@ -178,7 +185,7 @@ export async function ensureMetricsToken(directory) {
     if (!(await safeFile(filename)) || !/^[a-f0-9]{64}$/.test((await readFile(filename, 'utf8')).trim())) {
         throw new Error('Некорректный секрет метрик; автоматическая замена запрещена');
     }
-    await chmod(filename, 0o600);
+    await chmod(filename, SECRET_FILE_MODE);
 }
 
 export async function configureProduction(input, destination) {
@@ -200,11 +207,11 @@ export async function configureProduction(input, destination) {
     const secret = async (name, generate) => {
         const filename = path.join(secrets, name);
         if (await safeFile(filename)) {
-            await chmod(filename, 0o600);
+            await chmod(filename, SECRET_FILE_MODE);
             return (await readFile(filename, 'utf8')).trim();
         }
         const value = generate();
-        await privateWrite(filename, value + '\n');
+        await privateWrite(filename, value + '\n', SECRET_FILE_MODE);
         return value;
     };
     await secret('postgres_password', () => randomBytes(32).toString('hex'));
@@ -229,7 +236,7 @@ export async function configureProduction(input, destination) {
         ) {
             throw new Error('Заполните ssoClientSecret');
         }
-        await privateWrite(path.join(secrets, 'sso_client_secret'), input.ssoClientSecret + '\n');
+        await privateWrite(path.join(secrets, 'sso_client_secret'), input.ssoClientSecret + '\n', SECRET_FILE_MODE);
     } else if (!(await safeFile(path.join(secrets, 'sso_client_secret')))) {
         throw new Error('Заполните ssoClientSecret');
     }

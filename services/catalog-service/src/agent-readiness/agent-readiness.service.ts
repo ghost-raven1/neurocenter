@@ -5,6 +5,7 @@ import {
     Injectable,
     OnApplicationShutdown,
     OnModuleInit,
+    Optional,
     ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -43,7 +44,7 @@ export class AgentReadinessService implements OnModuleInit, OnApplicationShutdow
     constructor(
         private readonly models: ModelsService,
         runtime: ModelRuntime,
-        probe?: IOpenCodeReadinessProbe,
+        @Optional() probe?: IOpenCodeReadinessProbe,
     ) {
         this.policy = new AgentTrialPolicy(models);
         this.repository = new AgentTrialRepository(models.pool);

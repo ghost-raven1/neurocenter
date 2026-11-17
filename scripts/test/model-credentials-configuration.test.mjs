@@ -27,7 +27,7 @@ test('Dev готовит постоянный серверный ключ; по�
     const filename = first.NEUROCENTER_MODEL_CREDENTIAL_KEY_FILE,
         bytes = await readFile(filename, 'utf8');
     assert.match(bytes, /^[A-Za-z0-9+/]{43}=\n$/);
-    assert.equal((await stat(filename)).mode & 0o777, 0o600);
+    assert.equal((await stat(filename)).mode & 0o777, 0o444);
     assert.equal((await stat(path.dirname(filename))).mode & 0o777, 0o700);
     assert.ok(!JSON.stringify(first).includes(bytes.trim()));
 });
@@ -54,6 +54,7 @@ test('Потерянный ранее созданный ключ не заме�
 test('Подмена ключа даже другим корректным base64 обнаруживается по сохранённому identity', async (t) => {
     const root = await fixture(t),
         filename = await ensureModelCredentialKey(root);
+    await chmod(filename, 0o600);
     await writeFile(filename, Buffer.alloc(32, 1).toString('base64') + '\n');
     await assert.rejects(ensureModelCredentialKey(root), /автоматическая замена запрещена/);
 });
@@ -68,8 +69,12 @@ for (const mode of ['symlink', 'hardlink', 'corrupt', 'public-permissions'])
             await symlink(outside, filename);
         }
         if (mode === 'hardlink') await link(filename, outside);
-        if (mode === 'corrupt') await writeFile(filename, 'invalid');
-        if (mode === 'public-permissions') await chmod(filename, 0o644);
+        if (mode === 'corrupt') {
+            await chmod(filename, 0o600);
+            await writeFile(filename, 'invalid');
+        }
+        // 0o606: group/other-WRITE по-прежнему запрещён; world/group-read (0o444) допустим.
+        if (mode === 'public-permissions') await chmod(filename, 0o606);
         await assert.rejects(ensureModelCredentialKey(root));
         if (mode === 'symlink') assert.equal(await readFile(outside, 'utf8'), 'untouched');
     });

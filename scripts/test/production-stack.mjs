@@ -20,6 +20,7 @@ import {
     verifyProductionMaintenancePermissions,
     verifyProductionCapacityAdmission,
 } from './production-maintenance.fixture.mjs';
+import { load as loadYaml } from 'js-yaml';
 const require = createRequire(new URL('../../frontend/package.json', import.meta.url));
 const { io } = require('socket.io-client');
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -69,28 +70,54 @@ await configureProduction(
 );
 await rm(path.join(stage, 'production-stack.json'), { force: true });
 const override = path.join(directory, 'compose.fixture.yml');
-await writeFile(
-    override,
-    `services:
-  frontend:
-    ports: !override ['127.0.0.1:18080:8080', '127.0.0.1:18443:8443']
-  oauth2-bridge:
+// Опциональная фиксация внешних хостов для сборки образов на ограниченной сети,
+// где build-контейнер не резолвит имена (например, прокси-окружение без наружного DNS):
+// NEUROCENTER_BUILD_HOSTS=host:ip,host2:ip2. Без переменной override не меняется.
+const buildHosts = (process.env.NEUROCENTER_BUILD_HOSTS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+const baseCompose = loadYaml(await readFile(path.join(root, 'compose.production.yml'), 'utf8'));
+const buildServices = Object.entries(baseCompose.services || {})
+    .filter(([, service]) => service.build)
+    .map(([name]) => name);
+const extraHostsYaml = buildHosts.length
+    ? `
+    build:
+      extra_hosts:
+${buildHosts.map((host) => `        - '${host}'`).join('\n')}`
+    : '';
+const overrideBlocks = [
+    `  frontend:
+    ports: !override ['127.0.0.1:18080:8080', '127.0.0.1:18443:8443']${extraHostsYaml}`,
+    `  oauth2-bridge:
     environment:
       NODE_EXTRA_CA_CERTS: /fixture/tls.crt
-    volumes: ['${directory}/tls.crt:/fixture/tls.crt:ro']
-  blitz-fixture:
+    volumes: ['${directory}/tls.crt:/fixture/tls.crt:ro']${extraHostsYaml}`,
+    `  blitz-fixture:
     image: node:24.22.0-bookworm-slim
     command: [node, /fixture/provider.cjs]
     networks:
       backend:
         aliases: [blitz.test]
-    ports: ['127.0.0.1:18444:443']
+    # 8443, а не 443: host→container-трафик с destination-портом 443 перехватывается
+    # антивирусом хоста (KESL) с переизданием сертификата (см. blitz-provider.fixture.cjs).
+    ports: ['127.0.0.1:18444:8443']
     volumes:
       - '${directory}/tls.crt:/fixture/tls.crt:ro'
       - '${directory}/tls.key:/fixture/tls.key:ro'
-      - '${root}/scripts/test/blitz-provider.fixture.cjs:/fixture/provider.cjs:ro'
-`,
-);
+      - '${root}/scripts/test/blitz-provider.fixture.cjs:/fixture/provider.cjs:ro'`,
+];
+if (buildHosts.length) {
+    for (const name of buildServices) {
+        if (name === 'frontend' || name === 'oauth2-bridge') continue;
+        overrideBlocks.push(`  ${name}:
+    build:
+      extra_hosts:
+${buildHosts.map((host) => `        - '${host}'`).join('\n')}`);
+    }
+}
+await writeFile(override, 'services:\n' + overrideBlocks.join('\n') + '\n');
 const composeArgs = [
     'compose',
     '--project-name',
@@ -106,10 +133,10 @@ const composeArgs = [
 ];
 const dockerEnvironment = composeEnvironment();
 await writeFile(path.join(directory, 'project-name'), project + '\n');
-function docker(args) {
-    const result = spawnSync('docker', [...composeArgs, ...args], {
+function dockerRun(argv, args, extraEnvironment = {}) {
+    const result = spawnSync('docker', [...argv, ...args], {
         cwd: root,
-        env: dockerEnvironment,
+        env: { ...dockerEnvironment, ...extraEnvironment },
         encoding: 'utf8',
         maxBuffer: 4 * 1024 * 1024,
         timeout: args[0] === 'build' ? 20 * 60 * 1000 : 180000,
@@ -129,6 +156,13 @@ function docker(args) {
         );
     }
     return result.stdout.trim();
+}
+function docker(args, extraEnvironment = {}) {
+    return dockerRun(composeArgs, args, extraEnvironment);
+}
+// Raw docker-команды без compose-префикса (inspect и проч.): у compose v5.6 таких подкоманд нет.
+function dockerRaw(args) {
+    return dockerRun([], args);
 }
 /** Живой WS-клиент должен отвечать на close frames во время остановки сервера. */
 async function dockerAsync(args) {
@@ -265,6 +299,48 @@ try {
     });
     docker(['up', '-d', '--wait']);
     await recordProductionHealth({ run: async (args) => docker(args) }, stage);
+    await check('Production-конфиг не содержит dev-флагов', async () => {
+        // 11.1 (AD-OP-5): локальный auth = supported-конфигурация, не обход.
+        // Операторский .env не несёт dev-обходов (configureProduction их не пишет).
+        const dotenv = (await readFile(path.join(directory, 'config/.env'), 'utf8')).split('\n');
+        for (const line of dotenv) {
+            assert.doesNotMatch(
+                line.trim(),
+                /^(SSO_DISABLE|RAG_AUTH_DISABLED)\s*=\s*["']?true["']?$/,
+                'dev-флаг в операторском .env: ' + line.trim(),
+            );
+        }
+        // Живые контейнеры проекта: ни в одном env нет dev-обхода; мост явно несёт SSO_DISABLE=false.
+        // compose v5.6: `compose ps --filter` поддерживает только `status` (label — «unknown filter label»);
+        // проектная область и так задана --project-name, фильтр избыточен.
+        const ids = docker(['ps', '-aq']).split('\n').filter(Boolean);
+        assert.ok(ids.length, 'нет контейнеров production-проекта');
+        const inspected = JSON.parse(dockerRaw(['inspect', ...ids]));
+        for (const item of inspected) {
+            const service = item?.Config?.Labels?.['com.docker.compose.service'];
+            const env = item?.Config?.Env ?? [];
+            for (const line of env) {
+                assert.doesNotMatch(
+                    line,
+                    /^(SSO_DISABLE|RAG_AUTH_DISABLED)=true$/,
+                    'dev-флаг в env контейнера: ' + service,
+                );
+            }
+            if (service === 'oauth2-bridge') {
+                assert.ok(env.includes('SSO_DISABLE=false'), 'oauth2-bridge не несёт SSO_DISABLE=false');
+            }
+        }
+        // bootstrap-admin — one-shot (run --rm), его env сверяется в развёрнутом compose-конфиге.
+        // COMPOSE_PROFILES: v5.6 `config` не имеет --profile и без профилей setup не показывает bootstrap-admin.
+        const resolved = loadYaml(docker(['config'], { COMPOSE_PROFILES: 'setup' }));
+        for (const service of ['oauth2-bridge', 'bootstrap-admin']) {
+            assert.equal(
+                resolved.services[service].environment.SSO_DISABLE,
+                'false',
+                service + ' не несёт SSO_DISABLE=false в compose-конфиге',
+            );
+        }
+    });
     await check('Финальный Linux-образ загружает LanceDB после удаления dev-зависимостей', async () => {
         const result = docker([
             'exec',
@@ -272,7 +348,7 @@ try {
             'rag-sync-service',
             'node',
             '-e',
-            "require('/app/mcp/neurocenter-asset-sync/node_modules/@lancedb/lancedb').connect('/tmp/verification-lancedb').then(async db=>console.log(JSON.stringify({ok:true,tables:await db.tableNames()})))",
+            "require('/repo/mcp/neurocenter-asset-sync/node_modules/@lancedb/lancedb').connect('/tmp/verification-lancedb').then(async db=>console.log(JSON.stringify({ok:true,tables:await db.tableNames()})))",
         ]);
         assert.deepEqual(JSON.parse(result), { ok: true, tables: [] });
     });
@@ -614,6 +690,7 @@ try {
                 checkedAt: new Date().toISOString(),
                 stopDurationMs,
                 realBlitz: false,
+                authMode: 'local-idp',
                 idp: 'local HTTPS Blitz fixture',
                 capacityCollector: true,
             },
@@ -621,7 +698,7 @@ try {
             2,
         ),
     );
-    console.log(JSON.stringify({ passed: passed.length, realBlitz: false }));
+    console.log(JSON.stringify({ passed: passed.length, realBlitz: false, authMode: 'local-idp' }));
 } finally {
     socket?.close();
     try {
