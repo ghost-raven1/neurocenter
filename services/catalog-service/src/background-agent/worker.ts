@@ -91,6 +91,9 @@ export class BackgroundAgentWorker {
                     ),
                     checks: checked.checks,
                     deadlineAt: checked.deadlineAt,
+                    workflowId: checked.workflowId,
+                    method: checked.method,
+                    methodVersion: checked.methodVersion,
                 },
                 {},
             );

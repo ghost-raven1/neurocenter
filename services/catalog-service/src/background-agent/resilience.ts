@@ -567,6 +567,9 @@ export class CrashResilientBackgroundWorker {
                 prompt: this.renderPrompt(checked.instruction, rendered),
                 checks: checked.checks,
                 deadlineAt: checked.deadlineAt,
+                workflowId: checked.workflowId,
+                method: checked.method,
+                methodVersion: checked.methodVersion,
             },
             {},
         );
