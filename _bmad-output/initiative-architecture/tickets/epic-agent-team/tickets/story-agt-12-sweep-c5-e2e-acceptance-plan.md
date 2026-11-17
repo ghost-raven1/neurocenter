@@ -3,7 +3,7 @@ title: 'Sweep + C5 e2e-приёмка (реальный проект агент-
 type: 'feature'
 ticket: '12'
 created: '2026-11-09'
-status: ready-for-dev
+status: in-progress
 baseline_revision: '56f8c009cf0c9cb9d18091c5176c36831eb981cd'
 route: 'full'
 route_source: 'auto'
