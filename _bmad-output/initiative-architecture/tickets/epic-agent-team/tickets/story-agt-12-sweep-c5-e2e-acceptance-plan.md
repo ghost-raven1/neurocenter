@@ -122,3 +122,48 @@ context:
 - **OQ3 — Что именно = «принято» (критерий GO)?** Рекомендация: принятые документы BMAD (brief/PRD/архитектура) + OpenSpec change с `all_done`/архив + успешные проверки (`openspec validate --all --strict --no-interactive`) + провенанс всех артефактов (NFR-4) + верификация (entry 6). Обоснование: docs §«Выполнение и результат» (PASS-критерии).
 - **OQ4 — Обязателен ли крах-сценарий в e2e?** Рекомендация: да — инъецировать крах (kill) на одном из этапов и проверить политику (entry 11) + отсутствие дубля. Обоснование: C5 должен доказать отказоустойчивость в реальном прогоне, а не только unit.
 - **OQ5 — Пилот (эпик 10) ожидает C5?** Рекомендация: да — эпик 10 `after` эпик 9 «реальный проект агент-командой (C5)». C5 GO = вход в пилот. Обоснование: tickets.toml (эпик 10 after эпик 9).
+
+## Progress (2026-11-17, sweep-часть)
+
+**Sweep (автономизируемая часть тикета) — выполнен, 2026-11-17 (worktree nc-wt/agt12, ветка nc-agt12, base 2e705df6).**
+
+### 1. Drift — 0 (I/O 1)
+- `node --test scripts/test/compose-drift.test.mjs` — **23/23 green** (Node 24.22.0).
+- `structuralDrift` — **0**: 14 production-сервисов = модель ровно (merge-якоря/overlay развёрнуты). background-agent (entry 7) в `deploy/production/environment-model.json`: image/networks/volumes/env + `requiredEnv` (6: NODE_ENV, NEUROCENTER_SERVICE, PANEL_URL, NEUROCENTER_INTERNAL_TOKEN_FILE, CATALOG_PG_URL_FILE, BACKGROUND_AGENT_RUNTIME_ROOT) + codeRoots + envNotes.
+- `deadEnvironment` — **0 dead / 0 noteErrors**; `requiredEnvironmentDrift` — **0 missing / 0 phantom / 0 noteErrors** (requiredEnv всего 45).
+- Compose-шапки (паттерн 1.12 D2) на месте: dev `docker-compose.yml` — «Состав осознанный: dev-стек — 10 сервисов (…) / Production — 14» (включая background-agent); prod 14 = dev 10 + capacity-collector, database-init, bootstrap-admin, node_exporter (AD-OP-8).
+- Drift-часть entry 7 (`background-agent-server.test.mjs` I/O 3) статически покрывает тот же model/compose; полный e2e (owned-PG) не запускался по ограничению (только targeted: compose-drift / workspace-check-tooling / unit).
+
+### 2. Мёртвые флаги/артефакты — 0 для вычищения (I/O 2)
+- Инвентарь: **60 флагов** в `services/shared/feature-flag-catalog.json` (регистрация: `feature-flags-service` + `feature-policy.cjs`/`feature-client.cjs`).
+- Скан referenced (quoted-вхождения + `flags.X` property-access по services/frontend/scripts, кроме самого каталога): **0 мёртвых флагов** — все 60 referenced в enforcement/UI. Пограничные подтверждены вручную: `card_depth_effect`, `neural_background` — property-access (`services/api-gateway/src/features/public-appearance.ts`, `frontend/src/features/Appearance/VisualAppearance.tsx`); `model_rate_limits` — `readFeatures().flags.X` (`model-api-admission.ts`, `model-rate-limits.service.ts`).
+- Unit затронутых модулей: `scripts/test/feature-policy.test.cjs` — **126/126 green**.
+- Временные артефакты: `git status` чист (untracked = 0); `_bmad-output/_stale` — отсутствует; `.run` — отсутствует; временных fixture-каталогов вне git — нет. → Вычищать нечего; exception-список пуст.
+
+### 3. Провенанс (I/O 3, Done-when 9, NFR-4) — пересказанных артефактов без провенанса = 0
+- Ключевые артефакты существуют: `initiative-architecture.md` (sources → PRD, companions → 4 spine), `prd-neurocenter/prd-neurocenter.md` (status: final), 4 architecture-spine (`sources` → recon-*.md), `ux/DESIGN.md`+`EXPERIENCE.md`, 12 epic-*.md (`sources` → PRD), 123 story-тикета (113 с `baseline_revision`; 10 epic-файлов — схема `sources`, а не baseline).
+- Ссылочная целостность: context-списки тикетов — **330 ссылок проверено, 1 сломанная** → починена: `story-prj-03-gguf-archive-e1-413-plan.md` context `ux/ДESIGN.md` (кириллическое «Д») → `ux/DESIGN.md`. sources/companions (initiative+spine+epics+UX) — **50 проверено, 0 сломанных**.
+- Стилевые варианты (не break, не чинили): префикс `{project-root}/` и кавычки в ссылках (epic-dr, epic-release-baseline, epic-trust-device-catalog, epic-local-auth) — разрешаются.
+- Наблюдение (не дефект): 8 story epic-catalog-external — минимальная frontmatter-схема (title/ticket/status, без baseline_revision) — консистентная per-epic схема; провенанс-цепочка сохраняется через epic `sources`.
+- Провенанс-якоря на всех уровнях: PRD — датированные user-закрепления; spine → recon; тикеты → baseline_revision/commits; «пересказ без провенанса» не найден.
+
+### 4. OQ предыдущих историй (закрыты/закреплены)
+- **agt-07** OQ1–4 — resolved при дизайне (уже зафиксировано в Progress): 1 сервис/replica; OpenCode 1.14.48 единая версия; компьютер = контекст без мостостроения; изоляция = mem/cpus/pids в compose+model (верифицировано в этом sweep: background-agent в модели с лимитами).
+- **agt-08** OQ1–3 + новые (a)/(b) — resolved (детали в Progress тикета): opt-in+аудит+7–30д; per-agent; mcp/plugin/skill; (a) без отдельных REST-эндпоинтов — service-флоу; (b) материаллизация device-local — штатный установщик кита (mcpOverride overlay, byte-exact re-verify).
+- **agt-09** OQ1–3 + новые (1)–(3) — resolved/зафиксированы (Progress тикета): interim C2 = 5 min; финал — pending до Q7 (старт пилота); проба — содержательная, реальный probe — pending до epic-devices (не слайсирован, agt-12 не блокирует); self-onboarding здесь / pairing — epic-devices.
+- **agt-10** OQ1–4 — resolved в §C5-протокол (docs + Progress этого тикета): проект/инициатива фиксируются в e2e-приёмке (HITL); «принято» = PASS-критерии docs; OpenCode 1.14.48 единая версия, запуск на сервере.
+- **agt-11** OQ1–5 — resolved реализацией (Progress тикета): maxAttempts 3/backoff 500ms×2 cap 30s → dead-letter; alerts.jsonl+error store+critical; global policy+per-job override; идемпотентность request_key/phase (execution/result/publish); unknown — без повторного исполнения, решает оператор.
+- **epic-trust-device-catalog** (referenced из context agt-12): done 12 story / 20 OQ — resolved реализацией по рекомендациям (эпик закрыт); trust-01 (ready-for-dev, 4 OQ) — pending до выполнения.
+- **epic-project** (referenced из context agt-12): done 1/2 OQ (resolved); in-progress ux-consolidation 8 OQ; ready-for-dev 17 story / 78 OQ — pending до реализации каждой. **Ни один OQ этих эпиков не блокирует sweep/C5 agt-12.**
+
+### 5. C5-протокол (draft, HITL) (I/O 8)
+Каркас протокола (детали/решение — при e2e-приёмке; эталон: `docs/features/agent-method-workflows.md` §«C5-протокол (main-runtime)»):
+- **(а) Какой проект** — HITL: реальный пилотный проект (не toy) с привязанной папкой, каталогом, одобренными знаниями и правами; конкретный проект **ожидает решения owner'а** при e2e (OQ1). Не фиксируется в коде.
+- **(б) BMAD-инициатива** — реальная пилотная (аналог `_bmad-output/` в корне проекта, manifest BMAD 6.12.4 + project skills); принятые документы (brief/PRD/архитектура) **переиспользуются** (FR-308: второй PRD/второй build-цикл не создаются); BMAD выполняется только для недостающих planning-стадий (OQ2).
+- **(в) Pinned-версии** — проверено по факту, расхождений нет: `AGENT_METHOD_VERSIONS` (`services/shared/agent-method-workflow.cjs:8-12`) = bmad **6.12.4** / openspec **1.15.0** / combined `bmad-6.12.4+openspec-1.15.0`; OpenCode **1.14.48** — единая версия: `BACKGROUND_AGENT_OPENCODE_VERSION` (`shared/background-agent.cjs:17`), `MAIN_RUNTIME_OPENCODE_VERSION` (`background-agent/method-preparation.ts:17`), `opencode-cli-install`/`opencode-personal-key`/`opencode-local-providers`/`runtime-probe` — все 1.14.48; `catalog-service` `agent-method-workflows/jobs.ts` — версия метода **server-fixed** из `AGENT_METHOD_VERSIONS`, в jobs.ts собственных чисел версий нет (mismatch → именованная ошибка `METHOD_VERSION`, тихой подстановки нет).
+- **(г) Что = «принято»** (критерий GO, OQ3): одновременно — (1) принятые planning-документы BMAD (brief/PRD/архитектура) сохранены в `_bmad-output` проекта; (2) OpenSpec change, **изменённый этим запуском**: `all_done` в `instructions apply --json` либо настоящий архив (tasks+proposal+spec); (3) `openspec validate --all --strict --no-interactive` пройдено; (4) объявленные проверки задания — нулевые exit (не «сделано» без proof — entry 6/FR-304); (5) провенанс в результате: SHA-256 изменённых файлов, артефакты методики, exit code/signal проверок, идентичность исполнителя (NFR-4). PASS-критерии: `docs/features/agent-method-workflows.md` §«Выполнение и результат» (OpenSpec all_done/архив; BMAD `status: done` + Auto Run Result + Review Triage Log; combined — принятые planning-документы + завершение OpenSpec).
+- Крах-сценарий (OQ4): рекомендация — да, в e2e-прогоне инъецировать крах (kill) на одном из этапов: политика entry 11 (retry/backoff/dead-letter/остановка) + **нет дубля эффектов** (request_key/phase, lost-ACK → redelivery той же квитанции) + артефакты с провенансом не теряются (docs §«Отмена и восстановление»: started-marker → `unknown`, повторного исполнения нет).
+- OQ5 — подтверждено: пилот (эпик 10) `after` эпик 9; C5 GO = вход в пилот.
+
+### Остаток (HITL, вне sweep-автономизации)
+- C5 e2e-приёмка (I/O 4–7, 9): реальный проект + выбор проекта (решение owner'а) + прогон + крах-сценарий + отчёт `c5-e2e.json` в `NEUROCENTER_TEST_EVIDENCE` + HITL-ранбук; регистрация в tooling-списке (union+sort) при добавлении e2e-driver.
