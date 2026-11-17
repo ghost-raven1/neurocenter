@@ -16,7 +16,7 @@ context:
   - _bmad-output/initiative-architecture/tickets/epic-project/epic-project.md
   - _bmad-output/initiative-architecture/prd-neurocenter/prd-neurocenter.md
   - _bmad-output/initiative-architecture/ux/REVIEW-2.md
-  - _bmad-output/initiative-architecture/ux/ДESIGN.md
+  - _bmad-output/initiative-architecture/ux/DESIGN.md
   - _bmad-output/initiative-architecture/.memlog.md
 ---
 
