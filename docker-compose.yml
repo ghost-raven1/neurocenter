@@ -1,6 +1,6 @@
-# Состав осознанный: dev-стек — 9 сервисов (model-runtime, frontend, oauth2-bridge, api-gateway,
-# catalog-service, feature-flags-service, skills-service, postgres, rag-sync-service).
-# Production (compose.production.yml) — 13: те же 9 + capacity-collector, database-init (one-shot),
+# Состав осознанный: dev-стек — 10 сервисов (model-runtime, frontend, oauth2-bridge, api-gateway,
+# catalog-service, background-agent, feature-flags-service, skills-service, postgres, rag-sync-service).
+# Production (compose.production.yml) — 14: те же 10 + capacity-collector, database-init (one-shot),
 # bootstrap-admin (one-shot), node_exporter (host-метрики, AD-OP-8; целевой состав 15 с мониторингом ep6 e12).
 services:
   # Runtime starts empty; model installation uses imported asset supply.
@@ -178,6 +178,45 @@ services:
       retries: 5
       start_period: 20s
 
+  # Фоновый агент (FR-305): фоновое opencode-исполнение задач в отдельном контейнере (не блокирует чат).
+  # Движок — bin/opencode-probe из автономного пакета в volume background-agent-runtime (ro);
+  # без пакета сервис не проходит healthcheck (явная ошибка предусловия).
+  background-agent:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+      args:
+        NEUROCENTER_BUILD_CA_SHA256: ${NEUROCENTER_BUILD_CA_SHA256:-}
+        NEUROCENTER_BUILD_CA_NAME: ${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}
+        NEUROCENTER_TLS_DISABLE: ${NEUROCENTER_TLS_DISABLE:-0}
+        NEUROCENTER_NPM_STRICT_SSL: ${NEUROCENTER_NPM_STRICT_SSL:-true}
+    env_file:
+      - .env
+      - path: .env.local
+        required: false
+    environment:
+      - NODE_ENV=development
+      # Корпоративный CA: путь внутри образа (env_file .env.local содержит хостовый путь, которого нет в контейнере).
+      - NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem
+      - CATALOG_PG_URL=postgresql://${POSTGRES_USER:-rag}:${POSTGRES_PASSWORD:-rag}@postgres:5432/catalog
+      - PROJECTS_ROOT=/data/projects
+      - BACKGROUND_AGENT_RUNTIME_ROOT=/app/background-agent-runtime
+    command: [node, dist/background-agent/background-agent.cli.js]
+    volumes:
+      - ${PROJECTS_HOST_PATH:-./data/projects}:/data/projects
+      - background-agent-runtime:/app/background-agent-runtime:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 1g
+    cpus: 2
+    healthcheck:
+      test: [CMD, node, dist/background-agent/background-agent.cli.js, --check]
+      interval: 15s
+      timeout: 10s
+      retries: 4
+      start_period: 30s
+
   # Флаги функций используют каталог PostgreSQL и не получают внешнего порта.
   feature-flags-service:
     build:
@@ -310,3 +349,4 @@ volumes:
   pgvector-data:
   runtime-artifacts:
   backup-data:
+  background-agent-runtime:

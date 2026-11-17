@@ -130,6 +130,36 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
 
+  # Фоновый агент (FR-305): фоновое opencode-исполнение задач (не блокирует чат). Движок —
+  # bin/opencode-probe из автономного пакета в named-volume background-agent-runtime (ro, OQ-2);
+  # без пакета healthcheck (--check) не проходит — явная ошибка предусловия. 1 replica (OQ-1),
+  # изоляция mem/cpus/pids (OQ-4).
+  background-agent:
+    <<: *service
+    image: neurocenter/catalog-service:${NEUROCENTER_RELEASE:?Заполните метку релиза}
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 256
+    cap_drop: [ALL]
+    command: [node, dist/background-agent/background-agent.cli.js]
+    environment:
+      NODE_ENV: production
+      NEUROCENTER_SERVICE: background-agent
+      PANEL_URL: ${PANEL_URL:?Заполните PANEL_URL}
+      NEUROCENTER_INTERNAL_TOKEN_FILE: /run/secrets/internal_token
+      CATALOG_PG_URL_FILE: /run/secrets/catalog_url
+      BACKGROUND_AGENT_RUNTIME_ROOT: /app/background-agent-runtime
+    secrets: [internal_token, catalog_url]
+    volumes: [projects:/data/projects, background-agent-runtime:/app/background-agent-runtime:ro]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, dist/background-agent/background-agent.cli.js, --check]
+      interval: 15s
+      timeout: 10s
+      retries: 4
+      start_period: 30s
+
   catalog-service:
     <<: *service
     # bwrap owns nested PID/network namespaces; no host administrative capabilities are granted.
@@ -387,6 +417,7 @@ volumes:
   model-weights:
   capacity:
   postgres:
+  background-agent-runtime:
   skills:
   projects:
   help-content:

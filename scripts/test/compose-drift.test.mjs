@@ -75,9 +75,9 @@ test('production compose совпадает с моделью окружения
     assert.deepEqual(drift, []);
     assert.deepEqual(dead.dead, []);
     assert.deepEqual(dead.noteErrors, []);
-    // Все 13 сервисов production-стека охвачены, merge-якоря и overlay развёрнуты.
+    // Все 14 сервисов production-стека охвачены, merge-якоря и overlay развёрнуты.
     assert.deepEqual(Object.keys(services).sort(), Object.keys(checked.services).sort());
-    assert.equal(Object.keys(services).length, 13);
+    assert.equal(Object.keys(services).length, 14);
     const totalEnv = Object.values(services).reduce((sum, service) => sum + Object.keys(service.env).length, 0);
     assert.ok(totalEnv >= 80, `ожидалось не менее 80 env, получено ${totalEnv}`);
     // Production-контракт required env (D2) закрыт: 0 missing (code→compose), 0 phantom, 0 noteErrors.
@@ -90,8 +90,8 @@ test('production compose совпадает с моделью окружения
     );
     assert.equal(
         requiredTotal,
-        39,
-        'начальный набор requiredEnv (D2): изменение набора — только осознанной правкой этого теста; entry 2.9: +CATALOG_PG_URL_FILE (api-gateway, PG pairing AD-6)',
+        45,
+        'начальный набор requiredEnv (D2): изменение набора — только осознанной правкой этого теста; entry 2.9: +CATALOG_PG_URL_FILE (api-gateway, PG pairing AD-6); agt-07: +6 (background-agent: NODE_ENV, NEUROCENTER_SERVICE, PANEL_URL, NEUROCENTER_INTERNAL_TOKEN_FILE, CATALOG_PG_URL_FILE, BACKGROUND_AGENT_RUNTIME_ROOT)',
     );
 });
 

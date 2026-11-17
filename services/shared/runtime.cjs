@@ -27,6 +27,7 @@ const services = new Set([
     'feature-flags-service',
     'oauth2-bridge',
     'bootstrap-admin',
+    'background-agent',
 ]);
 
 /** Читает только известные секреты; ошибка не раскрывает ни путь, ни значение. */
@@ -128,7 +129,7 @@ function validateProduction(env, service) {
     // api-gateway — PG-счётчики pairing-окон (entry 9, AD-6): URL той же базы, что и catalog.
     for (const name of service === 'catalog-service'
         ? ['CATALOG_PG_URL', 'RAG_PG_URL']
-        : ['api-gateway', 'bootstrap-admin', 'feature-flags-service'].includes(service)
+        : ['api-gateway', 'bootstrap-admin', 'feature-flags-service', 'background-agent'].includes(service)
           ? ['CATALOG_PG_URL']
           : service === 'rag-sync-service'
             ? ['RAG_PG_URL', 'RAG_PROVISION_PG_URL']

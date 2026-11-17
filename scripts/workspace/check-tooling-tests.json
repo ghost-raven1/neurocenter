@@ -7,6 +7,7 @@
     "scripts/agent-kit/test/live-preflight.test.mjs",
     "scripts/agent-kit/test/role-contracts.test.mjs",
     "scripts/agent-kit/test/role-evals.test.mjs",
+    "scripts/test/background-agent-server.test.mjs",
     "scripts/test/bridge-templates-resolution.test.mjs",
     "scripts/test/ceiling-identity.test.mjs",
     "scripts/test/compose-drift.test.mjs",

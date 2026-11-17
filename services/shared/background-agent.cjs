@@ -11,6 +11,10 @@ const {
 
 const BACKGROUND_AGENT_PROTOCOL = 'background-agent-v1';
 const BACKGROUND_AGENT_JOB = 'run-background-agent';
+/** Job-machine kind of the server background-agent job row (server pg store, phase B). */
+const BACKGROUND_AGENT_WORKFLOW_JOB = 'run-background-agent-workflow';
+/** OQ-2: the single pinned OpenCode version; the server runs the package probe engine, never PATH. */
+const BACKGROUND_AGENT_OPENCODE_VERSION = '1.14.48';
 const BACKGROUND_AGENT_RUNTIME = 'opencode';
 /** Configurable context sources (FR-305). Adding a source = extend this list + a provider (context seam). */
 const BACKGROUND_AGENT_CONTEXT_SOURCES = Object.freeze(['project', 'computer', 'web']);
@@ -91,11 +95,15 @@ function normalizeBackgroundAgentPayload(value) {
 }
 /** Receipt idempotency: a stable digest over the normalized immutable payload. */
 function backgroundAgentDigest(payload) {
-    return createHash('sha256').update(JSON.stringify(normalizeBackgroundAgentPayload(payload))).digest('hex');
+    return createHash('sha256')
+        .update(JSON.stringify(normalizeBackgroundAgentPayload(payload)))
+        .digest('hex');
 }
 module.exports = {
     BACKGROUND_AGENT_PROTOCOL,
     BACKGROUND_AGENT_JOB,
+    BACKGROUND_AGENT_WORKFLOW_JOB,
+    BACKGROUND_AGENT_OPENCODE_VERSION,
     BACKGROUND_AGENT_RUNTIME,
     BACKGROUND_AGENT_CONTEXT_SOURCES,
     normalizeBackgroundAgentPayload,
