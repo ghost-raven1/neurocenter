@@ -139,6 +139,13 @@ context:
 
 **Остаток: нет.** Корневой сьют в этом инкременте не запускался (по ограничению задачи; затронуты только background-agent-модули + зарегистрированный e2e).
 
+**OQ-статус (аудит sweep agt-12, 2026-11-17):**
+- OQ1 (retry/backoff) — **resolved**: named-константы `BACKGROUND_AGENT_RESILIENCE` (maxAttempts 3, backoff 500ms×2, cap 30s) + per-job override; exhausted → dead-letter + явная остановка (e2e T3: «Retry budget exhausted (crash policy)»).
+- OQ2 (dead-letter — куда) — **resolved**: job → dead_letter + alert channel `alerts.jsonl` (severity critical, event `dead_letter`, ровно 1 алерт на транзишен, e2e T3) + error store (AD-O5, best-effort) + security/ops event (AD-O7).
+- OQ3 (global vs per-agent) — **resolved**: global policy + per-job override (бюджет retry на задание) — реализовано в `CrashResilientBackgroundWorker`.
+- OQ4 (идемпотентность эффектов) — **resolved**: request_key/phase на каждый эффект — `execution` (journaled до dispatch), `result` (recorded до ACK), `publish` (ACK-based, lost-ACK → redelivery той же квитанции; e2e T6: нет дубля сообщения/revision-bump).
+- OQ5 (unknown — кто разрезает) — **resolved**: оператор — `unknown` без повторного исполнения (e2e T1/T5: prompt ровно 1), actionable «проверьте локальную папку и создайте новый явный запрос» (docs §«Отмена и восстановление»); авто-повтор исполнения запрещён.
+
 ## Verification
 
 ```bash

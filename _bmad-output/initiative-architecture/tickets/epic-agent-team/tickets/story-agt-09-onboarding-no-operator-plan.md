@@ -115,3 +115,11 @@ node --test scripts/test/onboarding-no-operator.test.mjs 2>/dev/null || true
 - **Readiness opencode** (Task 3): `IOpenCodeReadinessProbe` (инъекция; default `NoOpenCodeProbe` → `OpenCodeNeedsSetupException` 409 + actionable `setup-runtime`); `AgentOpenCodeTrialRunner` — содержательная проба: SHA-256 нормализованного результата + detail ≤ 512Б; обратная совместимость (legacy receipt → server_chat-путь, `executionSurface` в jsonb без миграции).
 - **Миграция 60**: отдельный блок `AGENT_ONBOARDING_SCHEMA_SQL` (паттерн agt-08/migration 59 — checksum-ловушка validateMigrationHistory).
 - ОQ из отчёта: (1) финальная цель C2 — в baseline Q7, interim-константа в одном месте; (2) реальный `IOpenCodeReadinessProbe` предоставит epic 7 (device/pairing) в DI; (3) schema-контракты не обновлены (паттерн agt-08 — assertAgentSchema expected→actual, лишние таблицы не ломают).
+
+**OQ-статус (аудит sweep agt-12, 2026-11-17):**
+- OQ1 (целевое время «за минуты») — **resolved (interim) / pending (final)**: interim зафиксирован — `C2_INTERIM_TARGET_MS = 5 min` одним константным местом; финальная цифра — pending до старта пилота: Q7 (PRD:207, owner: старт пилота, epic-pilot) фиксирует baseline-цифры Success Metrics при старте пилота.
+- OQ2 (readiness opencode — проба) — **resolved (design) / pending (реализация пробы)**: содержательная проба зафиксирована (`AgentOpenCodeTrialRunner`: SHA-256 нормализованного результата, detail ≤ 512Б; «карточка ≠ работающая обработка»); реальный `IOpenCodeReadinessProbe` — pending: предоставит epic-devices (device/pairing) в DI; эпик пока не слайсирован (tickets/ отсутствует) — блок не для agt-12.
+- OQ3 (onboarding здесь или эпик 7) — **resolved**: здесь self-onboarding (роль/контекст/инструменты/чаты в одном транзакционном шаге assign, снапшот `agent_onboarding`); pairing/установщик — граница epic-devices.
+- Новый OQ (1) — см. OQ1 (interim resolved, final pending Q7).
+- Новый OQ (2) — см. OQ2 (pending до epic-devices).
+- Новый OQ (3) schema-контракты — **resolved (design decision)**: не обновлялись намеренно (паттерн agt-08: `assertAgentSchema` expected→actual; новые таблицы `agent_onboarding` не ломают контракт, лишних таблиц в expected нет).
