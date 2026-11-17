@@ -43,7 +43,8 @@ let skip = false,
     bootstrapError = '',
     f = null,
     container = null,
-    port = 0;
+    port = 0,
+    activePool = null;
 
 /** Фиксированные классификаторы (AD-O8) — повторяем из модулей, ассерты не читают src. */
 const PROCESS_CRASH_SAFE = 'Background agent process crashed (uncaught exception or unhandled rejection).';
@@ -85,6 +86,21 @@ const waitFor = async (fn, timeoutMs = 90000, intervalMs = 500, diagnose) => {
         await sleep(intervalMs);
     }
 };
+/**
+ * In-process PG pool. T5 stops the PG container mid-run: the postmaster FATALs every idle
+ * connection on shutdown, and a Pool without an 'error' listener would turn that expected fatal
+ * into an uncaughtException. T5 additionally ends the pool under control on the same tick as the
+ * docker stop (which blocks the event loop, so the buffered fatal frames are discarded with the
+ * sockets instead of being delivered to a severed client) and builds a fresh pool via this
+ * factory after the PG returns.
+ */
+const makePool = (pgUrl) => {
+    const { Pool } = require('pg');
+    const pool = new Pool({ connectionString: pgUrl, max: 4 });
+    pool.on('error', () => undefined);
+    return pool;
+};
+
 /** Сколько paid steps (промптов) записал движок в promptLog. */
 const countPrompts = (file) => {
     try {
@@ -210,14 +226,10 @@ test('bootstrap: live PG + dist + автономные пакеты (healthy + O
         const pkgOk = writeAutonomousPackage(path.join(workspace, 'pkg-ok')),
             pkgOom = writeAutonomousPackage(path.join(workspace, 'pkg-oom'), { oom: true }),
             alertsFile = path.join(workspace, 'alerts.jsonl');
-        const { Pool } = require('pg');
         process.env.NEUROCENTER_INTERNAL_TOKEN = randomBytes(32).toString('hex');
         const pgUrl = 'postgres://postgres:qa@127.0.0.1:' + port + '/postgres';
-        const pool = new Pool({ connectionString: pgUrl, max: 4 });
-        // T5 stops the PG container mid-run: postmaster terminates the idle pool clients, and a
-        // Pool without an 'error' listener would turn that expected fatal into an uncaughtException.
-        // (Only IDLE clients surface here; in-use clients reject their queries, which the tests handle.)
-        pool.on('error', () => undefined);
+        const pool = makePool(pgUrl);
+        activePool = pool; // the f.* helpers read activePool at call time (T5 recycles it)
         // Readiness = the driver can actually query (a docker-exec pg_isready can report «ready»
         // while the postmaster is still finishing startup — a real query is the ground truth).
         const probeDeadline = Date.now() + 120000;
@@ -277,7 +289,7 @@ test('bootstrap: live PG + dist + автономные пакеты (healthy + O
             const id = randomUUID(),
                 generation = randomUUID(),
                 requestKey = randomUUID();
-            await pool.query(
+            await activePool.query(
                 `INSERT INTO project_chat_messages(id,project_id,room_id,kind,content,author_email,author_name,author_role,status,request_key,request_hash,generation)
                  VALUES($1,$2,$3,'user',$4,$5,$6,$7,'done',$8,$9,$10)`,
                 [
@@ -310,7 +322,11 @@ test('bootstrap: live PG + dist + автономные пакеты (healthy + O
             return env;
         };
         f = {
-            pool,
+            // T5 recycles the pool (ends it under control during the PG-down window); the getter
+            // keeps f.pool / the queries below bound to the CURRENT pool at call time.
+            get pool() {
+                return activePool;
+            },
             service,
             workspace,
             pkgOk,
@@ -330,36 +346,36 @@ test('bootstrap: live PG + dist + автономные пакеты (healthy + O
             startCli: (opts) =>
                 spawnCli(cliEnv(opts.pkgRoot, opts.promptLog, opts.delayMs ?? 0, opts.crashOnDispatch), opts),
             agentMessage: (sourceId) =>
-                pool
+                activePool
                     .query(
                         `SELECT * FROM project_chat_messages WHERE project_id=$1 AND kind='agent' AND source_message_id=$2 AND (snapshot->>'agentId')='background-agent'`,
                         [projectId, sourceId],
                     )
                     .then((result) => result.rows[0]),
             agentMessages: (sourceId) =>
-                pool
+                activePool
                     .query(
                         `SELECT * FROM project_chat_messages WHERE project_id=$1 AND kind='agent' AND source_message_id=$2`,
                         [projectId, sourceId],
                     )
                     .then((result) => result.rows),
             job: (requestId) =>
-                pool
+                activePool
                     .query('SELECT * FROM background_agent_jobs WHERE request_id=$1::uuid', [requestId])
                     .then((result) => result.rows[0]),
             roomRevision: () =>
-                pool
+                activePool
                     .query('SELECT revision::int AS revision FROM project_chat_rooms WHERE project_id=$1', [projectId])
                     .then((result) => Number(result.rows[0].revision)),
             errorEvents: (requestId) =>
-                pool
+                activePool
                     .query(
                         'SELECT service, ts, level, request_id, message, stack_hint FROM error_events WHERE request_id=$1 ORDER BY ts, id',
                         [requestId],
                     )
                     .then((result) => result.rows),
             securityEvents: (requestId, action) =>
-                pool
+                activePool
                     .query(
                         'SELECT actor, action, resource_id, before_state, after_state FROM security_events WHERE resource_id=$1 AND action=$2',
                         [requestId, action],
@@ -367,7 +383,7 @@ test('bootstrap: live PG + dist + автономные пакеты (healthy + O
                     .then((result) => result.rows),
             /** Documented time-compression: a 5-minute lease cannot be awaited in a minutes-long test. */
             expireLease: (requestId) =>
-                pool.query(
+                activePool.query(
                     `UPDATE background_agent_jobs SET lease_until = now() - interval '1 second' WHERE request_id=$1::uuid`,
                     [requestId],
                 ),
@@ -716,6 +732,13 @@ test('T5. PG-down mid-run → best-effort (tick-failed, loop жив) → lease �
     await sleep(2000); // the paid step is journaled and the 8s turn is in flight
     // PG down mid-run: the turn finishes, but the result journal fails — the crash path is best-effort.
     execFileSync('docker', ['stop', container], { timeout: 60000, stdio: 'pipe' });
+    // The postmaster FATALs every idle connection on shutdown. The docker stop above blocks the
+    // event loop, so those fatal frames are still buffered undelivered: ending the pool on this
+    // same tick closes the clients under control and discards the frames — no severed socket can
+    // later emit a listener-less error (the ~1/8 run flake: uncaughtException
+    // "terminating connection due to administrator command"). The pool is recycled below.
+    await activePool.end();
+    activePool = null;
     await waitFor(
         () => cli.output().includes('"event":"tick-failed"'),
         90000,
@@ -731,16 +754,22 @@ test('T5. PG-down mid-run → best-effort (tick-failed, loop жив) → lease �
     assert.equal(cli.proc.exitCode, null, 'the executor survives a PG outage (the loop keeps polling)');
     execFileSync('docker', ['start', container], { timeout: 60000, stdio: 'pipe' });
     await waitForTcp('127.0.0.1', port, 60000);
+    // Recycle: a fresh pool + service/store bound to the recovered PG. The f.* helpers read
+    // activePool/f.service at call time, so T6 and the teardown see the live pair.
     const upDeadline = Date.now() + 60000;
+    activePool = makePool(f.pgUrl);
     for (;;) {
         try {
-            await f.pool.query('SELECT 1');
+            await activePool.query('SELECT 1');
             break;
         } catch {
             if (Date.now() > upDeadline) throw new Error('PG did not come back: ' + container);
             await sleep(500);
         }
     }
+    const { PgBackgroundAgentStore } = require(path.join(dist, 'background-agent/pg-store.js'));
+    const { BackgroundAgentService } = require(path.join(dist, 'background-agent/service.js'));
+    f.service = new BackgroundAgentService({ pool: activePool }, new PgBackgroundAgentStore(activePool));
     await f.expireLease(requestId); // documented time-compression of the 5-minute lease
     const message = await waitFor(
         () => f.agentMessage(source),
