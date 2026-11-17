@@ -21,6 +21,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const PASSTHROUGH_ALLOWLIST = {
     'services/api-gateway/src/bridge/bridge.controller.ts': 'FeatureFlagError (feature-client.cjs)',
     'services/api-gateway/src/features/research-mcp/research-mcp.controller.ts': 'FeatureFlagError (feature-client.cjs)',
+    'services/catalog-service/src/background-agent/background-agent.cli.ts':
+        '2 точки: BackgroundEngineError (startup-failed, engine.ts — фиксированные доменные сообщения pin/sha256-валидации) + BackgroundCrashError (crash-exit, resilience.ts — фиксированное CRASH_SAFE_MESSAGE); stderr JSON-лог, не транспорт',
     'services/catalog-service/src/features/require-feature-enabled.ts': 'FeatureFlagError (feature-client.cjs)',
     'services/catalog-service/src/model-chat/chat-project-context.ts': 'FeatureFlagError (feature-client.cjs), 2 точки',
     'services/catalog-service/src/model-chat/chat-learning-context.ts': 'FeatureFlagError (feature-client.cjs)',
@@ -28,8 +30,8 @@ const PASSTHROUGH_ALLOWLIST = {
     'services/rag-sync-service/src/rag/rag-features.ts': 'FeatureFlagError (feature-client.cjs)',
     'services/skills-service/src/skills/feature-policy.guard.ts': 'FeatureFlagError (feature-client.cjs)',
 };
-// 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1
-const EXPECTED_PASSTHROUGH_MATCHES = 9;
+// 1 + 1 + 2 + 1 + 2 + 1 + 1 + 1 + 1
+const EXPECTED_PASSTHROUGH_MATCHES = 11;
 
 /**
  * STATIC_PASSTHROUGH: grep-инвариант «no passthrough outside allowlist».
