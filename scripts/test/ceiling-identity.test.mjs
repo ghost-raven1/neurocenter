@@ -8,7 +8,7 @@
  *   → services/shared/runtime-artifacts.cjs (CEILING, server-verify)
  *   → mcp/neurocenter-asset-sync/dist/shared/runtime-artifacts.cjs (CEILING, bridge-клиент, собрано).
  *
- * Live-сегмент T6 (trust-device-e2e.mjs) проверяет ту же идентичность из РАЗВЁРНУТЫХ образов
+ * Live-сегмент T6 (trust-device-e2e.test.mjs) проверяет ту же идентичность из РАЗВЁРНУТЫХ образов
  * (docker exec); здесь — исходник кандидата + собранная dist (без docker, T5-static).
  */
 import { test } from 'node:test';

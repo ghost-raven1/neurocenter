@@ -1,13 +1,13 @@
 # Приёмка устройственного канала и каталога (TRUST-01)
 
-`scripts/test/trust-device-e2e.mjs` — e2e-драйвер TRUST-01 (эпик 2, тикет 14). Принимает связку «устройство → gateway → catalog → контракт» на **production-стеке** (12 сервисов, production-nginx с маскированием билетов и лестницами, `--pull never`, `validateProduction`) — то, чего не доказывали изолированные сьюты 2.1–2.13. Аналог REL-01 для эпика 2. Драйвер не создаёт кандидата, не мержит и не решает «принят/отклонён»: он сверяет, разворачивает в замкнутом контуре и записывает evidence. Операторские шаги — H1, H2, H4, H5 ниже; live-фазы выполняет драйвер, человек запускает его один раз и читает отчёт.
+`scripts/test/trust-device-e2e.test.mjs` — e2e-драйвер TRUST-01 (эпик 2, тикет 14). Принимает связку «устройство → gateway → catalog → контракт» на **production-стеке** (12 сервисов, production-nginx с маскированием билетов и лестницами, `--pull never`, `validateProduction`) — то, чего не доказывали изолированные сьюты 2.1–2.13. Аналог REL-01 для эпика 2. Драйвер не создаёт кандидата, не мержит и не решает «принят/отклонён»: он сверяет, разворачивает в замкнутом контуре и записывает evidence. Операторские шаги — H1, H2, H4, H5 ниже; live-фазы выполняет драйвер, человек запускает его один раз и читает отчёт.
 
 Результат — файл `$NEUROCENTER_TEST_EVIDENCE/trust-device-e2e.json` (0600, по умолчанию `.run/trust-device-e2e/`): кандидат (commit SHA + сверенный `candidateHead`), режим (`static-only`/`live`), compose-проект, `checkedAt`, `liveRun` (`setup-ok`/`setup-failed`/`not-run` + `reason`), `phases` — статус каждой проверки (`pass`/`fail`/`skip`). Решение «эпик принят» принимает оператор (H5) после отчёта и H4.
 
 ## Режимы
 
-- `node --test scripts/test/trust-device-e2e.mjs --static-only` (и просто `node --test scripts/test/trust-device-e2e.mjs` без `--candidate`) — **БЕЗ docker**: T5-static (gateway-политики на коде кандидата: completeness, лестницы, nginx-body-инварианты, error-body, ceiling-identity; при stale-сборке драйвер сначала собирает `api-gateway` и `neurocenter-asset-sync`). Safe-дефолт для tooling-гейта и локального запуска; live-фазы помечены `skip: live mode только с --candidate <commit>`.
-- `node scripts/test/trust-device-e2e.mjs --candidate <sha>` — **полный live**: сверка HEAD == кандидат → build + up production-стека → T1–T7 → teardown. Жёсткий docker.
+- `node --test scripts/test/trust-device-e2e.test.mjs --static-only` (и просто `node --test scripts/test/trust-device-e2e.test.mjs` без `--candidate`) — **БЕЗ docker**: T5-static (gateway-политики на коде кандидата: completeness, лестницы, nginx-body-инварианты, error-body, ceiling-identity; при stale-сборке драйвер сначала собирает `api-gateway` и `neurocenter-asset-sync`). Safe-дефолт для tooling-гейта и локального запуска; live-фазы помечены `skip: live mode только с --candidate <commit>`.
+- `node scripts/test/trust-device-e2e.test.mjs --candidate <sha>` — **полный live**: сверка HEAD == кандидат → build + up production-стека → T1–T7 → teardown. Жёсткий docker.
 
 Гейт режима — наличие `--candidate`: под `node --test` дополнительные флаги не доходят до argv процесса, поэтому live — только прямым запуском (не через `node --test`).
 
@@ -34,7 +34,7 @@ Checkout на этом коммите; чистоту дерева операт�
 
 ```sh
 uptime
-node scripts/test/trust-device-e2e.mjs --candidate <sha>
+node scripts/test/trust-device-e2e.test.mjs --candidate <sha>
 ```
 
 Что делает драйвер (последовательно):
@@ -49,7 +49,7 @@ node scripts/test/trust-device-e2e.mjs --candidate <sha>
 Статика без docker:
 
 ```sh
-node --test scripts/test/trust-device-e2e.mjs --static-only
+node --test scripts/test/trust-device-e2e.test.mjs --static-only
 ```
 
 ## T1–T7: что проверяет драйвер

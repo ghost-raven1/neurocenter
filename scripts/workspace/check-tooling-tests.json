@@ -64,6 +64,7 @@
     "scripts/test/stack-watchdog.test.mjs",
     "scripts/test/supply-vendor.test.mjs",
     "scripts/test/tls-global-disable.test.mjs",
+    "scripts/test/trust-device-e2e.test.mjs",
     "scripts/test/verifier-tls.test.mjs",
     "scripts/test/workspace-check-options.test.mjs",
     "scripts/test/workspace-check-process.test.mjs",

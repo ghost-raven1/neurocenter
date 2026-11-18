@@ -7,10 +7,10 @@
  * не доказывали изолированные сьюты 2.1–2.13. Аналог REL-01 для эпика 2.
  *
  * Режимы (гейт = наличие --candidate; под `node --test` доп. флаги не доходят до argv):
- *   node --test scripts/test/trust-device-e2e.mjs --static-only
+ *   node --test scripts/test/trust-device-e2e.test.mjs --static-only
  *     → БЕЗ docker: T5-static (completeness/лестницы/body-инварианты/error-body + ceiling-identity
  *       на коде кандидата). Без --candidate статика — режим по умолчанию (безопасный дефолт).
- *   node scripts/test/trust-device-e2e.mjs --candidate <commit>
+ *   node scripts/test/trust-device-e2e.test.mjs --candidate <commit>
  *     → полный live: сверка HEAD == кандидат, build+up production-стека, T1–T7, teardown.
  *       Жёсткий docker (build+up 12 сервисов) — HITL H2; запускать при load < 6 (sequential).
  *

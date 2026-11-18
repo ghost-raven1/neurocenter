@@ -87,6 +87,7 @@ const expectedFiles = [
     'scripts/test/dr-images.test.mjs',
     'scripts/test/error-body-policy.test.mjs',
     'scripts/test/tls-global-disable.test.mjs',
+    'scripts/test/trust-device-e2e.test.mjs',
     'scripts/test/verifier-tls.test.mjs',
     'scripts/test/mcp-host-route-shadowing.test.mjs',
 ].sort();
