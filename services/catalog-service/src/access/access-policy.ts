@@ -179,6 +179,12 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (/^\/api\/models\/[^/]+\/my-access(?:\/|$)/.test(route)) {
         if (!['Главный админ', 'Админ проекта', 'Разработчик'].includes(activeRole)) return false;
         if (/^\/api\/models\/[^/]+\/my-access$/.test(route)) return read || ['PUT', 'DELETE'].includes(verb);
+        // Квитанция переноса личного ключа: исполнитель повторно проверяет владение job по email и requestKey.
+        if (
+            read &&
+            /^\/api\/models\/[^/]+\/my-access\/transfers\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(route)
+        )
+            return true;
         return (
             read &&
             /^\/api\/models\/[^/]+\/my-access\/requests\/[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(route)
