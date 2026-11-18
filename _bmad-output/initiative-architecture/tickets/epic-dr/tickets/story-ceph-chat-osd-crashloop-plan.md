@@ -3,7 +3,7 @@ title: 'ceph-chat (dev) — ceph-osd crashloop после DR-репетиции:
 type: 'story'
 ticket: '9'
 created: '2026-11-12'
-status: in-progress
+status: done
 baseline_revision: '56815ff1'
 route: 'full'
 route_source: 'auto'
@@ -86,3 +86,75 @@ cleanup-трепе 12 с); mtime `osd/block` = 10-11 09:20.
 Контейнер `neurocenter-ceph-chat-8bbcf06109-chat-ceph-1` **остановлен** (docker stop для
 диагностики; status: Exited (0)). До решения по варианту восстановления стэк chat-хранилища
 dev-окружения недоступен.
+
+## Progress (2026-11-18)
+
+**Итог: done.** Crash-loop не активен — dev-стэк здоров и стабилен; verification gap
+закрыт и проверен. Вариант восстановления (а) не потребовался.
+
+### Фактическое состояние ceph (диагностика, 2026-11-18)
+
+- Контейнер `neurocenter-ceph-chat-8bbcf06109-chat-ceph-1` — Up (healthy) с
+  2026-11-16T02:23:07Z (≈2 дня), restarts=0. Предыдущее состояние Exited
+  2026-11-13T11:10:15Z (docker inspect FinishedAt) — т.е. стэк перезапущен 16.11
+  (docker start) и с тех пор стабилен.
+- `ceph osd stat`: 1 up (since 2d), 1 in (since 6d), epoch e27. `ceph health` — только
+  HEALTH_WARN (AUTH_INSECURE_GLOBAL_ID_RECLAIM + POOL_NO_REDUNDANCY по 5 пулам) —
+  ожидаемо для single-OSD dev-стэка, ошибок нет.
+- **Volume НЕ пересоздан** (вариант (а) не выполнялся): тот же fsid
+  `dffaad42-a6c7-42c5-9643-0bea253361bc`, osdUuid `81d23d35-…`, все метаданные osd/
+  (keyring, fsid, ceph_fsid, mkfs_done) датированы 2026-11-12 02:20. OSD примонтировал
+  исходный BlueStore от 12.11 и работает.
+- osd.log теперь 3.2 МБ / 34 184 строк, **0** «Caught signal», **0** ceph_assert /
+  __ceph_abort. В логе всего 2 старта ceph-osd: pid 1010 @ 2026-11-12T02:20:19
+  (первичный mkfs/старт) и pid 159 @ 2026-11-16T02:23:12 (текущий). Лог на 5.79 ГБ с
+  22 465 crash-сборками из раздела Root cause был заменён/обрезан; в текущем логе
+  падений нет. mon.log: osd.0 зарегистрирован в crush и помечен up 2026-11-16T02:23:22–27
+  (сразу после старта контейнера).
+- RGW отвечает: `radosgw-admin user info --uid=neurocenter-dev` — пользователь
+  существует (создан 2026-11-12T02:20:39, ключ active); healthcheck `GET /` → 200,
+  контейнер «healthy».
+- **Вывод:** crash-loop (ceph-osd abort в BlueStore recovery) не воспроизводится — OSD
+  стабилен 2 дня. Восстановление по варианту (а) не нужно. Точная причина, почему тот же
+  volume теперь монтируется штатно, не установлена (старый crash-лог заменён);
+  зафиксировано как остаточное неизвестное, не блокирующее.
+
+### Verification gap — закрыт
+
+- Реализовано `osd_liveness_gate` в `scripts/workspace/dev-ceph.sh` (коммит d28d2df4,
+  ветка nc-dr-ceph-recovery): после `wait_for osd_ready` и до RGW-verification — окно
+  5 с, в котором при смерти отслеживаемого pid ceph-osd скрипт падает сразу с
+  диагностикой «OSD not alive (crash-loop); osd.log: <путь>; last crash: <строка>»
+  (проверка живого OSD, эквивалент `pgrep ceph-osd` по отслеживаемому pid). Причина:
+  `osd_ready()` читает `ceph osd stat` — сохранённое состояние мон, которое до ~10 с
+  после краха OSD ещё показывает «1 up, 1 in», из-за чего bootstrap проходил osd_ready и
+  вис на `radosgw-admin` ~20 с с общим «timed out».
+- Проверено:
+  - изолированный прогон логики (хост): живой pid → pass (окно 5 с); мёртвый pid → fail
+    за 0 с, «last crash» корректно извлечён из stub-лога (строка ceph_assert).
+  - живой pass (контейнер): гейт принимает работающий ceph-osd (pid 159) на здоровом
+    стэке.
+  - fail-путь в контейнере (stub мёртвый pid + реальный osd.log): быстрый fail,
+    «osd.log: /var/lib/neurocenter-ceph/osd.log; last crash: none found», exit 1.
+  - живой ceph-osd **не** убивал (pkill): супервизор скрипта перезапускал бы контейнер за
+    <1 с (гонка), а работающий контейнер использует пре-фикс скрипт; fail-путь доказан
+    изолированными / stub-прогонами.
+
+### Отдельная находка (вне скоупа тикета → новый тикет)
+
+- **S3 data path (операции bucket/объекта) возвращает 403 AccessDenied**: подпись не
+  проходит аутентификацию (пользователь в access-логе = `-` / anonymous) даже при
+  корректных креденшалах (access/secret совпадают с user info и хэшами owner.json),
+  корректных часах и доверенном клиенте (curl --aws-sigv4; и в контейнере, и с хоста
+  через 127.0.0.1:19011). Пулы данных (`default.rgw.buckets.data/index/non-ec`)
+  **никогда не создавались** → объекты через S3 успешно не записывались ни разу.
+  RGW metadata / admin API (user info) работает штатно. Это предсуществующая проблема,
+  отдельная от crash-loop ceph-osd; рекомендуется отдельный тикет на аутентификацию
+  S3 data path.
+
+### Git
+
+- Ветка `nc-dr-ceph-recovery` (worktree /tmp/opencode/nc-dr-ceph-wt), базовый 26fc8788;
+  коммит d28d2df4 (osd_liveness_gate). В main не мержено, push не делался.
+- Рабочее дерево основного чекаута не тронуто (там чужая незакоммиченная работа
+  ветки nc-rel01-e2e-driver).

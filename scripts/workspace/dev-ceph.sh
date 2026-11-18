@@ -264,11 +264,30 @@ assert (root / 'fsid').read_text().strip() == sys.argv[3]
 PY
 admin osd crush add 0 1.0 host=neurocenter-dev root=default >/dev/null || fail 'OSD placement failed'
 start osd ceph-osd -c "$CONF" -f -i 0
+OSD_PID=${PIDS[${#PIDS[@]}-1]}
 osd_ready() {
     admin osd stat --format json >"$ROOT/command.json" || return 1
     python3 -c 'import json,sys;s=json.load(open(sys.argv[1]));sys.exit(0 if s.get("num_up_osds")==1 and s.get("num_in_osds")==1 else 1)' "$ROOT/command.json"
 }
 wait_for osd_ready
+# The mon's osd stat is persisted state: after an OSD crash it can still report
+# "1 up, 1 in" for up to ~10s, so osd_ready above can pass while the OSD is really
+# crash-looping in BlueStore recovery. Left unchecked, the (slow) RGW verification
+# below hangs ~20s and fails with a generic "timed out". Give the OSD a short window
+# to either crash or stay up; on a crash, fail fast (~5s) with the osd.log path and
+# the last crash line instead of the 20s RGW hang. This is the live-OSD check the
+# stale osd stat cannot give (equivalent to `pgrep ceph-osd`, via the tracked pid).
+osd_liveness_gate() {
+    local deadline=$((SECONDS + 5)) log="$ROOT/osd.log" last
+    while (( SECONDS < deadline )); do
+        if ! kill -0 "$OSD_PID" 2>/dev/null; then
+            last=$(tail -c 200000 "$log" 2>/dev/null | grep -a -E 'Caught signal|ceph_assert|__ceph_abort|assertion|core dumped' | tail -1 || true)
+            fail "OSD not alive (crash-loop); osd.log: $log; last crash: ${last:-none found}"
+        fi
+        sleep 0.5
+    done
+}
+osd_liveness_gate
 auth_key client.rgw.dev "$ROOT/rgw/keyring" mon 'allow rw' osd 'allow rwx'
 
 # radosgw-admin has no S3 secret-file option. Only this short-lived child sees argv keys.
