@@ -72,15 +72,33 @@ node scripts/test/release-candidate-e2e.test.mjs \
 
 Драйвер работает только с чистого checkout (F1) и не трогает main-worktree. Конфиг-каталоги для F2 (×2) и F4 — свои копии оператора (`cp`, 0700) с переписанной `NEUROCENTER_CONFIG_DIR`; повторный запуск не ломается stale `schema-initialization.json`.
 
+### Возобновление прерванного прогона (фазы)
+
+Драйвер исполняет фазы F1..F5 в каноническом порядке (F6 — отчёт — всегда). `--phase F1,F2,...` ограничивает прогон выбранными фазами; выполненное не повторяется:
+
+- F2 — маркеры `f2-clone<N>.json` в stage (commit/tag сверяются) пропускают сборку; манифест берётся из предыдущего запуска;
+- F4 — имя Compose-проекта детерминировано кандидатом+тегом (`nc-rel01-<commit-8>-<hash-8>`): если стек ещё поднят и его образы совпадают с манифестом, деплой пропущен (re-attach);
+- F5 — при поднятом стеке (из F4 этого или предыдущего запуска) выполняется против него;
+- F6 — отчёт кумулятивный: `phases`/`checks`/`loadHistory` предыдущего отчёта того же кандидата наследуются; `GO` только при успешном завершении всех шести фаз.
+
+Teardown выполняется, только если стек поднят этим запуском; после re-attach стек остаётся оператору для осмотра. `--fresh` очищает stage (маркеры, клоны, предыдущий отчёт) до старта. Пример — сборки прошли, деплой не выполнялся:
+
+```sh
+node scripts/test/release-candidate-e2e.test.mjs \
+  --candidate "$(git rev-parse <tag>)" --tag <tag> \
+  --manifest <config>/releases/<tag>/release-manifest.json \
+  --host-variant B --phase F3,F4,F5
+```
+
 ## H4. Что делает драйвер
 
 1. **F1.** Тег annotated; `manifest.release` == тег; `manifest.commit` == `git rev-list -n1 <tag>`; HEAD == кандидат; кандидат == замороженный коммит манифеста; дерево чистое.
 2. **F2.** Два последовательных чистых клона одного commit (`git clone --no-checkout` + `checkout --detach`, не worktree). Каждый: `assertCleanCheckout` → `withDockerBuildCa` со strict-TLS (как `setup.mjs build`) → `normalizeBuildContext` (SOURCE_DATE_EPOCH = timestamp commit) → `docker compose build` в своём Compose-проекте с `--project-directory` = клон (production `composeClient` хардкодит корень репозитория, поэтому драйвер держит тонкий clone-клиент) → capture фактов сразу после сборки (тег `neurocenter/<svc>:<tag>` общий, вторая сборка перезапишет его) → `buildReleaseManifest` → запись в `releases/<tag>/release-manifest.json` копии конфига → `verifyReleaseManifest` повторным capture.
 3. **F3.** `compareManifestDigests`: 7 image ID + postgres по serviceName и `canonicalSha256` по каноническому JSON. Любое расхождение — NO-GO по имени сервиса. Дополнительно сверяется, что чистые сборки воспроизводят операторский кандидат-манифест.
-4. **F4.** Pinned-деплой в замкнутом контуре: уникальный проект `nc-rel01-<uuid>`, overlay JSON ровно по паттерну `update.mjs` (7 app → свои digest'ы, `database-init`/`bootstrap-admin`/`capacity-collector` → digest `catalog-service`; postgres не пинится — base compose закреплён по digest'у и сверяется через `container.Image == manifest.postgresImage`), test-override: порты `127.0.0.1:19080:8080` / `127.0.0.1:19443:8443` (`!override`, иначе склейка с 80/443 встанет в production-стек) и blitz-fixture. Все `up`/`run` — `--no-build --pull never`. Последовательность под `maintenanceLock`: postgres → `database-init` → `runSchemaCommands check` → `prepareSchemaInitialization` → `migrate` → закрытие квитанции → `bootstrap-admin` → `assertProductionModelKey` → `capacity-collector` → `up --wait` всего. Assert: 7 app + postgres `running`/`healthy`, образы == digest'ы из манифеста.
+4. **F4.** Pinned-деплой в замкнутом контуре: детерминированный проект `nc-rel01-<commit-8>-<hash-8>` (re-attach при resume, см. выше), overlay JSON ровно по паттерну `update.mjs` (7 app → свои digest'ы, `database-init`/`bootstrap-admin`/`capacity-collector` → digest `catalog-service`; postgres не пинится — base compose закреплён по digest'у и сверяется через `container.Image == manifest.postgresImage`), test-override: порты `127.0.0.1:19080:8080` / `127.0.0.1:19443:8443` (`!override`, иначе склейка с 80/443 встанет в production-стек) и blitz-fixture. Все `up`/`run` — `--no-build --pull never`. Последовательность под `maintenanceLock`: postgres → `database-init` → `runSchemaCommands check` → `prepareSchemaInitialization` → `migrate` → закрытие квитанции → `bootstrap-admin` → `assertProductionModelKey` → `capacity-collector` → `up --wait` всего. Assert: 7 app + postgres `running`/`healthy`, образы == digest'ы из манифеста.
 5. **F5.** Статика: `staticDriftReport` модели окружения на base + overlays модели + live-оверлеях (0/0/0: structural, dead-env, required-env; pinned-сервисы и frontend-порты тенью, blitz-fixture исключён из compose-стороны). Live: (а) absence TLS-отключений — ни в `compose.production.yml`, ни в `Config.Env` 7 кандидат-образов; (б) живые 7 контейнеров: `NEUROCENTER_TLS_DISABLE=0` присутствует, `NODE_TLS_REJECT_UNAUTHORIZED=0` отсутствует; (в) исходящий вызов `api-gateway → https://blitz.test:443` на self-signed отклонён (`SELF_SIGNED`/`CERT_*`), негативный контроль с `NODE_TLS_REJECT_UNAUTHORIZED=0` дошёл до HTTP; (г) `validateProduction` негатив: `compose run … -e SSO_DISABLE=true --entrypoint node catalog-service -e 'require("/shared/runtime.cjs")'` падает с `SSO_DISABLE=false обязателен в production`, позитив — поднятый production-стек (F4); (д) ghost-БД: `pg_database` только `catalog`, `nc_rag_<hash>`, системные — `skills` нет; DDL `security_events` — ровно 7 колонок контракта, `PRIMARY KEY (event_id)`, индекс `security_events_created … USING btree (created_at DESC)`; (е) lock-независимость для обоих ключей (`neurocenter:feature-flags:migrations`, `neurocenter:catalog:migrations`): racing `migrate.cli.js check` другого сервиса проходит под чужим advisory-локом, а прямой `pg_advisory_xact_lock` с `lock_timeout=2s` падает с `lock timeout`/`55P03`.
 6. **H5 (в рамках F5).** Полный PKCE-поток Blitz: `/auth/login` → authorize у blitz-fixture → callback → `bridge_session`, возврат в исходный раздел, `/auth/me` — `Главный админ`; затем `verifyProductionBridge` (автономный архив MCP, pairing, heartbeat/pause/resume, choose-root job с арендой, продление истёкшего подключения) через настоящий HTTPS gateway на `127.0.0.1:19443` (servername `panel.test`, CA = сертификат кандидата).
-7. **F6.** Evidence-запись (0600 в 0700), затем teardown `down --remove-orphans --timeout 60`. Volumes намеренно сохраняются; удаление — явно:
+7. **F6.** Evidence-запись (0600 в 0700), затем teardown `down --remove-orphans --timeout 60` — только если стек поднят этим запуском; после re-attach стек остаётся. Volumes намеренно сохраняются; удаление — явно:
 
 ```sh
 docker volume ls -q --filter name=nc-rel01- | xargs -r docker volume rm
