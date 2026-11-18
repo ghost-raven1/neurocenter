@@ -110,6 +110,88 @@ for (const route of ['/api/skills/%', '/api/skills/%2e%2e', '/api/skills/%5c']) 
     });
 }
 
+test('RBAC-матрица my-access: квитанция переноса ключа — read разрешённой роли, остальное не затронуто', () => {
+    const catalogDist = process.env.PUBLICATION_TEST_DIST || path.resolve('services/catalog-service/dist');
+    const { allowRequest } = require(path.join(catalogDist, 'access/access-policy.js'));
+    const matrixClaims = {
+        email: 'owner@example.test',
+        userRoles: ['Главный админ', 'Админ проекта', 'Разработчик', 'Наблюдатель'],
+        projects: [],
+        pluginIds: [],
+        skillPaths: [],
+    };
+    const jobId = '22222222-2222-4222-8222-222222222222',
+        keyId = '11111111-1111-4111-8111-111111111111';
+    const request = (method, pathValue) => ({ method, path: pathValue });
+    // Исполнитель (browserReceipt) повторно проверяет владение job по email и requestKey; матрица — только билет на вход.
+    for (const role of ['Главный админ', 'Админ проекта', 'Разработчик'])
+        assert.equal(
+            allowRequest(matrixClaims, role, request('GET', `/api/models/openai-test/my-access/transfers/${jobId}`)),
+            true,
+            `${role}: read квитанции переноса`,
+        );
+    assert.equal(
+        allowRequest(
+            matrixClaims,
+            'Наблюдатель',
+            request('GET', `/api/models/openai-test/my-access/transfers/${jobId}`),
+        ),
+        false,
+        'Наблюдатель: read квитанции переноса',
+    );
+    assert.equal(
+        allowRequest(
+            matrixClaims,
+            'Разработчик',
+            request('POST', `/api/models/openai-test/my-access/transfers/${jobId}`),
+        ),
+        false,
+        'разрешённая роль: POST квитанции переноса',
+    );
+    assert.equal(
+        allowRequest(
+            matrixClaims,
+            'Разработчик',
+            request('DELETE', `/api/models/openai-test/my-access/transfers/${jobId}`),
+        ),
+        false,
+        'разрешённая роль: DELETE квитанции переноса',
+    );
+    assert.equal(
+        allowRequest(
+            matrixClaims,
+            'Разработчик',
+            request('GET', `/api/models/openai-test/my-access/transfers/${jobId}x`),
+        ),
+        false,
+        'битый идентификатор переноса',
+    );
+    assert.equal(
+        allowRequest(matrixClaims, 'Разработчик', request('GET', '/api/models/openai-test/my-access')),
+        true,
+        'базовый read my-access',
+    );
+    assert.equal(
+        allowRequest(matrixClaims, 'Разработчик', request('PUT', '/api/models/openai-test/my-access')),
+        true,
+        'базовый PUT my-access',
+    );
+    assert.equal(
+        allowRequest(
+            matrixClaims,
+            'Разработчик',
+            request('GET', `/api/models/openai-test/my-access/requests/${keyId}`),
+        ),
+        true,
+        'read requests',
+    );
+    assert.equal(
+        allowRequest(matrixClaims, 'Разработчик', request('GET', `/api/models/openai-test/my-access/other/${jobId}`)),
+        false,
+        'неизвестный подмаршрут my-access',
+    );
+});
+
 test('Главный администратор сохраняет полный список; двойное кодирование не декодируется повторно', () => {
     assert.deepEqual(filterResponse(cases[0][1], claims, 'Главный админ', '/api/skills/'), cases[0][1]);
     assert.equal(canonicalAccessRoute('/api/skills/%252F'), '/api/skills/%2F');
