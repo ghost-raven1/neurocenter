@@ -3,7 +3,7 @@ title: 'Баг: oauth2-bridge — тот же env_file-override корпорат
 type: 'bugfix'
 ticket: '14'
 created: '2026-11-13'
-status: ready-for-dev
+status: in-progress
 baseline_revision: 'd51c49b05da8b4b68096ff3e7d6ab78d6b688559'
 route: 'auto'
 route_source: 'auto'
@@ -57,9 +57,9 @@ context:
 ## Tasks & Acceptance
 
 ### Execution
-- [ ] `docker-compose.yml`: oauth2-bridge `environment:` + `NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem`.
-- [ ] Drift-тесты (compose→code, code→compose) зелёные.
-- [ ] (Опционально, если SSO включат) live-проверка: `docker exec neurocenter-oauth2-bridge node -e "console.log(process.env.NODE_EXTRA_CA_CERTS)"` → путь из образа.
+- [x] `docker-compose.yml`: oauth2-bridge `environment:` + `NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem` (в main с c20f4704, 2026-11-13).
+- [x] Drift-тесты (compose→code, code→compose) зелёные (23/23, 0 dead-env / 0 drift — см. Progress 2026-11-18).
+- [x] (Опционально, если SSO включат) live-проверка: выполнена read-only на живом контейнере — путь из образа (см. Progress 2026-11-18).
 
 ### Acceptance
 - **Given** oauth2-bridge в dev-compose **when** SSO включён и bridge делает outbound-запрос к корп-TLS-хосту **then** TLS-рукопожатие проходит (CA из образа).
@@ -79,8 +79,30 @@ context:
 export PATH=$HOME/.nvm/versions/node/v24.22.0/bin:$PATH
 node --test scripts/test/compose-drift.test.mjs scripts/test/production-stack.mjs
 ```
-Ожидаемо: drift-тесты зелёные (oauth2-bridge `NODE_EXTRA_CA_CERTS` в модели). Корневой сьют — без деградации.
+Ожидаемо: drift-тесты зелёные (0 dead-env / 0 drift). Примечание (2026-11-18): `NODE_EXTRA_CA_CERTS` сознательно НЕ в `environment-model.json` — в production CA зашит в образ через `ENV` Dockerfile, а не в compose `environment:` (у oauth2-bridge и у всех остальных 14 сервисов); dev compose в drift-сверке не участвует. Корневой сьют — без деградации.
 
 ## Open Questions
 
 1. **Фиксить сейчас или при включении SSO?** Рекомендация: сейчас (однострочный, паттерн принят d51c49b0, риск ≈ 0). Обоснование: latent-баг того же класса, что зафиксированный CA-баг; дешевле закрыть сейчас, чем ловить при включении SSO.
+
+## Progress (2026-11-18, in-progress)
+
+**Кодовый фикс уже в main до этой сессии.** Override добавлен в main коммитом `c20f4704` (2026-11-13, «1.14: … wip»): `docker-compose.yml` oauth2-bridge `environment:` — комментарий + `NODE_EXTRA_CA_CERTS=/usr/local/share/neurocenter/build-ca/extra.pem` (строки 71–72), тот же паттерн, что 5 сервисов из `d51c49b0`. Хостовый `.env.local` не тронут.
+
+**Production-модель — не менять и не добавлять:** `NODE_EXTRA_CA_CERTS` отсутствует в `deploy/production/environment-model.json` и в `compose.production.yml` осознанно: в production CA зашит в образ через `ENV` в Dockerfile (все 8 node-образов), а не через compose `environment:` — ни один из 14 production-сервисов переменную в compose не несёт. Добавление в env модели oauth2-bridge сломало бы `structuralDrift` (env модели ≠ env production compose). Dev compose в drift-сверке не участвует (drift = production compose ↔ модель). Вывод: добавление строки в dev compose drift не ломает — проверено прогоном.
+
+**Live-проверка (read-only, контейнер НЕ пересоздан):** живой `neurocenter-oauth2-bridge-1` (Up 2 days, healthy) — `docker exec … node -e "console.log(process.env.NODE_EXTRA_CA_CERTS)"` → `/usr/local/share/neurocenter/build-ca/extra.pem`; CA-файл в контейнере есть (`test -f` → OK). Живой dev-стек уже в post-fix состоянии (контейнер создан после merge c20f4704 в main).
+
+**Найден и исправлен pre-existing red на main (26fc8788, чистое дерево):** `scripts/test/docker-build-ca.test.mjs` ждал 7 CA build-args в `docker-compose.yml` — счётчик устарел после agt-07 B1 (`a8a967b2`): в dev-стек добавлен `background-agent` (8-й node-образ с CA build-arg). Провал НЕ связан с 1.14 (воспроизведён на чистом main). Фикс: count `7 → 8` + комментарий с перечнем 8 сервисов.
+
+**Тесты (2026-11-18, node v24.22.0):**
+- `compose-drift` — **23/23 pass**: 0 structural drift, 0 dead-env, 0 noteErrors, 0 missing / 0 phantom required (оба направления).
+- `production-configuration` + `production-setup` — **51/51 pass**.
+- `docker-build-ca` + `tls-global-disable` — **23 pass / 1 skip / 0 fail** (skip = real Docker-сборка за `DOCKER_BUILD_CA_TEST=1`).
+- prettier — clean на изменённом файле; TS-изменений нет (tsc N/A).
+
+**НЕ доказано (честно, без done):**
+- Edge-case 1 матрицы (SSO включён, bridge → корп-TLS IdP, handshake проходит) — SSO в dev off (AD-OP-5 interim); подтверждены env и файл CA в живом контейнере, механизм идентичен зафиксированному CA-багу.
+- Свежий старт стека и полный корневой сьют — вне узкой верификации тикета (граница: oauth2-bridge контейнер не пересоздавать; живой стек healthy).
+
+**Следующий шаг:** при заморозке кандидата (1.13 REL-01) фикс попадает в release-базу main автоматически; при включении SSO в dev-стек — live-проверка edge-case 1.

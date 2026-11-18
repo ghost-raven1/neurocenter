@@ -352,7 +352,9 @@ test('All Node Dockerfiles verify optional CA before npm and scope their selecte
     }
     for (const file of ['docker-compose.yml', 'compose.production.yml']) {
         const source = await fs.readFile(path.join(root, file), 'utf8');
-        const count = file === 'docker-compose.yml' ? 7 : 8;
+        // 8 node-образов в dev-стеке (frontend, oauth2-bridge, api-gateway, catalog-service,
+        // background-agent, feature-flags-service, skills-service, rag-sync-service) и 8 в production.
+        const count = 8;
         assert.equal([...source.matchAll(/NEUROCENTER_BUILD_CA_SHA256: /g)].length, count, file);
         assert.equal([...source.matchAll(/NEUROCENTER_BUILD_CA_NAME: /g)].length, count, file);
         assert.equal([...source.matchAll(/NEUROCENTER_TLS_DISABLE: /g)].length, count, file);
