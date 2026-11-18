@@ -1,5 +1,5 @@
 # Сторис эпика epic-dr. Порядок таблиц = порядок сборки.
-# next_id = 10
+# next_id = 11
 
 [[entry]]
 id = 1
@@ -98,4 +98,15 @@ verify = "Dev-стэк ceph-chat поднят и health (neurocenter-dev-ceph --
 covers = ["R10"]
 after = []
 hitl = true
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "S3 data path (ceph-chat dev): 403 AccessDenied — подпись SigV4 не аутентифицируется + RGW-пулы данных не создавались"
+description = "Предсуществующая проблема (выявлена при диагностике story 9, 2026-11-18), отдельная от ceph-osd crash-loop. FAKTY: (1) S3 data path (операции bucket/объекта) на 127.0.0.1:19011 возвращает 403 AccessDenied; в RGW access-логе пользователь = `-` (anonymous) — подпись SigV4 не проходит аутентификацию; (2) проверка исключила стороны клиента: креденшалы корректны (access/secret совпадают с user info RGW и хэшами owner.json), часы корректны, доверенный клиент (curl --aws-sigv4) пробован и в контейнере, и с хоста; (3) RGW-пулы данных (default.rgw.buckets.data/index/non-ec) НИКОГДА не создавались → объекты через S3 ни разу не записывались; chat-файлы в dev-стеке фактически не хранятся; (4) RGW metadata/admin API (user info) работает штатно. Скоуп: (1) найти причину отказа аутентификации S3 data path (кандидаты: часы/зона RGW-контейнера, алгоритм/region SigV4 в настройках RGW, host-заголовок в canonical request, mismatch user/secret в RGW против owner.json при повторном init) — по рёпам RGW и воспроизведению; (2) создать RGW-пулы данных в сценарии поднятия (dev-ceph.sh) до/после radosgw-admin init + health-гейт проверяет пулы; (3) верификация: полный S3-раундtrip PUT/GET объекта."
+verify = "S3 PUT/GET объекта через 127.0.0.1:19011 с owner-креденшалами (curl --aws-sigv4) → 200/200, readback byte-идентичен; в RGW access-логе user = access key (не `-`); пулы default.rgw.buckets.data/index существуют (rados df / ceph osd pool ls); dev-ceph.sh создаёт пулы и health-гейт их проверяет; RGW admin API без регрессии; штатный старт без регрессии (osd_ready + rgw_ready)."
+covers = ["R10"]
+after = []
+hitl = false
 risk = "medium"
