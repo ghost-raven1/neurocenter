@@ -175,3 +175,32 @@ context:
 - **OQ3 — Повторяемый гейт на этой машине (B) или ждать реальный чистый хост (A)?** Рекомендация: **повторяемый гейт = B** (эта машина + ipv4first, детерминированно, без зависимости от хоста); **истинный чистый хост (A) = отдельный HITL-шаг** (F6) для финальной промышленной приёмки. Обоснование: чистый хост может быть недоступен; B даёт повторяемую защиту, A — финальный стейтмент.
 - **OQ4 — Реальный Blitz IdP нужен для приёмки 1.13?** Рекомендация: **нет для гейта** (local Blitz fixture, как `production-stack.mjs`); реальный Blitz = отдельная HITL-приёмка (epic-identity). Обоснование: 1.13 принимает **кандидата сборки/деплоя**, не IdP-интеграцию; SSO-flow уже покрывается fixture.
 - **OQ5 — TLS-чек до мержа 1.10?** Рекомендация: **F5-TLS = skipped с пометкой «ждёт 1.10»** до мержа; после мержа — полный ассерт (absence `NODE_TLS_REJECT_UNAUTHORIZED=0` + reject невалидного сертификата). Обоснование: 1.10 не в main; точные имена env/флагов за 1.10; `after=[1..12]` гарантирует порядок сборки.
+
+## Progress (2026-11-18)
+
+**Прогон: ветка `nc-rel01-e2e-driver` (от main 26fc8788).** Драйвер уже в main (633ba9ef, 2026-11-09: `scripts/test/release-candidate-e2e.test.mjs` F1–F6 + `docs/release-candidate-e2e.md` + tooling-регистрация, стр. 56). Пункт плана «new `release-candidate-e2e.mjs`» отдельным файлом НЕ создан: имя `.test.mjs` — regex tooling-гейта, дублирование 1292-строчного драйвера противоречит «не дублировать». Прогон добавил недостающее по задаче: **фаза запускается по имени с пропуском выполненных** (точка продолжения тяжёлых прогонов).
+
+**Реализовано в прогоне (diff 1 файла драйвера + ранбук):**
+- `--phase F1..F6` (канонический порядок, F6-отчёт всегда) и `--fresh` (очистка stage);
+- resume: F2 — маркеры `f2-clone<N>.json` (commit/tag сверены) пропускают сборку; F4 — детерминированный проект `nc-rel01-<commit-8>-<hash-8>` + re-attach, если стек поднят и образы = манифест; F5 — re-attach к поднятому стеку; F6 — кумулятивный отчёт (`phases`/`checks`/`loadHistory` предыдущего отчёта того же кандидата наследуются; `GO` только при всех 6 фазах ok; `validateE2eReport` проверяет согласованность `result ⇔ phases`);
+- teardown только если стек поднят этим запуском; после re-attach стек остаётся оператору;
+- ранбук: раздел H3 «Возобновление прерванного прогона», H4 — детерминированный проект и условный teardown.
+
+**OQ-решения сверены со state main:** OQ1 — freeze = HITL, driver сверяет tag↔manifest (F1); OQ2 — bare image ID (pinned overlay + assertLive-эквивалент `stackProblem`: 7 app + postgres = digest'ы манифеста); OQ3 — вариант B, ipv4first-Dockerfile'ы (8 сервисов) в build-контейнерах; OQ4 — Blitz = local fixture (`blitz-fixture`), реальный Blitz вне 1.13; **OQ5 — 1.10 В main** (`neurocenter.config.json` + `tls.disableTlsVerification` + `scripts/workspace/project-config.mjs` + `scripts/test/tls-global-disable.test.mjs`; `NODE_TLS_REJECT_UNAUTHORIZED` в `compose.production.yml` = 0; build форсирует `NEUROCENTER_TLS_DISABLE=0` — setup.mjs:125; `validateProduction` без api-gateway-исключения — runtime.cjs:111) → полный TLS-ассерт (F5-live: absence в compose и Config.Env 7 образов, `NEUROCENTER_TLS_DISABLE=0` в живых контейнерах, reject self-signed + негативный контроль) — в драйвере уже реализован.
+
+**Статическая верификация (Node 24.22.0, без docker):**
+- `node --test scripts/test/release-candidate-e2e.test.mjs` — 11 pass / 0 fail / 3 skip (HITL F2/F4/F5);
+- `node --test` compose-drift + bridge-templates-resolution + release-manifest + schema-locks-ddl-invariant + tls-global-disable — 52 pass / 0 fail (без регрессии);
+- prettier --check + eslint на изменённый файл — чисто; tsc (catalog-service typecheck) — чисто, TS в прогоне не тронут.
+
+**Не выполнено (в рамках прогона):**
+- Тяжёлые live-прогоны F2/F3-полные/F4 — **отложены**: load average 6.48 > 6 (12:03), 11 контейнеров dev-стека в `docker ps`, активных docker-сборок нет.
+- `stretch-ctx-326a01f2.sh` отсутствует в репо и `.run` — пункт переиспользования не применим.
+- `scripts/workspace/check-tooling-tests.json` / `check.mjs` — не тронуты (регистрация драйвера уже есть).
+- Выбор кандидата (commit + tag) — HITL оператора (H1).
+
+**Точка продолжения (live-прогон в low-load окне):**
+1. Оператор H1: кандидат + annotated-тег; H2: кандидат-конфиг (fixture-SSO) + `setup.mjs configure/build` → манифест.
+2. `node scripts/test/release-candidate-e2e.test.mjs --candidate <sha> --tag <rel> --manifest <path> --host-variant B` (все фазы; драйвер сам ждёт load < 8 перед тяжёлыми шагами).
+3. При прерывании — перезапуск `--phase <невыполненные>` (раздел ранбука «Возобновление прерванного прогона»).
+4. H4: интерпретация F6-отчёта → GO/NO-GO REL-01.

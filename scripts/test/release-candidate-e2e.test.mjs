@@ -48,6 +48,7 @@ import { verifyProductionBridge } from './production-bridge.fixture.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const EVIDENCE_FORMAT = 'neurocenter-release-candidate-e2e-v1';
+const PHASE_ORDER = Object.freeze(['F1', 'F2', 'F3', 'F4', 'F5', 'F6']);
 const LOAD_LIMIT = 8;
 const LOAD_POLL_MS = 15000;
 // Те же ключи, что в scripts/test/schema-locks-ddl-invariant-db.mjs: check-команды берут свои локи.
@@ -86,11 +87,27 @@ const BLITZ_PORT = 19444;
 
 // ============================== Exports (pure) ==============================
 
+/**
+ * CLI live-режима. --phase (список F1..F6) ограничивает прогон выбранными фазами в каноническом
+ * порядке (F6 всегда выполняется); выполненные фазы возобновляются из stage без повторного
+ * запуска (маркеры f2-cloneN.json, re-attach стека). --fresh очищает stage перед стартом.
+ */
 export function parseDriverArgs(argv) {
-    const args = { candidate: null, tag: null, manifest: null, hostVariant: null };
+    const args = {
+        candidate: null,
+        tag: null,
+        manifest: null,
+        hostVariant: null,
+        phases: [...PHASE_ORDER],
+        fresh: false,
+    };
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
-        if (!['--candidate', '--tag', '--manifest', '--host-variant'].includes(arg))
+        if (arg === '--fresh') {
+            args.fresh = true;
+            continue;
+        }
+        if (!['--candidate', '--tag', '--manifest', '--host-variant', '--phase'].includes(arg))
             throw new Error('Неизвестный аргумент ' + arg + ' (см. usage)');
         const value = argv[i + 1];
         if (value === undefined) throw new Error('Для ' + arg + ' не задано значение');
@@ -104,9 +121,19 @@ export function parseDriverArgs(argv) {
             args.tag = value;
         } else if (arg === '--manifest') {
             args.manifest = path.resolve(value);
-        } else {
+        } else if (arg === '--host-variant') {
             if (!['A', 'B'].includes(value)) throw new Error('--host-variant принимает A или B');
             args.hostVariant = value;
+        } else {
+            const names = value
+                .split(',')
+                .map((part) => part.trim())
+                .filter(Boolean);
+            if (names.length === 0) throw new Error('--phase: пустой список фаз');
+            for (const name of names)
+                if (!PHASE_ORDER.includes(name))
+                    throw new Error('Неизвестная фаза ' + name + ' (допустимо: ' + PHASE_ORDER.join(', ') + ')');
+            args.phases = PHASE_ORDER.filter((name) => names.includes(name));
         }
     }
     if (!args.candidate || !args.tag || !args.manifest || !args.hostVariant)
@@ -269,6 +296,12 @@ export function validateE2eReport(report) {
         fail('digests.images: ожидается 7 sha256-образов');
     if (!imagePattern.test(report.digests?.postgresImage ?? '')) fail('digests.postgresImage отсутствует');
     if (!/^[a-f0-9]{64}$/.test(report.digests?.canonicalSha256 ?? '')) fail('digests.canonicalSha256 отсутствует');
+    if (!report.phases || typeof report.phases !== 'object' || Array.isArray(report.phases)) fail('phases отсутствуют');
+    for (const key of PHASE_ORDER) {
+        if (typeof report.phases[key]?.ok !== 'boolean') fail('phases.' + key + '.ok отсутствует');
+    }
+    const complete = PHASE_ORDER.every((key) => report.phases[key].ok);
+    if (report.result === 'GO' ? !complete : complete) fail('result не согласован с phases (все ok ⇔ GO)');
     if (!Array.isArray(report.steps) || report.steps.length === 0) fail('steps отсутствуют');
     if (!Array.isArray(report.checks)) fail('checks отсутствуют');
     if (typeof report.startedAt !== 'string' || typeof report.finishedAt !== 'string')
@@ -534,6 +567,38 @@ function assertCandidateConfig(configCopy) {
     return { certFile, keyFile };
 }
 
+/** Стек соответствует кандидат-манифесту: 7 app + postgres running/healthy, образы = digest'ы. */
+async function stackProblem({ client, manifest }) {
+    const list = await containers(client);
+    const byService = {};
+    for (const container of list) byService[container?.Config?.Labels?.['com.docker.compose.service']] = container;
+    for (const service of applicationServices) {
+        const container = byService[service];
+        if (!container) return 'нет контейнера ' + service;
+        if (container.State?.Status !== 'running') return service + ' не running';
+        if (container.State?.Health?.Status !== 'healthy') return service + ' не healthy';
+        if (container.Image !== manifest.images[service])
+            return 'образ ' + service + ' не совпадает с digest из манифеста';
+    }
+    const postgres = byService.postgres;
+    if (!postgres) return 'нет контейнера postgres';
+    if (postgres.State?.Status !== 'running') return 'postgres не running';
+    if (postgres.State?.Health?.Status !== 'healthy') return 'postgres не healthy';
+    if (postgres.Image !== manifest.postgresImage) return 'образ postgres не совпадает с манифестом';
+    return null;
+}
+
+/** Resume: стек предыдущего запуска ещё поднят — re-attach без повторного деплоя. */
+async function reattachDeploy({ stage, projectName, manifest }) {
+    const configCopy = path.join(stage, 'config-deploy');
+    const pinnedFile = path.join(configCopy, 'releases', manifest.release, 'pinned.compose.json');
+    const overrideFile = path.join(configCopy, 'compose.e2e-override.yml');
+    if (!fs.existsSync(path.join(configCopy, '.env')) || !fs.existsSync(pinnedFile) || !fs.existsSync(overrideFile))
+        return null;
+    const client = composeClient({ directory: configCopy, projectName, files: [pinnedFile, overrideFile] });
+    return (await stackProblem({ client, manifest })) ? null : { client, configCopy, attached: true };
+}
+
 /** F4: pinned-оверлей (паттерн update.mjs, без postgres) + closed-loop up и live-сверка. */
 async function deployPinned({ manifest, operatorConfig, projectName, stage, record }) {
     const configCopy = path.join(stage, 'config-deploy');
@@ -562,6 +627,10 @@ async function deployPinned({ manifest, operatorConfig, projectName, stage, reco
     const overrideFile = path.join(configCopy, 'compose.e2e-override.yml');
     fs.writeFileSync(overrideFile, e2eOverrideYaml(certFile, keyFile), { mode: 0o600 });
     const client = composeClient({ directory: configCopy, projectName, files: [pinnedFile, overrideFile] });
+    if (!(await stackProblem({ client, manifest }))) {
+        record('F4: стек предыдущего запуска поднят (resume) — деплой пропущен');
+        return { client, configCopy, attached: true };
+    }
     const config = await composeConfiguration(client);
     await maintenanceLock(client, manifest.images['catalog-service'], 'release-candidate-e2e', async () => {
         await client.run(['up', '-d', '--wait', '--no-build', '--pull', 'never', 'postgres'], { inherit: true });
@@ -611,25 +680,10 @@ async function deployPinned({ manifest, operatorConfig, projectName, stage, reco
         });
         await client.run(['up', '-d', '--wait', '--no-build', '--pull', 'never'], { inherit: true });
     });
-    const list = await containers(client);
-    const byService = {};
-    for (const container of list) byService[container?.Config?.Labels?.['com.docker.compose.service']] = container;
-    for (const service of applicationServices) {
-        const container = byService[service];
-        assert.ok(container, 'F4: нет контейнера ' + service);
-        assert.equal(container.State.Status, 'running', 'F4: ' + service + ' не running');
-        assert.equal(container.State.Health?.Status, 'healthy', 'F4: ' + service + ' не healthy');
-        assert.equal(
-            container.Image,
-            manifest.images[service],
-            'F4: образ ' + service + ' не совпадает с digest из манифеста',
-        );
-    }
-    assert.equal(byService.postgres?.State?.Status, 'running', 'F4: postgres не running');
-    assert.equal(byService.postgres?.State?.Health?.Status, 'healthy', 'F4: postgres не healthy');
-    assert.equal(byService.postgres.Image, manifest.postgresImage, 'F4: образ postgres не совпадает с манифестом');
+    const problem = await stackProblem({ client, manifest });
+    if (problem) throw new Error('F4: ' + problem);
     record('F4: 7 app + postgres подняты, healthy, образы = digestы из кандидат-манифеста');
-    return { client, configCopy };
+    return { client, configCopy, attached: false };
 }
 
 const PROBE_SCRIPT = [
@@ -901,23 +955,53 @@ async function verifySsoAndBridge({ client, certFile, record }) {
 }
 
 async function runLive(args) {
-    const startedAt = new Date().toISOString();
+    const manifest = validateReleaseManifest(JSON.parse(await readFile(args.manifest, 'utf8')));
     const operatorConfig = process.env.NEUROCENTER_CONFIG_DIR;
     if (!operatorConfig)
         throw new Error(
             'Не задан NEUROCENTER_CONFIG_DIR (production-каталог кандидата) — см. docs/release-candidate-e2e.md (H2)',
         );
-    const manifest = validateReleaseManifest(JSON.parse(await readFile(args.manifest, 'utf8')));
-    const projectName = 'nc-rel01-' + randomUUID().slice(0, 8);
+    // Стабильное имя проекта: resume re-attach'ивается к стеку того же кандидата+тега.
+    const projectName =
+        'nc-rel01-' +
+        args.candidate.slice(0, 8) +
+        '-' +
+        createHash('sha256').update(args.tag).digest('hex').slice(0, 8);
     const stage = path.resolve(root, process.env.NEUROCENTER_TEST_EVIDENCE || '.run/release-candidate-e2e');
-    fs.rmSync(stage, { recursive: true, force: true });
+    if (args.fresh) fs.rmSync(stage, { recursive: true, force: true });
     fs.mkdirSync(stage, { recursive: true, mode: 0o700 });
+    // Кумулятивный отчёт: если в stage есть отчёт того же кандидата, его phases/checks/loadHistory наследуются.
+    let previous = null;
+    if (!args.fresh) {
+        try {
+            const parsed = JSON.parse(await readFile(path.join(stage, 'release-candidate-e2e.json'), 'utf8'));
+            if (
+                parsed?.format === EVIDENCE_FORMAT &&
+                parsed?.candidate?.commit === manifest.commit &&
+                parsed?.candidate?.tag === args.tag &&
+                parsed?.phases &&
+                typeof parsed.phases === 'object'
+            ) {
+                previous = parsed;
+            }
+        } catch {
+            /* stage пуст или отчёт от другого кандидата — начинаем заново */
+        }
+    }
+    const phases = Object.fromEntries(PHASE_ORDER.map((key) => [key, { ok: false, at: null }]));
+    for (const [key, value] of Object.entries(previous?.phases ?? {}))
+        if (PHASE_ORDER.includes(key) && typeof value?.ok === 'boolean')
+            phases[key] = { ok: value.ok, at: value.at ?? null };
+    const startedAt = previous?.startedAt ?? new Date().toISOString();
     const loadHistory = [];
     const steps = [];
     const checks = [];
     let canonicalSha256 = manifestCanonicalSha256(manifest);
-    let manifests = { operator: args.manifest };
+    const manifests = { ...(previous?.manifests ?? {}), operator: args.manifest };
     let deploy = null;
+    let f2Artifacts = null;
+    const selected = new Set(args.phases);
+    const phaseKey = (name) => name.slice(0, 2);
     const record = (name, evidence = '') => {
         checks.push({ name, ok: true, evidence });
         console.log('OK   ' + name + (evidence ? ' — ' + evidence : ''));
@@ -925,79 +1009,150 @@ async function runLive(args) {
     const step = async (name, action) => {
         console.log('\n== ' + name + ' ==');
         const startedAtMs = Date.now();
-        steps.push({ name, startedAt: new Date(startedAtMs).toISOString() });
+        const entry = { name, startedAt: new Date(startedAtMs).toISOString(), ok: false };
+        steps.push(entry);
         try {
             await action();
+        } catch (error) {
+            phases[phaseKey(name)] = { ok: false, at: new Date().toISOString() };
+            throw error;
         } finally {
-            const entry = steps[steps.length - 1];
             entry.finishedAt = new Date().toISOString();
             entry.durationMs = Date.now() - startedAtMs;
         }
+        entry.ok = true;
+        phases[phaseKey(name)] = { ok: true, at: entry.finishedAt };
     };
-    let result = 'GO';
+    // Resume F2: маркер успешной сборки клона (commit/tag сверены) — сборка не повторяется.
+    const readF2Marker = (index) => {
+        try {
+            const marker = JSON.parse(fs.readFileSync(path.join(stage, 'f2-clone' + index + '.json'), 'utf8'));
+            if (
+                marker &&
+                marker.commit === args.candidate &&
+                marker.tag === args.tag &&
+                typeof marker.manifestFile === 'string' &&
+                fs.existsSync(marker.manifestFile)
+            ) {
+                return marker;
+            }
+        } catch {
+            /* маркера нет — собирать */
+        }
+        return null;
+    };
+    const buildOrLoadClone = async (index) => {
+        const marker = readF2Marker(index);
+        if (marker) {
+            const loaded = validateReleaseManifest(JSON.parse(await readFile(marker.manifestFile, 'utf8')));
+            record(
+                'F2-clone' + index + ': пропущена — манифест предыдущего запуска (marker f2-clone' + index + '.json)',
+                marker.manifestFile,
+            );
+            return { manifest: loaded, filename: marker.manifestFile };
+        }
+        assertSupplyAvailable(root);
+        record('F2-clone' + index + ': supply-архивы runtime/opencode присутствуют в checkout');
+        await waitForLoad(loadHistory, 'F2-clone' + index + '-build');
+        const built = await buildCloneRelease({
+            index,
+            candidate: args.candidate,
+            tag: args.tag,
+            hostVariant: args.hostVariant,
+            operatorConfig,
+            stage,
+        });
+        fs.writeFileSync(
+            path.join(stage, 'f2-clone' + index + '.json'),
+            JSON.stringify(
+                {
+                    commit: args.candidate,
+                    tag: args.tag,
+                    manifestFile: built.filename,
+                    canonicalSha256: manifestCanonicalSha256(built.manifest),
+                    at: new Date().toISOString(),
+                },
+                null,
+                2,
+            ) + '\n',
+            { mode: 0o600 },
+        );
+        record('F2-clone' + index + ': сборка с чистого клона, манифест записан и сверен', built.filename);
+        return { manifest: built.manifest, filename: built.filename };
+    };
+    const loadF2Artifact = async (index) => {
+        const marker = readF2Marker(index);
+        if (!marker)
+            throw new Error('F3: нет манифеста чистых сборок клона ' + index + ' — сначала выполните --phase F2');
+        return {
+            manifest: validateReleaseManifest(JSON.parse(await readFile(marker.manifestFile, 'utf8'))),
+            filename: marker.manifestFile,
+        };
+    };
     try {
-        await step('F1: замороженный кандидат', async () => {
-            const { commit } = await checkFrozenCandidate(root, args, manifest);
-            record('F1: тег annotated, manifest.release/commit, HEAD == кандидат, дерево чистое', commit.slice(0, 12));
-        });
-        await step('F2: две чистые последовательные сборки', async () => {
-            assertSupplyAvailable(root);
-            record('F2: supply-архивы runtime/opencode присутствуют в checkout');
-            await waitForLoad(loadHistory, 'F2-clone1-build');
-            const first = await buildCloneRelease({
-                index: 1,
-                candidate: args.candidate,
-                tag: args.tag,
-                hostVariant: args.hostVariant,
-                operatorConfig,
-                stage,
-            });
-            manifests = { ...manifests, clone1: first.filename };
-            record('F2-clone1: сборка с чистого клона, манифест записан и сверен', first.filename);
-            await waitForLoad(loadHistory, 'F2-clone2-build');
-            const second = await buildCloneRelease({
-                index: 2,
-                candidate: args.candidate,
-                tag: args.tag,
-                hostVariant: args.hostVariant,
-                operatorConfig,
-                stage,
-            });
-            manifests = { ...manifests, clone2: second.filename };
-            record('F2-clone2: повторная сборка с чистого клона, манифест записан и сверен', second.filename);
-            const comparison = compareManifestDigests(first.manifest, second.manifest);
-            canonicalSha256 = comparison.canonicalSha256;
-            record('F3: две сборки идентичны', comparison.canonicalSha256);
-            for (const service of applicationServices)
-                assert.equal(
-                    first.manifest.images[service],
-                    manifest.images[service],
-                    'F2: образ ' + service + ' не воспроизводит операторский кандидат-манифест',
+        if (selected.has('F1'))
+            await step('F1: замороженный кандидат', async () => {
+                const { commit } = await checkFrozenCandidate(root, args, manifest);
+                record(
+                    'F1: тег annotated, manifest.release/commit, HEAD == кандидат, дерево чистое',
+                    commit.slice(0, 12),
                 );
-            assert.equal(first.manifest.postgresImage, manifest.postgresImage, 'F2: postgresImage не воспроизведён');
-            record('F2: операторский кандидат-манифест воспроизведён чистыми сборками (7 images + postgres)');
-        });
-        await step('F4: pinned-деплой в замкнутом контуре', async () => {
-            await waitForLoad(loadHistory, 'F4-up');
-            deploy = await deployPinned({ manifest, operatorConfig, projectName, stage, record });
-        });
-        await step('F5: TLS, схема, lock-независимость, мост', async () => {
-            const report = await staticDriftReport(root, liveOverlayDocuments(manifest));
-            assert.deepEqual(report.counts, { structural: 0, dead: 0, required: 0 }, 'F5-static: дрейф модели');
-            record('F5-static: модель окружения без дрейфа (base + overlays + live-оверлеи)');
-            const certFile = envValue(fs.readFileSync(path.join(deploy.configCopy, '.env'), 'utf8'), 'TLS_CERT_FILE');
-            await runF5Live({ client: deploy.client, manifest, record });
-            await verifySsoAndBridge({ client: deploy.client, certFile, record });
-        });
+            });
+        if (selected.has('F2'))
+            await step('F2: две чистые последовательные сборки', async () => {
+                f2Artifacts = { first: await buildOrLoadClone(1), second: await buildOrLoadClone(2) };
+                manifests.clone1 = f2Artifacts.first.filename;
+                manifests.clone2 = f2Artifacts.second.filename;
+            });
+        if (selected.has('F3'))
+            await step('F3: digest-детерминизм', async () => {
+                const first = f2Artifacts?.first ?? (await loadF2Artifact(1));
+                const second = f2Artifacts?.second ?? (await loadF2Artifact(2));
+                manifests.clone1 = manifests.clone1 ?? first.filename;
+                manifests.clone2 = manifests.clone2 ?? second.filename;
+                const comparison = compareManifestDigests(first.manifest, second.manifest);
+                canonicalSha256 = comparison.canonicalSha256;
+                record('F3: две сборки идентичны', comparison.canonicalSha256);
+                for (const service of applicationServices)
+                    assert.equal(
+                        first.manifest.images[service],
+                        manifest.images[service],
+                        'F3: образ ' + service + ' не воспроизводит операторский кандидат-манифест',
+                    );
+                assert.equal(
+                    first.manifest.postgresImage,
+                    manifest.postgresImage,
+                    'F3: postgresImage не воспроизведён',
+                );
+                record('F3: операторский кандидат-манифест воспроизведён чистыми сборками (7 images + postgres)');
+            });
+        if (selected.has('F4'))
+            await step('F4: pinned-деплой в замкнутом контуре', async () => {
+                await waitForLoad(loadHistory, 'F4-up');
+                deploy = await deployPinned({ manifest, operatorConfig, projectName, stage, record });
+            });
+        if (selected.has('F5'))
+            await step('F5: TLS, схема, lock-независимость, мост', async () => {
+                if (!deploy) deploy = await reattachDeploy({ stage, projectName, manifest });
+                if (!deploy) throw new Error('F5: нет поднятого стека — сначала выполните --phase F4');
+                const report = await staticDriftReport(root, liveOverlayDocuments(manifest));
+                assert.deepEqual(report.counts, { structural: 0, dead: 0, required: 0 }, 'F5-static: дрейф модели');
+                record('F5-static: модель окружения без дрейфа (base + overlays + live-оверлеи)');
+                const certFile = envValue(
+                    fs.readFileSync(path.join(deploy.configCopy, '.env'), 'utf8'),
+                    'TLS_CERT_FILE',
+                );
+                await runF5Live({ client: deploy.client, manifest, record });
+                await verifySsoAndBridge({ client: deploy.client, certFile, record });
+            });
         await step('F6: evidence-запись', async () => {
             // Запись формируется в finally: сюда только подтверждение каталога.
             record('F6: evidence-каталог готов', stage);
         });
-    } catch (error) {
-        result = 'NO-GO';
-        throw error;
     } finally {
-        if (deploy) {
+        // Teardown — только если стек поднят этим запуском: при resume оператор может осмотреть
+        // промежуточное состояние между фазами. Volumes намеренно сохраняются в обоих случаях.
+        if (deploy && !deploy.attached) {
             try {
                 await deploy.client.run(['down', '--remove-orphans', '--timeout', '60']);
                 console.log('\nTeardown: Compose-проект остановлен (volumes намеренно сохранены)');
@@ -1005,6 +1160,7 @@ async function runLive(args) {
                 console.error('Teardown: ' + (error?.message ?? error));
             }
         }
+        const result = PHASE_ORDER.every((key) => phases[key].ok) ? 'GO' : 'NO-GO';
         const report = {
             format: EVIDENCE_FORMAT,
             candidate: { commit: manifest.commit, tag: args.tag },
@@ -1016,9 +1172,10 @@ async function runLive(args) {
                 canonicalSha256,
             },
             manifests,
+            phases,
             steps,
-            checks,
-            loadHistory,
+            checks: [...(previous?.checks ?? []), ...checks],
+            loadHistory: [...(previous?.loadHistory ?? []), ...loadHistory],
             result,
             startedAt,
             finishedAt: new Date().toISOString(),
@@ -1034,7 +1191,10 @@ async function runLive(args) {
 
 const USAGE =
     'Использование: node scripts/test/release-candidate-e2e.test.mjs --candidate <commit> --tag <release> ' +
-    '--manifest <path> --host-variant A|B\n' +
+    '--manifest <path> --host-variant A|B [--phase F1,F2,...] [--fresh]\n' +
+    'Фазы в порядке F1..F5 (F6 всегда): F1 — сверка freeze; F2 — две чистые сборки; F3 — digest-детерминизм;\n' +
+    'F4 — pinned-деплой; F5 — проверки. Без --phase — все фазы. Выполненные фазы возобновляются из stage\n' +
+    '(маркеры f2-cloneN.json, re-attach стека); --fresh очищает stage перед стартом.\n' +
     'Env: NEUROCENTER_CONFIG_DIR — production-конфиг кандидата; NEUROCENTER_TEST_EVIDENCE — каталог evidence ' +
     '(по умолчанию .run/release-candidate-e2e).\n' +
     'Live-запуски F2–F5 — HITL, порядок подготовки: docs/release-candidate-e2e.md';
@@ -1121,6 +1281,29 @@ if (process.env.NODE_TEST_CONTEXT) {
             /A или B/,
         );
         assert.throws(() => parseDriverArgs(['--unknown']), /Неизвестный аргумент/);
+    });
+
+    test('parseDriverArgs: --phase (канонический порядок, отклонения) и --fresh', () => {
+        const base = [
+            '--candidate',
+            'a'.repeat(40),
+            '--tag',
+            'rel-1',
+            '--manifest',
+            '/tmp/m.json',
+            '--host-variant',
+            'B',
+        ];
+        const all = parseDriverArgs(base);
+        assert.deepEqual(all.phases, ['F1', 'F2', 'F3', 'F4', 'F5', 'F6']);
+        assert.equal(all.fresh, false);
+        assert.deepEqual(parseDriverArgs([...base, '--phase', 'F4']).phases, ['F4']);
+        assert.deepEqual(parseDriverArgs([...base, '--phase', 'F5,F1']).phases, ['F1', 'F5']);
+        assert.throws(() => parseDriverArgs([...base, '--phase', 'F9']), /Неизвестная фаза/);
+        assert.throws(() => parseDriverArgs([...base, '--phase', '']), /пустой список/);
+        assert.throws(() => parseDriverArgs([...base, '--phase', ',']), /пустой список/);
+        assert.deepEqual(parseDriverArgs([...base, '--phase', 'F1,']).phases, ['F1']);
+        assert.equal(parseDriverArgs([...base, '--fresh']).fresh, true);
     });
 
     test('F1: замороженный кандидат подтверждён (annotated тег, manifest, HEAD, чистое дерево)', async (t) => {
@@ -1215,7 +1398,11 @@ if (process.env.NODE_TEST_CONTEXT) {
                 postgresImage: manifest.postgresImage,
                 canonicalSha256: manifestCanonicalSha256(manifest),
             },
-            steps: [{ name: 'F1' }],
+            manifests: { operator: '/tmp/manifest.json' },
+            phases: Object.fromEntries(
+                ['F1', 'F2', 'F3', 'F4', 'F5', 'F6'].map((key) => [key, { ok: true, at: '2026-11-09T00:10:00.000Z' }]),
+            ),
+            steps: [{ name: 'F1', ok: true }],
             checks: [],
             result: 'GO',
             startedAt: '2026-11-09T00:00:00.000Z',
@@ -1228,6 +1415,11 @@ if (process.env.NODE_TEST_CONTEXT) {
         assert.equal(JSON.parse(await readFile(filename, 'utf8')).format, EVIDENCE_FORMAT);
         await assert.rejects(writeE2eReport(stage, { ...report, result: 'MAYBE' }), /GO или NO-GO/);
         await assert.rejects(writeE2eReport(stage, { ...report, hostVariant: 'C' }), /hostVariant/);
+        await assert.rejects(
+            writeE2eReport(stage, { ...report, phases: { ...report.phases, F4: { ok: false, at: null } } }),
+            /phases/,
+        );
+        await assert.rejects(writeE2eReport(stage, { ...report, result: 'NO-GO' }), /phases/);
         await fs.promises.chmod(stage, 0o755);
         await assert.rejects(writeE2eReport(stage, report), /0700/);
     });
