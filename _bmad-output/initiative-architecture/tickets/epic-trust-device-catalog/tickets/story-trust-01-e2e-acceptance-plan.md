@@ -3,7 +3,7 @@ title: 'TRUST-01: приёмка устройственного канала и 
 type: 'feature'
 ticket: '14'
 created: '2026-11-09'
-status: 'ready-for-dev'
+status: 'in-progress'
 baseline_revision: '3433b1d147163a82fc023a34f909457830c7f6aa'
 route: 'full'
 route_source: 'auto'
@@ -163,3 +163,15 @@ context:
 - **OQ2 — T3 re-check ≤60s: как замерить live (кэш)?** Рекомендация: отозвать device-доступ, запросить authorize-session в окне ≤60s (должен пройти по кэшу) и после 60s (должен отказать); тайминг — wall-clock в driver. Подтвердить.
 - **OQ3 — Кандидат TRUST-01: HEAD main после мержа 2.1–2.13 или отдельный tag?** Рекомендация: **HEAD main** (commit SHA, HITL-выбор); релизный тег — за REL-01/релиз-процесс (не смешивать приёмку эпика с релизом).
 - **OQ4 — T6 identity: из развёрнутых образов или из исходника кандидата?** Рекомендация: **из развёрнутых образов** (docker exec: значения ceiling в gateway-процессе vs bridge-клиенте в образе) — ловит stale-build; исходник — pre-гейт (T5-static).
+
+## Progress (2026-11-18, in-progress)
+
+**Driver T1–T7 готов и верифицирован в статике; live-запуск отложен (load хоста > 6). Решения по OQ зафиксированы: OQ1 scripted device, OQ2 wall-clock re-check ≤60s, OQ3 кандидат = HEAD main commit SHA, OQ4 T6 из развёрнутых образов (docker exec).**
+
+- `scripts/test/trust-device-e2e.mjs` (new, driver) — полный переписанный driver T1–T7 на production-стеке: переиспользует `configureProduction`/`composeEnvironment` из `production/configuration.mjs`, паттерны request/docker/login/override из `production-stack.mjs` (сам harness не модифицирован). Scripted device-клиент по каноническому паттерну `mcp-host-access-http.test.mjs` (packRuntime → импорт в каталог операторским CLI → проект → член → hosted-mcp карточка → назначение/pin → device-строка с JS-хешем `sha256(token)` — pgcrypto в production-БД не гарантирован).
+- `scripts/test/ceiling-identity.test.mjs` (new) — 5-й static-субтест T5: byte-identity facade `dist/shared/{runtime-artifacts.cjs,runtime/limits.cjs}` клиента и `services/shared` + `CEILING` deepEqual (клиентский facade == server facade == `@neurocenter/asset-contract` `ARTIFACT_CEILING`) + shape-проверка. Pre-гейт T6.
+- **Статика зелёная:** `node --test scripts/test/trust-device-e2e.mjs --static-only` → 14 tests: **7 pass** (T5.build + 5 субтестов: completeness, ladders, body-invariants, error-body, ceiling-identity), **7 skip** (live-фазы T1–T7, гейт `--candidate`), 0 fail; отчёт `.run/trust-device-e2e/trust-device-e2e.json` чистый. `node --check` OK; Prettier чистый (tabWidth 4, singleQuote, printWidth 120, semi, trailingComma all, lf). Tsc-гейта на `scripts/*.mjs` нет (tsconfig не покрывает scripts/test) — применимые проверки: `node --check` + Prettier.
+- **Правки в этой сессии:** (1) device-INSERT: psql `sha256($3)` → JS-сторона `createHash('sha256').update(token).digest('hex')` (канонический паттерн, pgcrypto unverified); (2) `tearDownProductionStack`: убирает только `stage/fixture` (конфиг с секретами), а не весь `stage` — `services.log`/`build.log`/отчёт сохраняются для triage при `setup-failed` (было: `rm(stage)` уничтожал логи до их чтения).
+- **Runbook готов:** `docs/trust-device-e2e.md` (new) — режимы (static/live, гейт `--candidate`), требования, H1 (кандидат = HEAD main SHA, driver сверяет HEAD), H2 (запуск при load < 6, sequential build+up 12 сервисов, ~30 мин), T1–T7 что проверяет, H4 (UI-проверка UJ-2 провенанс-карточки в браузере), H5 (интерпретация `trust-device-e2e.json`: pass/skip-список, T6 fallback + residual 3629dc7e, CRIT-признаки, rationale подделок с fixture-секретом).
+- **Live-запуск (T1–T7 на production-стеке) — отложен:** load хоста > 6 (порог H2). Команда для продолжения: `node scripts/test/trust-device-e2e.mjs --candidate <sha>` (шаблон: `git rev-parse HEAD`), интерпретация — H5 runbook.
+- **Вне этого прогона:** live-запуск (load), регистрация tooling (`check-tooling-tests.json` + `expectedFiles` в `check.mjs` — main agent), финальное HITL-решение «эпик принят» (H5, owner).
