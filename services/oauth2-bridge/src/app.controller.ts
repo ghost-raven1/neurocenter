@@ -1,9 +1,7 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { checkReadiness, httpReady } from '../../shared/readiness.cjs';
 
-/**
- * Health-эндпоинт для docker-compose healthcheck.
- */
+/** Единственная health-семантика oauth2-bridge — /ready (для docker-compose healthcheck). */
 @Controller()
 export class AppController {
     @Get('ready')
@@ -15,14 +13,5 @@ export class AppController {
             throw new ServiceUnavailableException(state);
         }
         return state;
-    }
-    /**
-     * Health-check.
-     *
-     * @returns {{ ok: boolean }}
-     */
-    @Get('health')
-    public health(): { ok: boolean } {
-        return { ok: true };
     }
 }

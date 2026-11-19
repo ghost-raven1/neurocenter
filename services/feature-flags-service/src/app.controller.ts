@@ -5,11 +5,7 @@ import { FlagsService } from './flags/flags.service';
 @Controller()
 export class AppController {
     constructor(private readonly flags: FlagsService) {}
-    @Get('health')
-    health(): { ok: boolean } {
-        return { ok: true };
-    }
-    /** Liveness не зависит от БД, readiness отражает фактическое подключение без раскрытия адреса. */
+    /** Readiness отражает фактическое подключение БД без раскрытия адреса; liveness-эндпоинта нет. */
     @Get('ready')
     async ready(): Promise<unknown> {
         const state = await checkReadiness({ postgres: () => this.flags.ready() });

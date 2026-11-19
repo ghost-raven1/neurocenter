@@ -1,9 +1,7 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { checkReadiness, httpReady } from '../../shared/readiness.cjs';
 
-/**
- * Health-эндпоинт gateway.
- */
+/** Единственная health-семантика gateway — /ready. */
 @Controller()
 export class AppController {
     @Get('ready')
@@ -29,15 +27,5 @@ export class AppController {
             throw new ServiceUnavailableException(state);
         }
         return state;
-    }
-
-    /**
-     * Health-check.
-     *
-     * @returns {{ ok: boolean }}
-     */
-    @Get('health')
-    public health(): { ok: boolean } {
-        return { ok: true };
     }
 }

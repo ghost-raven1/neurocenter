@@ -21,3 +21,20 @@ node scripts/production/resources.mjs --directory /etc/neurocenter --project-nam
 `/metrics` защищённых сервисов отдаёт доступность/возраст снимка, свободные/полные байты по ресурсу, WAL, причины отказов и очередь RAG. При ошибке измерения неизвестные размеры не превращаются в ноль. Правила Prometheus добавляют предупреждения о недоступном замере, свободном месте менее 1 ГиБ или 15%, очереди RAG более восьми и непроверенной/просроченной внешней копии. Prometheus/Alertmanager нужно подключить и проверить отдельно: файл правила сам по себе не является доставленным оповещением.
 
 Проверки: `node --test scripts/test/capacity.test.cjs scripts/test/observability.test.cjs`; typecheck catalog, skills и rag-sync. Эти локальные проверки не подменяют Docker/native/server приёмку и тест реального заполнения отдельного стенда.
+
+## Единственная health-семантика: /ready (AD-O4)
+
+В стеке одна семантика готовности — `GET /ready` (503 + `checks`-разложение драйверами). `/health` как liveness-эндпоинт удалён (liveness = «контейнер жив» = docker restart policy, а не HTTP). Docker-проверки (dev- и production-compose) опрашивают `/ready`; внешний мониторинг использует тот же `/ready`.
+
+### `/ready/dependencies` — решение
+
+`GET /ready/dependencies` (api-gateway, 5 upstream'ов: catalog / skills / rag / auth / featureFlags) сохранён — это диагностика готовности зависимостей, а не маршрутизация трафика (AD-4, entry 9):
+
+- **consumers**: `stack-watchdog` (эпик 4, AD-OP-8), admin UI (OQ-1);
+- **решение**: оставить; **удалить, если к концу эпика 4 не подключён** — ревизия = задача эпика 4.
+
+Проверка зависит от upstream'ов: `/ready` локального сервиса остаётся 200 + `{ok:true, checks:{<svc>:'ready'}}`, а `/ready/dependencies` при недоступном upstream'е возвращает 503 + `checks` разложение.
+
+### CAPACITY_REQUIRED=false — capacity-метрики не рендерятся у gateway / bridge / feature-flags
+
+`renderCapacityMetrics` (`services/shared/capacity.cjs`) эмитит снимки `neurocenter_capacity_*` только при `CAPACITY_REQUIRED === 'true'`. У api-gateway, oauth2-bridge и feature-flags-service переменная не задана, поэтому `/metrics` у них **не отдаёт** capacity-снимок (доступность/возраст/свободные байты по ресурсу) — только счётчики отказов и очередь. Это осознанно: capacity-admission критичен для тяжёлых записей каталога (где `CAPACITY_REQUIRED=true`), а не для транзитных/лёгких сервисов. Для этих трёх сервисов `CAPACITY_REQUIRED=false` означает, что `/ready` не проверяет capacity — health-смысл `/ready` у них изолирован от капасити-защиты. Prometheus-оповещения по capacity (`/metrics` catalog, `capacity-collector` при `CAPACITY_REQUIRED=true`) остаются.

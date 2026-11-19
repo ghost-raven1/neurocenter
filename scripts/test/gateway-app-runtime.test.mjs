@@ -25,7 +25,6 @@ describe('Canonical Gateway application runtime', { concurrency: false, timeout:
             { cleared: false, referenced: false },
         ]);
         const before = f.snapshot();
-        assert.deepEqual(await f.request('/health'), { ok: true });
         assert.deepEqual(await f.request('/ready'), { ok: true, checks: { gateway: 'ready' } });
         assert.deepEqual(f.snapshot(), before);
     });
@@ -140,7 +139,6 @@ describe('Canonical Gateway application runtime', { concurrency: false, timeout:
             });
             await f.request('/api/rag/projects', { status: 502 });
             await f.request('/api/skills', { status: 503 });
-            assert.deepEqual(await f.request('/health'), { ok: true });
             assert.deepEqual(await f.request('/ready'), { ok: true, checks: { gateway: 'ready' } });
             assert.deepEqual(await f.request('/api/projects'), [f.project]);
         } finally {
@@ -174,7 +172,7 @@ describe('Canonical Gateway application runtime', { concurrency: false, timeout:
             peersListening: 0,
             failures: [],
         });
-        await assert.rejects(f.request('/health'));
+        await assert.rejects(f.request('/ready'));
     });
 
     it('reports a controlled close acknowledgement failure and restores all process boundaries in finally', async (t) => {

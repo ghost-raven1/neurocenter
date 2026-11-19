@@ -432,7 +432,7 @@ try {
             database,
         ]);
         await delay(120);
-        assert.equal((await fetch('http://127.0.0.1:4300/health')).status, 200);
+        assert.equal((await fetch('http://127.0.0.1:4300/ready')).status, 200);
         assert.equal((await call('GET', '/api/rag/summary?projectKey=' + project.id)).rowCount, 2);
     });
     for (const application of ['neurocenter:access', 'neurocenter:devices', 'neurocenter:catalog']) {

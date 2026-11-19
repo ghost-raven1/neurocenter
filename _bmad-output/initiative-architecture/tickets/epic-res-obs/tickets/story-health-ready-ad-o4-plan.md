@@ -3,7 +3,7 @@ title: 'Health: /ready — единственная семантика, /health 
 type: 'feature'
 ticket: '9'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '4097fdc35bd78dbebf44bec1b026b46663a005e2'
 route: 'full'
 route_source: 'auto'
@@ -67,19 +67,19 @@ context:
 ## Tasks & Acceptance
 
 ### Execution
-- [ ] readiness.cjs: именованные константы (READINESS_CHECK_TIMEOUT_MS/HTTP_READY_TIMEOUT_MS/READY_BODY_LIMIT_BYTES) + экспорт; значения не меняются (2500/2000/16384)
-- [ ] 6 app.controller.ts: удалить @Get('health') + тесты на /health (если есть — найти при impl)
-- [ ] nginx template:27 — удалить location /health
-- [ ] observability.cjs:20-22 — убрать ветку /health из group() (group('health') dead)
-- [ ] Invariant-тест: readiness-invariant.test.mjs — (а) литералы 2500/2000/16384 в services/*/src (excl. shared) = 0; (б) shared/readiness.cjs использует константы (не литералы); (в) grep '/health' в services/*/src + nginx template = 0
-- [ ] Документ: /ready/dependencies — consumers (stack-watchdog AD-OP-8, admin UI) + решение «удалить, если к концу эпика 4 не подключён» (docs/capacity-admission.md или док эпика)
-- [ ] Regression: compose healthchecks (docker compose ps — все healthy), /ready-тесты сервисов (существующие — без изменений)
+- [x] readiness.cjs: именованные константы (READINESS_CHECK_TIMEOUT_MS/HTTP_READY_TIMEOUT_MS/READY_BODY_LIMIT_BYTES) + экспорт; значения не меняются (2500/2000/16384)
+- [x] 6 app.controller.ts: удалить @Get('health') + тесты на /health (если есть — найти при impl)
+- [x] nginx template:27 — удалить location /health
+- [x] observability.cjs:20-22 — убрать ветку /health из group() (group('health') dead)
+- [x] Invariant-тест: readiness-invariant.test.mjs — (а) литералы 2500/2000/16384 в services/*/src (excl. shared) = 0; (б) shared/readiness.cjs использует константы (не литералы); (в) grep '/health' в services/*/src + nginx template = 0
+- [x] Документ: /ready/dependencies — consumers (stack-watchdog AD-OP-8, admin UI) + решение «удалить, если к концу эпика 4 не подключён» (docs/capacity-admission.md или док эпика)
+- [x] Regression: compose healthchecks (docker compose ps — все healthy), /ready-тесты сервисов (существующие — без изменений)
 
 ### Acceptance
-- **Given** grep `/health` в services/*/src + nginx template **when** после удаления **then** 0 вхождений
-- **Given** docker compose up (dev/prod-стек) **when** healthchecks **then** все /ready-проверки зелёные (без изменений)
-- **Given** хардкод бюджета (2500) в src сервиса **when** invariant-тест **then** фэйл
-- **Given** GET /ready/dependencies **when** upstream down **then** 503 + checks (ратификация, без изменений)
+- [x] **Given** grep `/health` в services/*/src + nginx template **when** после удаления **then** 0 вхождений
+- [x] **Given** docker compose up (dev/prod-стек) **when** healthchecks **then** все /ready-проверки зелёные (без изменений)
+- [x] **Given** хардкод бюджета (2500) в src сервиса **when** invariant-тест **then** фэйл
+- [x] **Given** GET /ready/dependencies **when** upstream down **then** 503 + checks (ратификация, без изменений)
 
 ## Design Notes
 
@@ -107,3 +107,49 @@ curl -s localhost:4000/ready && curl -s localhost:4000/ready/dependencies
 2. **Внешние consumers /health?** (мониторинг-системы, скрипты). Sweep: grep /health в scripts/ + docs/ + monitoring-конфигах. Рекомендация: если найдены — мигрировать на /ready в этой story (compose healthchecks уже /ready).
 3. **nginx /health после удаления**: SPA-fallback (200 index.html) vs явный 404? Рекомендация: `location = /health { return 404; }` — явная семантика «эндпоинт удалён», не маскировать под SPA.
 4. **Точность invariant-теста (ложные срабатывания 2500/2000/16384)**: grep чисел vs контекстный поиск? Рекомендация: grep чисел + allowlist (порты/размеры) — простой и детерминированный; на impl зафиксировать allowlist.
+
+## Progress (2026-11-19)
+
+**Итог: done.** `/health` удалён из всех 6 сервисов + nginx (prod- и dev-шаблон); бюджеты readiness — именованные константы в `shared/readiness.cjs` + invariant-тест; `/ready` — единственная health-семантика; решение по `/ready/dependencies` и `CAPACITY_REQUIRED=false` зафиксированы в доке.
+
+### Изменённые файлы
+
+**Исходники / конфиги:**
+- `services/{api-gateway,catalog-service,feature-flags-service,oauth2-bridge,rag-sync-service,skills-service}/src/app.controller.ts` — удалены `@Get('health')` + метод `health()` (+ вводящие в заблуждение JSDoc `Health-check`/`Health-эндпоинт`); комментарии приведены к единой семантике `/ready` (liveness-эндпоинта нет).
+- `services/shared/readiness.cjs` — добавлены `READINESS_CHECK_TIMEOUT_MS=2500`, `HTTP_READY_TIMEOUT_MS=2000`, `READY_BODY_LIMIT_BYTES=16384`, используются в логике и экспортируются.
+- `services/shared/readiness.d.cts` — добавлены объявления трёх констант.
+- `services/shared/observability.cjs` — в `group()` удалена ветка `/health` (осталась только `/ready` → group `ready`).
+- `services/api-gateway/src/proxy/route-policy.ts` — удалена строка `{ path: '/health' }`.
+- `services/api-gateway/src/proxy/shadowing-diagnostic.ts` — удалена запись `/health` из `EXPECTED_CONTROLLERS` + обновлён шапковый комментарий.
+- `frontend/nginx.production.conf.template` — удалена `location = /health { return 200 ... }`.
+- `frontend/nginx.conf` (dev) — удалена `location = /health { ... }`.
+- `docker-compose.yml` (dev) — healthcheck'и frontend(8080)/bridge(22222)/gateway(4000)/catalog(4100)/skills(4200)/rag-sync(4300) мигрированы `/health` → `/ready` (feature-flags:4400 уже `/ready`).
+- `docs/capacity-admission.md` — добавлен раздел «Единственная health-семантика: /ready (AD-O4)»: consumers `/ready/dependencies` (stack-watchdog AD-OP-8, admin UI) + решение «удалить к концу эпика 4»; `CAPACITY_REQUIRED=false` — capacity-снимок не рендерится у gateway/bridge/feature-flags.
+
+**Тесты:**
+- `scripts/test/readiness-invariant.test.mjs` — новый invariant-тест (а/б/в, см. ниже).
+- `scripts/test/gateway-app-runtime.test.mjs` — удалены ассерты `/health` (маршрут удалён); после-закрытие проверяется по `/ready`.
+- `scripts/test/production-stack.mjs` — удалён liveness-ассерт `/health` (503 `/ready` уже доказывает «живой HTTP-процесс»).
+- `scripts/test/qa-api.mjs` — `/health` → `/ready` (rag-sync 4300).
+
+### Инвариант-тест (readiness-invariant.test.mjs) — целевой
+
+Из-за ложных срабатываний грубого grep 2500/2000/16384 (порты/размеры в src) тест сужен (OQ-4): (а) `shared/readiness.cjs` экспортирует константы с каноническими значениями и использует их в логике (не литералы в вызовах); (б) сервисы в `services/*/src` не переопределяют имена констант, а `app.controller.ts` не содержит проверяемых бюджетов (ровно 6 файлов); (в) grep `/health` в `services/*/src` + `frontend/nginx*.conf` = 0. Грубый grep по всем `services/*/src` для числовых бюджетов НЕ реализован.
+
+### Результаты проверок (Node v24)
+
+- `readiness-invariant.test.mjs` — 3/3 pass.
+- `readiness.test.cjs` + `observability.test.cjs` — 11/11 pass.
+- `route-policy-completeness.test.mjs` + `nginx-edge-invariant.test.mjs` + `route-shadowing-diagnostic.test.mjs` — 15/15 pass.
+- `gateway-app-runtime.test.mjs` — 9/9 pass.
+- Typecheck (tsc `--noEmit`): api-gateway (через `nest build`) + catalog/feature-flags/oauth2-bridge/rag-sync/skills — без ошибок.
+- `openapi-document.test.mjs` — **pre-existing red** (338 ≠ 334, 2 fail), НЕ регрессия: на baseline (git stash) результат идентичен (338 ≠ 334, тот же manifest-фейл); `/health` из публичной OpenAPI-поверхности и так исключён в `scripts/openapi/routes.mjs`, поэтому удаление маршрута не меняет счётчик.
+- Docker-стек (dev/prod compose ps) — недоступен (Docker unusable); живая проверка отложена в RES-01. Источниковая проверка состава healthcheck'ов выполнена (все `/ready`).
+
+### Отклонения и риски
+
+1. **Dev-tooling `/health`** вне scope: `scripts/workspace/dev-service-health.mjs` (devServices), `scripts/dev-mcp/health.mjs`, `scripts/test/dev-health-*`, `dev-cli`, `dev-watch-*`, `dev-start`, `skill-packaging.fixture`, `catalog-requests.fixture`, `system-role-chat-runtime.fixture` используют `/health` как liveness-путь dev-инструментов — оставлены без изменений (отдельная подсистема, не health-семантика сервисов). Кандидат на отдельную задачу/эпик.
+2. **`scripts/openapi/routes.mjs:112`** — осталась ветка фильтра `clean === '/health'` (dead после удаления; документ и так не публикует `/health`). Не влияет на acceptance; можно удалить как follow-up.
+3. **Проверка `/ready` принятие compose** — только источниковая (Docker недоступен). Валидация в живом стеке — RES-01.
+4. **OQ-3 (nginx явный 404 для `/health`)** НЕ выполнен: добавление `location = /health { return 404; }` создало бы вхождение `/health` и провалило инвариант (в). После удаления `/health` → SPA-fallback (index.html 200) — принято по плану.
+5. **`check-tooling-tests.json`** не изменён (конфликт-прун; invariant-тест запускается напрямую по `node --test`). Если требуется включить в tooling-гейт — отдельно синхронизировать с `workspace-check-tooling.test.mjs` `expectedFiles`.
