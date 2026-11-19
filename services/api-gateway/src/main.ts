@@ -6,6 +6,8 @@ import { ggufRequestTimeouts } from '../../shared/gguf-request-timeout.cjs';
 import { assetSourceArchiveRoute } from '../../shared/asset-source-archive-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
+import { loadGatewayConfig } from './config';
+import { formatConfigReport } from '../../shared/config.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Server as IoServer } from 'socket.io';
@@ -28,6 +30,9 @@ import { CATCH_ALL_ROW } from './proxy/route-policy';
  * Инвалидации разделов и личные статусы MCP; состояние заданий сохраняется в PG.
  */
 async function bootstrap(): Promise<void> {
+    // AD-9: окружение читается только через config-модуль; fail-fast с агрегированным отчётом.
+    const config = loadGatewayConfig();
+    console.log('[api-gateway] конфигурация:\n' + formatConfigReport(config.report));
     const app = await NestFactory.create(AppModule, { bodyParser: false });
     app.enableShutdownHooks();
     app.use(ggufRequestTimeouts(app.getHttpServer()));
@@ -52,7 +57,7 @@ async function bootstrap(): Promise<void> {
         jsonParser(req, res, next);
     });
 
-    const port = process.env.PORT ? Number(process.env.PORT) : 4000;
+    const port = config.values.port;
 
     const io = new IoServer(app.getHttpServer(), {
         path: '/socket.io',
@@ -113,7 +118,7 @@ async function bootstrap(): Promise<void> {
         });
     });
 
-    await app.listen(port, process.env.BIND_HOST || '127.0.0.1');
+    await app.listen(port, config.values.bindHost);
     console.log(`[api-gateway] listening on :${port}`);
 }
 

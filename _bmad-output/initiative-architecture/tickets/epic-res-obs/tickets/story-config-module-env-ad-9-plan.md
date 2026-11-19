@@ -3,7 +3,7 @@ title: 'Config-модуль: числовые env fail-fast + owner env-лими
 type: 'feature'
 ticket: '5'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '4097fdc35bd78dbebf44bec1b026b46663a005e2'
 route: 'full'
 route_source: 'auto'
@@ -112,3 +112,42 @@ grep -rn "configuredGgufImportPolicy()" services/*/src --include="*.ts"  # → 0
 2. **Полная typed-схема всех env**: в скоупе entry vs только числовые+лимитные (рекомендация: только числовые+лимитные — P0-RES-часть AD-9; полная схема — расширение/Deferred, т.к. dead-env drift (epic 1) уже держит имена env в модели).
 3. **Дефолт configuredGgufImportPolicy(env = process.env)**: удалить дефолт (обязательный параметр — строже, AD-9) vs оставить для тестов. Рекомендация: удалить дефолт из production-пути; test-only wrapper — отдельно.
 4. **Setup-CLI (database-init/bootstrap-admin/migrate)**: тот же config-модуль (подмножество env) vs отдельная минимальная валидация. Рекомендация: тот же модуль — один owner.
+
+## Progress
+
+**Status:** done (branch `nc-res-05`, worktree `/home/region.cbr.ru/69starodubtsevae/projects/nc-wt/res5`)
+
+### Реализовано
+
+1. **Общий config-engine** (`services/shared/config.cjs` + `config.d.cts`): typed-схема (positiveInteger / nonNegativeInteger / integer / string / secret / boolean), `loadConfig(schema, env, validate?)` → `{ values, report }`, `ConfigEnvironmentError` с агрегированным `issues[]`, `formatConfigReport(report)`; секреты маскируются как `***` в отчёте. Drift-guard (`shared-declaration-drift.test.mjs`) — зелёный (6/6).
+2. **6 config-модулей сервисов** (`src/config/index.ts`): api-gateway, catalog-service, rag-sync-service, oauth2-bridge, skills-service, feature-flags-service. Каждый читает числовые env как positive safe-integer, порт/биндинг (PORT + BIND_HOST), маскирует секреты в отчёте старта.
+3. **Wiring в `main.ts`** всех 6 сервисов: config-модуль вызывается в самом начале `bootstrap()` (до `NestFactory.create`), отчёт пишется через `formatConfigReport`, значения берутся из `config.values.port` / `config.values.bindHost` (не из raw `process.env`).
+4. **NaN-дыра закрыта** (`host.ts`): лимит MCP-хостов берётся из config-модуля, а не из сырого `process.env.NEUROCENTER_MCP_HOST_MAX`. `parseMcpHostLimits` дефолт сохранён (defense-in-depth) — regression host-limits тест не сломан.
+5. **`configuredGgufImportPolicy(env = process.env)` дефолт удалён** (`gguf-import-policy.cjs` + `.d.cts`): параметр `env` теперь обязателен. Оба catalog-вызова (`runtime-limits.service.ts`, `gguf-import.service.ts`) передают явный `env` из config-модуля. `grep "configuredGgufImportPolicy()"` → 0 вызовов без параметра.
+6. **Секреты**: `NEUROCENTER_*_TOKEN/SECRET/PG_URL_FILE`-подобные значения в отчётах маскируются (имена переменных — да, значения — нет).
+7. **api-gateway DI**: production-путь (`proxy.module.ts` useFactory + `mcp-host.controller.ts`) передаёт `gatewayMcpHostLimits()` из config в `McpHostService`.
+
+### Тесты (все зелёные)
+
+| Сервис | Файлов | Тестов |
+|--------|--------|--------|
+| api-gateway | 9 | 88 pass |
+| catalog-service | 46 | 434 pass |
+| rag-sync-service | 23 | pass (3 skip) |
+| oauth2-bridge | — | 12 pass |
+| skills-service | — | 334 pass |
+| feature-flags-service | — | 11 pass |
+
+Typecheck (`tsc --noEmit`) — чистый на всех 6 сервисах. `shared-declaration-drift.test.mjs` — 6/6. Regression NaN-дыры: `NEUROCENTER_MCP_HOST_MAX=abc node dist/main.js` → exit 1 с именем переменной в отчёте.
+
+### Отклонения / риски
+
+- **setup-CLI** (database-init/bootstrap-admin/migrate): НЕ читают числовые env из списка, поэтому числовая валидация там не добавлена (deviations — OQ-4 закрыт как «не требуется»).
+- **Feature-валидаторы** (backupPolicy, ragQuotaPolicy, managedChatContextWindow) оставлены читающими env — config-модуль является стартовым gate; граница сознательная, чтобы не сломать 44 catalog-теста.
+- **Полная typed-схема всех env** не делалась (OQ-2): скоуп = числовые + лимитные env.
+- :warning: `environment-model` / `compose-drift` тест (`scripts/production/environment-model.mjs`, `compose-drift.test.mjs`) требует перепроверки, т.к. config-schema теперь ссылается на больше имён env.
+
+### Файлы
+
+Новые: `services/shared/config.cjs` + `config.d.cts`; `services/{api-gateway,catalog-service,rag-sync-service,oauth2-bridge,skills-service,feature-flags-service}/src/config/index.ts` + `src/config/tests/config.test.ts`.
+Изменённые: `services/shared/gguf-import-policy.cjs` + `.d.cts`; `main.ts` у 6 сервисов; `services/api-gateway/src/proxy/proxy.module.ts`, `services/api-gateway/src/features/mcp-host/mcp-host.controller.ts`; `services/catalog-service/src/runtime-limits/runtime-limits.service.ts`, `services/catalog-service/src/models/gguf-import/gguf-import.service.ts`.

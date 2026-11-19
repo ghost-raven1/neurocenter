@@ -17,4 +17,4 @@ export interface IGgufImportPolicy {
 }
 export const DEFAULT_GGUF_IMPORT_POLICY: Readonly<IGgufImportPolicy>;
 export function ggufImportPolicy(value?: unknown): Readonly<IGgufImportPolicy>;
-export function configuredGgufImportPolicy(env?: NodeJS.ProcessEnv): Readonly<IGgufImportPolicy>;
+export function configuredGgufImportPolicy(env: NodeJS.ProcessEnv): Readonly<IGgufImportPolicy>;

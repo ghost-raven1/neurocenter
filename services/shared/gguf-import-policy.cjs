@@ -36,7 +36,8 @@ function ggufImportPolicy(value = {}) {
         throw new Error('Лимиты импорта GGUF должны быть положительными безопасными целыми числами.');
     return Object.freeze(result);
 }
-function configuredGgufImportPolicy(env = process.env) {
+/** AD-9: env-ликмит принимается явным параметром (инжекция из config-модуля сервиса), не из process.env. */
+function configuredGgufImportPolicy(env) {
     return ggufImportPolicy(env.GGUF_IMPORT_POLICY_JSON ? JSON.parse(env.GGUF_IMPORT_POLICY_JSON) : {});
 }
 module.exports = { DEFAULT_GGUF_IMPORT_POLICY, ggufImportPolicy, configuredGgufImportPolicy };

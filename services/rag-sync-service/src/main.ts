@@ -1,5 +1,7 @@
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
+import { loadRagSyncConfig } from './config';
+import { formatConfigReport } from '../../shared/config.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import * as express from 'express';
@@ -11,6 +13,9 @@ import { AppModule } from './app.module';
  * Body-лимит поднят (~20mb): sync-батчи несут векторы выбранной проектом размерности.
  */
 async function bootstrap(): Promise<void> {
+    // AD-9: окружение читается только через config-модуль; fail-fast с агрегированным отчётом.
+    const config = loadRagSyncConfig();
+    console.log('[rag-sync-service] конфигурация:\n' + formatConfigReport(config.report));
     // Prod: отключение role-gate недопустимо (прямой доступ к сервису = обход авторизации).
     if ((process.env.NODE_ENV || '') === 'production' && process.env.RAG_AUTH_DISABLED === 'true') {
         console.error('[rag-sync-service] RAG_AUTH_DISABLED=true запрещён в production — отказ в старте');
@@ -32,9 +37,9 @@ async function bootstrap(): Promise<void> {
         next();
     });
     app.use(express.json({ limit: '20mb' }));
-    const port = process.env.PORT ? Number(process.env.PORT) : 4300;
+    const port = config.values.port;
 
-    await app.listen(port, process.env.BIND_HOST || '127.0.0.1');
+    await app.listen(port, config.values.bindHost);
     console.log(`[rag-sync-service] listening on :${port}`);
 }
 

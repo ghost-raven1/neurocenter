@@ -6,6 +6,8 @@ import { ggufRequestTimeouts } from '../../shared/gguf-request-timeout.cjs';
 import { assetSourceArchiveRoute } from '../../shared/asset-source-archive-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
+import { loadCatalogConfig } from './config';
+import { formatConfigReport } from '../../shared/config.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import express from 'express';
@@ -16,6 +18,9 @@ import { AppModule } from './app.module';
  * Точка входа каталожного microservice.
  */
 async function bootstrap(): Promise<void> {
+    // AD-9: окружение читается только через config-модуль; fail-fast с агрегированным отчётом.
+    const config = loadCatalogConfig();
+    console.log('[catalog-service] конфигурация:\n' + formatConfigReport(config.report));
     const app = await NestFactory.create(AppModule, { bodyParser: false });
     app.enableShutdownHooks();
     app.use(ggufRequestTimeouts(app.getHttpServer()));
@@ -47,9 +52,9 @@ async function bootstrap(): Promise<void> {
         }
         next();
     });
-    const port = process.env.PORT ? Number(process.env.PORT) : 4100;
+    const port = config.values.port;
 
-    await app.listen(port, process.env.BIND_HOST || '127.0.0.1');
+    await app.listen(port, config.values.bindHost);
     console.log(`[catalog-service] listening on :${port}`);
 }
 

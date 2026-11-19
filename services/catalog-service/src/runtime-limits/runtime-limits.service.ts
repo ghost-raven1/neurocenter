@@ -14,6 +14,7 @@ import { ModelsService } from '../models/models.service';
 import { securityEvent } from '../access/security-events';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { readFeatures } from '../../../shared/feature-client.cjs';
+import { ggufPolicyEnv } from '../config';
 import { configuredGgufImportPolicy, type IGgufImportPolicy } from '../../../shared/gguf-import-policy.cjs';
 import {
     DEFAULT_RUNTIME_LIMIT_POLICY,
@@ -47,7 +48,7 @@ export class RuntimeLimitsService {
                 await db.query('SELECT revision,policy,updated_at FROM runtime_limit_settings WHERE singleton')
             ).rows[0];
             const policy = runtimeLimitPolicy(
-                row?.policy ?? { ...DEFAULT_RUNTIME_LIMIT_POLICY, ggufImport: configuredGgufImportPolicy() },
+                row?.policy ?? { ...DEFAULT_RUNTIME_LIMIT_POLICY, ggufImport: configuredGgufImportPolicy(ggufPolicyEnv()) },
             );
             return {
                 revision: Number(row?.revision ?? 0),

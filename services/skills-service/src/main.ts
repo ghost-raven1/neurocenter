@@ -1,5 +1,7 @@
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
+import { loadSkillsConfig } from './config';
+import { formatConfigReport } from '../../shared/config.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import express from 'express';
@@ -10,6 +12,9 @@ import { AppModule } from './app.module';
  * Точка входа skills-service (порт по умолчанию 4200).
  */
 async function bootstrap(): Promise<void> {
+    // AD-9: окружение читается только через config-модуль; fail-fast с агрегированным отчётом.
+    const config = loadSkillsConfig();
+    console.log('[skills-service] конфигурация:\n' + formatConfigReport(config.report));
     const app = await NestFactory.create(AppModule, { bodyParser: false });
 
     app.enableShutdownHooks();
@@ -30,9 +35,9 @@ async function bootstrap(): Promise<void> {
 
     app.use(express.json({ limit: '50mb' }));
 
-    const port = process.env.PORT ? Number(process.env.PORT) : 4200;
+    const port = config.values.port;
 
-    await app.listen(port, process.env.BIND_HOST || '127.0.0.1');
+    await app.listen(port, config.values.bindHost);
 
     console.log(`[skills-service] listening on :${port}`);
 }

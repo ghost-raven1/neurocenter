@@ -17,6 +17,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import type { Request, Response } from 'express';
 import { AuthGuardService } from '../../auth/auth-guard.service';
+import { gatewayMcpHostLimits } from '../../config';
 import { McpHostService } from './host';
 import { issueHostedMcpTicket, verifyHostedMcpTicket, validHostedMcpSession } from './ticket';
 import { CEILING } from '../../../../shared/runtime-artifacts.cjs';
@@ -40,7 +41,7 @@ export class McpHostController {
             /\/+$/,
             '',
         );
-        this.host = new McpHostService(this.catalogUrl, process.env.NEUROCENTER_INTERNAL_TOKEN || '');
+        this.host = new McpHostService(this.catalogUrl, process.env.NEUROCENTER_INTERNAL_TOKEN || '', gatewayMcpHostLimits());
     }
     async onModuleDestroy(): Promise<void> {
         await this.host.onModuleDestroy();

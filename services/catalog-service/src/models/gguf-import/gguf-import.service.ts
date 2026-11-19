@@ -19,6 +19,7 @@ import {
     type IGgufImportPolicy,
 } from '../../../../shared/gguf-import-policy.cjs';
 import { CapacityError, reserveCapacity } from '../../../../shared/capacity.cjs';
+import { ggufPolicyEnv } from '../../config';
 import { AccessDb } from '../../access/access-db';
 import { normalizeEmail, type IAccessActor } from '../../access/access.model';
 import { createPool } from '../../database/pool';
@@ -43,7 +44,7 @@ export class GgufImports {
     constructor(
         readonly pool: Pool,
         root: string,
-        private readonly policy: () => Promise<Readonly<IGgufImportPolicy>> = async () => configuredGgufImportPolicy(),
+        private readonly policy: () => Promise<Readonly<IGgufImportPolicy>> = async () => configuredGgufImportPolicy(ggufPolicyEnv()),
         private readonly flags = () => requireFeaturesEnabled(['gguf_import']),
         private readonly streamPool: Pool = pool,
     ) {
