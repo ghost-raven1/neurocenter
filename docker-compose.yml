@@ -1,7 +1,8 @@
-# Состав осознанный: dev-стек — 10 сервисов (model-runtime, frontend, oauth2-bridge, api-gateway,
-# catalog-service, background-agent, feature-flags-service, skills-service, postgres, rag-sync-service).
-# Production (compose.production.yml) — 14: те же 10 + capacity-collector, database-init (one-shot),
-# bootstrap-admin (one-shot), node_exporter (host-метрики, AD-OP-8; целевой состав 15 с мониторингом ep6 e12).
+# Состав осознанный (паттерн D2): dev-стек — 10 сервисов (model-runtime, frontend, oauth2-bridge,
+# api-gateway, catalog-service, background-agent, feature-flags-service, skills-service, postgres,
+# rag-sync-service). Production (compose.production.yml) — 16: те же 10 + capacity-collector,
+# database-init (one-shot), bootstrap-admin (one-shot), node_exporter (host-метрики, AD-OP-8) и
+# мониторинг ep6 e12 — prometheus + alertmanager (AD-O6, только production; dev-стек их НЕ содержит).
 services:
   # Runtime starts empty; model installation uses imported asset supply.
   model-runtime:

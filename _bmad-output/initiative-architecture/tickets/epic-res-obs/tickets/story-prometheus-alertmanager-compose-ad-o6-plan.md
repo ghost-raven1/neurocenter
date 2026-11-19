@@ -3,7 +3,7 @@ title: 'prometheus + alertmanager: compose-сервисы 12→14 + модель
 type: 'feature'
 ticket: '12'
 created: '2026-11-09'
-status: ready-for-dev
+status: in-progress
 baseline_revision: '4097fdc35bd78dbebf44bec1b026b46663a005e2'
 route: 'full'
 route_source: 'auto'
@@ -112,6 +112,21 @@ docker compose -f compose.production.yml ps   # prometheus+alertmanager healthy
 docker compose -f compose.production.yml port api-gateway   # 9090/9093 отсутствуют
 ```
 Ожидаемо: 14 сервисов, 0 drift, monitoringImages в manifest, healthy, порты наружу нет; корневой сьют — без деградации.
+
+## Progress
+
+**2026-11-19 — in-progress (ветка nc-res-12, worktree).** Реализовано:
+- `compose.production.yml`: +prometheus и +alertmanager в backend-сети, порты наружу не публикуются (9090/9093 только internal), конфиг/state volumes (`./deploy/production/monitoring:/etc/prometheus:ro` + `prometheus-data:/prometheus`; `alertmanager.yml:/etc/alertmanager:ro` + `alertmanager-data:/alertmanager`), секрет `metrics_token` (prometheus), лимиты (prometheus 1g/2/512, alertmanager 256m/0.5/128), healthchecks `wget … /-/healthy`; названные volumes `prometheus-data`/`alertmanager-data` добавлены; шапка «dev 10 / prod 16».
+- **Отклонение от плана (12→14):** цифры плана устарели. На текущем baseline main уже 14 production-сервисов (node_exporter — epic-dr 4.8: 12→13; background-agent — agt-07 B1: 13→14) и 10 dev. После +prometheus/+alertmanager production = **16** (не 14), dev остаётся **10**. Шапки обновлены на «dev 10 / prod 16» (не план-«dev 9 / prod 14»).
+- `deploy/production/environment-model.json`: +2 сервиса — image (digest-pin), networks [backend], memLimit/cpus/pidsLimit, secrets ([metrics_token] / []), volumes (== compose), env {}, codeRoots [], requiredEnv {}.
+- `scripts/production/release-manifest.mjs`: обязательное поле `monitoringImages {prometheus, alertmanager}` — validate (ровно 2 ключа, imagePattern), build (параметр), verify (пересчёт совпадения), captureReleaseActuals (inspect образов prometheus/alertmanager из compose-конфигурации).
+- Тесты: новый `scripts/test/manifest-monitoring.test.mjs` (schema monitoringImages + verify + compose-структура: backend-сеть, без публичных портов, модель==compose 0 drift); обновлены `compose-drift.test.mjs` (14→16), `release-manifest.test.mjs`, `dr-images.test.mjs`, `release-candidate-e2e.test.mjs` под monitoringImages.
+- Регистрация: `scripts/workspace/check-tooling-tests.json` + `expectedFiles` (workspace-check-tooling.test.mjs) + лимит списка в `scripts/workspace/check-plan.mjs` (76→77).
+- dev-состав (`docker-compose.yml`): prometheus/alertmanager НЕ добавлены (dev = 10); шапка «dev 10 / prod 16» (мониторинг только production — OQ-1 / паттерн D2).
+
+**Offline-тесты (node v24.22.0):** compose-drift 23/23, release-manifest 14/14, dr-images 16/16, release-candidate-e2e 11/11 (3 HITL-skip), manifest-monitoring 3/3, stack-watchdog 8/8, workspace-check-tooling 17/17 — зелёные.
+
+**Отложено (deferred):** pull-проверка образов prometheus/alertmanager из локального registry — Docker-egress в контуре недоступен; перенесено в приёмку RES-01 (entry 15). Значения digest-pin — из публичных Docker Hub; перепроверка при приёмке. Live-приёмка (up/ps/порты) — без docker невыполнима, переносится в RES-01.
 
 ## Open Questions (с рекомендациями)
 

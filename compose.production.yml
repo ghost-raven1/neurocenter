@@ -1,4 +1,10 @@
 # Отдельный стек: не объединять с dev docker-compose.yml и его env_file.
+# Состав осознанный (паттерн D2): dev-стек — 10 сервисов, production — 16.
+# Мониторинг (prometheus, alertmanager, node_exporter) — только production: dev-стек без
+# prometheus/alertmanager (OQ-1 — рекомендация: мониторинг принимается на production-стеке).
+# Production = dev 10 + capacity-collector, database-init (one-shot), bootstrap-admin (one-shot),
+# node_exporter (host-метрики, AD-OP-8), prometheus + alertmanager (AD-O6, ep6 entry 12).
+# Публичных портов у мониторинга нет: scrape из backend-сети через metrics_token (/run/secrets).
 x-service: &service
   restart: unless-stopped
   init: true
@@ -397,6 +403,58 @@ services:
       retries: 5
       start_period: 10s
 
+  # AD-O6: prometheus — compose-сервис в backend-сети; порты наружу НЕ публикуются
+  # (9090 только internal, доступ оператора — ssh-tunnel / docker exec, документ в production-setup.md).
+  # Scrape через metrics_token (deploy/production/monitoring/prometheus.yml, credentials_file /run/secrets/metrics_token).
+  # State volume prometheus-data (named, tsdb) — DR-бандл AD-OP-2; digest-pin образа — часть release manifest (AD-OP-2).
+  prometheus:
+    <<: *service
+    image: prom/prometheus:v3.0.0@sha256:3b9b2a15d376334da8c286d995777d3b9315aa666d2311170ada6059a517b74f
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 512
+    command:
+      [
+        --config.file=/etc/prometheus/prometheus.yml,
+        --storage.tsdb.path=/prometheus,
+        --storage.tsdb.retention.time=7d,
+        --web.enable-lifecycle,
+      ]
+    secrets: [metrics_token]
+    volumes:
+      - ./deploy/production/monitoring:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: [CMD, wget, -Y, off, --spider, http://127.0.0.1:9090/-/healthy]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # AD-O6: alertmanager — compose-сервис в backend-сети; порты наружу НЕ публикуются (9093 internal).
+  # Канал доставки (webhook/email) и route — конфиг entry 13 (alertmanager.yml placeholder до entry 13).
+  # State volume alertmanager-data (named); digest-pin — часть release manifest (AD-OP-2).
+  alertmanager:
+    <<: *service
+    image: prom/alertmanager:v0.32.1@sha256:06a1e7960b1a68794ef943744082dc361dd352fd07ed3319ab6de3f929f38ad2
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    command:
+      [
+        --config.file=/etc/alertmanager/alertmanager.yml,
+        --storage.path=/alertmanager,
+      ]
+    volumes:
+      - ./deploy/production/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    healthcheck:
+      test: [CMD, wget, -Y, off, --spider, http://127.0.0.1:9093/-/healthy]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 secrets:
   model_credential_key: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/model_credential_key'}
   metrics_token: {file: '${NEUROCENTER_CONFIG_DIR:?}/secrets/metrics_token'}
@@ -424,3 +482,5 @@ volumes:
   runtime-artifacts:
   backups:
   artifact-cache:
+  prometheus-data:
+  alertmanager-data:

@@ -185,6 +185,7 @@ export function manifestCanonicalSha256(manifest) {
     const payload = {
         images: Object.fromEntries(Object.entries(manifest.images).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
         postgresImage: manifest.postgresImage,
+        monitoringImages: manifest.monitoringImages,
     };
     return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
@@ -204,6 +205,12 @@ export function compareManifestDigests(manifestA, manifestB) {
     }
     if (manifestA.postgresImage !== manifestB.postgresImage)
         throw new Error('F3: postgresImage расходится: ' + manifestA.postgresImage + ' -> ' + manifestB.postgresImage);
+    for (const name of ['prometheus', 'alertmanager']) {
+        if (manifestA.monitoringImages?.[name] !== manifestB.monitoringImages?.[name])
+            throw new Error(
+                'F3: monitoringImages.' + name + ' расходится: ' + manifestA.monitoringImages?.[name] + ' -> ' + manifestB.monitoringImages?.[name],
+            );
+    }
     const canonicalSha256 = manifestCanonicalSha256(manifestA);
     if (manifestCanonicalSha256(manifestB) !== canonicalSha256)
         throw new Error('F3: canonicalSha256 расходится между сборками');
@@ -295,6 +302,10 @@ export function validateE2eReport(report) {
     if (!applicationServices.every((service) => imagePattern.test(report.digests?.images?.[service] ?? '')))
         fail('digests.images: ожидается 7 sha256-образов');
     if (!imagePattern.test(report.digests?.postgresImage ?? '')) fail('digests.postgresImage отсутствует');
+    if (!imagePattern.test(report.digests?.monitoringImages?.prometheus ?? ''))
+        fail('digests.monitoringImages.prometheus отсутствует');
+    if (!imagePattern.test(report.digests?.monitoringImages?.alertmanager ?? ''))
+        fail('digests.monitoringImages.alertmanager отсутствует');
     if (!/^[a-f0-9]{64}$/.test(report.digests?.canonicalSha256 ?? '')) fail('digests.canonicalSha256 отсутствует');
     if (!report.phases || typeof report.phases !== 'object' || Array.isArray(report.phases)) fail('phases отсутствуют');
     for (const key of PHASE_ORDER) {
@@ -460,19 +471,32 @@ async function captureActuals(clone, client) {
     const nodeExporterName = config.services?.node_exporter?.image;
     if (typeof nodeExporterName !== 'string' || !nodeExporterName)
         throw new Error('F2: в production-профиле отсутствует node_exporter');
-    const [images, postgresRaw, nodeExporterRaw] = await Promise.all([
+    const prometheusName = config.services?.prometheus?.image;
+    if (typeof prometheusName !== 'string' || !prometheusName)
+        throw new Error('F2: в production-профиле отсутствует prometheus');
+    const alertmanagerName = config.services?.alertmanager?.image;
+    if (typeof alertmanagerName !== 'string' || !alertmanagerName)
+        throw new Error('F2: в production-профиле отсутствует alertmanager');
+    const [images, postgresRaw, nodeExporterRaw, prometheusRaw, alertmanagerRaw] = await Promise.all([
         serviceImageIds(config),
         docker(['image', 'inspect', postgresName]),
         docker(['image', 'inspect', nodeExporterName]),
+        docker(['image', 'inspect', prometheusName]),
+        docker(['image', 'inspect', alertmanagerName]),
     ]);
     const postgresImage = JSON.parse(postgresRaw)[0]?.Id;
     if (!imagePattern.test(postgresImage ?? '')) throw new Error('F2: образ postgres не закреплён');
     const nodeExporterImage = JSON.parse(nodeExporterRaw)[0]?.Id;
     if (!imagePattern.test(nodeExporterImage ?? '')) throw new Error('F2: образ node_exporter не закреплён');
+    const prometheusImage = JSON.parse(prometheusRaw)[0]?.Id;
+    if (!imagePattern.test(prometheusImage ?? '')) throw new Error('F2: образ prometheus не закреплён');
+    const alertmanagerImage = JSON.parse(alertmanagerRaw)[0]?.Id;
+    if (!imagePattern.test(alertmanagerImage ?? '')) throw new Error('F2: образ alertmanager не закреплён');
     return {
         images,
         postgresImage,
         nodeExporterImage,
+        monitoringImages: { prometheus: prometheusImage, alertmanager: alertmanagerImage },
         migrations: await inspectSchemaManifests(images, (args) => docker(args)),
         supply: await supplyInventory(clone),
     };
@@ -1169,6 +1193,7 @@ async function runLive(args) {
             digests: {
                 images: manifest.images,
                 postgresImage: manifest.postgresImage,
+                monitoringImages: manifest.monitoringImages,
                 canonicalSha256,
             },
             manifests,
@@ -1212,6 +1237,7 @@ if (process.env.NODE_TEST_CONTEXT) {
             images: Object.fromEntries(applicationServices.map((service) => [service, 'sha256:' + 'a'.repeat(64)])),
             postgresImage: 'sha256:' + 'b'.repeat(64),
             nodeExporterImage: 'sha256:' + 'f'.repeat(64),
+            monitoringImages: { prometheus: 'sha256:' + 'c'.repeat(64), alertmanager: 'sha256:' + 'd'.repeat(64) },
             supply: {
                 runtime: [{ name: 'runtime/neurocenter-runtime.tgz', sha256: 'c'.repeat(64) }],
                 opencode: [{ name: 'opencode/neurocenter-opencode.tgz', sha256: 'd'.repeat(64) }],
@@ -1373,6 +1399,9 @@ if (process.env.NODE_TEST_CONTEXT) {
         const postgresDrift = structuredClone(b);
         postgresDrift.postgresImage = 'sha256:' + 'c'.repeat(64);
         assert.throws(() => compareManifestDigests(a, postgresDrift), /postgresImage/);
+        const monitoringDrift = structuredClone(b);
+        monitoringDrift.monitoringImages.prometheus = 'sha256:' + '5'.repeat(64);
+        assert.throws(() => compareManifestDigests(a, monitoringDrift), /monitoringImages\.prometheus/);
     });
 
     test('F5-static: модель окружения без дрейфа — base и с live-оверлеями', async () => {
@@ -1396,6 +1425,7 @@ if (process.env.NODE_TEST_CONTEXT) {
             digests: {
                 images: manifest.images,
                 postgresImage: manifest.postgresImage,
+                monitoringImages: manifest.monitoringImages,
                 canonicalSha256: manifestCanonicalSha256(manifest),
             },
             manifests: { operator: '/tmp/manifest.json' },
