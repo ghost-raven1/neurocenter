@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { resources, maxAgeMs } = require('./capacity.cjs');
 const destination = '/capacity/snapshot.json';
@@ -8,6 +9,70 @@ function safeNumber(value) {
         throw new Error('unsupported size');
     }
     return Number(value);
+}
+
+/** Кумулятивные jiffies /proc/stat между тиками (модульное состояние переживает 15s-тик). */
+let previousCpu = null;
+function readMeminfo(props = {}) {
+    const file = props.meminfoPath || '/proc/meminfo';
+    return fs.readFile(file, 'utf8').then((text) => {
+        const value = (key) => {
+            const match = text.match(new RegExp('^' + key + ':\\s+(\\d+)\\s+kB', 'm'));
+            return match ? Number(match[1]) : null;
+        };
+        const memTotal = value('MemTotal');
+        if (memTotal == null || memTotal <= 0) {
+            throw new Error('machine meminfo');
+        }
+        // MemAvailable отсутствует на старых ядрах — консервативный запас из MemFree/Buffers/Cached.
+        const memAvailable = value('MemAvailable') ?? value('MemFree') + value('Buffers') + value('Cached');
+        if (memAvailable == null) {
+            throw new Error('machine meminfo available');
+        }
+        return { ramTotalBytes: memTotal * 1024, ramAvailableBytes: memAvailable * 1024 };
+    });
+}
+function readCpuStat(props = {}) {
+    const file = props.statPath || '/proc/stat';
+    return fs.readFile(file, 'utf8').then((text) => {
+        const line = text.split('\n').find((entry) => entry.startsWith('cpu '));
+        if (!line) {
+            throw new Error('machine cpu stat');
+        }
+        const fields = line.trim().split(/\s+/).slice(1).map((value) => Number(value) || 0);
+        // linux /proc/stat: user nice system idle iowait irq softirq steal guest guest_nice;
+        // guest/guest_nice уже учтены в user/nice, поэтому не суммируются повторно.
+        const [user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0] = fields;
+        const total = user + nice + system + idle + iowait + irq + softirq + steal;
+        if (total <= 0) {
+            throw new Error('machine cpu stat');
+        }
+        return { idles: idle + iowait, total };
+    });
+}
+
+/** AD-18: host-RAM/CPU из /proc (не маскируются docker'ом, network_mode none + DAC_OVERRIDE). */
+async function collectMachine(props = {}) {
+    const [mem, cpu] = await Promise.all([readMeminfo(props), readCpuStat(props)]);
+    const cores =
+        typeof os.availableParallelism === 'function'
+            ? os.availableParallelism()
+            : Array.isArray(os.cpus()) && os.cpus().length
+              ? os.cpus().length
+              : 1;
+    const machine = {
+        ramTotalBytes: mem.ramTotalBytes,
+        ramAvailableBytes: mem.ramAvailableBytes,
+        cpuCores: cores,
+    };
+    // Первый тик не имеет предыдущего /proc/stat: cpuUtilization отсутствует (не 0 — «нет данных»).
+    if (previousCpu && cpu.total > previousCpu.total) {
+        const deltaTotal = cpu.total - previousCpu.total;
+        const deltaIdle = Math.max(0, cpu.idles - previousCpu.idles);
+        machine.cpuUtilization = Math.max(0, Math.min(1, 1 - deltaIdle / deltaTotal));
+    }
+    previousCpu = cpu;
+    return machine;
 }
 
 /** Пути определены production-топологией, а не пользовательскими или произвольными env-путями. */
@@ -59,6 +124,7 @@ async function collectCapacity({ root = '/volumes', now = Date.now } = {}) {
             result.resources[resource] = { available: false };
         }
     }
+    result.machine = await collectMachine();
     return result;
 }
 async function publishCapacity(value) {
@@ -116,7 +182,7 @@ async function main() {
         }
     }
 }
-module.exports = { collectCapacity, publishCapacity };
+module.exports = { collectCapacity, collectMachine, publishCapacity };
 if (require.main === module) {
     void main().catch((error) => {
         console.error(error.message);

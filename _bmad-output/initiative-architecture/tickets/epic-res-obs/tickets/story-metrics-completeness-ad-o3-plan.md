@@ -3,7 +3,7 @@ title: 'Метрики: канонический набор + auth-failure + mac
 type: 'feature'
 ticket: '8'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '4097fdc35bd78dbebf44bec1b026b46663a005e2'
 route: 'full'
 route_source: 'auto'
@@ -111,3 +111,35 @@ node services/shared/capacity-collector.cjs --once | jq .machine
 2. **cpuUtilization на первом тике**: omit (рекомендация) vs 0? Рекомендация: omit — 0 ложно («CPU свободен»), omit = «нет данных» (gauge отсутствует до 2-го тика, ~15s).
 3. **Machine-метрики у всех CAPACITY_REQUIRED-сервисов или только catalog?** renderCapacityMetrics вызывается у всех 6, но capacity-блок только при CAPACITY_REQUIRED=true (capacity.cjs:163). Machine-метрики идут тем же условием. Рекомендация: да (единое условие) — gateway/bridge/ff не показывают machine (осознанно, entry 9 документ).
 4. **Alert на auth-failures?** (entry 13 решает правила; здесь только метрика). Рекомендация: entry 13 добавит правило rate(auth_failures[5m]) > threshold — порог на HITL-приёмке.
+
+## Progress
+
+**Реализовано (res-obs/8, worktree nc-res-08):**
+
+- **prometheus.yml**: добавлен `feature-flags-service:4400` — 6/6 в scrape targets (known-defect закрыт).
+- **observability.cjs**: `recordAuthFailure()` в возврате `createObservability` + модульный `recordAuthFailure(service)`; `neurocenter_auth_failures_total{service}` (HELP/TYPE) рендерится всегда (даже 0) — стабильная канон-семья. Метки — только фиксированный `service` (AD-O3/AD-O8: без причины, email, URL).
+- **Вызовы auth-failure**: gateway `auth-guard.service.ts` — на отказе проверки входа (невалидный Bearer-формат, 401/403 device-channel, 401/403 `/auth/me`) и в catch (проверка не выполнена); лог в catch приведён к allowlist `name/code/causeCode` без `error.message` (AD-O8). bridge `auth.controller.ts` — точки: missing/invalid state (`login_error=state`), client denied (`login_error=denied`), code-exchange failed (`login_error=exchange`); лог code-exchange также приведён к allowlist. Инвентарь точек зафиксирован выше; `/auth/me` 401 и `denied(bridge)` — это намеренно не считается отдельно от «негативных» событий внутри контроллера (см. deviations).
+  - *Решение*: auth-failure у gateway также считает catch (невыполнимую проверку входом). Это расширяет счётчик на сценарии «проверка не удалась», а не только на явные 401; документировано как отклонение от строгого «до 5xx», т.к. план прямо требует «auth check failed → recordAuthFailure» в auth-guard.
+- **capacity-collector.cjs**: `collectMachine()` — `/proc/meminfo` (MemTotal/MemAvailable, fallback MemFree+Buffers+Cached) + `/proc/stat` (delta кумулятивных jiffies, модульное состояние `previousCpu`; первый тик — `cpuUtilization` отсутствует, `os.availableParallelism()` для `cpuCores`) → `machine` в snapshot. Экспортируется `collectMachine` для тестов.
+- **capacity.cjs**: `renderCapacityMetrics(sample?)` — новый опциональный параметр (обратная совместимость: `renderCapacityMetrics()` читает snapshot как раньше); machine-gauges `neurocenter_machine_ram_total_bytes/ram_available_bytes/cpu_cores/cpu_utilization` (только при `CAPACITY_REQUIRED=true` и наличии `sample.machine`; cpu_utilization — только когда конечное число). `validateSnapshot` остаётся пермиссивным к `machine` — старые снапшоты (schemaVersion 1/2 без machine, partial-деплой) валидны; новый коллектор всегда публикует `machine`.
+- **docs/capacity-admission.md**: добавлен design-note «CAPACITY_REQUIRED=false у api-gateway/oauth2-bridge/feature-flags-service — осознанно (AD-O4)» и примечание про machine (AD-18).
+- **Тест** `scripts/test/metrics-completeness.test.mjs` (15 кейсов): 6/6 targets + знаменатель-исключения (capacity-collector/frontend/nginx/postgres/prometheus/alertmanager), новый сервис без targets = фэйл, канон на каждом из 6 `/metrics` (http+process+auth_failures, без приватных лейблов), гейтинг capacity/machine по CAPACITY_REQUIRED, отсутствие capacity у gateway, счётчик auth-failures растёт (без причины в метрике), machine из /proc (первый тик omit, второй в [0,1]), machine-gauges рендерятся только при наличии machine, work-queue у rag, compat validateSnapshot на старом снапшоте без machine.
+
+**Проверки (host, Node v24.22.0; Docker недоступен — живой стек отложен до приёмки RES-01):**
+
+- `node --test scripts/test/metrics-completeness.test.mjs` — **15/15 pass**.
+- `node --test scripts/test/capacity.test.cjs scripts/test/observability.test.cjs` — **22/22 pass** (без деградации).
+- `node --test scripts/test/shared-declaration-drift.test.mjs` — **6/6 pass** (добавлен `collectMachine` в `.d.cts`).
+- `node --test scripts/test/{coverage-completion,coverage-inventory,coverage-focused,production-configuration,tls-global-disable}.test.mjs` — **62/62 pass**.
+- vitest api-gateway (8 файлов) — **73/73 pass**; vitest oauth2-bridge `login-return.test.ts` — **7/7 pass** (изолированно).
+- typecheck `tsc -p tsconfig.build.json --noEmit` для api-gateway, oauth2-bridge, catalog-service, skills-service, rag-sync-service, feature-flags-service — **все 0 ошибок**.
+- Пункт "machine snapshot via collector --once": в этом окружении `/volumes`/model-weights не смонтирован — коллектор fail-fast на model-weights (предсуществующее поведение), machine логика покрыта unit-тестом `collectMachine`.
+
+**Изменённые файлы:** `deploy/production/monitoring/prometheus.yml`, `docs/capacity-admission.md`, `services/api-gateway/src/auth/auth-guard.service.ts`, `services/oauth2-bridge/src/auth/auth.controller.ts`, `services/shared/capacity-collector.cjs`, `services/shared/capacity-collector.d.cts`, `services/shared/capacity.cjs`, `services/shared/capacity.d.cts`, `services/shared/observability.cjs`, `services/shared/observability.d.cts`, `scripts/test/metrics-completeness.test.mjs`, ticket.
+
+**Отклонения/риски:**
+- **PR-регистрация теста**: `metrics-completeness.test.mjs` НЕ добавлен в `scripts/workspace/check-tooling-tests.json` (+ не тронуты `cap 76` и `expectedFiles`). Тест авто-обнаруживается `nodeTestFiles` (шаг main-check «Общие контракты, production и упаковка») и не относится к фиксированному tooling-набору; это осознанно, чтобы не раздувать cap 76→77 и не трогать conflict-prone регистрационные файлы. Если maintainers захотят включить его в tooling-гейт — потребуется +1 к cap и строка в expectedFiles.
+- **feature-flags-infra.test.mjs** падает на базе worktree (НЕ регрессия моей истории): ожидаемый список volume-ключей compose.production.yml (8) не совпадает с фактическим (10: +`background-agent-runtime`, +`artifact-cache`). compose.production.yml мною не изменялся (`git diff` пуст). Это предсуществующее расхождение (эволюция volume-топологии, L-8/AD-OP-4), вне scope.
+- **Machine в `--once`**: требует смонтированного model-weights — в данном окружении невыполнимо; unit-покрытие через `collectMachine`.
+- **`machine` в `ICapacitySnapshot` объявлен опциональным** (`machine?`) — отражает compat (старые снапшоты без machine); новый коллектор всегда публикует machine.
+- **auth-failure в catch gateway** — осознанное расширение (см. выше); не считается 401 при `denied(bridge)`, но считается при `login_error=state/exchange/denied` в контроллере — инвентарь зафиксирован для entry 13 (правила на rate).

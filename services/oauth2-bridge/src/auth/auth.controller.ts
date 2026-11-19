@@ -6,6 +6,7 @@ import { IAuthMeResponse, type IBridgeUser } from './interface';
 import { SessionService } from './session.service';
 import { loginReturn } from './login-return';
 import { OAuthTransactions } from './oauth-transactions.service';
+import { recordAuthFailure } from '../../../shared/observability.cjs';
 
 const STATE_COOKIE = 'oauth_state';
 const SESSION_COOKIE = 'bridge_session';
@@ -71,6 +72,7 @@ export class AuthController {
 
         const transaction = this.transactions.consume(query.state, cookies[STATE_COOKIE]);
         if (!transaction) {
+            recordAuthFailure('oauth2-bridge');
             res.redirect(`${panel}/?login_error=state`);
             return;
         }
@@ -78,6 +80,7 @@ export class AuthController {
         res.clearCookie(STATE_COOKIE, this.cookieOptions());
         res.clearCookie(RETURN_COOKIE, this.cookieOptions());
         if (query.error) {
+            recordAuthFailure('oauth2-bridge');
             res.redirect(`${panel}/?login_error=denied`);
             return;
         }
@@ -86,7 +89,10 @@ export class AuthController {
         try {
             user = await this.auth.exchangeCode(query.code ?? '', transaction.verifier);
         } catch (error) {
-            console.error('[oauth2-bridge] code exchange failed:', error instanceof Error ? error.name : 'Unavailable');
+            // AD-O8: allowlist name/code — error.message может нести внутренний host:port.
+            const safe = error instanceof Error ? { name: error.name, code: (error as { code?: unknown }).code } : { name: 'Unavailable' };
+            console.error('[oauth2-bridge] code exchange failed', safe);
+            recordAuthFailure('oauth2-bridge');
             res.redirect(`${panel}/?login_error=exchange`);
             return;
         }

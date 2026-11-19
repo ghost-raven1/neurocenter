@@ -169,13 +169,14 @@ function recordCapacityQueue(name, pending, active) {
     queues.set(name, { pending: integer(pending), active: integer(active) });
 }
 /** Отсутствующие значения не превращаются в нулевой размер или здоровый диск. */
-function renderCapacityMetrics() {
+function renderCapacityMetrics(sample) {
     const lines = [];
-    let sample;
     if (process.env.CAPACITY_REQUIRED === 'true') {
-        try {
-            sample = readSnapshot();
-        } catch {}
+        if (sample === undefined) {
+            try {
+                sample = readSnapshot();
+            } catch {}
+        }
         lines.push(
             '# TYPE neurocenter_capacity_snapshot_available gauge',
             'neurocenter_capacity_snapshot_available ' + (sample ? 1 : 0),
@@ -194,6 +195,25 @@ function renderCapacityMetrics() {
                     if (Number.isSafeInteger(value) && value >= 0) {
                         lines.push('neurocenter_capacity_' + metric + '{resource="' + resource + '"} ' + value);
                     }
+                }
+            }
+            // AD-18: machine-метрики хоста (RAM/CPU из /proc) — только когда они есть в снапшоте.
+            // Поле отсутствует на первом тике коллектора (cpuUtilization нет данных) — gauge не рендерится.
+            if (sample.machine && typeof sample.machine === 'object') {
+                const machine = sample.machine;
+                for (const [metric, value] of [
+                    ['ram_total_bytes', machine.ramTotalBytes],
+                    ['ram_available_bytes', machine.ramAvailableBytes],
+                    ['cpu_cores', machine.cpuCores],
+                ]) {
+                    if (Number.isSafeInteger(value) && value > 0) {
+                        lines.push('# TYPE neurocenter_machine_' + metric + ' gauge');
+                        lines.push('neurocenter_machine_' + metric + ' ' + value);
+                    }
+                }
+                if (Number.isFinite(machine.cpuUtilization)) {
+                    lines.push('# TYPE neurocenter_machine_cpu_utilization gauge');
+                    lines.push('neurocenter_machine_cpu_utilization ' + machine.cpuUtilization);
                 }
             }
         }

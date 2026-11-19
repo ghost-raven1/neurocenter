@@ -16,4 +16,8 @@ interface IObservabilityOptions {
 export function createObservability(options: IObservabilityOptions): {
     middleware: (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
     render: () => string;
+    recordAuthFailure: () => void;
 };
+
+/** Счётчик отказов аутентификации по имени сервиса (только фиксированные метки, AD-O3). */
+export function recordAuthFailure(service: string): void;

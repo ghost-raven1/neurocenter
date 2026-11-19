@@ -20,4 +20,10 @@ node scripts/production/resources.mjs --directory /etc/neurocenter --project-nam
 
 `/metrics` защищённых сервисов отдаёт доступность/возраст снимка, свободные/полные байты по ресурсу, WAL, причины отказов и очередь RAG. При ошибке измерения неизвестные размеры не превращаются в ноль. Правила Prometheus добавляют предупреждения о недоступном замере, свободном месте менее 1 ГиБ или 15%, очереди RAG более восьми и непроверенной/просроченной внешней копии. Prometheus/Alertmanager нужно подключить и проверить отдельно: файл правила сам по себе не является доставленным оповещением.
 
-Проверки: `node --test scripts/test/capacity.test.cjs scripts/test/observability.test.cjs`; typecheck catalog, skills и rag-sync. Эти локальные проверки не подменяют Docker/native/server приёмку и тест реального заполнения отдельного стенда.
+Проверки: `node --test scripts/test/capacity.test.cjs scripts/test/observability.test.cjs scripts/test/metrics-completeness.test.mjs`; typecheck catalog, skills и rag-sync. Эти локальные проверки не подменяют Docker/native/server приёмку и тест реального заполнения отдельного стенда.
+
+## Design note: CAPACITY_REQUIRED=false и machine-метрики (AD-18 / AD-O3)
+
+`CAPACITY_REQUIRED=false` у api-gateway, oauth2-bridge и feature-flags-service — **осознанно** (AD-O4): эти сервисы не выполняют защищённые тяжёлые записи (создание БД, RAG-батч, импорт runtime-архива, поток HTTP-копии), поэтому capacity-блок и machine-метрики у них не рендерятся. Это не дефект и не отсутствие покрытия — решение зафиксировано в полисе AD-O4 и проверяется completeness-тестом (AD-O3). Catalog, skills и rag-sync (`CAPACITY_REQUIRED=true`) отдают capacity-семейства и machine-метрики.
+
+Machine-метрики (host RAM/CPU) считываются сборщиком из `/proc/meminfo` + `/proc/stat` (AD-18): `network_mode: none` + `DAC_OVERRIDE` в compose не маскируют `/proc`. Поле `machine` добавляется в snapshot.json; cpuUtilization — дельта по кумулятивным jiffies `/proc/stat` между тиками (модульное состояние), на первом тике поле отсутствует («нет данных», а не 0). `validateSnapshot` не требует `machine` — старые снапшоты (включая schemaVersion 1 и rolling-deploy с новым/старым коллектором) остаются валидными; новый сборщик всегда публикует `machine`. Метки — только фиксированные groups: в metric-пространство не попадают email, ID проектов и произвольные URL.

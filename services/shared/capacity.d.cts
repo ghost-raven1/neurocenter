@@ -29,7 +29,7 @@ export function validateSnapshot(value: unknown, now?: number): unknown;
 /** Резерв до записи освобождается в finally; production требует свежий замер реальных томов. */
 export function reserveCapacity(request: ICapacityRequest): Promise<() => void>;
 export function recordCapacityQueue(name: 'rag', pending: number, active: number): void;
-export function renderCapacityMetrics(): string;
+export function renderCapacityMetrics(sample?: { machine?: object } | null): string;
 export function getCapacityStatus(): {
     available: boolean;
     reason?: string;
