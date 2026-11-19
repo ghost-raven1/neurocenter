@@ -631,7 +631,6 @@ try {
             assert.equal(state.status, 503);
             assert.equal(state.body.ok, false);
             assert.equal((await request('/ready')).status, 503);
-            assert.equal((await request('/health')).status, 200);
         } finally {
             docker(['start', '--wait', 'postgres']);
         }

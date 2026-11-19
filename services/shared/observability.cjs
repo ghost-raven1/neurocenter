@@ -25,7 +25,7 @@ const authFailures = new Map();
 /** Фиксированные группы исключают почту, ID проектов, коды OAuth и произвольные URL из меток. */
 function group(url) {
     const pathname = String(url || '').split('?')[0];
-    if (pathname === '/health' || pathname === '/ready') {
+    if (pathname === '/ready') {
         return pathname.slice(1);
     }
     if (pathname === '/api' || pathname.startsWith('/api/')) {

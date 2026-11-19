@@ -1,4 +1,11 @@
 'use strict';
+/** Таймаут агрегированной проверки зависимостей (readiness), мс. */
+const READINESS_CHECK_TIMEOUT_MS = 2500;
+/** Таймаут одиночного HTTP /ready запроса к зависимому сервису, мс. */
+const HTTP_READY_TIMEOUT_MS = 2000;
+/** Максимальный размер тела JSON-квитанции /ready, байты. */
+const READY_BODY_LIMIT_BYTES = 16384;
+
 /** Готовность зависимостей ограничена по времени; ответ не раскрывает URL и секреты. */
 async function checkReadiness(checks) {
     const entries = await Promise.all(
@@ -8,7 +15,7 @@ async function checkReadiness(checks) {
                 await Promise.race([
                     Promise.resolve().then(check),
                     new Promise((_, reject) => {
-                        timer = setTimeout(() => reject(new Error('timeout')), 2500);
+                        timer = setTimeout(() => reject(new Error('timeout')), READINESS_CHECK_TIMEOUT_MS);
                     }),
                 ]);
                 return [name, 'ready'];
@@ -23,7 +30,7 @@ async function checkReadiness(checks) {
 }
 async function httpReady(base) {
     const response = await fetch(base.replace(/\/$/, '') + '/ready', {
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(HTTP_READY_TIMEOUT_MS),
         redirect: 'error',
     });
     if (!response.ok) {
@@ -39,7 +46,7 @@ async function httpReady(base) {
             const part = await reader.read();
             if (part.done) break;
             bytes += part.value.byteLength;
-            if (bytes > 16384) {
+            if (bytes > READY_BODY_LIMIT_BYTES) {
                 await reader.cancel();
                 throw new Error('unavailable');
             }
@@ -54,4 +61,4 @@ async function httpReady(base) {
         reader.releaseLock();
     }
 }
-module.exports = { checkReadiness, httpReady };
+module.exports = { checkReadiness, httpReady, READINESS_CHECK_TIMEOUT_MS, HTTP_READY_TIMEOUT_MS, READY_BODY_LIMIT_BYTES };

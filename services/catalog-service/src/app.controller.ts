@@ -2,13 +2,11 @@ import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { CatalogService } from './catalog/catalog.service';
 import { checkReadiness } from '../../shared/readiness.cjs';
 
-/**
- * Health-эндпоинт для healthcheck.
- */
+/** Единственная health-семантика catalog — /ready. */
 @Controller()
 export class AppController {
     constructor(private readonly catalog: CatalogService) {}
-    /** Readiness отражает доступность БД, liveness остаётся отдельным. */
+    /** Readiness отражает доступность БД; liveness-эндпоинта нет (liveness = контейнер жив). */
     @Get('ready')
     async ready(): Promise<unknown> {
         const state = await checkReadiness({ postgres: () => this.catalog.ready() });
@@ -16,14 +14,5 @@ export class AppController {
             throw new ServiceUnavailableException(state);
         }
         return state;
-    }
-    /**
-     * Health-check.
-     *
-     * @returns {{ ok: boolean }}
-     */
-    @Get('health')
-    public health(): { ok: boolean } {
-        return { ok: true };
     }
 }

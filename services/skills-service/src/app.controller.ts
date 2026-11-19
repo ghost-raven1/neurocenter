@@ -5,9 +5,7 @@ import path from 'node:path';
 import { SKILLS_STORAGE, ISkillsStorage } from './storage/skills-storage.interface';
 import { checkReadiness } from '../../shared/readiness.cjs';
 
-/**
- * Health-эндпоинт skills-service.
- */
+/** Единственная health-семантика skills-service — /ready. */
 @Controller()
 export class AppController {
     constructor(@Inject(SKILLS_STORAGE) private readonly storage: ISkillsStorage) {}
@@ -41,15 +39,5 @@ export class AppController {
             throw new ServiceUnavailableException(state);
         }
         return state;
-    }
-
-    /**
-     * Health-check.
-     *
-     * @returns {{ ok: boolean }}
-     */
-    @Get('health')
-    public health(): { ok: boolean } {
-        return { ok: true };
     }
 }

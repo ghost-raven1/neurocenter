@@ -30,7 +30,6 @@ server {
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss://${NEUROCENTER_HOST}; object-src 'none'; base-uri 'self'; frame-ancestors 'none'" always;
     # Метрики доступны только сборщику внутри backend-сети.
     location = /metrics { return 404; }
-    location = /health { return 200 '{"ok":true}'; }
     location = /ready {
         proxy_pass http://api-gateway:4000/ready;
         proxy_read_timeout 5s;

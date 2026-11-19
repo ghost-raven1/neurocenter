@@ -116,7 +116,6 @@ export const ROUTE_POLICY: readonly IRouteRow[] = [
     // --- Явные маршруты контроллеров (router.stack; канонический вид без /api/) ---
     { kind: 'route', path: '/ready', allowed: ['GET'] },
     { kind: 'route', path: '/ready/dependencies', allowed: ['GET'] },
-    { kind: 'route', path: '/health', allowed: ['GET'] },
     // bridge: дедлайн маршрута 600s (bridgeRequest); конфиг — метаданные 128KB, runtime — пакет до 1GiB.
     { kind: 'route', path: '/bridge/config', allowed: ['GET'], timeoutMs: 600000, maxResponseBytes: 128 * KIB },
     { kind: 'route', path: '/bridge/install.sh', allowed: ['GET'], timeoutMs: 600000 },

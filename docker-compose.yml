@@ -44,7 +44,7 @@ services:
       oauth2-bridge:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://127.0.0.1:8080/health"]
+      test: ["CMD", "wget", "--spider", "http://127.0.0.1:8080/ready"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -74,7 +74,7 @@ services:
       - CATALOG_SERVICE_URL=http://catalog-service:4100
       - BIND_HOST=0.0.0.0
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:22222/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:22222/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -118,7 +118,7 @@ services:
     volumes:
       - ./bridge-dist:/app/bridge-dist:ro
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -172,7 +172,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4100/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4100/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -276,7 +276,7 @@ services:
     volumes:
       - ./data/skills:/app/data/skills
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4200/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4200/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -337,7 +337,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4300/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:4300/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 5

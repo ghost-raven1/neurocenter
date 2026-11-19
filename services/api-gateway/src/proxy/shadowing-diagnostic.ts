@@ -10,19 +10,18 @@ import { CATCH_ALL_PATH, CATCH_ALL_ROW, matchPolicy } from './route-policy';
  * фиксированный body без internal-деталей (AD-19).
  *
  * Инцидент — только если входящий URL есть РЕГИСТРИРОВАННЫЙ вариант явного роута
- * (фикс false positive 2.13 K3.1): OQ3-нормализация matchPolicy (/api/health → /health)
+ * (фикс false positive 2.13 K3.1): OQ3-нормализация matchPolicy (/api/ready → /ready)
  * матчит канонический паттерн, но не означает, что у роута существует /api/-URL-вариант.
  * /api/-вариант зарегистрирован только у контроллеров с /api/-префиксом:
  *  - /bridge/* — BridgeController @Controller(['bridge', 'api/bridge']) (двойной префикс);
  *  - /mcp-host/* — McpHostController @Controller('api/mcp-host').
- * AppController (/health, /ready, /ready/dependencies), /internal/* и postCreate
- * (/docs, /socket.io) /api/-варианта не имеют: входящий /api/health и т.п. — легитимная
+ * AppController (/ready, /ready/dependencies), /internal/* и postCreate
+ * (/docs, /socket.io) /api/-варианта не имеют: входящий /api/ready и т.п. — легитимная
  * зона catch-all (pre-entry 10: проксирование в catalog), а не routing-инцидент.
  */
 const EXPECTED_CONTROLLERS: Record<string, string> = {
     '/ready': 'AppController.ready',
     '/ready/dependencies': 'AppController.dependencies',
-    '/health': 'AppController.health',
     '/bridge/config': 'BridgeController.configuration',
     '/bridge/install.sh': 'BridgeController.installScript',
     '/bridge/connect.sh': 'BridgeController.connectScript',

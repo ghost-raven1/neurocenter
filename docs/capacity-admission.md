@@ -27,3 +27,21 @@ node scripts/production/resources.mjs --directory /etc/neurocenter --project-nam
 `CAPACITY_REQUIRED=false` у api-gateway, oauth2-bridge и feature-flags-service — **осознанно** (AD-O4): эти сервисы не выполняют защищённые тяжёлые записи (создание БД, RAG-батч, импорт runtime-архива, поток HTTP-копии), поэтому capacity-блок и machine-метрики у них не рендерятся. Это не дефект и не отсутствие покрытия — решение зафиксировано в полисе AD-O4 и проверяется completeness-тестом (AD-O3). Catalog, skills и rag-sync (`CAPACITY_REQUIRED=true`) отдают capacity-семейства и machine-метрики.
 
 Machine-метрики (host RAM/CPU) считываются сборщиком из `/proc/meminfo` + `/proc/stat` (AD-18): `network_mode: none` + `DAC_OVERRIDE` в compose не маскируют `/proc`. Поле `machine` добавляется в snapshot.json; cpuUtilization — дельта по кумулятивным jiffies `/proc/stat` между тиками (модульное состояние), на первом тике поле отсутствует («нет данных», а не 0). `validateSnapshot` не требует `machine` — старые снапшоты (включая schemaVersion 1 и rolling-deploy с новым/старым коллектором) остаются валидными; новый сборщик всегда публикует `machine`. Метки — только фиксированные groups: в metric-пространство не попадают email, ID проектов и произвольные URL.
+
+## Единственная health-семантика: /ready (AD-O4)
+
+В стеке одна семантика готовности — `GET /ready` (503 + `checks`-разложение драйверами). `/health` как liveness-эндпоинт удалён (liveness = «контейнер жив» = docker restart policy, а не HTTP). Docker-проверки (dev- и production-compose) опрашивают `/ready`; внешний мониторинг использует тот же `/ready`.
+
+### `/ready/dependencies` — решение
+
+`GET /ready/dependencies` (api-gateway, 5 upstream'ов: catalog / skills / rag / auth / featureFlags) сохранён — это диагностика готовности зависимостей, а не маршрутизация трафика (AD-4, entry 9):
+
+- **consumers**: `stack-watchdog` (эпик 4, AD-OP-8), admin UI (OQ-1);
+- **решение**: оставить; **удалить, если к концу эпика 4 не подключён** — ревизия = задача эпика 4.
+
+Проверка зависит от upstream'ов: `/ready` локального сервиса остаётся 200 + `{ok:true, checks:{<svc>:'ready'}}`, а `/ready/dependencies` при недоступном upstream'е возвращает 503 + `checks` разложение.
+
+### CAPACITY_REQUIRED=false — capacity-метрики не рендерятся у gateway / bridge / feature-flags
+
+`renderCapacityMetrics` (`services/shared/capacity.cjs`) эмитит снимки `neurocenter_capacity_*` только при `CAPACITY_REQUIRED === 'true'`. У api-gateway, oauth2-bridge и feature-flags-service переменная не задана, поэтому `/metrics` у них **не отдаёт** capacity-снимок — только счётчики отказов и очередь. Это осознанно: capacity-admission критичен для тяжёлых записей каталога, а не для транзитных/лёгких сервисов. Для этих трёх сервисов `CAPACITY_REQUIRED=false` означает, что `/ready` не проверяет capacity — health-смысл `/ready` у них изолирован от капасити-защиты. Prometheus-оповещения по capacity (`/metrics` catalog, `capacity-collector` при `CAPACITY_REQUIRED=true`) остаются.
+
