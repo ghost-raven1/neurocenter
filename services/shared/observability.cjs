@@ -14,6 +14,14 @@ const services = new Set([
     'feature-flags-service',
 ]);
 
+/**
+ * Счётчики отказов аутентификации (leading-индикатор: рост до 5xx). Ключ — только
+ * фиксированное label-пространство `service` (AD-O3): причина не попадает в метрику
+ * (диагностика — лог по requestId + error-store), чтобы не раскрывать её и не плодить
+ * кардинальность (AD-O8).
+ */
+const authFailures = new Map();
+
 /** Фиксированные группы исключают почту, ID проектов, коды OAuth и произвольные URL из меток. */
 function group(url) {
     const pathname = String(url || '').split('?')[0];
@@ -57,6 +65,9 @@ function createObservability({
     const requests = new Map();
     const durations = new Map();
     let active = 0;
+    const recordAuthFailure = () => {
+        authFailures.set(service, (authFailures.get(service) || 0) + 1);
+    };
     const middleware = (req, res, next) => {
         if (String(req.url || '').split('?')[0] === '/metrics') {
             res.setHeader('Cache-Control', 'no-store');
@@ -141,13 +152,26 @@ function createObservability({
                 `${name}{${common}} ${value}`,
             );
         }
+        lines.push(
+            '# HELP neurocenter_auth_failures_total Отказы аутентификации (до появления 5xx).',
+            '# TYPE neurocenter_auth_failures_total counter',
+            `neurocenter_auth_failures_total{${common}} ${authFailures.get(service) || 0}`,
+        );
         lines.push(renderCapacityMetrics());
         if (service === 'catalog-service') {
             lines.push(renderMaintenanceMetrics());
         }
         return lines.join('\n') + '\n';
     }
-    return { middleware, render };
+    return { middleware, render, recordAuthFailure };
 }
 
-module.exports = { createObservability };
+/** Общий доступ к счётчику отказов auth для сервисов без ссылки на экземпляр наблюдаемости. */
+function recordAuthFailure(service) {
+    if (!services.has(service)) {
+        return;
+    }
+    authFailures.set(service, (authFailures.get(service) || 0) + 1);
+}
+
+module.exports = { createObservability, recordAuthFailure };

@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import type { Request } from 'express';
+import { recordAuthFailure } from '../../../shared/observability.cjs';
 import type { IAuthMeResponse, IAuthPayload } from './interfaces';
 
 export type { IAuthPayload } from './interfaces';
@@ -37,6 +38,7 @@ export class AuthGuardService {
         try {
             if (req.headers.authorization) {
                 if (!/^Bearer [a-f0-9]{64}$/.test(req.headers.authorization)) {
+                    recordAuthFailure('api-gateway');
                     return null;
                 }
                 const response = await this.http.post(
@@ -50,6 +52,7 @@ export class AuthGuardService {
                     },
                 );
                 if (response.status === 401 || response.status === 403) {
+                    recordAuthFailure('api-gateway');
                     return null;
                 }
                 if (response.status !== 201 && response.status !== 200) {
@@ -75,6 +78,7 @@ export class AuthGuardService {
             });
 
             if (response.status === 401 || response.status === 403) {
+                recordAuthFailure('api-gateway');
                 return null;
             }
             if (response.status !== 200) {
@@ -109,7 +113,17 @@ export class AuthGuardService {
                 policies: data.policies,
             };
         } catch (error) {
-            console.error('[api-gateway] auth check failed:', error instanceof Error ? error.message : 'unavailable');
+            // AD-O8: allowlist name/code/cause.code — error.message может нести URL/секреты (внутренний host:port).
+            const safe =
+                error instanceof Error
+                    ? {
+                          name: error.name,
+                          code: (error as { code?: unknown }).code,
+                          causeCode: (error as { cause?: { code?: unknown } }).cause?.code,
+                      }
+                    : { name: 'Unavailable' };
+            console.error('[api-gateway] auth check failed', safe);
+            recordAuthFailure('api-gateway');
             throw new ServiceUnavailableException('Проверка входа временно недоступна. Повторите запрос позже.');
         }
     }
