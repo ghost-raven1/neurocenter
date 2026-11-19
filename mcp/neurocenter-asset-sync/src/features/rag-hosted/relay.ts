@@ -8,6 +8,32 @@ import {
     type IHostedRequestProfile,
 } from './profile.js';
 const budget = 1024 * 1024;
+/** Сервер кладёт код upstream-отказа в фиксированную формулировку (AD-19): «…(HTTP 400)…». */
+const UPSTREAM_CODE = /\(HTTP (\d{3})\)/;
+/** Читает тело серверного отказа (кап ~2 КиБ) для кода и worker-лога; чужое тело в HTTP-ответ не уходит (AD-19). */
+async function readUpstreamError(body: ReadableStream<Uint8Array> | null): Promise<string> {
+    if (!body) return '';
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    const limit = 2048;
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (size + value.length > limit) {
+                const remaining = limit - size;
+                if (remaining > 0) chunks.push(value.slice(0, remaining));
+                break;
+            }
+            chunks.push(value);
+            size += value.length;
+        }
+    } finally {
+        await reader.cancel().catch(() => undefined);
+    }
+    return Buffer.concat(chunks).toString('utf8');
+}
 export const hostedInstallationIdentity = (profile: IHostedRequestProfile) => ({
     kind: profile.pkg.plugin.kind,
     id: profile.pkg.plugin.id,
@@ -67,10 +93,20 @@ export async function inferHosted(
         throw new Error('Ответ модели превышает лимит.');
     }
     if (!response.ok) {
-        await response.body?.cancel();
+        const body = await readUpstreamError(response.body).catch(() => '');
+        const upstreamCode = Number(UPSTREAM_CODE.exec(body)?.[1] ?? 0) || undefined;
+        process.stderr.write(
+            'neurocenter bridge: серверная модель отказала: HTTP ' +
+                response.status +
+                (body ? ' — ' + body.slice(0, 512) : '') +
+                (upstreamCode !== undefined ? ' (upstream HTTP ' + upstreamCode + ')' : '') +
+                '\n',
+        );
         throw Object.assign(
-            new Error('Серверная модель недоступна или подключение изменилось. Проверьте модель и права на проект.'),
-            { status: response.status },
+            new Error(
+                body || 'Серверная модель недоступна или подключение изменилось. Проверьте модель и права на проект.',
+            ),
+            { status: response.status, ...(upstreamCode !== undefined ? { upstreamCode } : {}) },
         );
     }
     // Векторы ограничены числом входов и размерностью; тело читается с отдельным лимитом.
@@ -129,10 +165,10 @@ export async function createHostedRelay(profile: IHostedProfile): Promise<IHoste
     let busy = false;
     const server = http.createServer(async (req, res) => {
         const connection = structuredClone(relay.profile);
-        const send = (status: number, message: string) => {
+        const send = (status: number, message: string, code?: number) => {
             if (!res.destroyed) {
                 res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-                res.end(JSON.stringify({ error: { message } }));
+                res.end(JSON.stringify({ error: { message, ...(code !== undefined ? { code } : {}) } }));
             }
         };
         if (req.method !== 'POST' || req.url !== '/v1/embeddings') {
@@ -217,10 +253,16 @@ export async function createHostedRelay(profile: IHostedProfile): Promise<IHoste
             }
         } catch (error) {
             const status = (error as { status?: number }).status;
+            const upstreamCode = (error as { upstreamCode?: number }).upstreamCode;
             // Upstream retries HTTP 413, so rejected payloads use its permanent validation status.
             if (status === 400 || status === 413 || status === 422)
-                send(status === 413 ? 422 : status, 'Проверьте размер и формат входных текстов.');
-            else send(status === 409 ? 409 : 503, 'Модель недоступна. Проверьте подключение и настройку проекта.');
+                send(status === 413 ? 422 : status, 'Проверьте размер и формат входных текстов.', upstreamCode);
+            else
+                send(
+                    status === 409 ? 409 : 503,
+                    'Модель недоступна. Проверьте подключение и настройку проекта.',
+                    upstreamCode,
+                );
         } finally {
             res.off('close', disconnected);
             active.delete(controller);
