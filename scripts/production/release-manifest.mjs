@@ -107,6 +107,16 @@ export function validateReleaseManifest(manifest) {
         invalid();
     if (!imagePattern.test(manifest.postgresImage || '')) invalid();
     if (!imagePattern.test(manifest.nodeExporterImage || '')) invalid();
+    const monitoringImages = manifest.monitoringImages;
+    if (
+        !monitoringImages ||
+        typeof monitoringImages !== 'object' ||
+        Array.isArray(monitoringImages) ||
+        Object.keys(monitoringImages).sort().join(',') !== 'alertmanager,prometheus' ||
+        !imagePattern.test(monitoringImages.prometheus || '') ||
+        !imagePattern.test(monitoringImages.alertmanager || '')
+    )
+        invalid();
     const supply = manifest.supply;
     if (!supply || typeof supply !== 'object' || Array.isArray(supply)) invalid();
     for (const key of ['runtime', 'opencode', 'installers']) supplyEntries(supply[key], key);
@@ -129,6 +139,7 @@ export function buildReleaseManifest({
     images,
     postgresImage,
     nodeExporterImage,
+    monitoringImages,
     supply,
     migrations,
 }) {
@@ -139,6 +150,7 @@ export function buildReleaseManifest({
         images,
         postgresImage,
         nodeExporterImage,
+        monitoringImages,
         supply,
         migrations,
     });
@@ -190,6 +202,20 @@ export function verifyReleaseManifest(manifest, actuals) {
     if (expected.nodeExporterImage !== actuals?.nodeExporterImage)
         mismatches.push(
             'nodeExporterImage: ' + expected.nodeExporterImage + ' -> ' + (actuals?.nodeExporterImage ?? 'нет'),
+        );
+    if (expected.monitoringImages?.prometheus !== actuals?.monitoringImages?.prometheus)
+        mismatches.push(
+            'monitoringImages.prometheus: ' +
+                expected.monitoringImages?.prometheus +
+                ' -> ' +
+                (actuals?.monitoringImages?.prometheus ?? 'нет'),
+        );
+    if (expected.monitoringImages?.alertmanager !== actuals?.monitoringImages?.alertmanager)
+        mismatches.push(
+            'monitoringImages.alertmanager: ' +
+                expected.monitoringImages?.alertmanager +
+                ' -> ' +
+                (actuals?.monitoringImages?.alertmanager ?? 'нет'),
         );
     for (const key of ['runtime', 'opencode', 'installers', 'vendorContract']) {
         if (!isDeepStrictEqual(expected.supply[key], actuals?.supply?.[key]))
@@ -425,10 +451,18 @@ async function captureReleaseActuals({
     const nodeExporterName = config.services?.node_exporter?.image;
     if (typeof nodeExporterName !== 'string' || !nodeExporterName)
         throw new Error('В production-профиле отсутствует node_exporter');
-    const [images, postgresRaw, nodeExporterRaw] = await Promise.all([
+    const prometheusName = config.services?.prometheus?.image;
+    if (typeof prometheusName !== 'string' || !prometheusName)
+        throw new Error('В production-профиле отсутствует prometheus');
+    const alertmanagerName = config.services?.alertmanager?.image;
+    if (typeof alertmanagerName !== 'string' || !alertmanagerName)
+        throw new Error('В production-профиле отсутствует alertmanager');
+    const [images, postgresRaw, nodeExporterRaw, prometheusRaw, alertmanagerRaw] = await Promise.all([
         serviceImageIds(config),
         docker(['image', 'inspect', postgresName]),
         docker(['image', 'inspect', nodeExporterName]),
+        docker(['image', 'inspect', prometheusName]),
+        docker(['image', 'inspect', alertmanagerName]),
     ]);
     for (const service of applicationServices) {
         if (typeof images?.[service] !== 'string' || !imagePattern.test(images[service]))
@@ -450,10 +484,27 @@ async function captureReleaseActuals({
     }
     if (typeof nodeExporterImage !== 'string' || !imagePattern.test(nodeExporterImage))
         throw new Error('Не закреплён образ node_exporter');
+    let prometheusImage;
+    try {
+        prometheusImage = JSON.parse(prometheusRaw)[0]?.Id;
+    } catch {
+        prometheusImage = undefined;
+    }
+    if (typeof prometheusImage !== 'string' || !imagePattern.test(prometheusImage))
+        throw new Error('Не закреплён образ prometheus');
+    let alertmanagerImage;
+    try {
+        alertmanagerImage = JSON.parse(alertmanagerRaw)[0]?.Id;
+    } catch {
+        alertmanagerImage = undefined;
+    }
+    if (typeof alertmanagerImage !== 'string' || !imagePattern.test(alertmanagerImage))
+        throw new Error('Не закреплён образ alertmanager');
     return {
         images,
         postgresImage,
         nodeExporterImage,
+        monitoringImages: { prometheus: prometheusImage, alertmanager: alertmanagerImage },
         migrations: await inspectSchemaManifests(images, docker),
         supply: await supplyInventory(root),
     };

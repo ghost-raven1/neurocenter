@@ -1,0 +1,11 @@
+# AD-O6: alertmanager — compose-сервис (entry 12). Канал доставки и полный route — entry 13
+# (alerting: alertmanager.yml + правила + доставляющий канал, AD-O6/OP-7/OP-8). Здесь placeholder:
+# минимальный валидный конфиг, чтобы compose-сервис стартовал и отдавал /-/healthy до entry 13.
+route:
+  receiver: 'default'
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+receivers:
+  - name: 'default'

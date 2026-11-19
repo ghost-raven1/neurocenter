@@ -75,9 +75,9 @@ test('production compose совпадает с моделью окружения
     assert.deepEqual(drift, []);
     assert.deepEqual(dead.dead, []);
     assert.deepEqual(dead.noteErrors, []);
-    // Все 14 сервисов production-стека охвачены, merge-якоря и overlay развёрнуты.
+    // Все 16 сервисов production-стека охвачены, merge-якоря и overlay развёрнуты.
     assert.deepEqual(Object.keys(services).sort(), Object.keys(checked.services).sort());
-    assert.equal(Object.keys(services).length, 14);
+    assert.equal(Object.keys(services).length, 16);
     const totalEnv = Object.values(services).reduce((sum, service) => sum + Object.keys(service.env).length, 0);
     assert.ok(totalEnv >= 80, `ожидалось не менее 80 env, получено ${totalEnv}`);
     // Production-контракт required env (D2) закрыт: 0 missing (code→compose), 0 phantom, 0 noteErrors.

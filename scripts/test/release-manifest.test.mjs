@@ -22,6 +22,8 @@ import {
 
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const image = (letter) => 'sha256:' + letter.repeat(64);
+const PROMETHEUS_IMAGE = 'sha256:' + 'ac'.repeat(32);
+const ALERTMANAGER_IMAGE = 'sha256:' + 'be'.repeat(32);
 const serviceLetters = ['a', 'b', 'c', 'd', 'e', 'f', '0'];
 const driftLetters = ['1', '2', '3', '4', '5', '6', '7'];
 const serviceImages = () =>
@@ -132,7 +134,14 @@ function flowDeps({ root, directory, git, drift = false }) {
             return JSON.stringify(migrationRows(service));
         }
         if (args[0] === 'image' && args[1] === 'inspect') {
-            const id = String(args[2]).startsWith('prom/node-exporter') ? image('9') : image('8');
+            const name = String(args[2]);
+            const id = name.startsWith('prom/node-exporter')
+                ? image('9')
+                : name.startsWith('prom/prometheus')
+                  ? PROMETHEUS_IMAGE
+                  : name.startsWith('prom/alertmanager')
+                    ? ALERTMANAGER_IMAGE
+                    : image('8');
             return JSON.stringify([{ Id: id }]);
         }
         throw new Error('fixture docker: ' + args.join(' '));
@@ -153,6 +162,8 @@ function flowDeps({ root, directory, git, drift = false }) {
                 ...Object.fromEntries(applicationServices.map((service) => [service, { image: 'fixture:' + service }])),
                 postgres: { image: 'pgvector/pgvector:pg16@sha256:' + '8'.repeat(64) },
                 node_exporter: { image: 'prom/node-exporter:v1.9.1@sha256:' + '9'.repeat(64) },
+                prometheus: { image: 'prom/prometheus:v3.0.0@sha256:' + 'ac'.repeat(32) },
+                alertmanager: { image: 'prom/alertmanager:v0.32.1@sha256:' + 'be'.repeat(32) },
             },
         }),
         serviceImageIds: async () => {
@@ -180,6 +191,7 @@ test('validateReleaseManifest: полный манифест проходит, �
         images: serviceImages(),
         postgresImage: image('d'),
         nodeExporterImage: image('8'),
+        monitoringImages: { prometheus: PROMETHEUS_IMAGE, alertmanager: ALERTMANAGER_IMAGE },
         supply: {
             runtime: [],
             opencode: [],
@@ -239,6 +251,30 @@ test('validateReleaseManifest: полный манифест проходит, �
             },
         ],
         [
+            'monitoringImages.prometheus',
+            (value) => {
+                value.monitoringImages.prometheus = 'prom/prometheus:v3.0.0';
+            },
+        ],
+        [
+            'monitoringImages.alertmanager',
+            (value) => {
+                value.monitoringImages.alertmanager = 'prom/alertmanager:v0.32.1';
+            },
+        ],
+        [
+            'monitoringImages лишний ключ',
+            (value) => {
+                value.monitoringImages.extra = PROMETHEUS_IMAGE;
+            },
+        ],
+        [
+            'monitoringImages недостающий ключ',
+            (value) => {
+                delete value.monitoringImages.alertmanager;
+            },
+        ],
+        [
             'supply digest',
             (value) => {
                 value.supply.installers[0].sha256 = 'B'.repeat(64);
@@ -275,6 +311,7 @@ test('verifyReleaseManifest: пустой список при совпадени
         images: serviceImages(),
         postgresImage: image('d'),
         nodeExporterImage: image('8'),
+        monitoringImages: { prometheus: PROMETHEUS_IMAGE, alertmanager: ALERTMANAGER_IMAGE },
         supply: {
             runtime: [],
             opencode: [],
@@ -288,6 +325,7 @@ test('verifyReleaseManifest: пустой список при совпадени
     const drifted = {
         ...actuals,
         images: { ...actuals.images, frontend: image('x') },
+        monitoringImages: { prometheus: image('a'), alertmanager: ALERTMANAGER_IMAGE },
         migrations: {
             ...actuals.migrations,
             'catalog-service': [
@@ -297,9 +335,10 @@ test('verifyReleaseManifest: пустой список при совпадени
         },
     };
     const mismatches = verifyReleaseManifest(manifest, drifted);
-    assert.equal(mismatches.length, 2);
+    assert.equal(mismatches.length, 3);
     assert.ok(mismatches.some((line) => line.startsWith('images.frontend')));
     assert.ok(mismatches.some((line) => line.startsWith('migrations.catalog-service')));
+    assert.ok(mismatches.some((line) => line.startsWith('monitoringImages.prometheus')));
 });
 
 test('CLEAN_BUILD: чистый checkout записывает проверенный манифест со всеми секциями', async (t) => {
@@ -313,6 +352,7 @@ test('CLEAN_BUILD: чистый checkout записывает проверенн
     assert.deepEqual(manifest.images, serviceImages());
     assert.equal(manifest.postgresImage, image('8'));
     assert.equal(manifest.nodeExporterImage, image('9'));
+    assert.deepEqual(manifest.monitoringImages, { prometheus: PROMETHEUS_IMAGE, alertmanager: ALERTMANAGER_IMAGE });
     // EMPTY_SUPPLY: в чистом checkout архивы bridge-dist могут отсутствовать.
     assert.deepEqual(manifest.supply.runtime, []);
     assert.deepEqual(manifest.supply.opencode, []);
@@ -329,8 +369,8 @@ test('CLEAN_BUILD: чистый checkout записывает проверенн
     const info = await stat(filename);
     assert.equal(info.mode & 0o777, 0o600);
     assert.deepEqual(JSON.parse(await readFile(filename, 'utf8')), manifest);
-    // Верификация пересчитала состояние: postgres и node_exporter inspect дважды.
-    assert.equal(deps.dockerCalls.filter((args) => args[0] === 'image').length, 4);
+    // Верификация пересчитала состояние: postgres, node_exporter, prometheus, alertmanager inspect дважды.
+    assert.equal(deps.dockerCalls.filter((args) => args[0] === 'image').length, 8);
     assert.equal(deps.dockerCalls.filter((args) => args[0] === 'run').length, 6);
 });
 
@@ -535,6 +575,7 @@ test('writeReleaseManifest: закрытая атомарная запись; п
         images: serviceImages(),
         postgresImage: image('d'),
         nodeExporterImage: image('8'),
+        monitoringImages: { prometheus: PROMETHEUS_IMAGE, alertmanager: ALERTMANAGER_IMAGE },
         supply,
         migrations: migrationManifests(),
     });
@@ -550,6 +591,7 @@ test('writeReleaseManifest: закрытая атомарная запись; п
         images: serviceImages(),
         postgresImage: image('d'),
         nodeExporterImage: image('8'),
+        monitoringImages: { prometheus: PROMETHEUS_IMAGE, alertmanager: ALERTMANAGER_IMAGE },
         supply,
         migrations: migrationManifests(),
     });

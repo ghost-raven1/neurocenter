@@ -597,6 +597,48 @@
             "env": {},
             "codeRoots": [],
             "requiredEnv": {}
+        },
+        "prometheus": {
+            "image": "prom/prometheus:v3.0.0@sha256:3b9b2a15d376334da8c286d995777d3b9315aa666d2311170ada6059a517b74f",
+            "networks": ["backend"],
+            "networkMode": null,
+            "memLimit": "1g",
+            "cpus": 2,
+            "pidsLimit": 512,
+            "readOnly": false,
+            "capDrop": null,
+            "capAdd": null,
+            "seccomp": null,
+            "secrets": ["metrics_token"],
+            "ports": [],
+            "volumes": [
+                "./deploy/production/monitoring:/etc/prometheus:ro",
+                "prometheus-data:/prometheus"
+            ],
+            "env": {},
+            "codeRoots": [],
+            "requiredEnv": {}
+        },
+        "alertmanager": {
+            "image": "prom/alertmanager:v0.32.1@sha256:06a1e7960b1a68794ef943744082dc361dd352fd07ed3319ab6de3f929f38ad2",
+            "networks": ["backend"],
+            "networkMode": null,
+            "memLimit": "256m",
+            "cpus": 0.5,
+            "pidsLimit": 128,
+            "readOnly": false,
+            "capDrop": null,
+            "capAdd": null,
+            "seccomp": null,
+            "secrets": [],
+            "ports": [],
+            "volumes": [
+                "./deploy/production/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro",
+                "alertmanager-data:/alertmanager"
+            ],
+            "env": {},
+            "codeRoots": [],
+            "requiredEnv": {}
         }
     }
 }

@@ -30,6 +30,8 @@ const driftImages = () =>
     Object.fromEntries(applicationServices.map((service, index) => [service, image(driftLetters[index])]));
 const POSTGRES = image('1');
 const NODE_EXPORTER = 'sha256:' + '9a'.repeat(32);
+const PROMETHEUS = 'sha256:' + 'ac'.repeat(32);
+const ALERTMANAGER = 'sha256:' + 'be'.repeat(32);
 const migrationRows = (service) =>
     service === 'rag-sync-service'
         ? [{ scope: 'data', version: 'project-generations-1', name: 'Поколения проектов', checksum: 'c'.repeat(64) }]
@@ -56,6 +58,7 @@ function makeManifest({
     images = serviceImages(),
     postgresImage = POSTGRES,
     nodeExporterImage = NODE_EXPORTER,
+    monitoringImages = { prometheus: PROMETHEUS, alertmanager: ALERTMANAGER },
 } = {}) {
     return buildReleaseManifest({
         commit,
@@ -63,6 +66,7 @@ function makeManifest({
         images,
         postgresImage,
         nodeExporterImage,
+        monitoringImages,
         supply: supply(),
         migrations: migrationManifests(),
     });

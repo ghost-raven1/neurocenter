@@ -86,6 +86,7 @@ const expectedFiles = [
     'scripts/test/dr-evidence.test.mjs',
     'scripts/test/dr-images.test.mjs',
     'scripts/test/error-body-policy.test.mjs',
+    'scripts/test/manifest-monitoring.test.mjs',
     'scripts/test/tls-global-disable.test.mjs',
     'scripts/test/trust-device-e2e.test.mjs',
     'scripts/test/verifier-tls.test.mjs',
