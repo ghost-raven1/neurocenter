@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { estimateModelTokens } from '../model-token-quotas/quota-estimate';
 import type { IModel } from './model.interfaces';
 import type { IRemoteModelConnection } from './remote-model.interfaces';
@@ -25,6 +26,7 @@ const validVector = (vector: unknown, dimension: number | null): vector is numbe
 
 /** Клиент делает только inference зарегистрированной модели и никогда не следует редиректам. */
 export class RemoteModelClient {
+    private readonly logger = new Logger(RemoteModelClient.name);
     constructor(
         private readonly options: {
             fetch?: typeof fetch;
@@ -96,7 +98,11 @@ export class RemoteModelClient {
         const url = remoteModelBaseUrl(connection.baseUrl);
         if (connection.apiKey && (connection.apiKey.length > 8192 || /[\x00-\x20\x7f]/.test(connection.apiKey)))
             throw new RemoteModelError('authorization', 'Сохранённый ключ удалённого API некорректен.');
-        const request = () => this.request(url + route, payload, connection.apiKey, signal, connection.timeoutMs);
+        const request = () =>
+            this.request(url + route, payload, connection.apiKey, signal, connection.timeoutMs, {
+                modelId: model.id,
+                route,
+            });
         const value = await (this.options.admission
             ? this.options.admission.run(model, signal, request, () => estimateModelTokens(model, endpoint, payload))
             : request());
@@ -261,6 +267,44 @@ export class RemoteModelClient {
     private tokens(value: unknown): number | null {
         return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
     }
+
+    /** Читает тело upstream-отказа (кап ~2 КиБ), редектирует ключ и возвращает текст для лога. */
+    private async upstreamReason(response: Response, apiKey?: string): Promise<string> {
+        let text = '';
+        if (response.body) {
+            const limit = 2 * 1024;
+            const chunks: Uint8Array[] = [];
+            let size = 0;
+            try {
+                const reader = response.body.getReader();
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (size + value.length > limit) {
+                        const remaining = limit - size;
+                        if (remaining > 0) chunks.push(value.slice(0, remaining));
+                        break;
+                    }
+                    chunks.push(value);
+                    size += value.length;
+                }
+                await reader.cancel().catch(() => undefined);
+            } catch {
+                // Нечитаемое тело отказа не должно скрывать сам факт отказа (status уже зафиксирован).
+            }
+            text = Buffer.concat(chunks.map((part) => Buffer.from(part))).toString('utf8');
+        }
+        if (text && apiKey) text = text.split(apiKey).join('[REDACTED]');
+        return text;
+    }
+
+    /** Structured warn: model id + route + HTTP status + redacted body. Чужое тело в клиентский ответ не уходит (AD-19). */
+    private upstreamFailureLog(context: { modelId?: string; route?: string } | undefined, status: number, body: string): string {
+        const modelId = context?.modelId ?? '(unknown)',
+            route = context?.route ?? '(unknown)';
+        return `model=${modelId} ${route} → HTTP ${status}: ${body || '(пустое тело)'}`;
+    }
+
     private openaiVectors(value: TJson, count: number): unknown {
         if (value.object !== 'list' || !Array.isArray(value.data) || value.data.length !== count) {
             return undefined;
@@ -361,6 +405,7 @@ export class RemoteModelClient {
         apiKey?: string,
         signal?: AbortSignal,
         timeoutMs?: number,
+        context?: { modelId?: string; route?: string },
     ): Promise<TJson> {
         signal?.throwIfAborted();
         const wire = currentModelUsage().providerWire;
@@ -410,16 +455,34 @@ export class RemoteModelClient {
                 );
             }
             if (!response.ok) {
-                await response.body?.cancel();
+                const reason = await this.upstreamReason(response, currentKey);
+                this.logger.warn(this.upstreamFailureLog(context, response.status, reason));
                 if (response.status === 401 || response.status === 403) {
-                    throw new RemoteModelError('authorization', 'Удалённый API отклонил ключ или доступ к модели.');
+                    throw new RemoteModelError(
+                        'authorization',
+                        'Удалённый API отклонил ключ или доступ к модели.',
+                        response.status,
+                    );
                 }
                 if (response.status === 429) {
-                    throw new RemoteModelError('rate-limit', 'Удалённый API ограничил запросы. Повторите позже.');
+                    throw new RemoteModelError(
+                        'rate-limit',
+                        'Удалённый API ограничил запросы. Повторите позже.',
+                        response.status,
+                    );
+                }
+                if (response.status >= 400 && response.status < 500) {
+                    // 4xx-отклонение — это отказ, а не недоступность: код и формулировка сохраняются видимыми.
+                    throw new RemoteModelError(
+                        'rejected',
+                        `Удалённый API отклонил запрос (HTTP ${response.status}). Проверьте настройки подключения модели.`,
+                        response.status,
+                    );
                 }
                 const error = new RemoteModelError(
                     'unavailable',
                     `Удалённый API недоступен (HTTP ${response.status}).`,
+                    response.status,
                 );
                 throw [502, 503, 504].includes(response.status) ? markModelProviderUnavailable(error) : error;
             }

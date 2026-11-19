@@ -33,7 +33,8 @@ let temporary: string, root: string, bindingId: string, instanceId: string, pkg:
 let requests: Array<{ route: string; body: Record<string, unknown>; authorization: string | null }>,
     fail = false,
     invalid = false,
-    currentRevision = 1;
+    currentRevision = 1,
+    upstreamReject: { status: number; body: Record<string, unknown> } | null = null;
 beforeEach(async () => {
     ({ temporary, root } = await workspaceFixture());
     bindingId = await projectBindingId('test-project');
@@ -57,6 +58,7 @@ beforeEach(async () => {
     fail = false;
     invalid = false;
     currentRevision = 1;
+    upstreamReject = null;
     vi.stubGlobal(
         'fetch',
         vi.fn(async (input: Parameters<typeof fetch>[0], options?: RequestInit) => {
@@ -65,6 +67,8 @@ beforeEach(async () => {
             const body = JSON.parse(String(options?.body));
             requests.push({ route, body, authorization: new Headers(options?.headers).get('authorization') });
             if (fail) return Response.json({ message: 'private upstream detail' }, { status: 503 });
+            if (upstreamReject)
+                return Response.json(upstreamReject.body, { status: upstreamReject.status });
             if (body.expectedRevision !== undefined && body.expectedRevision !== currentRevision)
                 return Response.json({ message: 'selection changed' }, { status: 409 });
             if (route === 'embedding/context')
@@ -257,6 +261,27 @@ describe('Приватное подключение серверной моде�
         const before = requests.length;
         expect((await relayRequest('x')).status).toBe(503);
         expect(requests).toHaveLength(before);
+    });
+    it('relay поверх серверного отказа с кодом upstream (HTTP 400) выставляет error.code и пишет статус в лог', async () => {
+        await connect();
+        upstreamReject = {
+            status: 503,
+            body: { message: 'Удалённый API отклонил запрос (HTTP 400). Проверьте настройки подключения модели.' },
+        };
+        const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+        try {
+            const response = await relayRequest('x');
+            expect(response.status).toBe(503);
+            const payload = (await response.json()) as { error: { message: string; code?: number } };
+            expect(payload.error.code).toBe(400);
+            expect(payload.error.message).toBe('Модель недоступна. Проверьте подключение и настройку проекта.');
+            expect(JSON.stringify(payload)).not.toContain('Удалённый API отклонил запрос');
+            const logged = stderr.mock.calls.map((call) => String(call[0])).join('');
+            expect(logged).toContain('HTTP 503');
+            expect(logged).toContain('upstream HTTP 400');
+        } finally {
+            stderr.mockRestore();
+        }
     });
     it('restore при недоступном сервере не ждёт context и восстанавливает прежний порт', async () => {
         await connect();
