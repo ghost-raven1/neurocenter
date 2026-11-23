@@ -9,6 +9,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import type { IHostedMcpClaim, IHostedMcpSession } from './ticket';
 import { materializeArtifact } from './artifact-cache';
+import { createLogger } from '../../../../shared/logging.cjs';
+import { internalFetch } from '../../../../shared/request-context.cjs';
+
+const log = createLogger('api-gateway');
 import { validHostedMcpSession } from './ticket';
 
 /** Child MCPs inherit trusted CA/proxy settings, without provider keys or arbitrary Node preload code. */
@@ -458,7 +462,7 @@ class McpHostService {
         const cachedAt = this.authzCache.get(key);
         if (cachedAt !== undefined && now - cachedAt < this.limits.authzCacheTtlMs) return;
         try {
-            const response = await fetch(this.catalogUrl.replace(/\/+$/, '') + '/internal/mcp-host/authorize-session', {
+            const response = await internalFetch(this.catalogUrl.replace(/\/+$/, '') + '/internal/mcp-host/authorize-session', {
                 method: 'POST',
                 redirect: 'error',
                 signal: AbortSignal.any([AbortSignal.timeout(10000), ...(signal ? [signal] : [])]),
@@ -524,7 +528,7 @@ function isHostDomainError(error: unknown): error is Error & { status: number } 
  */
 function hostChannelMessage(error: unknown): string {
     if (isHostDomainError(error)) return error.message;
-    console.error('[api-gateway] mcp-host channel error:', error instanceof Error ? error.message : String(error));
+    log.error('mcp-host channel error', { err: error });
     return 'Хост MCP недоступен.';
 }
 

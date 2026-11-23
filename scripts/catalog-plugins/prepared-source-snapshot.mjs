@@ -11,7 +11,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 // Мерж 2.11: +runtime/contract-version.{cjs,d.cts} (require из runtime-artifacts.cjs в retained-closure) = 183.
 // Story 12.2: +see-image.mjs и компонент opencode-see-image (13 файлов) = 197.
 // Story res-obs/3: +quota-guard.{cjs,d.cts} (AD-D4 quota enforcement, общий для rag-sync/skills/catalog) = 199.
-export const PREPARED_SOURCE_MAX_FILES = 199;
+// Story 6.6 (epic-res-obs): +logging.cjs/.d.cts + request-context.cjs/.d.cts (AD-O1/O2) = 203.
+export const PREPARED_SOURCE_MAX_FILES = 203;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS = Object.freeze(
     [
@@ -204,6 +205,11 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
                 'v2.ts',
             ].map((name) => 'source/' + name),
         ].map((name) => 'catalog-source/components/opencode-see-image/' + name),
+        // Story 6.6 (epic-res-obs, AD-O1/O2): единая лог-схема + correlation id (runtime 6 сервисов).
+        'services/shared/logging.cjs',
+        'services/shared/logging.d.cts',
+        'services/shared/request-context.cjs',
+        'services/shared/request-context.d.cts',
         ...[
             'SOURCE.json',
             'NOTICE.md',

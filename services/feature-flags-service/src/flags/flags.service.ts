@@ -1,12 +1,12 @@
 import {
     HttpException,
     Injectable,
-    Logger,
     OnModuleDestroy,
     OnModuleInit,
     ServiceUnavailableException,
 } from '@nestjs/common';
 import { Pool } from 'pg';
+import { createLogger } from '../../../shared/logging.cjs';
 import { FlagsRepository } from './flags.repository';
 import type { IEvaluatedFeatureFlags, IFeatureFlag, IFeatureFlagList } from '../../../shared/feature-flags.cjs';
 import { evaluateFeatureFlags } from '../../../shared/feature-flags.cjs';
@@ -14,7 +14,7 @@ import { evaluateFeatureFlags } from '../../../shared/feature-flags.cjs';
 /** Настройки и аудит находятся в каталожной БД и входят в её существующую резервную копию. */
 @Injectable()
 export class FlagsService implements OnModuleInit, OnModuleDestroy {
-    private readonly logger = new Logger(FlagsService.name);
+    private readonly logger = createLogger('feature-flags-service');
     private readonly pool = new Pool({
         connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog',
         max: 3,

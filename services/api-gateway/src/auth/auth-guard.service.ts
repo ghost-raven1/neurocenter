@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import type { Request } from 'express';
 import { recordAuthFailure } from '../../../shared/observability.cjs';
+import { createLogger } from '../../../shared/logging.cjs';
+
+const log = createLogger('api-gateway');
 import type { IAuthMeResponse, IAuthPayload } from './interfaces';
 
 export type { IAuthPayload } from './interfaces';
@@ -113,16 +116,8 @@ export class AuthGuardService {
                 policies: data.policies,
             };
         } catch (error) {
-            // AD-O8: allowlist name/code/cause.code — error.message может нести URL/секреты (внутренний host:port).
-            const safe =
-                error instanceof Error
-                    ? {
-                          name: error.name,
-                          code: (error as { code?: unknown }).code,
-                          causeCode: (error as { cause?: { code?: unknown } }).cause?.code,
-                      }
-                    : { name: 'Unavailable' };
-            console.error('[api-gateway] auth check failed', safe);
+            // AD-O8: error.message не уходит — logging.cjs применяет allowlist name/code/causeCode.
+            log.error('auth check failed', { err: error });
             recordAuthFailure('api-gateway');
             throw new ServiceUnavailableException('Проверка входа временно недоступна. Повторите запрос позже.');
         }

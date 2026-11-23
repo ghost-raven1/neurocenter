@@ -4,10 +4,10 @@ import {
     ForbiddenException,
     HttpException,
     Injectable,
-    Logger,
     type OnModuleDestroy,
     type OnModuleInit,
 } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
 import { isDeepStrictEqual } from 'node:util';
 import type { IPackage } from '../catalog/bundle-package';
 import { normalizeRuntimeArtifacts } from '../../../shared/runtime-artifacts.cjs';
@@ -56,7 +56,7 @@ export class PluginAutoUpdateService implements OnModuleInit, OnModuleDestroy {
     private timer?: ReturnType<typeof setInterval>;
     private active?: Promise<void>;
     private stopped = false;
-    private readonly logger = new Logger('PluginAutoUpdates');
+    private readonly logger = createLogger('catalog-service');
     constructor(
         private readonly store: DeviceStore,
         private readonly installations: DeviceInstallations,

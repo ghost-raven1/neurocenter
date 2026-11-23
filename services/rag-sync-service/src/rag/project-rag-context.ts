@@ -1,5 +1,6 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { normalizeIndexProfile, type IIndexProfile } from '../../../shared/rag-index-contract.cjs';
+import { internalFetch } from '../../../shared/request-context.cjs';
 
 export interface IProjectRagContext {
     projectId: string;
@@ -12,7 +13,7 @@ export interface IProjectRagContext {
 /** Чтение никогда не выбирает generation локально: один authoritative pointer принадлежит каталогу. */
 export async function projectRagContext(projectId: string): Promise<IProjectRagContext> {
     const base = (process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/+$/, '');
-    const response = await fetch(`${base}/internal/project-rag/context/${encodeURIComponent(projectId)}`, {
+    const response = await internalFetch(`${base}/internal/project-rag/context/${encodeURIComponent(projectId)}`, {
         headers: { 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '' },
         signal: AbortSignal.timeout(8000),
     }).catch(() => {

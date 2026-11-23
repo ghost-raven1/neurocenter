@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
-import { Logger } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
+import { getRequestId, withRequestContext } from '../../../shared/request-context.cjs';
 import {
     archiveSkillJournal,
     confirmSkillJournal,
@@ -14,7 +15,7 @@ import type { TDeliverSkillAudit } from './skill-audit';
 
 /** Файловый outbox удаляется только после подтверждения всех стабильных UUID каталога. */
 export class SkillAuditOutbox {
-    private readonly logger = new Logger(SkillAuditOutbox.name);
+    private readonly logger = createLogger('skills-service');
     private timer?: ReturnType<typeof setInterval>;
     private delivery?: Promise<void>;
     private warned = false;
@@ -45,15 +46,19 @@ export class SkillAuditOutbox {
 
     /** Публикация файла успешна даже при недоступности каталога; готовность показывает оставшийся outbox. */
     async tryFlush(): Promise<void> {
-        try {
-            await this.flush();
-            this.warned = false;
-        } catch {
-            if (!this.warned) {
-                this.logger.warn('Сохранённые изменения скиллов ожидают подтверждения аудита.');
-                this.warned = true;
+        const job = async (): Promise<void> => {
+            try {
+                await this.flush();
+                this.warned = false;
+            } catch {
+                if (!this.warned) {
+                    this.logger.warn('Сохранённые изменения скиллов ожидают подтверждения аудита.');
+                    this.warned = true;
+                }
             }
-        }
+        };
+        // AD-O2: фоновая доставка (тик) — jobId в requestId; из запроса — унаследованный id.
+        return getRequestId() ? job() : withRequestContext('job-skills-outbox', job);
     }
 
     /** Быстрый ACK ждём до 250 мс; длинная очередь доставляется в фоне без повторной файловой записи. */

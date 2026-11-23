@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import type { Pool, PoolClient } from 'pg';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { assertInternal } from '../access/access.controller';
 import {
     canReadCommon,
@@ -147,7 +148,7 @@ export class DiscussionsPolicy {
             const token = process.env.NEUROCENTER_INTERNAL_TOKEN;
             if (!token) throw new ServiceUnavailableException('Каталог скиллов не настроен.');
             try {
-                const response = await fetch(
+                const response = await internalFetch(
                     (process.env.SKILLS_SERVICE_URL || 'http://localhost:4200').replace(/\/$/, '') + '/api/skills',
                     {
                         headers: { 'x-neurocenter-internal': token },

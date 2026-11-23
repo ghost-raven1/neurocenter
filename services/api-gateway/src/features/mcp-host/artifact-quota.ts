@@ -11,6 +11,10 @@
  * оптимизация, не источник истины); ошибки логируются как warn.
  */
 import { randomUUID } from 'node:crypto';
+import { createLogger } from '../../../../shared/logging.cjs';
+import { internalFetch } from '../../../../shared/request-context.cjs';
+
+const log = createLogger('api-gateway');
 
 /** Снимок измерения current для кэша: used-байты проекта и лимит (0 — безлимит по AD-D4). */
 export interface IArtifactQuotaSnapshot {
@@ -39,8 +43,8 @@ export async function readProjectArtifactQuota(
     projectId: string,
     options: IArtifactQuotaOptions = {},
 ): Promise<IArtifactQuotaSnapshot | null> {
-    const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-    const warn = options.warn ?? ((message: string) => console.warn(message));
+    const fetchImpl = options.fetchImpl ?? internalFetch;
+    const warn = options.warn ?? ((message: string) => log.warn(message));
     try {
         const response = await fetchImpl(`${quotaBase(options)}/internal/projects/${encodeURIComponent(projectId)}/quota-usage`, {
             method: 'GET',
@@ -72,8 +76,8 @@ export async function recordArtifactQuotaDelta(
     requestKey: string,
     options: IArtifactQuotaOptions = {},
 ): Promise<boolean> {
-    const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-    const warn = options.warn ?? ((message: string) => console.warn(message));
+    const fetchImpl = options.fetchImpl ?? internalFetch;
+    const warn = options.warn ?? ((message: string) => log.warn(message));
     try {
         const response = await fetchImpl(
             `${quotaBase(options)}/internal/projects/${encodeURIComponent(projectId)}/quota-usage`,

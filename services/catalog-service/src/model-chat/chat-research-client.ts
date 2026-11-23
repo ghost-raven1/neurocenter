@@ -1,5 +1,6 @@
 import { HttpException, ServiceUnavailableException } from '@nestjs/common';
 import { isIP } from 'node:net';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import type { IPackage } from '../catalog/bundle-package';
 
 export const RESEARCH_TOOL_NAMES = ['web_search_exa', 'web_fetch_exa'] as const;
@@ -109,7 +110,7 @@ export class ChatResearchMcpClient {
         const bounded = AbortSignal.any([signal, AbortSignal.timeout(50000)]);
         let response: Response;
         try {
-            response = await fetch(this.base + '/internal/research-mcp/' + path, {
+            response = await internalFetch(this.base + '/internal/research-mcp/' + path, {
                 method: 'POST',
                 redirect: 'error',
                 signal: bounded,

@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { internalFetch } from '../../../shared/request-context.cjs';
 
 interface IJobOperation {
     id: string;
@@ -54,7 +55,7 @@ export async function recordDeviceOperation(
 
 /** Инвалидация отправляется после фиксации данных; проекты перечитывают активные счётчики. */
 export async function notifyDeviceOperations(): Promise<void> {
-    await fetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
+    await internalFetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

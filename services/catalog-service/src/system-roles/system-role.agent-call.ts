@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { HttpException, Injectable } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
 import type { PoolClient } from 'pg';
 import { securityEvent } from '../access/security-events';
 import type { IChatAgentSnapshot } from '../model-chat/chat-group.interfaces';
@@ -31,6 +32,7 @@ const TERMINAL_RUN_STATES: readonly string[] = ['succeeded', 'awaiting_review', 
  * restart / hook failure) driven by the existing five-second sweep. Every
  * failure path yields an actionable next step (NFR-3).
  */
+const log = createLogger('catalog-service');
 @Injectable()
 export class SystemRoleAgentCall implements IProjectChatSystemCallPort {
     private readonly repository: SystemRoleRepository;
@@ -108,7 +110,7 @@ export class SystemRoleAgentCall implements IProjectChatSystemCallPort {
         } catch (e) {
             await client.query('ROLLBACK').catch(() => {});
             // Durable: the five-second reaper retries until the row completes.
-            console.error('[system-role] call delivery failed:', e);
+            log.error('system-role call delivery failed', { err: e });
         } finally {
             client.release();
         }

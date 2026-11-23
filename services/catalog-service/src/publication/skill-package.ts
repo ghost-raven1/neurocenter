@@ -1,4 +1,5 @@
 import { BadRequestException, BadGatewayException, ConflictException } from '@nestjs/common';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { renderSkillInstruction } from '../../../shared/skill-package.cjs';
 import { normalizeDependencyPins, type IDependencyPin } from '../../../shared/dependency-pins.cjs';
 import { buildPackage } from '../catalog/bundle-package';
@@ -12,7 +13,7 @@ export async function readSkillPackage(id: string, version: number) {
         id.split('/').map(encodeURIComponent).join('/') +
         '?version=' +
         version;
-    const response = await fetch(url, {
+    const response = await internalFetch(url, {
         signal: AbortSignal.timeout(10000),
         redirect: 'error',
         headers: {

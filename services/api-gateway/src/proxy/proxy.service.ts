@@ -20,6 +20,10 @@ import axios, { AxiosInstance } from 'axios';
 import type { Request, Response } from 'express';
 import { createHash } from 'node:crypto';
 import { deviceCredentialTransport } from '../security/device-credential-transport';
+import { createLogger } from '../../../shared/logging.cjs';
+import { getRequestId, newRequestId } from '../../../shared/request-context.cjs';
+
+const log = createLogger('api-gateway');
 
 import { filterResponse, IResourceClaims } from './access-response';
 import { AuthGuardService, IAuthPayload } from '../auth/auth-guard.service';
@@ -403,12 +407,11 @@ export class ProxyService {
             // AD-19: upstream 5xx — статус сохранён, body фиксированный; internal-текст
             // upstream-ошибки (hostname:port, stack) в body клиента не уходит, только в log.
             if (upstream.status >= 500) {
-                console.error(
-                    '[api-gateway] upstream 5xx:',
-                    upstream.status,
-                    upstreamRequest.url,
-                    JSON.stringify(upstream.data).slice(0, 2000),
-                );
+                log.error('upstream 5xx', {
+                    status: upstream.status,
+                    url: upstreamRequest.url,
+                    body: JSON.stringify(upstream.data).slice(0, 2000),
+                });
                 res.status(upstream.status).json(UPSTREAM_ERROR);
                 return;
             }
@@ -445,10 +448,7 @@ export class ProxyService {
             // AD-19: транспортные ошибки upstream — фиксированный body; hostname:port и детали
             // — только в server-лог. timeout — 504, соединение/DNS — 502.
             const timeout = isTransportTimeout(error);
-            console.error(
-                '[api-gateway] proxy error:',
-                error instanceof Error ? error.message : 'upstream-unavailable',
-            );
+            log.error('proxy error', { err: error, timeout });
             res.status(timeout ? 504 : 502).json(timeout ? UPSTREAM_TIMEOUT : UPSTREAM_UNAVAILABLE);
         }
     }
@@ -561,6 +561,7 @@ export class ProxyService {
                 ...(personalKeyTransfer ? { maxRedirects: 0, proxy: false as const } : {}),
                 headers: {
                     'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',
+                    'x-request-id': getRequestId() || newRequestId(),
                     ...(!publicPair || suffix === 'pair/start' ? { authorization: req.headers.authorization } : {}),
                 },
             });
@@ -573,7 +574,7 @@ export class ProxyService {
             }
             // AD-19: upstream 5xx в device-channel — статус сохранён, body фиксированный.
             if (response.status >= 500) {
-                console.error('[api-gateway] device-channel upstream 5xx:', response.status, suffix);
+                log.error('device-channel upstream 5xx', { status: response.status, suffix });
                 res.status(response.status).json(UPSTREAM_ERROR);
                 return;
             }
@@ -599,10 +600,7 @@ export class ProxyService {
                 this.live.sections(['knowledge', 'projects', 'operations', 'audit']);
             }
         } catch (error) {
-            console.error(
-                '[api-gateway] device-channel error:',
-                error instanceof Error ? error.message : 'upstream-unavailable',
-            );
+            log.error('device-channel error', { err: error });
             res.status(502).json({ code: 'upstream-unavailable', message: 'Сервис подключений недоступен.' });
         }
     }
@@ -688,6 +686,7 @@ export class ProxyService {
                         signal: abort.signal,
                         headers: {
                             'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',
+                            'x-request-id': getRequestId() || newRequestId(),
                             authorization: req.headers.authorization,
                         },
                     }),
@@ -695,10 +694,7 @@ export class ProxyService {
                 );
                 if (open()) res.status(response.status).json(response.data === '' ? null : response.data);
             } catch (error) {
-                console.error(
-                    '[api-gateway] device-channel embedding error:',
-                    error instanceof Error ? error.message : 'upstream-unavailable',
-                );
+                log.error('device-channel embedding error', { err: error });
                 if (open()) res.status(502).json({ code: 'upstream-unavailable', message: 'Сервис подключений недоступен.' });
                 else timeoutReply();
             }
@@ -730,6 +726,7 @@ export class ProxyService {
             JSON.stringify({ email: auth.email, activeRole: auth.activeRole }),
         );
         result['x-neurocenter-internal'] = process.env.NEUROCENTER_INTERNAL_TOKEN || '';
+        result['x-request-id'] = getRequestId() || newRequestId();
         if (auth.deviceId) result['x-neurocenter-device-id'] = auth.deviceId;
         result['x-bridge-policies'] = encodeURIComponent(JSON.stringify(auth.policies));
 

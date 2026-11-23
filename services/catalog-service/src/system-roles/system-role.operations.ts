@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import type { IRoleRunRow, TRoleRunState } from './system-role.interfaces';
 import type { TOperationState } from '../catalog/dto';
 
@@ -38,7 +39,7 @@ export async function projectRoleOperation(db: Pick<PoolClient, 'query'>, row: I
     );
 }
 export async function notifyRoleOperations(): Promise<void> {
-    await fetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
+    await internalFetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
         method: 'POST',
         headers: {
             'content-type': 'application/json',

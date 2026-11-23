@@ -12,6 +12,11 @@
  * идемпотентно; систематический разрыв перекрывается reconciliation story 8
  * эпика 5). Ошибки логируются как warn.
  */
+import { createLogger } from '../../../../shared/logging.cjs';
+import { internalFetch } from '../../../../shared/request-context.cjs';
+
+const log = createLogger('rag-sync-service');
+
 export interface IRagQuotaUsageRecord {
     /** project_id из карточки проекта (catalog UUID). */
     projectId: string;
@@ -45,8 +50,8 @@ export async function deliverRagQuotaUsage(
     if (records.length === 0) return 0;
     const base = (options.catalogUrl ?? process.env.CATALOG_SERVICE_URL ?? 'http://localhost:4100').replace(/\/+$/, '');
     const token = options.internalToken ?? process.env.NEUROCENTER_INTERNAL_TOKEN ?? '';
-    const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-    const warn = options.logger ?? ((message: string) => console.warn(message));
+    const fetchImpl = options.fetchImpl ?? internalFetch;
+    const warn = options.logger ?? ((message: string) => log.warn(message));
     let delivered = 0;
     for (const record of records) {
         try {

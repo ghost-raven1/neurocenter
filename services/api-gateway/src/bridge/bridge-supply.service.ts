@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { readDevBridgeRuntime } from './dev-bridge-runtime';
+import { getRequestId, newRequestId } from '../../../shared/request-context.cjs';
 import type { IBridgeArtifact, IBridgeSupply } from './bridge-supply.interfaces';
 import { matchPolicy } from '../proxy/route-policy';
 
@@ -179,7 +180,10 @@ export class BridgeSupplyService {
     }
 
     private headers(): Record<string, string> {
-        return { 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '' };
+        return {
+            'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',
+            'x-request-id': getRequestId() || newRequestId(),
+        };
     }
 
     private async stream(artifact: IBridgeArtifact, signal: AbortSignal, res: Response): Promise<void> {

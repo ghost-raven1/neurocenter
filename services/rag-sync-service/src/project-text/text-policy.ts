@@ -1,5 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { runtimeLimitPolicy } from '../../../shared/runtime-limits.cjs';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import type { ITextAdmission } from '../../../shared/project-text-knowledge.cjs';
 
 /** A new operation reads current Catalog policy; state and committed receipt reads do not depend on it. */
@@ -8,7 +9,7 @@ export async function readTextAdmission(): Promise<ITextAdmission> {
         const base = new URL(process.env.CATALOG_SERVICE_URL || 'http://localhost:4100');
         if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password)
             throw new Error('invalid configuration');
-        const response = await fetch(base.href.replace(/\/+$/, '') + '/internal/runtime-limits', {
+        const response = await internalFetch(base.href.replace(/\/+$/, '') + '/internal/runtime-limits', {
             redirect: 'error',
             headers: { 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '' },
             signal: AbortSignal.timeout(8000),

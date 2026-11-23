@@ -9,6 +9,7 @@ import {
     ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { AccessDb } from '../access/access-db';
 import { assertInternal } from '../access/access.controller';
 
@@ -42,7 +43,7 @@ export class RagQuotaPolicyController {
     private async forward(method: 'GET' | 'PATCH', body?: unknown): Promise<unknown> {
         const base = (process.env.RAG_SERVICE_URL || 'http://localhost:4300').replace(/\/+$/, '');
         try {
-            const response = await fetch(base + '/internal/platform-rag-quota', {
+            const response = await internalFetch(base + '/internal/platform-rag-quota', {
                 method,
                 headers: {
                     'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',

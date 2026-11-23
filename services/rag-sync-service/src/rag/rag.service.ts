@@ -14,6 +14,7 @@ import { ragRequestHash } from '../../../shared/rag-index-contract.cjs';
 import { projectSearchInput } from './rag-search';
 import { requireRagFeatures } from './rag-features';
 import { authorizeRagWrite } from './rag-write-authorization';
+import { internalFetch } from '../../../shared/request-context.cjs';
 
 @Injectable()
 export class RagService implements OnModuleInit, OnModuleDestroy {
@@ -233,7 +234,7 @@ export class RagService implements OnModuleInit, OnModuleDestroy {
         return this.databases.withProject(projectId, (db, id) =>
             db.generations.build(id, generation, async (texts, profile) => {
                 await requireRagFeatures(['rag_sync', 'model_hosting']);
-                const response = await fetch(base + '/internal/project-rag/reindex-embedding', {
+                const response = await internalFetch(base + '/internal/project-rag/reindex-embedding', {
                     method: 'POST',
                     headers: {
                         'content-type': 'application/json',

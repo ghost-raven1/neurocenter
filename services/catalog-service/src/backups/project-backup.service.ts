@@ -7,6 +7,7 @@ import path from 'node:path';
 import { AccessDb } from '../access/access-db';
 import { runAllBackups } from '../catalog/backup';
 import { backupDirectory, backupFailure } from './backup-policy';
+import { internalFetch } from '../../../shared/request-context.cjs';
 
 interface IProjectBackup {
     id: string;
@@ -75,7 +76,7 @@ export class ProjectBackupService implements OnModuleInit, OnModuleDestroy {
     async create(key: string): Promise<IProjectBackup> {
         const id = await this.projectId(key);
         const base = (process.env.RAG_SERVICE_URL || 'http://localhost:4300').replace(/\/$/, '');
-        const response = await fetch(`${base}/api/rag/database?projectKey=${encodeURIComponent(id)}`, {
+        const response = await internalFetch(`${base}/api/rag/database?projectKey=${encodeURIComponent(id)}`, {
             headers: { 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '' },
             signal: AbortSignal.timeout(5000),
         }).catch(() => {

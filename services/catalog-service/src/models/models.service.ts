@@ -6,6 +6,7 @@ import {
     OnApplicationShutdown,
     OnModuleInit,
 } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
 import type { Request } from 'express';
 import { AccessDb } from '../access/access-db';
 import { canReadCommon, projectLevel, type IAccessClaims } from '../access/access.model';
@@ -23,6 +24,7 @@ import { RemoteConnectionRepository } from './remote-connection.repository';
 import { isRemoteModel } from './remote-model.utils';
 import { remoteAuthMode } from '../remote-providers/remote-provider.identity';
 
+const log = createLogger('catalog-service');
 /** Реестр моделей не зависит от моста и не передаёт его установщику новые типы инструментов. */
 @Injectable()
 export class ModelsService implements OnModuleInit, OnApplicationShutdown {
@@ -175,7 +177,7 @@ export class ModelsService implements OnModuleInit, OnApplicationShutdown {
             actor,
             head,
         });
-        if (result.warning) console.warn(`[catalog-service] ${id}: ${result.warning} (PATCH model='${renamed}')`);
+        if (result.warning) log.warn('remote model name mismatch', { id, warning: result.warning, renamed });
     }
     /** Доверенные метаданные runtime фиксируются до инвалидации клиентского каталога. */
     async pinVerified(

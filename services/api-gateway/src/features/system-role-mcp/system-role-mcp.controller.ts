@@ -14,6 +14,7 @@ import {
 } from '../../../../shared/system-role-mcp.cjs';
 import type { McpHostService } from '../mcp-host/host';
 import { roleHostedPackage } from './package';
+import { internalFetch } from '../../../../shared/request-context.cjs';
 const uuid = (raw: unknown): raw is string =>
     typeof raw === 'string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(raw);
 const object = (raw: unknown): raw is Record<string, unknown> =>
@@ -35,7 +36,7 @@ export class SystemRoleMcpGatewayController {
             throw new ForbiddenException();
     }
     private async request(path: string, body: unknown, signal: AbortSignal): Promise<unknown> {
-        const response = await fetch(this.catalog + '/internal/system-role-mcp/' + path, {
+        const response = await internalFetch(this.catalog + '/internal/system-role-mcp/' + path, {
             method: 'POST',
             redirect: 'error',
             signal,
