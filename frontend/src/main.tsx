@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 
 import App from './App';
 import { store } from './store';
+import { ErrorBoundary, installErrorReporting } from './common/error-reporting';
 
 import './common/styles/app.less';
 import ruRU from 'antd/es/locale/ru_RU';
@@ -23,13 +24,19 @@ const main = (): void => {
         return;
     }
 
+    // AD-O5 (res-obs 6.11): client-репортинг ошибок (window handlers) + корневая
+    // ErrorBoundary — упавший SPA фиксируется в error-store, а не «в тишине».
+    installErrorReporting();
+
     createRoot(root as HTMLElement).render(
         <StrictMode>
             <ConfigProvider locale={ruRU}>
                 <Provider store={store}>
                     <BrowserRouter>
                         <FeatureAvailabilityProvider>
-                            <App />
+                            <ErrorBoundary>
+                                <App />
+                            </ErrorBoundary>
                         </FeatureAvailabilityProvider>
                     </BrowserRouter>
                 </Provider>

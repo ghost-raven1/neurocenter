@@ -8,6 +8,8 @@ map $uri $masked_uri {
 log_format neurocenter escape=json '{"time":"$time_iso8601","requestId":"$request_id","method":"$request_method","path":"$masked_uri","status":$status,"duration":$request_time}';
 limit_req_zone $binary_remote_addr zone=neurocenter_login:10m rate=10r/m;
 limit_req_zone $binary_remote_addr zone=neurocenter_token_exchange:10m rate=10r/m;
+# AD-O5 (6.11): client-репорт ошибок — всплеск = 429 (best-effort), не затопление error_events.
+limit_req_zone $binary_remote_addr zone=errors_client:10m rate=10r/m;
 server {
     listen 8080;
     server_name ${NEUROCENTER_HOST};
@@ -84,6 +86,17 @@ server {
     location ~ "^/api/models/[^/]+/ollama/" {
         proxy_pass http://api-gateway:4000;
         proxy_read_timeout 615s;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
+    }
+    # AD-O5 (6.11): client-репорт ошибок — отдельная зона errors_client (10r/m per IP).
+    # При 429 репорт отбрасывается (best-effort); клиент коализирует (1 репорт/мин).
+    location = /api/errors/client {
+        limit_req zone=errors_client burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://api-gateway:4000;
+        proxy_read_timeout 600s;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Request-ID $request_id;

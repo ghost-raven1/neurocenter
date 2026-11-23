@@ -65,6 +65,8 @@ export const OPERATIONS_ROUTE = 'operations';
 export const SKILLS_ROUTE = 'skills';
 export const MAINTENANCE_ROUTE = 'maintenance';
 export const AUDIT_ROUTE = 'audit';
+/** Маршрут модуля «Ошибки» (AD-O5, res-obs 6.11). */
+export const ERROR_ROUTE = 'error';
 export const ACCESS_ROUTE = 'access';
 export const RAG_ROUTE = 'rag';
 export const START_ROUTE = 'start';

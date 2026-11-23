@@ -9,6 +9,8 @@ import type {
     IAuditListParams,
     IBackupStatus,
     IBundlePackage,
+    IErrorEvent,
+    IErrorListParams,
     ILocalProjectsImportResult,
     IOperationActionResult,
     IOperationDetail,
@@ -139,6 +141,8 @@ export interface IBffApi {
     ) => Promise<IOperationActionResult>;
     /* AUDIT */
     listAudit: (params: IAuditListParams) => Promise<IPage<IAuditEvent>>;
+    /* ERRORS (AD-O5) */
+    listErrors: (params: IErrorListParams) => Promise<IPage<IErrorEvent>>;
     /* MAINTENANCE */
     getStorage: () => Promise<IStorageSummary>;
     getBackup: () => Promise<IBackupStatus>;

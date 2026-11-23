@@ -16,6 +16,7 @@ export const baseRoutes = {
     versions: '/versions',
     maintenance: '/maintenance',
     audit: '/audit',
+    error: '/error',
     modelUsage: '/model-usage',
     access: '/access',
     settings: '/settings',

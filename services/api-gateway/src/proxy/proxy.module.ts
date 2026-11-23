@@ -10,6 +10,7 @@ import { McpHostController } from '../features/mcp-host/mcp-host.controller';
 import { SecurityAuditService } from '../features/mcp-host/security-audit.service';
 import { ResearchMcpController } from '../features/research-mcp/research-mcp.controller';
 import { SystemRoleMcpGatewayController } from '../features/system-role-mcp/system-role-mcp.controller';
+import { ClientErrorController } from '../features/client-errors/client-error.controller';
 
 /**
  * Модуль: auth-guard + проксирование /api/* на каталожный microservice.
@@ -20,7 +21,7 @@ import { SystemRoleMcpGatewayController } from '../features/system-role-mcp/syst
  * scripts/test/mcp-host-route-shadowing.test.mjs.
  */
 @Module({
-    controllers: [McpHostController, ResearchMcpController, SystemRoleMcpGatewayController, ProxyController],
+    controllers: [ClientErrorController, McpHostController, ResearchMcpController, SystemRoleMcpGatewayController, ProxyController],
     providers: [
         ProxyService,
         AuthGuardService,

@@ -5,6 +5,7 @@ import Settings from './Settings';
 import Help from './Help';
 import Assets from './Assets';
 import Audit from './Audit';
+import ErrorModule from './Error';
 import ModelUsage from './ModelUsage';
 import Maintenance from './Maintenance';
 import Projects from './Projects';
@@ -25,6 +26,7 @@ export const contentModules: IModule[] = [
     Rag,
     Maintenance,
     Audit,
+    ErrorModule,
     ModelUsage,
     Access,
     Settings,

@@ -9,6 +9,8 @@ export function roleRoutes(role: string): string[] {
             'access',
             'maintenance',
             'audit',
+            // AD-O5 (res-obs 6.11): модуль «Ошибки» — только Главный админ (GET /api/errors — ta же роль).
+            'error',
             'mcp-bundles',
             'skills',
             'packages',
