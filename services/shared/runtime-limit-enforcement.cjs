@@ -231,6 +231,11 @@ const CEILING_LITERAL_ALLOWLIST = Object.freeze([
         line: 'bytes: Math.max(16 * 1024 ** 2, source.bytes * 6),',
         reason: 'RAG capacity-оценка max(16MiB, 6×JSON) — паттерн capacity.cjs, не ceiling runtime-limits',
     }),
+    Object.freeze({
+        file: 'services/rag-sync-service/src/rag/rag-generations.ts',
+        line: 'estimateBytes: Math.max(16 * 1024 ** 2, source.bytes * 6),',
+        reason: 'RAG capacity-оценка (6.3 quota, AD-D4): max(16MiB, 6×JSON) — не ceiling runtime-limits',
+    }),
 ]);
 
 module.exports = {
