@@ -527,9 +527,18 @@ test('AD-4: api-gateway hardening — pids_limit + cap_drop в compose и мод
     // AD-4 uid 1000 — либо явный useradd, либо встроенный node-пользователь официального
     // node-образа (uid/gid 1000, зафиксирован для node:*-bookworm; groupadd --gid 1000 на
     // этом базовом образе падает «GID already exists» — см. комментарий в Dockerfile).
+    // AD-OP-6: допустим также USER $SERVICE_USER при ARG SERVICE_USER=node / ARG SERVICE_UID=1000
+    // и build-time-гаранте id -u "$SERVICE_USER" | grep -qx "$SERVICE_UID" (единый паттерн всех 7
+    // app-образов, закреплён ещё и в scripts/test/non-root-user-images.test.mjs).
+    const argUidGuard =
+        /ARG SERVICE_USER=node\b/.test(dockerfile) &&
+        /ARG SERVICE_UID=1000\b/.test(dockerfile) &&
+        /id -u "\$SERVICE_USER" \| grep -qx "\$SERVICE_UID"/.test(dockerfile);
     assert.ok(
-        /useradd[^|]*--uid\s+1000\b/.test(dockerfile) || active === 'node',
-        'non-root пользователь обязан работать под uid 1000: явный useradd --uid 1000 либо встроенный node-пользователь node-образа',
+        /useradd[^|]*--uid\s+1000\b/.test(dockerfile) ||
+            active === 'node' ||
+            (active === '$SERVICE_USER' && argUidGuard),
+        'non-root пользователь обязан работать под uid 1000: явный useradd --uid 1000, встроенный node-пользователь node-образа либо USER $SERVICE_USER с ARG SERVICE_USER=node / SERVICE_UID=1000 и uid-гарантом',
     );
     assert.match(dockerfile, /chown[^|]*\/app/, 'каталог /app обязан передаваться в owner non-root пользователя');
     assert.match(

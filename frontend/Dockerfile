@@ -41,4 +41,19 @@ FROM ${NGINX_IMAGE}
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY frontend/nginx.production.conf.template /etc/neurocenter/nginx.production.conf.template
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
+# AD-OP-6: nginx master non-root (uid 1000 — единый с 6 Node-сервисами, OQ-1).
+# Alpine-базе пользователь с этим uid нужно создать явно. Порты 8080/8443 > 1024 —
+# привилегированные не нужны; если будущий edge потребует 80/443 — revert через
+# cap_add NET_BIND_SERVICE (residual зафиксирован в docs/production-setup.md).
+# pid-файл уводим из /var/run (tmpfs, не наследует owner из образа) в /var/cache/nginx;
+# grep-страх: при дрейфе базового конфига сборка падает, а не стартует с чужим pid-путём.
+ARG SERVICE_USER=node
+ARG SERVICE_UID=1000
+RUN addgroup -g "$SERVICE_UID" "$SERVICE_USER" \
+    && adduser -D -H -u "$SERVICE_UID" -G "$SERVICE_USER" -s /sbin/nologin "$SERVICE_USER" \
+    && [ "$SERVICE_UID" != "0" ] && id -u "$SERVICE_USER" | grep -qx "$SERVICE_UID" \
+    && sed -i 's|^pid[[:space:]]\+/var/run/nginx\.pid;|pid /var/cache/nginx/nginx.pid;|' /etc/nginx/nginx.conf \
+    && grep -q '^pid[[:space:]]\+/var/cache/nginx/nginx\.pid;' /etc/nginx/nginx.conf \
+    && chown -R "$SERVICE_USER:$SERVICE_USER" /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
+USER $SERVICE_USER
 EXPOSE 8080

@@ -48,6 +48,17 @@ RUN ln -s /repo/services/skills-service/node_modules /repo/services/shared/node_
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm run build
 RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; then printf 0; else printf 1; fi)" npm prune --omit=dev --no-audit --no-fund
 
+# AD-OP-6: единый non-root uid 1000 для всех 7 app-образов (OQ-1: volumes docker-managed —
+# host-конфликтов нет). node-базовый образ уже содержит пользователя node (uid/gid 1000) —
+# переиспользуем его (паттерн AD-4; groupadd --gid 1000 падает «GID already exists»).
+# Точка монтирования named volume заранее в owner: первый mount наследует владельца из образа.
+ARG SERVICE_USER=node
+ARG SERVICE_UID=1000
+RUN [ "$SERVICE_UID" != "0" ] && id -u "$SERVICE_USER" | grep -qx "$SERVICE_UID" \
+    && mkdir -p /app/data/skills /capacity \
+    && chown -R "$SERVICE_USER:$SERVICE_USER" /repo /app/data/skills /capacity
+USER $SERVICE_USER
+
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=skills-service
 

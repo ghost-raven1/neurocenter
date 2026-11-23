@@ -8,6 +8,7 @@ import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
 import { loadGatewayConfig } from './config';
 import { formatConfigReport } from '../../shared/config.cjs';
+import { assertServiceVolumes } from '../../shared/volume-ownership.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Server as IoServer } from 'socket.io';
@@ -33,6 +34,8 @@ async function bootstrap(): Promise<void> {
     // AD-9: окружение читается только через config-модуль; fail-fast с агрегированным отчётом.
     const config = loadGatewayConfig();
     console.log('[api-gateway] конфигурация:\n' + formatConfigReport(config.report));
+    // AD-OP-6 (OQ-2): fail-closed проверка владельца тома кэша MCP-host (production-only).
+    assertServiceVolumes('api-gateway', [process.env.NEUROCENTER_MCP_HOST_DIR || '/data/gateway/mcp-host']);
     const app = await NestFactory.create(AppModule, { bodyParser: false });
     app.enableShutdownHooks();
     app.use(ggufRequestTimeouts(app.getHttpServer()));
