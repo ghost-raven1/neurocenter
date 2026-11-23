@@ -114,7 +114,7 @@
             "networkMode": "none",
             "memLimit": "128m",
             "cpus": 0.25,
-            "user": "1000",
+            "user": "0",
             "pidsLimit": 32,
             "readOnly": true,
             "capDrop": ["ALL"],

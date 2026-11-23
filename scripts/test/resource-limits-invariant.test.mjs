@@ -49,7 +49,10 @@ const ALL_SERVICES = [
 ];
 /** one-shot: setup-профиль, restart 'no' — long-running-инвариант (a) на них не распространяется. */
 const ONE_SHOT = new Set(['database-init', 'bootstrap-admin']);
-/** App-сервисы — образы neurocenter/* (6.1: единый non-root uid 1000). 7 app + setup 2 + background-agent + capacity-collector. */
+/** App-сервисы — образы neurocenter/* (6.1: единый non-root uid 1000). 7 app + setup 2 + background-agent.
+ *  capacity-collector вне списка: observability-роль читает 700-каталог postgres (uid 999),
+ *  DAC_OVERRIDE для non-root неэффективен (нет file-капабилити у node + no-new-privileges),
+ *  ратифицирован user "0" — как у model-runtime (external-note в модели). */
 const APP_SERVICES = [
     'catalog-service',
     'feature-flags-service',
@@ -61,7 +64,6 @@ const APP_SERVICES = [
     'database-init',
     'bootstrap-admin',
     'background-agent',
-    'capacity-collector',
 ];
 const LONG_RUNNING = ALL_SERVICES.filter((name) => !ONE_SHOT.has(name));
 const ROOT_USERS = new Set(['0', 'root']);

@@ -35,7 +35,7 @@ Deferred, OQ-4). Инвариансы (long-running — pids_limit, app-серв
 |---|---|---|---|---|---|
 | model-runtime | 5g | 4 | 512 (ратиф.) | `0` (root — выбор образа) | cap_drop ALL |
 | postgres | 1g (ратиф.) | 2 | 256 (якорь) | `postgres` (uid 999) | entrypoint образа работает от postgres |
-| capacity-collector | 128m | 0.25 | 32 (ратиф.) | `1000` | read_only, cap_drop ALL + DAC_OVERRIDE, network_mode none |
+| capacity-collector | 128m | 0.25 | 32 (ратиф.) | `0` (root — читает 700-том postgres; DAC_OVERRIDE неэффективен для non-root) | read_only, cap_drop ALL + DAC_OVERRIDE, network_mode none |
 | database-init | 512m | — | 128 | `1000` | one-shot, profile setup |
 | bootstrap-admin | 512m | — | 128 | `1000` | one-shot, profile setup |
 | background-agent | 1g | 2 | 256 (ратиф.) | `1000` | cap_drop ALL |

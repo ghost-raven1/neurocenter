@@ -105,8 +105,13 @@ services:
     mem_limit: 128m
     cpus: 0.25
     pids_limit: 32
-    # AD-OP-6 (entry 2): тот же catalog-образ, что у app-сервисов — user 1000 (6.1).
-    user: "1000"
+    # Observability-роль (AD-D2): читает 700-каталог, принадлежащий postgres (uid 999).
+    # DAC_OVERRIDE для non-root неэффективен (у node бинаря нет file-капабилити,
+    # no-new-privileges запрещает их получение) — репо-харнес capacity-collector-stack.mjs
+    # гоняет collector именно как root; root ратифицирован как у model-runtime: сервис
+    # существует, чтобы statfs-ить тома других сервисов, non-root-постура AD-OP-6 на него
+    # не распространяется (инвариант-тест исключает его из non-root-списка).
+    user: "0"
     command: [node, /repo/services/shared/capacity-collector.cjs]
     volumes:
       - postgres:/volumes/postgres:ro
