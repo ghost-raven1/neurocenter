@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { AccessDb } from '../access/access-db';
+import { securityEvent } from '../access/security-events';
 import { runAllBackups } from '../catalog/backup';
 import { backupDirectory, backupFailure } from './backup-policy';
 import { internalFetch } from '../../../shared/request-context.cjs';
@@ -73,7 +74,7 @@ export class ProjectBackupService implements OnModuleInit, OnModuleDestroy {
         for (const backup of rows as IProjectBackup[]) if (await this.availableFile(id, backup)) results.push(backup);
         return results;
     }
-    async create(key: string): Promise<IProjectBackup> {
+    async create(key: string, actor?: string): Promise<IProjectBackup> {
         const id = await this.projectId(key);
         const base = (process.env.RAG_SERVICE_URL || 'http://localhost:4300').replace(/\/$/, '');
         const response = await internalFetch(`${base}/api/rag/database?projectKey=${encodeURIComponent(id)}`, {
@@ -112,11 +113,29 @@ export class ProjectBackupService implements OnModuleInit, OnModuleDestroy {
                     sizeBytes: file.sizeBytes,
                     createdAt: made.backupAt,
                 };
-                const saved = await this.pool.query(
-                    'INSERT INTO project_backups (id,project_id,file_name,database_name,size_bytes) VALUES ($1,$2,$3,$4,$5) RETURNING created_at',
-                    [backup.id, id, backup.fileName, databaseName, backup.sizeBytes],
-                );
-                backup.createdAt = new Date(saved.rows[0].created_at).toISOString();
+                const client = await this.pool.connect();
+                try {
+                    await client.query('BEGIN');
+                    const saved = await client.query(
+                        'INSERT INTO project_backups (id,project_id,file_name,database_name,size_bytes) VALUES ($1,$2,$3,$4,$5) RETURNING created_at',
+                        [backup.id, id, backup.fileName, databaseName, backup.sizeBytes],
+                    );
+                    // FR-903/AD-O7: создание резервной копии — admin-мутация; аудит в той же транзакции.
+                    await securityEvent(client, {
+                        actor: actor ?? 'system',
+                        action: 'project.backup.create',
+                        resourceId: id,
+                        before: null,
+                        after: { backupId: backup.id, fileName: backup.fileName, sizeBytes: backup.sizeBytes },
+                    });
+                    await client.query('COMMIT');
+                    backup.createdAt = new Date(saved.rows[0].created_at).toISOString();
+                } catch (error) {
+                    await client.query('ROLLBACK').catch(() => undefined);
+                    throw error;
+                } finally {
+                    client.release();
+                }
             },
             afterPrune: async (files) => {
                 await this.pool.query('DELETE FROM project_backups WHERE project_id=$1 AND file_name=ANY($2::text[])', [

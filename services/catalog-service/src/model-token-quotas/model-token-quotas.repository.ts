@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { authorizeAccessWrite } from '../access/access-write-policy';
+import { securityEvent } from '../access/security-events';
 import type { IModel } from '../models/model.interfaces';
 import {
     emptyQuotaCounters,
@@ -183,6 +184,14 @@ export class ModelTokenQuotasRepository {
                     'INSERT INTO model_user_token_quota_requests(writer_email,request_key,model_id,user_email,request_fingerprint,receipt) VALUES($1,$2,$3,$4,$5,$6::jsonb)',
                     [writer, input.requestKey, model.id, email, fingerprint, JSON.stringify(receipt)],
                 );
+                // FR-903/AD-O7: изменение квоты токенов — admin-мутация; safe before/after (AD-O8: без секретов).
+                await securityEvent(db, {
+                    actor: writer,
+                    action: 'model.token-quota.update',
+                    resourceId: model.id,
+                    before: { modelId: model.id, userEmail: email, revision: current?.revision ?? 0 },
+                    after: { modelId: model.id, userEmail: email, revision, enabled: input.enabled, tokenLimit: input.tokenLimit },
+                });
                 return receipt;
             },
             { signal },

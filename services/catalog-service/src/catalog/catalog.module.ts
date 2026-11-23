@@ -111,6 +111,8 @@ import { ModelTokenQuotasService } from '../model-token-quotas/model-token-quota
 import { ModelApiAdmission } from '../model-api-admission/model-api-admission';
 import { AccessController } from '../access/access.controller';
 import { AccessDb } from '../access/access-db';
+import { SecurityEventsController } from '../access/security-events.controller';
+import { SecurityEventsService } from '../access/security-events.service';
 import { DeviceStore } from '../devices/device-store';
 import { DeviceArtifacts } from '../devices/device-artifacts';
 import { DeviceJobs } from '../devices/device-jobs';
@@ -209,6 +211,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         SkillDependenciesController,
         SkillAuditController,
         AccessController,
+        SecurityEventsController,
         ProjectBackupController,
         DeviceController,
         McpHostController,
@@ -303,6 +306,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         CatalogService,
         ProjectQuotaUsageService,
         AccessDb,
+        SecurityEventsService,
         ProjectBackupService,
         DeviceStore,
         DeviceArtifacts,

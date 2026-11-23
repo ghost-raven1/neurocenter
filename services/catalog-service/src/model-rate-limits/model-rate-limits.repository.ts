@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException, ServiceUnavailableException } fro
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { authorizeAccessWrite } from '../access/access-write-policy';
+import { securityEvent } from '../access/security-events';
 import { DEFAULT_MODEL_RATE_LIMIT } from './model-rate-limits.constants';
 import {
     type IModelRateAdmission,
@@ -173,6 +174,15 @@ export class ModelRateLimitsRepository {
                     [id, current.revision + 1, input.requests, input.windowMs, input.enabled, actor],
                 )
             ).rows[0];
+            signal?.throwIfAborted();
+            // FR-903/AD-O7: изменение rate-limit — admin-мутация; safe before/after (AD-O8).
+            await securityEvent(db, {
+                actor,
+                action: 'model.rate-limit.update',
+                resourceId: id,
+                before: { modelId: id, revision: current.revision, requests: current.requests, windowMs: current.windowMs, enabled: current.enabled },
+                after: { modelId: id, revision: Number(saved.revision), requests: saved.requests, windowMs: saved.window_ms, enabled: saved.enabled },
+            });
             signal?.throwIfAborted();
             await db.query('COMMIT');
             begun = false;

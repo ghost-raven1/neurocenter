@@ -155,7 +155,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      * @param {string[] | undefined} names - выбранные имена локальных проектов.
      * @returns {Promise<ILocalProjectsImportResult>} итоги.
      */
-    async importLocalProjects(names?: string[]): Promise<ILocalProjectsImportResult> {
+    async importLocalProjects(names?: string[], actor?: string): Promise<ILocalProjectsImportResult> {
         const scan = await scanLocalAssets(undefined, undefined);
         const only = names === undefined ? null : new Set(names);
         let created: number = 0;
@@ -172,12 +172,15 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
                 existing += 1;
                 continue;
             }
-            await this.db.createProject({
-                name: entry.project,
-                externalResourceId: `local:${entry.project}`,
-                retention: 30,
-                fsRootPath: entry.path,
-            });
+            await this.db.createProject(
+                {
+                    name: entry.project,
+                    externalResourceId: `local:${entry.project}`,
+                    retention: 30,
+                    fsRootPath: entry.path,
+                },
+                actor,
+            );
             created += 1;
             createdNames.push(entry.project);
         }
@@ -216,20 +219,26 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
      * @param body — payload создания.
      * @returns {Promise<IProjectDetail>}
      */
-    createProject(body: {
-        name?: string;
-        externalResourceId?: string;
-        retention?: number;
-        quotas?: unknown;
-        fsRootPath?: string;
-    }): Promise<IProjectDetail> {
-        return this.db.createProject({
-            name: body.name,
-            externalResourceId: body.externalResourceId,
-            retention: body.retention,
-            quotas: body.quotas as IProjectDetail['quota'] | undefined,
-            fsRootPath: body.fsRootPath,
-        });
+    createProject(
+        body: {
+            name?: string;
+            externalResourceId?: string;
+            retention?: number;
+            quotas?: unknown;
+            fsRootPath?: string;
+        },
+        actor?: string,
+    ): Promise<IProjectDetail> {
+        return this.db.createProject(
+            {
+                name: body.name,
+                externalResourceId: body.externalResourceId,
+                retention: body.retention,
+                quotas: body.quotas as IProjectDetail['quota'] | undefined,
+                fsRootPath: body.fsRootPath,
+            },
+            actor,
+        );
     }
 
     /**

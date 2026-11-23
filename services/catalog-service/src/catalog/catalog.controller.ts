@@ -110,12 +110,13 @@ export class CatalogController {
      * @returns {Promise<unknown>}
      */
     @Post('projects/import-local')
-    public importLocalProjects(@Body() body: { names?: string[] }) {
-        return this.catalog.importLocalProjects(body?.names);
+    public importLocalProjects(@Req() req: IHttpRequest, @Body() body: { names?: string[] }) {
+        return this.catalog.importLocalProjects(body?.names, this.actor(req).email);
     }
 
     @Post('projects')
     public createProject(
+        @Req() req: IHttpRequest,
         @Body()
         body: {
             name?: string;
@@ -125,7 +126,10 @@ export class CatalogController {
             fsRootPath?: string;
         },
     ): Promise<IProjectDetail> {
-        return this.catalog.createProject({ ...body, fsRootPath: this.assertFsRootPath(body?.fsRootPath) });
+        return this.catalog.createProject(
+            { ...body, fsRootPath: this.assertFsRootPath(body?.fsRootPath) },
+            this.actor(req).email,
+        );
     }
 
     /**

@@ -14,6 +14,7 @@ import { normalizeProjectQuota } from './project-quota';
 import { readProjectQuotaUsage } from '../project-quota-usage/quota-usage-core';
 import { ProjectSettingsRepository, type IProjectSettingsPatch } from './project-settings-repository';
 import { deleteProjectWithAudit } from './project-deletion';
+import { securityEvent } from '../access/security-events';
 import type { IProjectRow } from './project-row';
 import { ProjectMemberRepository, projectMemberFromRow } from './project-member-repository';
 import type { IProjectMemberRow } from './project-member-repository';
@@ -214,7 +215,7 @@ export class CatalogDb {
      * @param body — `{ name, externalResourceId?, retention?, quotas? }`.
      * @returns {Promise<IProjectDetail>}
      */
-    public async createProject(body: ICreateProjectBody): Promise<IProjectDetail> {
+    public async createProject(body: ICreateProjectBody, actor?: string): Promise<IProjectDetail> {
         validateProjectSettings(body);
         const name = body.name?.trim().normalize('NFC') ?? '';
         if (!name || name.length > 128 || /[\u0000-\u001f/\\]/.test(name)) {
@@ -222,21 +223,39 @@ export class CatalogDb {
         }
         const id = `prj-${randomUUID()}`;
         const fsRoot = body.fsRootPath?.trim() || null;
-        const inserted = await this.pool.query(
-            `INSERT INTO projects (id, name, external_resource_id, state, retention, quota, rag_project_key, fs_root_path)
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            const inserted = await client.query(
+                `INSERT INTO projects (id, name, external_resource_id, state, retention, quota, rag_project_key, fs_root_path)
              VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $1, $6)
              ON CONFLICT DO NOTHING RETURNING id`,
-            [
-                id,
-                name,
-                body.externalResourceId ?? null,
-                body.retention ?? 30,
-                body.quotas ? JSON.stringify(normalizeProjectQuota(body.quotas)) : null,
-                fsRoot || null,
-            ],
-        );
-        if (!inserted.rowCount) {
-            throw new ConflictException('Проект с таким названием уже существует.');
+                [
+                    id,
+                    name,
+                    body.externalResourceId ?? null,
+                    body.retention ?? 30,
+                    body.quotas ? JSON.stringify(normalizeProjectQuota(body.quotas)) : null,
+                    fsRoot || null,
+                ],
+            );
+            if (!inserted.rowCount) {
+                throw new ConflictException('Проект с таким названием уже существует.');
+            }
+            // FR-903/AD-O7: создание проекта — admin-мутация; аудит в той же транзакции.
+            await securityEvent(client, {
+                actor: actor ?? 'system',
+                action: 'project.create',
+                resourceId: id,
+                before: null,
+                after: { id, name, retention: body.retention ?? 30, fsRoot: fsRoot !== null },
+            });
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+        } finally {
+            client.release();
         }
         const detail = await this.getProject(name);
         if (!detail) {

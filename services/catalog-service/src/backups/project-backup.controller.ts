@@ -1,5 +1,5 @@
-import { Controller, Get, Param, Post, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { Controller, Get, Param, Post, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { ProjectBackupService } from './project-backup.service';
 
 /** Разрешения на операции проверяются gateway в области конкретного проекта. */
@@ -11,8 +11,9 @@ export class ProjectBackupController {
         return this.backups.list(project);
     }
     @Post('backups')
-    create(@Param('project') project: string) {
-        return this.backups.create(project);
+    create(@Param('project') project: string, @Req() req: Request) {
+        const actor = JSON.parse(decodeURIComponent(String(req.headers['x-bridge-actor'] || '{}')));
+        return this.backups.create(project, actor?.email);
     }
     @Get('backups/:backup/download')
     async download(
