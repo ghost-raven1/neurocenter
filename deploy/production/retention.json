@@ -1272,6 +1272,18 @@
             "ddl": ["services/catalog-service/src/runtime-limits/runtime-limits.schema.ts"]
         },
         {
+            "resource": "error_events",
+            "db": "catalog",
+            "kind": "table",
+            "mode": "ttl",
+            "ttl": "90d",
+            "timeColumn": "ts",
+            "reason": "error-store (AD-O5): safe-события ошибок сервисов (crash-политика + report-точки); класс audit/usage 90d.",
+            "pruneLocation": "scripts/production/maintenance.mjs (story 8)",
+            "ownerService": "catalog-service",
+            "ddl": ["services/catalog-service/src/errors/error-events.schema.ts"]
+        },
+        {
             "resource": "feature_flags",
             "db": "catalog",
             "kind": "table",

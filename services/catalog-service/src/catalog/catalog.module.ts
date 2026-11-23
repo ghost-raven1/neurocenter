@@ -113,6 +113,8 @@ import { AccessController } from '../access/access.controller';
 import { AccessDb } from '../access/access-db';
 import { SecurityEventsController } from '../access/security-events.controller';
 import { SecurityEventsService } from '../access/security-events.service';
+import { ErrorEventsController, ErrorEventsInternalController } from '../errors/error-events.controller';
+import { ErrorEventsService } from '../errors/error-events.service';
 import { DeviceStore } from '../devices/device-store';
 import { DeviceArtifacts } from '../devices/device-artifacts';
 import { DeviceJobs } from '../devices/device-jobs';
@@ -212,6 +214,8 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         SkillAuditController,
         AccessController,
         SecurityEventsController,
+        ErrorEventsInternalController,
+        ErrorEventsController,
         ProjectBackupController,
         DeviceController,
         McpHostController,
@@ -307,6 +311,7 @@ import { SkillAuditController } from '../publication/skill-audit.controller';
         ProjectQuotaUsageService,
         AccessDb,
         SecurityEventsService,
+        ErrorEventsService,
         ProjectBackupService,
         DeviceStore,
         DeviceArtifacts,

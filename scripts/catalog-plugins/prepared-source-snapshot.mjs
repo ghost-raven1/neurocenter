@@ -12,7 +12,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 // Story 12.2: +see-image.mjs и компонент opencode-see-image (13 файлов) = 197.
 // Story res-obs/3: +quota-guard.{cjs,d.cts} (AD-D4 quota enforcement, общий для rag-sync/skills/catalog) = 199.
 // Story 6.6 (epic-res-obs): +logging.cjs/.d.cts + request-context.cjs/.d.cts (AD-O1/O2) = 203.
-export const PREPARED_SOURCE_MAX_FILES = 203;
+// Story 6.10 (epic-res-obs, AD-O5): +crash-handler.cjs/.d.cts (crash-политика 6 сервисов) = 205.
+export const PREPARED_SOURCE_MAX_FILES = 205;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS = Object.freeze(
     [
@@ -210,6 +211,9 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
         'services/shared/logging.d.cts',
         'services/shared/request-context.cjs',
         'services/shared/request-context.d.cts',
+        // Story 6.10 (epic-res-obs, AD-O5): crash-политика (import из main.ts 6 сервисов).
+        'services/shared/crash-handler.cjs',
+        'services/shared/crash-handler.d.cts',
         ...[
             'SOURCE.json',
             'NOTICE.md',

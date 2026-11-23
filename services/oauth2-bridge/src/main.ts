@@ -1,9 +1,14 @@
 import '../../shared/runtime.cjs';
-import { createObservability } from '../../shared/observability.cjs';
+import { createObservability, recordErrorEvent } from '../../shared/observability.cjs';
+import { installCrashHandler } from '../../shared/crash-handler.cjs';
+import { ErrorOutbox, deliverErrorEvents } from '../../shared/error-outbox.cjs';
+import os from 'node:os';
+import path from 'node:path';
 import { loadOauth2BridgeConfig } from './config';
 import { formatConfigReport } from '../../shared/config.cjs';
 import { createLogger } from '../../shared/logging.cjs';
-import { createRequestContextMiddleware } from '../../shared/request-context.cjs';import 'reflect-metadata';
+import { createRequestContextMiddleware } from '../../shared/request-context.cjs';
+import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 
@@ -12,6 +17,32 @@ import { browserSecurity } from './security/browser-security';
 
 /** AD-O1/O2: единый JSON-логгер и correlation id (до observability — контекст для всех middleware). */
 const log = createLogger('oauth2-bridge');
+
+/**
+ * AD-O5 (res-obs 6.10): crash-политика. Мост без прямого PG: crash-событие
+ * в file outbox, фоновая доставка в catalog POST /internal/error-events.
+ */
+const errorOutbox = new ErrorOutbox(
+    process.env.ERROR_OUTBOX_PATH
+        ? path.resolve(process.env.ERROR_OUTBOX_PATH)
+        : path.join(os.tmpdir(), 'neurocenter', 'error-outbox', 'oauth2-bridge'),
+    deliverErrorEvents,
+    { logger: log },
+);
+void errorOutbox.start().catch(() => {
+    log.warn('Error outbox: не удалось запустить фоновую доставку в каталог.');
+});
+installCrashHandler({
+    service: 'oauth2-bridge',
+    log,
+    reportError: (event) => errorOutbox.append([event]),
+    record: (level) => recordErrorEvent('oauth2-bridge', level),
+});
+for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.on(signal, () => {
+        void errorOutbox.stop().catch(() => undefined);
+    });
+}
 
 /**
  * Точка входа SSO-моста: bootstrap NestJS + cookie-parser (для OAuth state / session).

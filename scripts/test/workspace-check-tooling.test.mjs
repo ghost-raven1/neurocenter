@@ -36,6 +36,7 @@ const expectedFiles = [
     'scripts/test/bmad-openspec-main-runtime.test.mjs',
     'scripts/test/bridge-templates-resolution.test.mjs',
     'scripts/test/ceiling-identity.test.mjs',
+    'scripts/test/error-events.test.mjs',
     'scripts/test/dev-mcp-reports.test.mjs',
     'scripts/test/coverage-inventory.test.mjs',
     'scripts/test/coverage-profiles.test.mjs',
