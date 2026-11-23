@@ -21,6 +21,7 @@ import { PLATFORM_QUOTA_MIGRATION, PLATFORM_QUOTA_CACHE_MIGRATION } from '../dat
 import { deliverRagQuotaUsage } from './quota/project-quota-usage';
 import { RAG_WRITE_LOCK } from './quota/rag-quota-schema';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
+import { checkQuota } from '../../../shared/quota-guard.cjs';
 import { normalizeChunkRow, rowFingerprint } from '../../../shared/rag-index-contract.cjs';
 import { ragWriteAdmissionUncertain } from '../../../shared/rag-write-authorization.cjs';
 import {
@@ -260,6 +261,15 @@ export class RagDb {
             ...normalizeChunkRow(row),
             syncHash: write.indexProfile ? rowFingerprint(row) : null,
         }));
+        // Перезапись строк/индексов и WAL требуют запаса сверх логической квоты RAG.
+        const estimate = Math.max(16 * 1024 ** 2, Buffer.byteLength(JSON.stringify(upserts), 'utf8') * 6);
+        // Quota AD-D4: лимит retention проверяется по снимку accounting ДО любой записи;
+        // отклонённый пакет не оставляет квитанции и не меняет used.
+        try {
+            await checkQuota({ projectId: projectKey, dimension: 'retention', estimateBytes: estimate });
+        } catch (error) {
+            throw mapRagQuotaError(error);
+        }
         if (intent) {
             await this.pool.query(
                 `INSERT INTO rag_write_receipts(id,project_key,generation_id,payload_hash,state)
@@ -267,8 +277,6 @@ export class RagDb {
                 [intent.id, projectKey, generation, intent.payloadHash],
             );
         }
-        // Перезапись строк/индексов и WAL требуют запаса сверх логической квоты RAG.
-        const estimate = Math.max(16 * 1024 ** 2, Buffer.byteLength(JSON.stringify(upserts), 'utf8') * 6);
         const releaseCapacity = await reserveCapacity({ resource: 'postgres', bytes: estimate });
         const client = await this.pool.connect().catch((error) => {
             releaseCapacity();

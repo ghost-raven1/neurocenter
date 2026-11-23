@@ -1,6 +1,7 @@
 'use strict';
 const { timingSafeEqual } = require('node:crypto');
 const { renderCapacityMetrics } = require('./capacity.cjs');
+const { renderQuotaMetrics } = require('./quota-guard.cjs');
 const { renderMaintenanceMetrics } = require('./maintenance-metrics.cjs');
 
 const buckets = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30];
@@ -142,6 +143,7 @@ function createObservability({
             );
         }
         lines.push(renderCapacityMetrics());
+        lines.push(renderQuotaMetrics());
         if (service === 'catalog-service') {
             lines.push(renderMaintenanceMetrics());
         }

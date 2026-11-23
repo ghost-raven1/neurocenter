@@ -10,7 +10,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 // Entry 2.9: +deadline-ladders.mjs (tool-import/model-chat лестницы требуют его в retained-closure) = 181.
 // Мерж 2.11: +runtime/contract-version.{cjs,d.cts} (require из runtime-artifacts.cjs в retained-closure) = 183.
 // Story 12.2: +see-image.mjs и компонент opencode-see-image (13 файлов) = 197.
-export const PREPARED_SOURCE_MAX_FILES = 197;
+// Story res-obs/3: +quota-guard.{cjs,d.cts} (AD-D4 quota enforcement, общий для rag-sync/skills/catalog) = 199.
+export const PREPARED_SOURCE_MAX_FILES = 199;
 /** Public build inputs only. Adding a producer/helper requires deliberately extending this retained source set. */
 export const PREPARED_SOURCE_INPUTS = Object.freeze(
     [
@@ -158,6 +159,8 @@ export const PREPARED_SOURCE_INPUTS = Object.freeze(
         'services/catalog-service/src/publication/publication-validation.ts',
         'services/shared/tool-supply-paths.cjs',
         'services/shared/tool-supply-paths.d.cts',
+        'services/shared/quota-guard.cjs',
+        'services/shared/quota-guard.d.cts',
         'services/shared/deadline-ladders.mjs',
         'services/shared/tool-import-deadline.cjs',
         'services/shared/skill-source.mjs',

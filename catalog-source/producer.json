@@ -293,8 +293,8 @@
     },
     {
       "path": "scripts/catalog-plugins/prepared-source-snapshot.mjs",
-      "sha256": "024d33344a2bfa746ad0e1b672426dffc742f82fa83cdd2a5dc2c9cc7812982c",
-      "bytes": 13661
+      "sha256": "31a18a3aec421bbf82943356407ac8bb6efb682af7331abd1070da04709b3649",
+      "bytes": 13870
     },
     {
       "path": "scripts/catalog-plugins/publish.mjs",
@@ -745,6 +745,16 @@
       "path": "services/shared/python-source-plan.d.cts",
       "sha256": "4a98cfc23f8e5b16819db3e6a8a8ce3c89b408544fb26de646125ed28b8b6da2",
       "bytes": 440
+    },
+    {
+      "path": "services/shared/quota-guard.cjs",
+      "sha256": "6f2866f51308281a24ad9296e1d9a4c7789e9dc7b220e6577e01d49beaf6f649",
+      "bytes": 7562
+    },
+    {
+      "path": "services/shared/quota-guard.d.cts",
+      "sha256": "a963a03b8168d996358007779aedf7ec32db8a99ad126b8b06615b1cebb367b1",
+      "bytes": 2252
     },
     {
       "path": "services/shared/rag-core-contract.cjs",

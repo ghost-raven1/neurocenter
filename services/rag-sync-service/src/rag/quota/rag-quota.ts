@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, HttpException, ServiceUnavailab
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { RAG_QUOTA_SCHEMA, RAG_QUOTA_MIGRATION, RAG_WRITE_LOCK } from './rag-quota-schema';
+import { QuotaError } from '../../../../shared/quota-guard.cjs';
 
 export interface IRagQuota {
     usedBytes: number;
@@ -228,6 +229,9 @@ export async function ragQuota(
 
 /** Ошибка ограничения не теряет содержимое дельты: PostgreSQL откатывает весь пакет. */
 export function mapRagQuotaError(error: unknown): unknown {
+    if (error instanceof QuotaError) {
+        return new HttpException(error.message, error.statusCode);
+    }
     const pg = error as { code?: string; constraint?: string; detail?: string };
     if (pg?.code === '23514' && pg.constraint === 'rag_storage_quota_limit') {
         let detail: Record<string, unknown> = {};

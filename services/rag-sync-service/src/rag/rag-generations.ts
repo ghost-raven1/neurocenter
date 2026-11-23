@@ -11,6 +11,7 @@ import { RAG_WRITE_LOCK } from './quota/rag-quota-schema';
 import { readIndexManifest, requireUsableVectors, sealIndex } from './rag-index-state';
 import { buildUpsert, type IUpsertRow } from './rag-rows';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
+import { checkQuota } from '../../../shared/quota-guard.cjs';
 import { mapRagQuotaError } from './quota/rag-quota';
 import { deliverRagQuotaUsage } from './quota/project-quota-usage';
 
@@ -204,6 +205,13 @@ export class RagGenerations {
             const source = await generationSourceHash(client, project, sourceGeneration);
             if (source.hash !== expectedSource)
                 throw new ConflictException('Исходный индекс изменился. Подготовьте новый план переиндексации.');
+            // Quota AD-D4: лимит retention проверяется по снимку accounting ДО копирования
+            // строк нового поколения (та же ратифицированная оценка, что и capacity-reserve).
+            await checkQuota({
+                projectId: project,
+                dimension: 'retention',
+                estimateBytes: Math.max(16 * 1024 ** 2, source.bytes * 6),
+            });
             releaseCapacity = await reserveCapacity({
                 resource: 'postgres',
                 bytes: Math.max(16 * 1024 ** 2, source.bytes * 6),
