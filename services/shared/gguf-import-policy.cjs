@@ -38,6 +38,17 @@ function ggufImportPolicy(value = {}) {
 }
 /** AD-9: env-ликмит принимается явным параметром (инжекция из config-модуля сервиса), не из process.env. */
 function configuredGgufImportPolicy(env) {
-    return ggufImportPolicy(env.GGUF_IMPORT_POLICY_JSON ? JSON.parse(env.GGUF_IMPORT_POLICY_JSON) : {});
+    const raw = env.GGUF_IMPORT_POLICY_JSON ? JSON.parse(env.GGUF_IMPORT_POLICY_JSON) : {};
+    // AD-1: env — только bootstrap значения политики до первого чтения из DB и никогда выше дефолта.
+    for (const [key, value] of raw && typeof raw === 'object' ? Object.entries(raw) : [])
+        if (
+            typeof value === 'number' &&
+            Object.hasOwn(DEFAULT_GGUF_IMPORT_POLICY, key) &&
+            value > DEFAULT_GGUF_IMPORT_POLICY[key]
+        )
+            throw new Error(
+                `GGUF_IMPORT_POLICY_JSON.${key}: env-значение ${value} выше дефолта ${DEFAULT_GGUF_IMPORT_POLICY[key]} — env-политика не бывает выше дефолта (AD-1), fail-fast`,
+            );
+    return ggufImportPolicy(raw);
 }
 module.exports = { DEFAULT_GGUF_IMPORT_POLICY, ggufImportPolicy, configuredGgufImportPolicy };
