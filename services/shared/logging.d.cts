@@ -40,3 +40,6 @@ interface ICreateLoggerOptions {
  * requestId — из ALS-контекста request-context.cjs, вне контекста — 'background'.
  */
 export function createLogger(service: string, options?: ICreateLoggerOptions): IJsonLogger;
+
+/** Маркер requestId вне request-контекста (re-export из request-context.cjs). */
+export const BACKGROUND_REQUEST_ID: string;
