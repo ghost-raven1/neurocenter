@@ -6,6 +6,7 @@ import { IAuthMeResponse, type IBridgeUser } from './interface';
 import { SessionService } from './session.service';
 import { loginReturn } from './login-return';
 import { OAuthTransactions } from './oauth-transactions.service';
+import { SecurityAuditService } from './security-audit.service';
 
 const STATE_COOKIE = 'oauth_state';
 const SESSION_COOKIE = 'bridge_session';
@@ -21,6 +22,7 @@ export class AuthController {
         private readonly auth: AuthService,
         private readonly sessions: SessionService,
         private readonly transactions: OAuthTransactions,
+        private readonly audit: SecurityAuditService,
     ) {}
 
     private cookieOptions() {
@@ -71,6 +73,8 @@ export class AuthController {
 
         const transaction = this.transactions.consume(query.state, cookies[STATE_COOKIE]);
         if (!transaction) {
+            // AD-O8: в событии нет state/code — только безопасная причина и адрес.
+            this.audit.event({ actor: req.ip || 'unknown', action: 'login.failure', resourceId: 'login', before: null, after: { reason: 'state' } });
             res.redirect(`${panel}/?login_error=state`);
             return;
         }
@@ -78,6 +82,7 @@ export class AuthController {
         res.clearCookie(STATE_COOKIE, this.cookieOptions());
         res.clearCookie(RETURN_COOKIE, this.cookieOptions());
         if (query.error) {
+            this.audit.event({ actor: req.ip || 'unknown', action: 'login.failure', resourceId: 'login', before: null, after: { reason: 'denied' } });
             res.redirect(`${panel}/?login_error=denied`);
             return;
         }
@@ -87,11 +92,13 @@ export class AuthController {
             user = await this.auth.exchangeCode(query.code ?? '', transaction.verifier);
         } catch (error) {
             console.error('[oauth2-bridge] code exchange failed:', error instanceof Error ? error.name : 'Unavailable');
+            this.audit.event({ actor: req.ip || 'unknown', action: 'login.failure', resourceId: 'login', before: null, after: { reason: 'exchange' } });
             res.redirect(`${panel}/?login_error=exchange`);
             return;
         }
         // Storage failure is503, independent of provider exchange and before issuing a cookie.
         const token = await this.sessions.create(user);
+        this.audit.event({ actor: user.email, action: 'login.success', resourceId: user.email, before: null, after: { role: user.activeRole } });
         res.cookie(SESSION_COOKIE, token, { ...this.cookieOptions(), maxAge: this.sessions.ttlMs });
         res.redirect(panel + transaction.returnTo);
     }

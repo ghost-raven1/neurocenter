@@ -15,6 +15,7 @@ import { AccessDb } from '../access/access-db';
 import type { IAccessActor } from '../access/access.model';
 import { recordDeviceOperation, notifyDeviceOperations } from './device-operations';
 import { workspaceReport, bridgePresence } from './device-report';
+import { securityEvent } from '../access/security-events';
 
 export const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
 export interface IDevice {
@@ -113,13 +114,31 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
         if (!claims.userRoles.includes(actor.activeRole)) {
             throw new ForbiddenException('Выбранная роль больше не назначена.');
         }
-        const { rowCount } = await this.pool.query(
-            `UPDATE bridge_pairs p SET email=$2,role=$3 WHERE user_code=$1 AND expires_at>now() AND email IS NULL AND NOT issued
-            AND (resume_device_id IS NULL OR EXISTS(SELECT 1 FROM bridge_devices d WHERE d.id=p.resume_device_id AND d.email=$2 AND d.token_hash=p.resume_token_hash AND NOT d.revoked))`,
-            [userCode, actor.email, actor.activeRole],
-        );
-        if (!rowCount) {
-            throw new ConflictException('Код истёк или подключение уже подтверждено.');
+        const client = await this.pool.connect();
+        try {
+            await client.query('BEGIN');
+            const { rowCount } = await client.query(
+                `UPDATE bridge_pairs p SET email=$2,role=$3 WHERE user_code=$1 AND expires_at>now() AND email IS NULL AND NOT issued
+                AND (resume_device_id IS NULL OR EXISTS(SELECT 1 FROM bridge_devices d WHERE d.id=p.resume_device_id AND d.email=$2 AND d.token_hash=p.resume_token_hash AND NOT d.revoked))`,
+                [userCode, actor.email, actor.activeRole],
+            );
+            if (!rowCount) {
+                throw new ConflictException('Код истёк или подключение уже подтверждено.');
+            }
+            // FR-903/AD-O7: привязка нового компьютера — безопасность; код привязки в аудит не идёт (digest).
+            await securityEvent(client, {
+                actor: actor.email,
+                action: 'device.pair',
+                resourceId: digest(userCode),
+                before: null,
+                after: { email: actor.email, role: actor.activeRole },
+            });
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+        } finally {
+            client.release();
         }
         return { ok: true };
     }
@@ -280,6 +299,14 @@ export class DeviceStore implements OnModuleInit, OnModuleDestroy {
                     job.message,
                 );
             }
+            // FR-903/AD-O7: отзыв моста — безопасность; аудит атомен с мутацией (тот же транзакционный клиент).
+            await securityEvent(client, {
+                actor: actor.email,
+                action: 'device.revoke',
+                resourceId: id,
+                before: { deviceId: id, email: actor.email, revoked: false },
+                after: { deviceId: id, email: actor.email, revoked: true },
+            });
             await client.query('COMMIT');
         } catch (error) {
             await client.query('ROLLBACK').catch(() => undefined);

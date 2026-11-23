@@ -5,12 +5,13 @@ import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
 import { CatalogSessionClient } from './catalog-session.client';
 import { OAuthTransactions } from './oauth-transactions.service';
+import { SecurityAuditService } from './security-audit.service';
 
 /**
  * Модуль авторизации через Blitz (SSO/OIDC code-flow).
  */
 @Module({
     controllers: [AuthController],
-    providers: [AuthService, CatalogSessionClient, SessionService, OAuthTransactions],
+    providers: [AuthService, CatalogSessionClient, SessionService, OAuthTransactions, SecurityAuditService],
 })
 export class AuthModule {}

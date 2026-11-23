@@ -14,10 +14,12 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'node:crypto';
 import axios from 'axios';
 import type { Request, Response } from 'express';
 import { AuthGuardService } from '../../auth/auth-guard.service';
 import { McpHostService } from './host';
+import { SecurityAuditService } from './security-audit.service';
 import { issueHostedMcpTicket, verifyHostedMcpTicket, validHostedMcpSession } from './ticket';
 import { CEILING } from '../../../../shared/runtime-artifacts.cjs';
 import { isContractVersion } from '../../../../shared/runtime/contract-version.cjs';
@@ -35,6 +37,7 @@ export class McpHostController {
     constructor(
         private readonly authGuard: AuthGuardService,
         configService: ConfigService,
+        private readonly audit: SecurityAuditService,
     ) {
         this.catalogUrl = (configService.get<string>('CATALOG_SERVICE_URL') || 'http://localhost:4100').replace(
             /\/+$/,
@@ -170,6 +173,8 @@ export class McpHostController {
     async channel(@Req() req: Request, @Res() res: Response, @Param('ticket') ticket: string): Promise<void> {
         const claim = verifyHostedMcpTicket(ticket);
         if (!claim) {
+            // AD-O7: отказ верификации билета — security-событие (билет в событие не идёт).
+            this.audit.event({ actor: req.ip || 'unknown', action: 'ticket.denied', resourceId: 'mcp-ticket', before: null, after: { reason: 'invalid-ticket' } });
             res.status(401).json({
                 jsonrpc: '2.0',
                 error: { code: -32001, message: 'Соединение MCP истекло. Повторите установку.' },
@@ -177,6 +182,18 @@ export class McpHostController {
             });
             return;
         }
+        // AD-O7/AD-O8: успешная верификация — событие; eventId = hash билета
+        // (креденциал в событие не идёт; дедупликация кросс-реплик — ON CONFLICT).
+        this.audit.event({
+            eventId: createHash('sha256').update(ticket).digest('hex'),
+            actor: claim.session?.deviceId ?? 'unknown',
+            action: 'ticket.granted',
+            resourceId: claim.session?.assetId ?? 'mcp-ticket',
+            before: null,
+            after: claim.session
+                ? { deviceId: claim.session.deviceId, projectId: claim.session.projectId }
+                : null,
+        });
         try {
             await this.host.handle(claim, req, res);
         } catch {

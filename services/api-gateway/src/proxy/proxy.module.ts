@@ -6,6 +6,7 @@ import { ProxyService } from './proxy.service';
 import { ConfigService } from '@nestjs/config';
 import { McpHostService } from '../features/mcp-host/host';
 import { McpHostController } from '../features/mcp-host/mcp-host.controller';
+import { SecurityAuditService } from '../features/mcp-host/security-audit.service';
 import { ResearchMcpController } from '../features/research-mcp/research-mcp.controller';
 import { SystemRoleMcpGatewayController } from '../features/system-role-mcp/system-role-mcp.controller';
 
@@ -22,6 +23,7 @@ import { SystemRoleMcpGatewayController } from '../features/system-role-mcp/syst
     providers: [
         ProxyService,
         AuthGuardService,
+        SecurityAuditService,
         {
             provide: 'MCP_HOST',
             useFactory: (configService: ConfigService) =>

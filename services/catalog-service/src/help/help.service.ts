@@ -5,6 +5,7 @@ import { assertInternal } from '../access/access.controller';
 import { normalizeEmail, type IAccessActor } from '../access/access.model';
 import { requireFeatureEnabled } from '../features/require-feature-enabled';
 import { authorizeAccessWrite } from '../access/access-write-policy';
+import { securityEvent } from '../access/security-events';
 import { DiscussionsRepository } from '../discussions/discussions.repository';
 import { HelpFiles } from './help-files';
 
@@ -58,7 +59,21 @@ export class HelpService {
                 'help:' + this.files.directory + ':' + slug,
             ]);
             await authorizeAccessWrite(db, actor);
-            return this.files.save(slug, input.content, input.expectedRevision);
+            const article = await this.files.save(slug, input.content, input.expectedRevision);
+            // FR-903/AD-O7: правка статьи — admin-мутация; safe before/after (AD-O8: без полных текста/секретов).
+            await securityEvent(db, {
+                actor: actor.email,
+                action: 'help.article.update',
+                resourceId: slug,
+                before: { slug, expectedRevision: input.expectedRevision ?? null },
+                after: {
+                    slug,
+                    revision: article.revision,
+                    title: article.title,
+                    contentBytes: Buffer.byteLength(article.content),
+                },
+            });
+            return article;
         });
         return { ...saved, canEdit: true };
     }
