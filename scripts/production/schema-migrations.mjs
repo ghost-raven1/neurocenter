@@ -33,7 +33,8 @@ export function validateSchemaManifest(service, value) {
     return value;
 }
 
-/** Offline-проба не получает сеть, секреты, writable root или пользовательские тома. */
+/** Offline-проба не получает сеть, секреты, writable root или пользовательские тома.
+ *  Путь CLI — абсолютный, по repo-лейауту образов (d658006f): /repo/services/<svc>/dist/... */
 export async function inspectSchemaManifests(images, run) {
     const entries = await Promise.all(
         schemaServices.map(async (service) => {
@@ -57,7 +58,7 @@ export async function inspectSchemaManifests(images, run) {
                     '--entrypoint',
                     'node',
                     images[service],
-                    '/app/dist/database/migrate.cli.js',
+                    `/repo/services/${service}/dist/database/migrate.cli.js`,
                     'manifest',
                 ],
                 { timeout: 30000 },

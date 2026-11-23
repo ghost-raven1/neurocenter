@@ -57,7 +57,9 @@ test('Manifest запускается без сети из каждого точ
         assert.deepEqual(args.slice(0, 5), ['run', '--rm', '--network', 'none', '--read-only']);
         assert.ok(args.includes('--cap-drop'));
         assert.ok(args.includes('ALL'));
-        assert.deepEqual(args.slice(-2), ['/app/dist/database/migrate.cli.js', 'manifest']);
+        // repo-лейаут образов (d658006f): app-код живёт в /repo/services/<svc>/, WORKDIR того же каталога
+        const service = schemaServices.find((name) => args.includes(images[name]));
+        assert.deepEqual(args.slice(-2), [`/repo/services/${service}/dist/database/migrate.cli.js`, 'manifest']);
     }
 });
 
