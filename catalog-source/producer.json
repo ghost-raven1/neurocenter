@@ -293,8 +293,8 @@
     },
     {
       "path": "scripts/catalog-plugins/prepared-source-snapshot.mjs",
-      "sha256": "31a18a3aec421bbf82943356407ac8bb6efb682af7331abd1070da04709b3649",
-      "bytes": 13870
+      "sha256": "2890443ca4e8af15a8a61a53ea8c00a71978a90fdd66ad9e5554173f9b4f6c06",
+      "bytes": 14583
     },
     {
       "path": "scripts/catalog-plugins/publish.mjs",
@@ -652,6 +652,16 @@
       "bytes": 368
     },
     {
+      "path": "services/shared/crash-handler.cjs",
+      "sha256": "b6d9bc806af96d55cd6d79e42d60715b35f5a5203279ff5c0520f2b3670fd566",
+      "bytes": 7032
+    },
+    {
+      "path": "services/shared/crash-handler.d.cts",
+      "sha256": "3c032f7b8e1a5426edd731216472242420e6a02785e161ecc2035a713144f697",
+      "bytes": 2367
+    },
+    {
       "path": "services/shared/deadline-ladders.mjs",
       "sha256": "6d49bf2beb149d13f5fc035f3a3a2807ef42497f9049e94a233575767dcca64c",
       "bytes": 1774
@@ -670,6 +680,16 @@
       "path": "services/shared/github-release-source.cjs",
       "sha256": "2300fb607f3273dcb539d9fcbd634a3612354757482c5c1c5c3359daf1cd92c5",
       "bytes": 8657
+    },
+    {
+      "path": "services/shared/logging.cjs",
+      "sha256": "0fe44a7f799dfc5501d91ac177b0d3b679d19beb40fddd1aa4b506b7766ce4f9",
+      "bytes": 4752
+    },
+    {
+      "path": "services/shared/logging.d.cts",
+      "sha256": "597dc84f21c0f8ef88eb90ac0238dab79be85c9b74e0de713e4b337d0c02534d",
+      "bytes": 2232
     },
     {
       "path": "services/shared/opencode-rag-source.cjs",
@@ -785,6 +805,16 @@
       "path": "services/shared/repository-source.cjs",
       "sha256": "f2a9b4e06aeee44016dc714cdde1f56130950665f71b43b4acd3a8ba4de9ee4c",
       "bytes": 33302
+    },
+    {
+      "path": "services/shared/request-context.cjs",
+      "sha256": "d7062f6c6353937abd669c3eea94047af85182282d5f3c7cd402e2f2d90af87d",
+      "bytes": 4652
+    },
+    {
+      "path": "services/shared/request-context.d.cts",
+      "sha256": "4835623bc99867637c90c845882820bd161def128774a3a8ecbec4e139cdfe7f",
+      "bytes": 1984
     },
     {
       "path": "services/shared/runtime-artifacts.cjs",

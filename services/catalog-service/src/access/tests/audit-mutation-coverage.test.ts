@@ -55,6 +55,7 @@ const COVERAGE: Array<[string, { kind: "operations" | "security" | "allow"; note
     ["POST /internal/access/authorize", { kind: "allow", note: "internal access-авторизация/claims, не admin-мутация каталога" }],
     ["POST /api/platform/users", { kind: "allow", note: "internal access-авторизация/claims, не admin-мутация каталога" }],
     ["POST /internal/security-events", { kind: "security", note: "новый internal приём security_events (AD-O7); пишет security_events напрямую" }],
+    ["POST /internal/error-events", { kind: "security", note: "новый internal приём error_events (AD-O5); пишет error_events напрямую" }],
     ["POST api/projects/:projectId/agents/:agentId/readiness-trials", { kind: "allow", note: "readiness-диагностика: временные trial-записи, не конфигурация проекта" }],
     ["POST api/projects/:projectId/agents/:agentId/readiness-trials/:trialId/cancel", { kind: "allow", note: "readiness-диагностика: временные trial-записи, не конфигурация проекта" }],
     ["POST api/agents", { kind: "operations", note: "agent CRUD/connect/configure/remove пишут operations в agent.repository/project-agent.repository" }],

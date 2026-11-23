@@ -57,7 +57,7 @@ test('TTL-литералы: таблица → SQL interval и миллисек�
 
 test('Загрузка retention-таблицы: реальная таблица проходит, повреждённая — fail-closed', async () => {
     const resources = await loadRetentionTable(RETENTION_FILE);
-    assert.equal(resources.length, 167);
+    assert.equal(resources.length, 176);
     const directory = await mkdtemp(path.join(tmpdir(), 'nc-retention-'));
     try {
         const broken = [
@@ -85,15 +85,18 @@ test('Загрузка retention-таблицы: реальная таблица
     }
 });
 
-test('buildRetentionPlan: 27 catalog-таблиц в FK-порядке, rag-base и skill-versions', () => {
+test('buildRetentionPlan: 29 catalog-таблиц в FK-порядке, rag-base и skill-versions', () => {
     // Полная retention-таблица: skill-versions имеет свой pruneLocation, не maintenance-тик.
     const plan = buildRetentionPlan(retentionResources);
-    assert.equal(plan.catalog.length, 27);
+    assert.equal(plan.catalog.length, 29);
     assert.deepEqual(
         plan.catalog.slice(0, 4).map((entry) => entry.table),
         ['bridge_instance_events', 'device_model_calls', 'bridge_local_change_plans', 'bridge_jobs'],
     );
     assert.equal(plan.catalog.find((entry) => entry.table === 'security_events').interval, '90 days');
+    // AD-O5: error-store — класс audit/usage 90d, prune в maintenance-тике.
+    assert.equal(plan.catalog.find((entry) => entry.table === 'error_events').interval, '90 days');
+    assert.equal(plan.catalog.find((entry) => entry.table === 'error_events').column, 'ts');
     assert.equal(plan.catalog.find((entry) => entry.table === 'bridge_runtime_artifacts').artifacts, true);
     assert.ok(plan.catalog.every((entry) => entry.column && entry.interval));
     assert.deepEqual(

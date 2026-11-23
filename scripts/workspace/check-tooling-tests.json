@@ -48,6 +48,7 @@
     "scripts/test/dr-evidence.test.mjs",
     "scripts/test/dr-images.test.mjs",
     "scripts/test/error-body-policy.test.mjs",
+    "scripts/test/error-events.test.mjs",
     "scripts/test/manifest-monitoring.test.mjs",
     "scripts/test/mcp-host-route-shadowing.test.mjs",
     "scripts/test/npm-supply-lockfile.test.mjs",

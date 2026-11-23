@@ -105,6 +105,8 @@ import { PROJECT_CHAT_SYSTEM_CALL_SCHEMA_SQL } from '../project-chat/project-cha
 import { PROJECT_CHAT_SYSTEM_CALL_SCHEMA_ASSERT_SQL } from '../project-chat/project-chat-system-call.schema-verification';
 import { BACKGROUND_AGENT_SCHEMA_SQL } from '../background-agent/background-agent.schema';
 import { BACKGROUND_AGENT_SCHEMA_ASSERT_SQL } from '../background-agent/background-agent.schema-verification';
+import { ERROR_EVENTS_SCHEMA_SQL } from '../errors/error-events.schema';
+import { ERROR_EVENTS_SCHEMA_ASSERT_SQL } from '../errors/error-events.schema-verification';
 
 /** Historical migrations 1–5 stay byte-identical; zero supplies their former startup prerequisites. */
 export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
@@ -359,5 +361,10 @@ export const CATALOG_MIGRATIONS: readonly ICatalogMigration[] = [
         version: 62,
         name: 'server-background-agent-job-store',
         sql: BACKGROUND_AGENT_SCHEMA_SQL + '\n' + BACKGROUND_AGENT_SCHEMA_ASSERT_SQL,
+    },
+    {
+        version: 63,
+        name: 'error-events-store',
+        sql: ERROR_EVENTS_SCHEMA_SQL + '\n' + ERROR_EVENTS_SCHEMA_ASSERT_SQL,
     },
 ];

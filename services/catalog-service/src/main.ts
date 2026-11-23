@@ -5,12 +5,15 @@ import { ggufImportContentRoute } from '../../shared/gguf-import-route.cjs';
 import { ggufRequestTimeouts } from '../../shared/gguf-request-timeout.cjs';
 import { assetSourceArchiveRoute } from '../../shared/asset-source-archive-route.cjs';
 import '../../shared/runtime.cjs';
-import { createObservability } from '../../shared/observability.cjs';
+import { createObservability, recordErrorEvent } from '../../shared/observability.cjs';
+import { installCrashHandler } from '../../shared/crash-handler.cjs';
 import { loadCatalogConfig } from './config';
 import { formatConfigReport } from '../../shared/config.cjs';
 import { assertServiceVolumes } from '../../shared/volume-ownership.cjs';
 import { createLogger } from '../../shared/logging.cjs';
-import { createRequestContextMiddleware } from '../../shared/request-context.cjs';import 'reflect-metadata';
+import { createRequestContextMiddleware } from '../../shared/request-context.cjs';
+import { createPool } from './database/pool';
+import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import express from 'express';
 
@@ -18,6 +21,32 @@ import { AppModule } from './app.module';
 
 /** AD-O1/O2: единый JSON-логгер и correlation id (до observability — контекст для всех middleware). */
 const log = createLogger('catalog-service');
+
+/**
+ * AD-O5 (res-obs 6.10): crash-политика — uncaughtException/unhandledRejection →
+ * safe-лог → error-store (прямой PG, best-effort, ~2 s) → process.exit(1).
+ * «Catch и continue» запрещено: состояние процесса после uncaught неизвестно.
+ */
+const crashErrorPool = createPool(
+    { connectionString: process.env.CATALOG_PG_URL || 'postgresql://rag:rag@localhost:5432/catalog', max: 2 },
+    'crash-error-store',
+);
+installCrashHandler({
+    service: 'catalog-service',
+    log,
+    reportError: (event) =>
+        crashErrorPool.query(
+            'INSERT INTO error_events(id,service,ts,level,request_id,message,stack_hint) VALUES($1,$2,now(),$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING',
+            [event.id, event.service, event.level, event.requestId, event.message, event.stackHint],
+        ),
+    record: (level) => recordErrorEvent('catalog-service', level),
+});
+// Пул crash-пути закрывается на graceful-выходе, не удерживая event loop после Nest.
+for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.on(signal, () => {
+        void crashErrorPool.end().catch(() => undefined);
+    });
+}
 
 /**
  * Точка входа каталожного microservice.

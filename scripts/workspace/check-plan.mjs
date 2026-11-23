@@ -115,7 +115,7 @@ function toolingTestFiles(root, { readFile = (name) => fs.readFileSync(path.join
     if (
         !Array.isArray(files) ||
         !files.length ||
-        files.length > 79 || // 64→65 (entry 2.8: +route-policy-completeness), 65→66 (entry 2.11: +contract-version-handshake), 66→68 (entry 2.10: +error-body-policy, +route-shadowing-diagnostic), 68→69 (entry 4.1: +dr-images), 69→70 (entry 4.2: +dr-evidence), 70→71 (entry 4.7: +secret-rotation-runbook), 71→72 (entry 4.8: +stack-watchdog), 72→73 (entry 7: +background-agent-server), 73→74 (entry 10: +bmad-openspec-main-runtime), 74→75 (entry 11: +background-agent-crash-resilience), 75→76 (entry 2.14: +trust-device-e2e), 76→77 (ep6 entry 12: +manifest-monitoring), 77→78 (entry 6.4: +runtime-limits-enforcement), 78→79 (ep6 entry 2: +resource-limits-invariant); рост списка — только осознанно
+        files.length > 80 || // 64→65 (entry 2.8: +route-policy-completeness), 65→66 (entry 2.11: +contract-version-handshake), 66→68 (entry 2.10: +error-body-policy, +route-shadowing-diagnostic), 68→69 (entry 4.1: +dr-images), 69→70 (entry 4.2: +dr-evidence), 70→71 (entry 4.7: +secret-rotation-runbook), 71→72 (entry 4.8: +stack-watchdog), 72→73 (entry 7: +background-agent-server), 73→74 (entry 10: +bmad-openspec-main-runtime), 74→75 (entry 11: +background-agent-crash-resilience), 75→76 (entry 2.14: +trust-device-e2e), 76→77 (ep6 entry 12: +manifest-monitoring), 77→78 (entry 6.4: +runtime-limits-enforcement), 78→79 (ep6 entry 2: +resource-limits-invariant), 79→80 (ep6 6.10: +error-events); рост списка — только осознанно
         new Set(files).size !== files.length ||
         files.some(
             (file) =>

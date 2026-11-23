@@ -23,6 +23,14 @@ const services = new Set([
  */
 const authFailures = new Map();
 
+/**
+ * Счётчики error-событий (AD-O5): ключ `${service}|${level}`, фиксированное
+ * label-пространство service + level (error|critical) — как у auth-failures.
+ * Инкремент — crash-handler и явные report-точки; рендер — для алерта
+ * crash-loop (entry 13: rate(critical)).
+ */
+const errorEvents = new Map();
+
 /** Фиксированные группы исключают почту, ID проектов, коды OAuth и произвольные URL из меток. */
 function group(url) {
     const pathname = String(url || '').split('?')[0];
@@ -158,6 +166,17 @@ function createObservability({
             '# TYPE neurocenter_auth_failures_total counter',
             `neurocenter_auth_failures_total{${common}} ${authFailures.get(service) || 0}`,
         );
+        lines.push(
+            '# HELP neurocenter_error_events_total События error-store (crash-политика AD-O5 + явные отчёты).',
+            '# TYPE neurocenter_error_events_total counter',
+        );
+        for (const level of ['error', 'critical']) {
+            lines.push(
+                `neurocenter_error_events_total{${common},level="${level}"} ${
+                    errorEvents.get(service + '|' + level) || 0
+                }`,
+            );
+        }
         lines.push(renderCapacityMetrics());
         lines.push(renderQuotaMetrics());
         if (service === 'catalog-service') {
@@ -176,4 +195,16 @@ function recordAuthFailure(service) {
     authFailures.set(service, (authFailures.get(service) || 0) + 1);
 }
 
-module.exports = { createObservability, recordAuthFailure };
+/** Общий доступ к счётчику error-событий (crash-handler; AD-O5). */
+function recordErrorEvent(service, level) {
+    if (!services.has(service)) {
+        return;
+    }
+    if (level !== 'error' && level !== 'critical') {
+        throw new TypeError('recordErrorEvent: level — только "error" или "critical".');
+    }
+    const key = service + '|' + level;
+    errorEvents.set(key, (errorEvents.get(key) || 0) + 1);
+}
+
+module.exports = { createObservability, recordAuthFailure, recordErrorEvent };

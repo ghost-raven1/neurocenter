@@ -106,6 +106,8 @@ import { VERSION_RETIREMENT_SCHEMA_CONTRACT } from '../version-retirement/versio
 import { assertVersionRetirementSchema } from '../version-retirement/version-retirement.schema-verification';
 import { BACKGROUND_AGENT_SCHEMA_CONTRACT } from '../background-agent/background-agent.schema-contract';
 import { assertBackgroundAgentSchema } from '../background-agent/background-agent.schema-verification';
+import { ERROR_EVENTS_SCHEMA_CONTRACT } from '../errors/error-events.schema-contract';
+import { assertErrorEventsSchema } from '../errors/error-events.schema-verification';
 export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...REMOTE_PROVIDER_SCHEMA_CONTRACT,
     ...GGUF_RUNTIME_SCHEMA_CONTRACT,
@@ -149,6 +151,7 @@ export const CURRENT_CATALOG_SCHEMA_CONTRACT = [
     ...PROJECT_RAG_AUTHORIZATION_SCHEMA_CONTRACT,
     ...VERSION_RETIREMENT_SCHEMA_CONTRACT,
     ...BACKGROUND_AGENT_SCHEMA_CONTRACT,
+    ...ERROR_EVENTS_SCHEMA_CONTRACT,
 ];
 /** Runtime readiness checks every managed generation; historical migration assertions stay frozen. */
 export async function assertCurrentCatalogSchema(db: Pick<Pool, 'query'>): Promise<void> {
@@ -195,4 +198,5 @@ export async function assertCurrentCatalogSchema(db: Pick<Pool, 'query'>): Promi
     await assertVersionRetirementSchema(db);
     await assertProjectChatSystemCallSchema(db);
     await assertBackgroundAgentSchema(db);
+    await assertErrorEventsSchema(db);
 }

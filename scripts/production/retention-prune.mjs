@@ -77,6 +77,7 @@ export const CATALOG_PRUNE_ORDER = [
     // само-ссылка preview_id: restore-задачи сначала, потом непривязанные (два прохода)
     'web_restore_jobs',
     'security_events',
+    'error_events',
     'ai_plugin_versions',
     'bridge_runtime_artifacts',
     'bridge_source_checks',
@@ -89,6 +90,7 @@ export const CATALOG_PRUNE_ORDER = [
     'agent_catalog_versions',
     'maintenance_runs',
     'model_api_dispatch_slots',
+    'rate_limit_windows',
     'model_catalog_versions',
     'model_hosting_jobs',
     'operation_action_requests',

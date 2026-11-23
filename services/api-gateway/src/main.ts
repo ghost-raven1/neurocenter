@@ -5,12 +5,17 @@ import { ggufImportContentRoute } from '../../shared/gguf-import-route.cjs';
 import { ggufRequestTimeouts } from '../../shared/gguf-request-timeout.cjs';
 import { assetSourceArchiveRoute } from '../../shared/asset-source-archive-route.cjs';
 import '../../shared/runtime.cjs';
-import { createObservability } from '../../shared/observability.cjs';
+import { createObservability, recordErrorEvent } from '../../shared/observability.cjs';
+import { installCrashHandler } from '../../shared/crash-handler.cjs';
+import { ErrorOutbox, deliverErrorEvents } from '../../shared/error-outbox.cjs';
+import os from 'node:os';
+import path from 'node:path';
 import { loadGatewayConfig } from './config';
 import { formatConfigReport } from '../../shared/config.cjs';
 import { assertServiceVolumes } from '../../shared/volume-ownership.cjs';
 import { createLogger } from '../../shared/logging.cjs';
-import { createRequestContextMiddleware } from '../../shared/request-context.cjs';import 'reflect-metadata';
+import { createRequestContextMiddleware } from '../../shared/request-context.cjs';
+import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Server as IoServer } from 'socket.io';
 import express from 'express';
@@ -27,6 +32,32 @@ import { CATCH_ALL_ROW } from './proxy/route-policy';
 
 /** AD-O1/O2: единый JSON-логгер и correlation id (до observability — контекст для всех middleware). */
 const log = createLogger('api-gateway');
+
+/**
+ * AD-O5 (res-obs 6.10): crash-политика. Gateway без прямого PG: crash-событие
+ * в file outbox, фоновая доставка в catalog POST /internal/error-events.
+ */
+const errorOutbox = new ErrorOutbox(
+    process.env.ERROR_OUTBOX_PATH
+        ? path.resolve(process.env.ERROR_OUTBOX_PATH)
+        : path.join(os.tmpdir(), 'neurocenter', 'error-outbox', 'api-gateway'),
+    deliverErrorEvents,
+    { logger: log },
+);
+void errorOutbox.start().catch(() => {
+    log.warn('Error outbox: не удалось запустить фоновую доставку в каталог.');
+});
+installCrashHandler({
+    service: 'api-gateway',
+    log,
+    reportError: (event) => errorOutbox.append([event]),
+    record: (level) => recordErrorEvent('api-gateway', level),
+});
+for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.on(signal, () => {
+        void errorOutbox.stop().catch(() => undefined);
+    });
+}
 
 /**
  * Точка входа api-gateway: HTTP (proxy /api) + socket.io real-time (/socket.io).
