@@ -6,6 +6,9 @@ import {
     deliverSecurityEvents,
     type ISecurityOutboxEvent,
 } from '../../../../shared/security-outbox.cjs';
+import { createLogger } from '../../../../shared/logging.cjs';
+
+const log = createLogger('api-gateway');
 
 /**
  * P0-RES/AD-O7: security-события gateway (oauth2-bridge и gateway без прямого PG).
@@ -34,10 +37,8 @@ export class SecurityAuditService implements OnModuleInit, OnModuleDestroy {
     /** Файловая запись outbox не должна ломать канал; доставка — фоновая. */
     event(input: Omit<ISecurityOutboxEvent, 'eventId'> | ISecurityOutboxEvent): void {
         void this.outbox.append([input]).catch((error) => {
-            this.logger.error(
-                'Не удалось сохранить security-событие в outbox.',
-                error instanceof Error ? error.stack : String(error),
-            );
+            // AD-O8: error.stack/message не уходят — shared-логгер применяет allowlist name/code/causeCode.
+            log.error('Не удалось сохранить security-событие в outbox.', { err: error });
         });
     }
 }

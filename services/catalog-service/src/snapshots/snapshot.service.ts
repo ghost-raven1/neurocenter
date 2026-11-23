@@ -24,10 +24,12 @@ import { SnapshotSigner } from './snapshot-signature';
 import { SnapshotCommands } from './snapshot-commands';
 import { SnapshotGarbageCollector } from './snapshot-gc';
 import { SNAPSHOT_CHUNK_BYTES } from '../../../shared/project-snapshot.cjs';
+import { createLogger } from '../../../shared/logging.cjs';
 import type { ISnapshotCreate, ISnapshotRow } from './snapshot-interfaces';
 
 /** AD-D3 fallback period: one in-process GC attempt per hour (OQ-1 of story-s3-snapshot-gc). */
 const GC_FALLBACK_INTERVAL_MS = 60 * 60 * 1000;
+const log = createLogger('catalog-service');
 
 /** The HTTP service schedules work; full LanceDB verification runs outside this process. */
 @Injectable()
@@ -101,9 +103,8 @@ export class SnapshotService implements OnModuleInit, OnModuleDestroy {
                         ' snapshot(s).',
                 );
         } catch (error) {
-            this.logger.warn(
-                'Snapshot GC fallback tick failed: ' + String((error as { message?: string })?.message || error),
-            );
+            // AD-O8: error.message не уходит — shared-логгер применяет allowlist name/code/causeCode.
+            log.warn('Snapshot GC fallback tick failed', { err: error });
         } finally {
             this.gcRunning = false;
         }
