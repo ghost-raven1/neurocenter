@@ -497,9 +497,11 @@ services:
   # host-gateway: webhook_url host.docker.internal:9111 в alertmanager.yml — адрес хостового
   # receiver'а (host networking у compose-паттерна нет; extra_hosts → IP шлюза backend-моста).
   # State volume alertmanager-data (named); digest-pin — часть release manifest (AD-OP-2).
+  # Пин = manifest-list (multi-arch): per-arch digests — amd64 sha256:82c38dcc…, arm64
+  # sha256:06a1e796… (старый пин был arm64-only — на amd64 exec format error; фикс 6.12-дефекта).
   alertmanager:
     <<: *service
-    image: prom/alertmanager:v0.32.1@sha256:06a1e7960b1a68794ef943744082dc361dd352fd07ed3319ab6de3f929f38ad2
+    image: prom/alertmanager:v0.32.1@sha256:51a825c2a40acc3e338fdd00d622e01ec090f72be2b3ea46be0839cd47a4d286
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 128

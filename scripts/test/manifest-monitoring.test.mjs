@@ -113,7 +113,7 @@ test('production compose: prometheus и alertmanager в backend-сети, без
     assert.deepEqual(services.alertmanager.ports, []);
     assert.equal(services.alertmanager.networkMode, null);
     assert.deepEqual(services.alertmanager.secrets, []);
-    assert.equal(services.alertmanager.image, 'prom/alertmanager:v0.32.1@sha256:06a1e7960b1a68794ef943744082dc361dd352fd07ed3319ab6de3f929f38ad2');
+    assert.equal(services.alertmanager.image, 'prom/alertmanager:v0.32.1@sha256:51a825c2a40acc3e338fdd00d622e01ec090f72be2b3ea46be0839cd47a4d286');
     // Мониторинг не объявляет env: metrics_token — строго compose-секрет (/run/secrets/metrics_token).
     assert.deepEqual(services.prometheus.env, {});
     assert.deepEqual(services.alertmanager.env, {});
