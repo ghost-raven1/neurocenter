@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, HttpException, NotFoundException } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
 import { validateResources } from '../skills/skill-resources';
 import { SKILL_VERSIONS_DIRECTORY, versionRelative, preserveVersion, syncSkillDirectory } from './skill-versions';
@@ -18,6 +18,7 @@ import {
     withSkillScope,
 } from './skill-journal';
 import { reserveCapacity } from '../../../shared/capacity.cjs';
+import { QuotaError } from '../../../shared/quota-guard.cjs';
 import { SkillAuditOutbox } from './skill-audit-outbox';
 import {
     skillAuditEvents,
@@ -32,7 +33,7 @@ import {
 } from './skill-dependency-reservation';
 import { safeSkillDirectoryPath, skillDirectoryState, type ISkillDirectoryChange } from './skill-directory-change';
 import { assertSkillDurability } from './skill-durability';
-import { skillQuotaUsageRecords, type TDeliverSkillQuotaUsage } from './quota-usage';
+import { projectIdFromSkillPath, skillQuotaUsageRecords, type TDeliverSkillQuotaUsage, type TEnforceSkillQuota } from './quota-usage';
 
 /** Журнал файла в корне использует компонент `имя.md`, каталоги — своё имя. */
 const skillScope = (skillPath: string): string =>
@@ -51,6 +52,7 @@ export class FsSkillsStorage implements ISkillsStorage {
         private readonly reserveDependencies?: TReserveSkillDependencies,
         private readonly deliverAudit?: TDeliverSkillAudit,
         private readonly deliverQuota?: TDeliverSkillQuotaUsage,
+        private readonly enforceQuota?: TEnforceSkillQuota,
     ) {
         this.baseDir = path.resolve(baseDir);
         this.auditOutbox = new SkillAuditOutbox(this.baseDir, deliverAudit);
@@ -417,6 +419,36 @@ export class FsSkillsStorage implements ISkillsStorage {
                     purpose: 'preserve' as const,
                 })),
             );
+        }
+        // Quota AD-D4: лимит current проверяется по снимку accounting ДО журнала и записи.
+        // Оценка — Σ byteLength(after) по проекту: консервативная верхняя граница
+        // положительной дельты (атрибуция совпадает с записями учёта).
+        if (this.enforceQuota) {
+            const estimates = new Map<string, number>();
+            for (const { change, entry } of real) {
+                if (entry.after === null) {
+                    continue;
+                }
+                const metaProjectId = change.next?.meta.projectId ?? null;
+                const projectId =
+                    metaProjectId && metaProjectId.length > 0
+                        ? metaProjectId
+                        : projectIdFromSkillPath(entry.relative.slice(0, -3));
+                if (!projectId) {
+                    continue;
+                }
+                estimates.set(projectId, (estimates.get(projectId) ?? 0) + Buffer.byteLength(entry.after, 'utf8'));
+            }
+            for (const [projectId, estimateBytes] of estimates) {
+                try {
+                    await this.enforceQuota({ projectId, estimateBytes });
+                } catch (error) {
+                    if (error instanceof QuotaError) {
+                        throw new HttpException(error.message, error.statusCode);
+                    }
+                    throw error;
+                }
+            }
         }
         const events = this.deliverAudit
             ? skillAuditEvents(entries, context ?? { actor: 'skills-service', source: 'editor' })

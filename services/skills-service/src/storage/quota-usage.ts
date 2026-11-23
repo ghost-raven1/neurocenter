@@ -19,6 +19,7 @@
  * тем же requestKey идемпотентна); ошибки логируются как warn.
  */
 import { createHash } from 'node:crypto';
+import { checkQuota } from '../../../shared/quota-guard.cjs';
 import type { ISkillFileChange } from './skill-journal';
 
 export interface ISkillQuotaUsageRecord {
@@ -136,4 +137,15 @@ export async function deliverSkillQuotaUsage(
 /** Конструктор для инъекции в хранилище: best-effort доставка без проброса ошибок. */
 export const deliverSkillQuota: TDeliverSkillQuotaUsage = async (records) => {
     await deliverSkillQuotaUsage(records);
+};
+
+export type TEnforceSkillQuota = (request: { projectId: string; estimateBytes: number }) => Promise<void>;
+
+/**
+ * Enforcement (AD-D4): сравнение с currentBytesLimit ДО durable-записи.
+ * used — только из accounting каталога (измерение current); отказ — QuotaError
+ * (507 превышение / 503 лимиты не подтверждены), его маппит хранилище.
+ */
+export const enforceSkillQuota: TEnforceSkillQuota = async (request) => {
+    await checkQuota({ projectId: request.projectId, dimension: 'current', estimateBytes: request.estimateBytes });
 };

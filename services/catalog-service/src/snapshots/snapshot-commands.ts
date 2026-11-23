@@ -14,6 +14,7 @@ import {
     snapshotInput,
     snapshotUuid,
 } from './snapshot-repository';
+import { recordProjectQuotaUsage } from '../project-quota-usage/quota-usage-core';
 import { SnapshotSigner } from './snapshot-signature';
 import type { ISnapshotCommand, ISnapshotHead, ISnapshotProfileInput, ISnapshotRow } from './snapshot-interfaces';
 import { snapshotManifestHash } from '../../../shared/project-snapshot.cjs';
@@ -148,6 +149,17 @@ export class SnapshotCommands {
                     before: { status: row.status },
                     after: { status: 'REJECTED' },
                 });
+                // Accounting: публикация отменена — списываем in-flight-объём
+                // (только если опись была закреплена — иначе кредита не было;
+                // идемпотентен по id снимка).
+                const totalBytes = Number(row.total_bytes ?? 0);
+                if (Number.isSafeInteger(totalBytes) && totalBytes > 0) {
+                    await recordProjectQuotaUsage(client, projectId, {
+                        dimension: 'staging',
+                        deltaBytes: -totalBytes,
+                        requestKey: `snapshot-rejected:${id}`,
+                    });
+                }
                 return { snapshotId: id, status: 'REJECTED' };
             },
         );

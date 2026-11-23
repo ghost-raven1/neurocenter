@@ -1,15 +1,18 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import type { IAccessActor } from '../access/access.model';
 import { securityEvent } from '../access/security-events';
 import { snapshotProject } from './snapshot-auth';
+import { normalizeProjectQuota } from '../catalog/project-quota';
+import { recordProjectQuotaUsage } from '../project-quota-usage/quota-usage-core';
 import {
     normalizeSnapshotManifest,
     snapshotManifestHash,
     snapshotCanonicalJson,
     type ISnapshotManifest,
 } from '../../../shared/project-snapshot.cjs';
+import { decideQuota, rejectQuota, QuotaError } from '../../../shared/quota-guard.cjs';
 import type {
     ISnapshotCreate,
     ISnapshotHead,
@@ -400,45 +403,87 @@ export class SnapshotRepository {
             maximum = Number(process.env.SNAPSHOT_MAX_BYTES || 16 * 1024 ** 3);
         if (!Number.isSafeInteger(maximum) || maximum < 1 || bytes > maximum)
             throw new BadRequestException('Снимок превышает настроенный лимит размера.');
-        return this.transaction(projectId, actor, 3, async (client) => {
-            const row = await this.row(client, projectId, id, true);
-            if (row.status !== 'UPLOADING' || row.email !== actor.email)
-                throw new ConflictException('Публикация закрыта или принадлежит другому пользователю.');
-            if (row.manifest_sha256 && row.manifest_sha256 !== hash)
-                throw new ConflictException(
-                    'Опись уже закреплена: изменившийся индекс нужно опубликовать новым снимком.',
+        try {
+            return await this.transaction(projectId, actor, 3, async (client, project) => {
+                const row = await this.row(client, projectId, id, true);
+                if (row.status !== 'UPLOADING' || row.email !== actor.email)
+                    throw new ConflictException('Публикация закрыта или принадлежит другому пользователю.');
+                if (row.manifest_sha256 && row.manifest_sha256 !== hash)
+                    throw new ConflictException(
+                        'Опись уже закреплена: изменившийся индекс нужно опубликовать новым снимком.',
+                    );
+                const retained = Number(
+                    (
+                        await client.query(
+                            "SELECT COALESCE(sum(total_bytes),0)::text AS bytes FROM project_snapshots WHERE project_id=$1 AND id<>$2 AND status<>'DELETED'",
+                            [projectId, id],
+                        )
+                    ).rows[0].bytes,
                 );
-            const retained = Number(
-                (
-                    await client.query(
-                        "SELECT COALESCE(sum(total_bytes),0)::text AS bytes FROM project_snapshots WHERE project_id=$1 AND id<>$2 AND status<>'DELETED'",
-                        [projectId, id],
-                    )
-                ).rows[0].bytes,
-            );
-            const quota = Number(process.env.SNAPSHOT_PROJECT_MAX_BYTES || 64 * 1024 ** 3);
-            if (!Number.isSafeInteger(quota) || retained + bytes > quota)
-                throw new ConflictException('Лимит истории снимков проекта превышен.');
-            await client.query(
-                'UPDATE project_snapshots SET manifest=$2,manifest_sha256=$3,total_bytes=$4 WHERE id=$1',
-                [id, JSON.stringify(manifest), hash, bytes],
-            );
-            await client.query(
-                `INSERT INTO project_snapshot_blob_refs(snapshot_id,project_id,sha256,bytes)
+                const quota = Number(process.env.SNAPSHOT_PROJECT_MAX_BYTES || 64 * 1024 ** 3);
+                if (!Number.isSafeInteger(quota) || retained + bytes > quota)
+                    throw new ConflictException('Лимит истории снимков проекта превышен.');
+                // Quota AD-D4 (OQ-1): staging-измерение — in-flight-объём публикации
+                // проверяется против stagingBytesLimit ДО фиксации описи. In-process
+                // проверка: лимит из projects.quota (строка уже FOR UPDATE), used —
+                // из accounting на том же соединении.
+                const projectQuota = normalizeProjectQuota(project.quota);
+                if (projectQuota.stagingBytesLimit > 0 && bytes > 0) {
+                    const usageRow = (
+                        await client.query(
+                            "SELECT used_bytes FROM project_quota_usage WHERE project_id=$1 AND dimension='staging'",
+                            [projectId],
+                        )
+                    ).rows[0];
+                    const used = Number(usageRow?.used_bytes ?? 0);
+                    const decision = decideQuota({
+                        used,
+                        limit: projectQuota.stagingBytesLimit,
+                        estimateBytes: bytes,
+                    });
+                    if (!decision.allowed) {
+                        rejectQuota('staging', 'exceeded', {
+                            projectId,
+                            used,
+                            limit: projectQuota.stagingBytesLimit,
+                            estimateBytes: bytes,
+                        });
+                    }
+                }
+                await client.query(
+                    'UPDATE project_snapshots SET manifest=$2,manifest_sha256=$3,total_bytes=$4 WHERE id=$1',
+                    [id, JSON.stringify(manifest), hash, bytes],
+                );
+                await client.query(
+                    `INSERT INTO project_snapshot_blob_refs(snapshot_id,project_id,sha256,bytes)
                 SELECT $1,$2,c->>'sha256',(c->>'size')::bigint FROM jsonb_array_elements($3::jsonb->'files') f CROSS JOIN LATERAL jsonb_array_elements(f->'chunks') c
                 ON CONFLICT(snapshot_id,sha256) DO NOTHING`,
-                [id, projectId, JSON.stringify(manifest)],
-            );
-            const missing = (
-                await client.query<{ sha256: string; size: number }>(
-                    `SELECT r.sha256,r.bytes::float8 AS size FROM project_snapshot_blob_refs r
+                    [id, projectId, JSON.stringify(manifest)],
+                );
+                // Accounting: in-flight-объём публикации (кредит; идемпотентен по id снимка).
+                if (bytes > 0) {
+                    await recordProjectQuotaUsage(client, projectId, {
+                        dimension: 'staging',
+                        deltaBytes: bytes,
+                        requestKey: `snapshot-staging:${id}`,
+                    });
+                }
+                const missing = (
+                    await client.query<{ sha256: string; size: number }>(
+                        `SELECT r.sha256,r.bytes::float8 AS size FROM project_snapshot_blob_refs r
                 LEFT JOIN project_snapshot_blobs b ON b.project_id=r.project_id AND b.sha256=r.sha256 AND b.bytes=r.bytes AND b.state='LIVE'
                 WHERE r.snapshot_id=$1 AND b.sha256 IS NULL ORDER BY r.sha256`,
-                    [id],
-                )
-            ).rows;
-            return { manifestSha256: hash, missing };
-        });
+                        [id],
+                    )
+                ).rows;
+                return { manifestSha256: hash, missing };
+            });
+        } catch (error) {
+            if (error instanceof QuotaError) {
+                throw new HttpException(error.message, error.statusCode);
+            }
+            throw error;
+        }
     }
     async finishUpload(
         projectId: string,
@@ -493,6 +538,16 @@ export class SnapshotRepository {
                 before: { status: 'VERIFYING' },
                 after: { status: 'VERIFIED', sha256: row.manifest_sha256 },
             });
+            // Accounting: публикация больше не in-flight — списываем staging-объём
+            // (кредит был при фиксации описи; идемпотентен по id снимка).
+            const totalBytes = Number(row.total_bytes ?? 0);
+            if (Number.isSafeInteger(totalBytes) && totalBytes > 0) {
+                await recordProjectQuotaUsage(client, row.project_id, {
+                    dimension: 'staging',
+                    deltaBytes: -totalBytes,
+                    requestKey: `snapshot-verified:${id}`,
+                });
+            }
         });
     }
 }

@@ -9,7 +9,7 @@ import { SkillsService } from './skills.service';
 import { SkillDependenciesController } from './skill-dependencies.controller';
 import { deliverSkillAudit } from '../storage/skill-audit';
 import { reserveSkillDependencies } from '../storage/skill-dependency-reservation';
-import { deliverSkillQuota } from '../storage/quota-usage';
+import { deliverSkillQuota, enforceSkillQuota } from '../storage/quota-usage';
 import { SkillAssetImportController } from './asset-import.controller';
 import { InternalProjectSkillsController } from './internal-project-skills.controller';
 
@@ -32,7 +32,13 @@ const storagePath = process.env.SKILLS_STORAGE_PATH
         // Рабочее хранилище публикует pins только после подтверждения каталога.
         {
             provide: SKILLS_STORAGE,
-            useValue: new FsSkillsStorage(storagePath, reserveSkillDependencies, deliverSkillAudit, deliverSkillQuota),
+            useValue: new FsSkillsStorage(
+                storagePath,
+                reserveSkillDependencies,
+                deliverSkillAudit,
+                deliverSkillQuota,
+                enforceSkillQuota,
+            ),
         },
     ],
     exports: [SKILLS_STORAGE],
