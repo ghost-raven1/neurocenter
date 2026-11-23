@@ -1,11 +1,13 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { AccessDb } from '../access/access-db';
 import { withModelUsage } from '../model-usage/model-usage.context';
 import { ModelsService } from './models.service';
 import { RemoteConnectionService } from './remote-connection.service';
 import { isRemoteModel } from './remote-model.utils';
+import { createLogger } from '../../../shared/logging.cjs';
 
 const CHECK_TIMEOUT_MS = 3 * 60 * 1000;
+const log = createLogger('catalog-service');
 
 /**
  * 8.19 P2-3: фоновая автопроверка удалённой модели после сохранения подключения или личного доступа.
@@ -13,7 +15,6 @@ const CHECK_TIMEOUT_MS = 3 * 60 * 1000;
  */
 @Injectable()
 export class ModelAutoVerification {
-    private readonly logger = new Logger(ModelAutoVerification.name);
     private readonly inFlight = new Set<string>();
     constructor(
         private readonly models: ModelsService,
@@ -26,9 +27,8 @@ export class ModelAutoVerification {
         this.inFlight.add(modelId);
         void this.run(modelId, actor)
             .catch((error: unknown) => {
-                this.logger.warn(
-                    `Автопроверка модели ${modelId} не выполнена: ${error instanceof Error ? error.message : String(error)}`,
-                );
+                // AD-O8: error.message не уходит — shared-логгер применяет allowlist name/code/causeCode.
+                log.warn(`Автопроверка модели ${modelId} не выполнена`, { err: error });
             })
             .finally(() => this.inFlight.delete(modelId));
     }

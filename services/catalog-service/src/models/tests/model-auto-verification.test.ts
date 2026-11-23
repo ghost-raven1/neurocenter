@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Logger } from '@nestjs/common';
 import { ModelAutoVerification } from '../model-auto-verification';
 import { RemoteConnectionController } from '../remote-connection.controller';
 import { RemoteProviderAccessController } from '../../remote-providers/remote-provider.controller';
@@ -105,17 +104,31 @@ describe('ModelAutoVerification (8.19 P2-3)', () => {
         await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(2));
     });
     it('logs a failed check and frees the slot for a retry', async () => {
-        const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-        const failing = vi.fn().mockRejectedValueOnce(new Error('provider down')).mockResolvedValueOnce(undefined);
-        const { service, check } = fixture({ check: failing });
-        service.schedule(modelId, adminEmail);
-        await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(1));
-        await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
-        await flush();
-        expect(warn.mock.calls[0][0]).toContain('Автопроверка модели');
-        service.schedule(modelId, adminEmail);
-        await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(2));
-        await expect(check.mock.results[0].value).rejects.toThrow('provider down');
+        // AD-O8: лог — через shared-логгер: stdout-JSON, err только allowlist, message не уходит.
+        const lines: Record<string, unknown>[] = [];
+        const original = process.stdout.write;
+        process.stdout.write = ((chunk: unknown) => {
+            const text = String(chunk).trim();
+            if (text.startsWith('{')) lines.push(JSON.parse(text));
+            return true;
+        }) as unknown as typeof process.stdout.write;
+        try {
+            const failing = vi.fn().mockRejectedValueOnce(new Error('provider down')).mockResolvedValueOnce(undefined);
+            const { service, check } = fixture({ check: failing });
+            service.schedule(modelId, adminEmail);
+            await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(1));
+            const expected = `Автопроверка модели ${modelId} не выполнена`;
+            await vi.waitFor(() => expect(lines.some((line) => line.msg === expected)).toBe(true));
+            const line = lines.find((candidate) => candidate.msg === expected)!;
+            expect(line.level).toBe('warn');
+            expect(line.err).toEqual({ name: 'Error' });
+            expect(JSON.stringify(line)).not.toContain('provider down');
+            service.schedule(modelId, adminEmail);
+            await vi.waitFor(() => expect(check).toHaveBeenCalledTimes(2));
+            await expect(check.mock.results[0].value).rejects.toThrow('provider down');
+        } finally {
+            process.stdout.write = original;
+        }
     });
     it('aborts a check that outlives the bounded timeout', async () => {
         vi.useFakeTimers();

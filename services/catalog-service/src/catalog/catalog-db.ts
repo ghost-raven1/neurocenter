@@ -3,7 +3,10 @@ import { listAuditHistory } from './audit-history';
 import { createPool, observeClientErrors } from '../database/pool';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
+
+const log = createLogger('catalog-service');
 
 import { Client, Pool } from 'pg';
 import { PluginRepository } from '../publication/plugin-repository';
@@ -60,7 +63,6 @@ export class CatalogDb {
     private readonly projectAssets: ProjectAssetRepository;
     private readonly skillAudit: SkillAuditRepository;
     private readonly projectSettings: ProjectSettingsRepository;
-    private readonly logger = new Logger('CatalogDb');
     private setupDone: Promise<void> | null = null;
 
     constructor(url: string) {
@@ -281,9 +283,8 @@ export class CatalogDb {
         try {
             assets = await projectSystemAssets();
         } catch (error) {
-            this.logger.warn(
-                `Не удалось прочитать REQUIRED-набор: ${error instanceof Error ? error.message : String(error)}`,
-            );
+            // AD-O8: error.message не уходит — shared-логгер применяет allowlist name/code/causeCode.
+            log.warn('Не удалось прочитать REQUIRED-набор', { err: error });
             return;
         }
         const agentRepo = new ProjectAgentRepository(this.pool);
@@ -297,11 +298,8 @@ export class CatalogDb {
                     await this.projectAssets.add(projectId, nativeId, asset.kind, SYSTEM_ASSET_ACTOR);
                 }
             } catch (error) {
-                this.logger.warn(
-                    `Системный ассет ${asset.id} не назначен проекту ${projectId}: ${
-                        error instanceof Error ? error.message : String(error)
-                    }`,
-                );
+                // AD-O8: error.message не уходит — shared-логгер применяет allowlist name/code/causeCode.
+                log.warn(`Системный ассет ${asset.id} не назначен проекту ${projectId}`, { err: error });
             }
         }
     }

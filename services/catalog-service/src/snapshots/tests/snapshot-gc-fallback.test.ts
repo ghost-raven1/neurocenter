@@ -120,11 +120,26 @@ describe('SnapshotService.gcFallbackTick (AD-D3 in-process fallback)', () => {
         state.dueCandidates = 1;
         collect.mockRejectedValueOnce(new Error('S3 timeout')).mockResolvedValueOnce({ processed: 0, deleted: 0 });
         fixture = buildService(state);
-        await fixture.service.gcFallbackTick();
-        expect(Logger.prototype.warn).toHaveBeenCalledTimes(1);
-        expect(String(Logger.prototype.warn.mock.calls[0]![0])).toMatch(/fallback tick failed/);
-        await fixture.service.gcFallbackTick();
+        // AD-O8: сбой логируется shared-логгером — stdout-JSON, err только allowlist, message не уходит.
+        const lines: Record<string, unknown>[] = [];
+        const original = process.stdout.write;
+        process.stdout.write = ((chunk: unknown) => {
+            const text = String(chunk).trim();
+            if (text.startsWith('{')) lines.push(JSON.parse(text));
+            return true;
+        }) as unknown as typeof process.stdout.write;
+        try {
+            await fixture.service.gcFallbackTick();
+            await fixture.service.gcFallbackTick();
+        } finally {
+            process.stdout.write = original;
+        }
         expect(collect).toHaveBeenCalledTimes(2);
+        const failed = lines.filter((line) => line.msg === 'Snapshot GC fallback tick failed');
+        expect(failed).toHaveLength(1);
+        expect(failed[0]!.level).toBe('warn');
+        expect(failed[0]!.err).toEqual({ name: 'Error' });
+        expect(JSON.stringify(failed[0])).not.toContain('S3 timeout');
     });
 
     it('single-flight: второй tick во время первого не запускает второй gc', async () => {

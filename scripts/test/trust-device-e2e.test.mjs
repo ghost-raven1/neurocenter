@@ -644,10 +644,10 @@ test(
         });
         assert.ok([200, 202].includes(channel.status), 'канал jsonrpc: ' + JSON.stringify(channel.data));
         assert.ok(!channel.data?.error, 'канал без jsonrpc-error: ' + JSON.stringify(channel.data));
-        // T1_LOG_MASKED: после запроса m/:ticket в access-log (frontend → /dev/stdout) билета НЕТ, есть [REDACTED].
+        // T1_LOG_MASKED: после запроса m/:ticket в access-log (frontend → /dev/stdout) билета НЕТ, есть REDACTED (AD-O8).
         await new Promise((r) => setTimeout(r, 1500)); // nginx пишет асинхронно
         const accessLog = docker(live, ['logs', 'frontend']);
-        assert.ok(accessLog.includes('/api/mcp-host/m/[REDACTED]'), 'nginx access-log несёт маскированный путь');
+        assert.ok(accessLog.includes('/api/mcp-host/m/REDACTED'), 'nginx access-log несёт маскированный путь');
         assert.ok(!accessLog.includes(ticket), 'CRIT: сырой билет попал в nginx access-log');
         record('T1_MCPHOST_LIVE', true, { channelStatus: channel.status });
         record('T1_LOG_MASKED', true);

@@ -142,21 +142,22 @@ test('AD-5: production setup генерирует mcp_host_secret независ
     }
 });
 
-test('AD-5: nginx access-log маскирует m/:ticket, другие пути остаются как есть', async () => {
+test('AD-O8 (ранее AD-5): nginx access-log маскирует m/:ticket ($masked_uri), другие пути остаются как есть', async () => {
     const template = await readFile(path.join(root, 'frontend/nginx.production.conf.template'), 'utf8');
-    assert.match(template, /log_format\s+neurocenter[^;]*"path":"\$log_path"/);
+    assert.match(template, /log_format\s+neurocenter[^;]*"path":"\$masked_uri"/);
     assert.ok(!template.includes('"path":"$uri"'), 'log_format снова пишет сырой $uri');
-    const mapBlock = template.match(/map\s+\$uri\s+\$log_path\s*\{([\s\S]*?)\n\}/);
-    assert.ok(mapBlock, 'map $uri $log_path не найден');
-    const rule = mapBlock[1].match(/~([^;]+?)\s+([^;\s]+)\s*;\s*\n\s*default\s+\$uri\s*;/);
-    assert.ok(rule, 'правило маскировки m/:ticket и default $uri');
+    const mapBlock = template.match(/map\s+\$uri\s+\$masked_uri\s*\{([\s\S]*?)\n\}/);
+    assert.ok(mapBlock, 'map $uri $masked_uri не найден');
+    assert.match(mapBlock[1], /default\s+\$uri\s*;/, 'default $uri обязателен');
+    const rule = mapBlock[1].match(/~\s*([^;\s]+)\s+([^;\s]+)\s*;/);
+    assert.ok(rule, 'правило маскировки m/:ticket не найдено');
     const redactPattern = new RegExp(rule[1]);
     const loggedPath = (uri) => (redactPattern.test(uri) ? rule[2] : uri);
     const ticketValue = 'eyJhbGciOiJub25lIn0.c2VjcmV0LXRpY2tldA';
-    assert.equal(loggedPath('/api/mcp-host/m/' + ticketValue), '/api/mcp-host/m/[REDACTED]');
+    assert.equal(loggedPath('/api/mcp-host/m/' + ticketValue), '/api/mcp-host/m/REDACTED');
     assert.ok(!loggedPath('/api/mcp-host/m/' + ticketValue).includes(ticketValue));
     assert.equal(loggedPath('/api/mcp-host/m'), '/api/mcp-host/m');
-    assert.equal(loggedPath('/api/mcp-host/m/'), '/api/mcp-host/m/');
+    assert.equal(loggedPath('/api/mcp-host/m/'), '/api/mcp-host/m/REDACTED', 'AD-O8 кас 8: пустой ticket маскируется');
     assert.equal(loggedPath('/api/mcp-host/connect'), '/api/mcp-host/connect');
     assert.equal(loggedPath('/api/other'), '/api/other');
 });
