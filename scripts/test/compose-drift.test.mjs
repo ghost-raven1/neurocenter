@@ -158,12 +158,16 @@ test('dead-env в production overlay (chat-storage/web-restore) ловится �
     assert.deepEqual(dead.dead, [{ service: 'catalog-service', env: 'CHAT_S3_FAKE_REGION' }]);
 });
 
-test('расхождение модели с compose (mem/cpus/pids, secrets, ports) указывается как service.field', async (t) => {
+test('расхождение модели с compose (mem/cpus/pids/user, secrets, ports) указывается как service.field', async (t) => {
     const f = await fixture(t, {
         mutateModel: (model) => {
             model.services['catalog-service'].memLimit = '1g';
             model.services['skills-service'].cpus = 2;
             model.services['feature-flags-service'].pidsLimit = 256;
+            // AD-OP-6 (entry 2): user/pids — поля ресурсной таблицы, drift по ним — как по любым другим.
+            model.services.postgres.user = '0';
+            model.services['api-gateway'].user = '0';
+            model.services.postgres.pidsLimit = null;
             model.services.postgres.secrets = [];
             model.services.frontend.ports = [{ target: 8080, published: 81, hostIp: null, protocol: null }];
             model.services['model-runtime'].capDrop = [];
@@ -173,11 +177,14 @@ test('расхождение модели с compose (mem/cpus/pids, secrets, po
     assert.deepEqual(
         drift.map((entry) => `${entry.service}.${entry.field}`).sort(),
         [
+            'api-gateway.user',
             'catalog-service.memLimit',
             'feature-flags-service.pidsLimit',
             'frontend.ports',
             'model-runtime.capDrop',
+            'postgres.pidsLimit',
             'postgres.secrets',
+            'postgres.user',
             'skills-service.cpus',
         ].sort(),
     );

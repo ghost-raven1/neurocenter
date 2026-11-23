@@ -22,6 +22,47 @@ node scripts/production/resources.mjs --directory /etc/neurocenter --project-nam
 
 Проверки: `node --test scripts/test/capacity.test.cjs scripts/test/observability.test.cjs scripts/test/metrics-completeness.test.mjs`; typecheck catalog, skills и rag-sync. Эти локальные проверки не подменяют Docker/native/server приёмку и тест реального заполнения отдельного стенда.
 
+## Ресурсные ограничения сервисов (AD-OP-6)
+
+Ресурсная таблица — это модель `deploy/production/environment-model.json`: единственный машино-читаемый
+источник. Drift-тест (`scripts/test/compose-drift.test.mjs`, `structuralDrift`) сверяет модель с compose
+по каждому полю, включая `pidsLimit` и `user`, — в обе стороны. Таблица ниже — проекция модели для
+review: её не редактируют руками, значения берутся из модели (автоматическая сверка проекции —
+Deferred, OQ-4). Инвариансы (long-running — pids_limit, app-сервисы — non-root, все — mem_limit,
+ратифицированные значения) проверяет `scripts/test/resource-limits-invariant.test.mjs`.
+
+| сервис | mem_limit | cpus | pids_limit | user | примечания |
+|---|---|---|---|---|---|
+| model-runtime | 5g | 4 | 512 (ратиф.) | `0` (root — выбор образа) | cap_drop ALL |
+| postgres | 1g (ратиф.) | 2 | 256 (якорь) | `postgres` (uid 999) | entrypoint образа работает от postgres |
+| capacity-collector | 128m | 0.25 | 32 (ратиф.) | `1000` | read_only, cap_drop ALL + DAC_OVERRIDE, network_mode none |
+| database-init | 512m | — | 128 | `1000` | one-shot, profile setup |
+| bootstrap-admin | 512m | — | 128 | `1000` | one-shot, profile setup |
+| background-agent | 1g | 2 | 256 (ратиф.) | `1000` | cap_drop ALL |
+| catalog-service | 512m | 1 | 256 (якорь) | `1000` | cap_drop ALL, seccomp catalog-packager (bwrap) |
+| feature-flags-service | 256m | 0.5 | 128 (ратиф.) | `1000` | |
+| skills-service | 512m | 1 | 256 (якорь) | `1000` | |
+| rag-sync-service | 2g | 2 | 256 (якорь) | `1000` | |
+| oauth2-bridge | 256m | 1 | 256 (якорь) | `1000` | |
+| api-gateway | 512m | 1 | 128 (ратиф., AD-4) | `1000` | cap_drop ALL (child-MCP) |
+| frontend | 128m | 1 | 64 | `1000` | nginx, non-root master (6.1) |
+| node_exporter | 128m | 1 | 64 (ратиф.) | `65534` | USER nobody — дефолт образа |
+| prometheus | 1g | 2 | 512 (ратиф.) | `65534` | USER nobody — дефолт образа |
+| alertmanager | 256m | 0.5 | 128 (ратиф.) | `65534` | USER nobody — дефолт образа |
+
+- **Baseline pids = 256** — `pids_limit` в x-service-якоре `compose.production.yml` (OQ-1): Node-сервис
+  держит 1-3 PID, 256 — запас против форк-бомбы с рабочим запасом по процессам. Per-service override —
+  только осознанное отклонение; ратифицированные (не меняются): 512/32/128/128/256/64/512/128. Новые
+  (OQ-2/OQ-3): postgres, catalog, skills, rag, bridge — 256 через якорь; frontend — 64 (nginx master +
+  worker'ы, фактические единицы PID); setup-контейнеры — 128 + mem 512m.
+- **user**: 11 сервисов на образах neurocenter/* работают от `node` с единым uid **1000** (6.1 — общие
+  named volumes). Внешние образы вне non-root-скоупа (6.1): `ollama/ollama` — root (выбор образа),
+  `pgvector/pgvector` — процесс от `postgres` (uid 999; проверено: initdb и рестарт под `user: postgres`),
+  prom/* — `nobody` (65534, Config.User образов). Compose объявляет `user` явно у всех сервисов —
+  ратификация фактических uid (external-note в модели).
+- Живая проверка (fork-стресс: контейнер получает EAGAIN, хост стабилен, restart policy возвращает сервис;
+  `docker inspect` → PidsLimit) — final gate.
+
 ## Design note: CAPACITY_REQUIRED=false и machine-метрики (AD-18 / AD-O3)
 
 `CAPACITY_REQUIRED=false` у api-gateway, oauth2-bridge и feature-flags-service — **осознанно** (AD-O4): эти сервисы не выполняют защищённые тяжёлые записи (создание БД, RAG-батч, импорт runtime-архива, поток HTTP-копии), поэтому capacity-блок и machine-метрики у них не рендерятся. Это не дефект и не отсутствие покрытия — решение зафиксировано в полисе AD-O4 и проверяется completeness-тестом (AD-O3). Catalog, skills и rag-sync (`CAPACITY_REQUIRED=true`) отдают capacity-семейства и machine-метрики.

@@ -51,6 +51,7 @@ const expectedFiles = [
     'scripts/test/dev-mcp-coverage-lifecycle.test.mjs',
     'scripts/test/release-candidate-e2e.test.mjs',
     'scripts/test/release-manifest.test.mjs',
+    'scripts/test/resource-limits-invariant.test.mjs',
     'scripts/test/retention-inventory.test.mjs',
     'scripts/test/route-policy-completeness.test.mjs',
     'scripts/test/route-shadowing-diagnostic.test.mjs',
