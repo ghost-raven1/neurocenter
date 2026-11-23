@@ -46,13 +46,15 @@ COPY --from=build /app/frontend/dist /usr/share/nginx/html
 # привилегированные не нужны; если будущий edge потребует 80/443 — revert через
 # cap_add NET_BIND_SERVICE (residual зафиксирован в docs/production-setup.md).
 # pid-файл уводим из /var/run (tmpfs, не наследует owner из образа) в /var/cache/nginx;
-# grep-страх: при дрейфе базового конфига сборка падает, а не стартует с чужим pid-путём.
+# в alpine-базе строка pid указывает на /run/nginx.pid (/var/run — symlink на /run),
+# поэтому sed принимает обе формы. grep-страх: при дрейфе базового конфига сборка
+# падает, а не стартует с чужим pid-путём.
 ARG SERVICE_USER=node
 ARG SERVICE_UID=1000
 RUN addgroup -g "$SERVICE_UID" "$SERVICE_USER" \
     && adduser -D -H -u "$SERVICE_UID" -G "$SERVICE_USER" -s /sbin/nologin "$SERVICE_USER" \
     && [ "$SERVICE_UID" != "0" ] && id -u "$SERVICE_USER" | grep -qx "$SERVICE_UID" \
-    && sed -i 's|^pid[[:space:]]\+/var/run/nginx\.pid;|pid /var/cache/nginx/nginx.pid;|' /etc/nginx/nginx.conf \
+    && sed -i 's|^pid[[:space:]]\+\(/var/\)\?/run/nginx\.pid;|pid /var/cache/nginx/nginx.pid;|' /etc/nginx/nginx.conf \
     && grep -q '^pid[[:space:]]\+/var/cache/nginx/nginx\.pid;' /etc/nginx/nginx.conf \
     && chown -R "$SERVICE_USER:$SERVICE_USER" /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
 USER $SERVICE_USER
