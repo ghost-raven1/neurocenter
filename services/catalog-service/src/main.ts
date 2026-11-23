@@ -6,6 +6,7 @@ import { ggufRequestTimeouts } from '../../shared/gguf-request-timeout.cjs';
 import { assetSourceArchiveRoute } from '../../shared/asset-source-archive-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
+import { assertServiceVolumes } from '../../shared/volume-ownership.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import express from 'express';
@@ -16,6 +17,13 @@ import { AppModule } from './app.module';
  * Точка входа каталожного microservice.
  */
 async function bootstrap(): Promise<void> {
+    // AD-OP-6 (OQ-2): fail-closed проверка владельцев writable-томов (production-only).
+    assertServiceVolumes('catalog-service', [
+        process.env.PROJECTS_ROOT || '/data/projects',
+        process.env.BACKUP_DIR || '/app/backups',
+        process.env.RUNTIME_ARTIFACT_DIR || '/app/runtime-artifacts',
+        process.env.MODEL_STORAGE_PATH,
+    ]);
     const app = await NestFactory.create(AppModule, { bodyParser: false });
     app.enableShutdownHooks();
     app.use(ggufRequestTimeouts(app.getHttpServer()));

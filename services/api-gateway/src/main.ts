@@ -6,6 +6,7 @@ import { ggufRequestTimeouts } from '../../shared/gguf-request-timeout.cjs';
 import { assetSourceArchiveRoute } from '../../shared/asset-source-archive-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
+import { assertServiceVolumes } from '../../shared/volume-ownership.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Server as IoServer } from 'socket.io';
@@ -28,6 +29,8 @@ import { CATCH_ALL_ROW } from './proxy/route-policy';
  * Инвалидации разделов и личные статусы MCP; состояние заданий сохраняется в PG.
  */
 async function bootstrap(): Promise<void> {
+    // AD-OP-6 (OQ-2): fail-closed проверка владельца тома кэша MCP-host (production-only).
+    assertServiceVolumes('api-gateway', [process.env.NEUROCENTER_MCP_HOST_DIR || '/data/gateway/mcp-host']);
     const app = await NestFactory.create(AppModule, { bodyParser: false });
     app.enableShutdownHooks();
     app.use(ggufRequestTimeouts(app.getHttpServer()));

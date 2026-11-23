@@ -86,6 +86,18 @@ COPY scripts/opencode-platforms.mjs /tools/scripts/opencode-platforms.mjs
 COPY vendor/asset-contract/ /tools/vendor/asset-contract/
 RUN ln -s /repo/services/catalog-service/dist /tools/services/catalog-service/dist && ln -s /repo/services/catalog-service/node_modules /tools/services/catalog-service/node_modules && ln -s /repo/services/catalog-service/node_modules /tools/services/shared/node_modules && ln -s /repo/services/catalog-service/node_modules /tools/node_modules
 
+# AD-OP-6: единый non-root uid 1000 для всех 7 app-образов (OQ-1: volumes docker-managed —
+# host-конфликтов нет). node-базовый образ уже содержит пользователя node (uid/gid 1000) —
+# переиспользуем его (паттерн AD-4; groupadd --gid 1000 падает «GID already exists»).
+# Writable-пути (включая точки монтирования named volumes) принадлежат service-user:
+# первый mount пустого тома наследует владельца из образа.
+ARG SERVICE_USER=node
+ARG SERVICE_UID=1000
+RUN [ "$SERVICE_UID" != "0" ] && id -u "$SERVICE_USER" | grep -qx "$SERVICE_UID" \
+    && mkdir -p /data/projects /data/models /app/backups /app/runtime-artifacts /app/content/help /capacity \
+    && chown -R "$SERVICE_USER:$SERVICE_USER" /repo /tools /data /app /capacity
+USER $SERVICE_USER
+
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=catalog-service
 ENV TOOL_BUILD_SCRIPT=/tools/scripts/catalog-plugins/build.mjs

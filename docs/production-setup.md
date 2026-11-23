@@ -47,6 +47,16 @@ node scripts/production/setup.mjs configure --directory /srv/neurocenter/config
 
 `deploy/production/.env.example` — справочный шаблон с пустыми реквизитами и значениями квот по умолчанию. Его нельзя запускать без заполнения. Не используйте `.env` локального стенда и не объединяйте production Compose с `docker-compose.yml`.
 
+## Non-root-запуск и томы (AD-OP-6)
+
+Все 7 app-образов (catalog, gateway, skills, rag-sync, feature-flags, oauth2-bridge, frontend) работают от выделенного non-root-пользователя `node` с **единым uid 1000** во всех образах: общие named volumes (projects, skills, backups, model-weights) монтируются в несколько сервисов, и разные uid дали бы постоянные конфликты владельцев. Единый uid между доверенными сервисами закрытой backend-сети — осознанное решение (residual — AD-OP-7(5)). Внешние образы **вне non-root-скоупа** намеренно: `ollama/ollama` (работает root'ом — выбор образа) и `pgvector/pgvector` (внутренний пользователь `postgres`) — это не app-образы.
+
+Writable-пути образов, включая точки монтирования named volumes, принадлежат uid 1000 в самом образе: первый mount пустого тома наследует владельца из образа. **Старый root-owned том** (созданный до non-root-миграции) не chown'ится автоматически: сервис отказывается стартовать с явной ошибкой (fail-closed, только production) вместо молчаливой read-only-работы. Действие: согласованный backup, затем пересоздание тома в новом пустом стеке и restore (либо одноразовый chown uid=1000 через привилегированный контейнер по явному решению). `docker compose down -v` без подтверждённого бэкапа уничтожает данные.
+
+Профили `database-init`/`bootstrap-admin` (catalog-образ) работают тем же non-root: file secrets читаются в world-readable режиме (0444), app-томы они не пишут. `capacity-collector` (тот же образ, read-only-файловая система) пишет только снимок в том `capacity`; единственный `cap_add` стека — его `DAC_OVERRIDE` под read-only `statfs` — не меняется.
+
+nginx (frontend) — non-root master: контейнер слушает 8080/8443 (>1024), привилегированных портов нет, pid-файл — вне tmpfs. Если будущий edge потребует 80/443, revert-путь — `cap_add: [NET_BIND_SERVICE]` у frontend (зафиксированный residual).
+
 ## Проверка, сборка и первый seed
 
 Сборка сервера не загружает ассеты и не заполняет общий каталог. На сборочной машине с Node.js 24 установите корневые зависимости; зеркальные пакеты OpenCode подготавливаются отдельно, если нужны для первичной установки клиента.

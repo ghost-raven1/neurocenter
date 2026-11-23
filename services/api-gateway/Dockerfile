@@ -67,12 +67,16 @@ RUN NODE_TLS_REJECT_UNAUTHORIZED="$(if [ "$NEUROCENTER_TLS_DISABLE" = "1" ]; the
 RUN rm -rf /openapi /repo/scripts/openapi
 
 # AD-4: non-root — child-MCP («одобренный» недоверенный артефакт) не работает root.
-# node-образ уже содержит пользователя node (uid/gid 1000) — groupadd --gid 1000 падает
-# «GID already exists»: переиспользуем существующего non-root пользователя (AD-4 — uid 1000).
+# AD-OP-6: тот же non-root пользователь (uid 1000) теперь единый для всех 7 app-образов
+# (OQ-1: volumes docker-managed — host-конфликтов нет). node-базовый образ уже содержит
+# пользователя node (uid/gid 1000) — groupadd --gid 1000 падает «GID already exists».
 # Каталог кэша комплектов заранее в owner: первый mount именованного volume наследует права.
-RUN mkdir -p /data/gateway/mcp-host \
-    && chown -R node:node /repo /app/bridge-dist /data/gateway
-USER node
+ARG SERVICE_USER=node
+ARG SERVICE_UID=1000
+RUN [ "$SERVICE_UID" != "0" ] && id -u "$SERVICE_USER" | grep -qx "$SERVICE_UID" \
+    && mkdir -p /data/gateway/mcp-host \
+    && chown -R "$SERVICE_USER:$SERVICE_USER" /repo /app/bridge-dist /data/gateway
+USER $SERVICE_USER
 
 ENV NODE_ENV=production
 ENV NEUROCENTER_SERVICE=api-gateway
