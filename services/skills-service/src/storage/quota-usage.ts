@@ -19,7 +19,11 @@
  * тем же requestKey идемпотентна); ошибки логируются как warn.
  */
 import { createHash } from 'node:crypto';
+import { createLogger } from '../../../shared/logging.cjs';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import type { ISkillFileChange } from './skill-journal';
+
+const log = createLogger('skills-service');
 
 export interface ISkillQuotaUsageRecord {
     /** project_id, к которому относится изменение (каталог UUID). */
@@ -104,8 +108,8 @@ export async function deliverSkillQuotaUsage(
     }
     const base = (options.catalogUrl ?? process.env.CATALOG_SERVICE_URL ?? 'http://127.0.0.1:4100').replace(/\/+$/, '');
     const token = options.internalToken ?? process.env.NEUROCENTER_INTERNAL_TOKEN ?? '';
-    const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-    const warn = options.warn ?? ((message: string) => console.warn(message));
+    const fetchImpl = options.fetchImpl ?? internalFetch;
+    const warn = options.warn ?? ((message: string) => log.warn(message));
     let delivered = 0;
     for (const record of records) {
         try {

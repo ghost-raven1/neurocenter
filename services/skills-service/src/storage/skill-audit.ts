@@ -5,6 +5,7 @@ import {
     type TSkillAuditEvent,
     type ISkillAuditSummary,
 } from '../../../shared/skill-audit.cjs';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { normalizeMeta, parseSkillFile } from './frontmatter/frontmatter';
 import type { ISkillFileChange } from './skill-journal';
 
@@ -99,7 +100,7 @@ export async function deliverSkillAudit(events: TSkillAuditEvent[]): Promise<voi
         const chunk = normalizeSkillAuditEvents({ events: events.slice(offset, offset + 200) });
         let response: Response;
         try {
-            response = await fetch(endpoint, {
+            response = await internalFetch(endpoint, {
                 method: 'POST',
                 redirect: 'error',
                 signal: AbortSignal.timeout(5000),

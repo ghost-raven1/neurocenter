@@ -2,6 +2,9 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import type { Request } from 'express';
+import { createLogger } from '../../../shared/logging.cjs';
+
+const log = createLogger('api-gateway');
 import type { IAuthMeResponse, IAuthPayload } from './interfaces';
 
 export type { IAuthPayload } from './interfaces';
@@ -109,7 +112,7 @@ export class AuthGuardService {
                 policies: data.policies,
             };
         } catch (error) {
-            console.error('[api-gateway] auth check failed:', error instanceof Error ? error.message : 'unavailable');
+            log.error('auth check failed', { err: error });
             throw new ServiceUnavailableException('Проверка входа временно недоступна. Повторите запрос позже.');
         }
     }

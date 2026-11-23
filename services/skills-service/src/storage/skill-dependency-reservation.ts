@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { BadGatewayException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { normalizeDependencyPins, type IDependencyPin } from '../../../shared/dependency-pins.cjs';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { parseSkillFile } from './frontmatter/frontmatter';
 
 export interface ISkillDependencyReservation {
@@ -89,7 +90,7 @@ async function reserveChunk(endpoint: URL, token: string, entries: ISkillDepende
     let response: Response;
 
     try {
-        response = await fetch(endpoint, {
+        response = await internalFetch(endpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'x-neurocenter-internal': token },
             body: JSON.stringify({ entries }),

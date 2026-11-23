@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import axios, { type AxiosInstance } from 'axios';
 import type { ISessionCreate, ISessionIdentity, IStoredSession } from './catalog-session.interfaces';
+import { requestContextHeaders } from '../../../shared/request-context.cjs';
 
 function exact(value: unknown, keys: string[]): value is Record<string, unknown> {
     return (
@@ -47,7 +48,10 @@ export class CatalogSessionClient {
                 method,
                 url: this.url + path,
                 ...(data === undefined ? {} : { data }),
-                headers: { 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '' },
+                headers: {
+                    'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',
+                    ...requestContextHeaders(),
+                },
             });
             if (response.status !== 200 && !(method === 'post' && response.status === 201)) throw unavailable();
             return response.data;

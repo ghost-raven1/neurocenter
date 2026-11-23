@@ -5,6 +5,7 @@ import {
     ServiceUnavailableException,
 } from '@nestjs/common';
 import type { PoolClient } from 'pg';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { canReadCommon, projectLevel } from '../access/access.model';
 import type { TAssetType, IRequestActor, IRequestTarget, ITargetInput } from './request.interfaces';
 type TDb = Pick<PoolClient, 'query'>;
@@ -18,7 +19,7 @@ async function skills(): Promise<ISkillSummary[]> {
     const token = process.env.NEUROCENTER_INTERNAL_TOKEN;
     if (!token) throw new ServiceUnavailableException('Соединение со скиллами не настроено.');
     try {
-        const response = await fetch(
+        const response = await internalFetch(
             (process.env.SKILLS_SERVICE_URL || 'http://localhost:4200').replace(/\/$/, '') + '/api/skills',
             { headers: { 'x-neurocenter-internal': token }, redirect: 'error', signal: AbortSignal.timeout(10000) },
         );

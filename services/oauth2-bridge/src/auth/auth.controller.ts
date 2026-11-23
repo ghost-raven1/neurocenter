@@ -6,6 +6,9 @@ import { IAuthMeResponse, type IBridgeUser } from './interface';
 import { SessionService } from './session.service';
 import { loginReturn } from './login-return';
 import { OAuthTransactions } from './oauth-transactions.service';
+import { createLogger } from '../../../shared/logging.cjs';
+
+const log = createLogger('oauth2-bridge');
 
 const STATE_COOKIE = 'oauth_state';
 const SESSION_COOKIE = 'bridge_session';
@@ -86,7 +89,7 @@ export class AuthController {
         try {
             user = await this.auth.exchangeCode(query.code ?? '', transaction.verifier);
         } catch (error) {
-            console.error('[oauth2-bridge] code exchange failed:', error instanceof Error ? error.name : 'Unavailable');
+            log.error('code exchange failed', { err: error });
             res.redirect(`${panel}/?login_error=exchange`);
             return;
         }

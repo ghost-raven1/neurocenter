@@ -11,6 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { timingSafeEqual } from 'node:crypto';
 import type { Request } from 'express';
 import type { PoolClient } from 'pg';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import {
     SYSTEM_ROLE_MCP_LIMITS as limits,
     boundedMcpJson,
@@ -563,7 +564,7 @@ export class SystemRoleMcpService implements ISystemRoleMcpAccess, OnModuleInit,
     private async gateway(operation: 'execute' | 'close', body: unknown, signal: AbortSignal): Promise<unknown> {
         const token = process.env.NEUROCENTER_INTERNAL_TOKEN;
         if (!token) throw new ConflictException('Серверный канал MCP не настроен.');
-        const response = await fetch(
+        const response = await internalFetch(
             (process.env.API_GATEWAY_URL || 'http://localhost:4000').replace(/\/+$/, '') +
                 '/internal/system-role-mcp/' +
                 operation,

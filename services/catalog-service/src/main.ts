@@ -6,11 +6,16 @@ import { ggufRequestTimeouts } from '../../shared/gguf-request-timeout.cjs';
 import { assetSourceArchiveRoute } from '../../shared/asset-source-archive-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
+import { createLogger } from '../../shared/logging.cjs';
+import { createRequestContextMiddleware } from '../../shared/request-context.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import express from 'express';
 
 import { AppModule } from './app.module';
+
+/** AD-O1/O2: единый JSON-логгер и correlation id (до observability — контекст для всех middleware). */
+const log = createLogger('catalog-service');
 
 /**
  * Точка входа каталожного microservice.
@@ -19,6 +24,7 @@ async function bootstrap(): Promise<void> {
     const app = await NestFactory.create(AppModule, { bodyParser: false });
     app.enableShutdownHooks();
     app.use(ggufRequestTimeouts(app.getHttpServer()));
+    app.use(createRequestContextMiddleware());
     app.use(createObservability({ service: 'catalog-service' }).middleware);
     // Body-бюджет выравнивает цепь nginx 50m → gateway 50mb → catalog 50mb (entry 9, OQ2):
     // 40MB-запрос проходит всю цепь, а не умирает 413'ом глубоко в catalog (бывший 35mb).
@@ -50,7 +56,7 @@ async function bootstrap(): Promise<void> {
     const port = process.env.PORT ? Number(process.env.PORT) : 4100;
 
     await app.listen(port, process.env.BIND_HOST || '127.0.0.1');
-    console.log(`[catalog-service] listening on :${port}`);
+    log.info('listening', { port });
 }
 
 void bootstrap();

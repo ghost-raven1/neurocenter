@@ -18,6 +18,7 @@ import { normalizeEmail, type IAccessActor } from '../access/access.model';
 import { createPool } from '../database/pool';
 import { runtimeArtifactDirectory } from '../runtime-artifacts/runtime-artifacts';
 import { CapacityError, reserveCapacity } from '../../../shared/capacity.cjs';
+import { createLogger } from '../../../shared/logging.cjs';
 import { inspectUploadArchive } from '../../../shared/upload-inspection.cjs';
 import { SourceUploadRepository } from './source-upload.repository';
 import { UploadFiles } from './source-upload.files';
@@ -32,6 +33,7 @@ import {
     type IPinnedUploadSource,
 } from './source-upload.model';
 
+const log = createLogger('catalog-service');
 /** Durable upload control plane; data streams hold a PostgreSQL session lease until bytes settle. */
 export class SourceUploads {
     readonly repository: SourceUploadRepository;
@@ -246,9 +248,7 @@ export class SourceUploads {
                 throw error;
             // AD-19: текст ошибки разбора архива клиенту не уходит: фиксированный body;
             // детали — только в server-лог.
-            if (error instanceof Error) {
-                console.error('[catalog] source upload failed:', error.message);
-            }
+            log.error('source upload failed', { err: error });
             throw new BadRequestException(
                 controller.signal.aborted
                     ? 'Передача файла отменена. Можно повторить тот же файл.'

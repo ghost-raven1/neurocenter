@@ -6,11 +6,11 @@ import {
     BadRequestException,
     ConflictException,
     Injectable,
-    Logger,
     Optional,
     type OnModuleInit,
     type BeforeApplicationShutdown,
 } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
 import type { PoolClient } from 'pg';
 import { AccessDb } from '../access/access-db';
 import { ModelsService } from './models.service';
@@ -36,7 +36,7 @@ const actions: readonly string[] = ['start', 'stop', 'check'];
 /** Один исполнитель на общий runtime; процесс HTTP не держит открытый запрос до конца загрузки. */
 @Injectable()
 export class ModelHostingService implements OnModuleInit, BeforeApplicationShutdown {
-    private readonly logger = new Logger(ModelHostingService.name);
+    private readonly logger = createLogger('catalog-service');
     private readonly repository: ModelHostingRepository;
     private active?: { abort: AbortController; work: Promise<void> };
     private readonly starting = new Set<Promise<void>>();

@@ -5,6 +5,10 @@ x-service: &service
   stop_grace_period: 45s
   security_opt: [no-new-privileges:true]
   logging:
+    # OQ-1 (epic-res-obs, ticket 6.6): дефолт 10m×3; catalog-service и api-gateway
+    # переопределяют до 50m×10 — единый JSON-лог с X-Request-ID (AD-O1/O2) требует
+    # длиннее окно корреляции и аудита. Решено: не менять nginx, рост retention только
+    # для двух служб с наибольшим объёмом событий.
     driver: json-file
     options: {max-size: 10m, max-file: '3'}
   networks: [backend]
@@ -162,6 +166,10 @@ services:
 
   catalog-service:
     <<: *service
+    # OQ-1 (ticket 6.6): retention 50m×10 для единого JSON-лога (дефолт x-service — 10m×3).
+    logging:
+      driver: json-file
+      options: {max-size: 50m, max-file: '10'}
     # bwrap owns nested PID/network namespaces; no host administrative capabilities are granted.
     cap_drop: [ALL]
     security_opt:
@@ -311,6 +319,10 @@ services:
 
   api-gateway:
     <<: *service
+    # OQ-1 (ticket 6.6): retention 50m×10 для единого JSON-лога (дефолт x-service — 10m×3).
+    logging:
+      driver: json-file
+      options: {max-size: 50m, max-file: '10'}
     image: neurocenter/api-gateway:${NEUROCENTER_RELEASE:?Заполните метку релиза}
     build: {context: ., dockerfile: services/api-gateway/Dockerfile, args: {NEUROCENTER_BUILD_CA_SHA256: "${NEUROCENTER_BUILD_CA_SHA256:-}", NEUROCENTER_BUILD_CA_NAME: "${NEUROCENTER_BUILD_CA_NAME:-.gitkeep}", NPM_REGISTRY_AUTH_B64: "${NPM_REGISTRY_AUTH_B64:-}", NEUROCENTER_TLS_DISABLE: "${NEUROCENTER_TLS_DISABLE:-0}", NEUROCENTER_NPM_STRICT_SSL: "${NEUROCENTER_NPM_STRICT_SSL:-true}"}}
     mem_limit: 512m

@@ -6,6 +6,8 @@ import { ggufRequestTimeouts } from '../../shared/gguf-request-timeout.cjs';
 import { assetSourceArchiveRoute } from '../../shared/asset-source-archive-route.cjs';
 import '../../shared/runtime.cjs';
 import { createObservability } from '../../shared/observability.cjs';
+import { createLogger } from '../../shared/logging.cjs';
+import { createRequestContextMiddleware } from '../../shared/request-context.cjs';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Server as IoServer } from 'socket.io';
@@ -21,6 +23,9 @@ import { setupApiDocumentation } from './docs/setup-api-documentation';
 import { deviceChannelJson } from './proxy/device-channel-json';
 import { CATCH_ALL_ROW } from './proxy/route-policy';
 
+/** AD-O1/O2: единый JSON-логгер и correlation id (до observability — контекст для всех middleware). */
+const log = createLogger('api-gateway');
+
 /**
  * Точка входа api-gateway: HTTP (proxy /api) + socket.io real-time (/socket.io).
  *
@@ -31,6 +36,7 @@ async function bootstrap(): Promise<void> {
     const app = await NestFactory.create(AppModule, { bodyParser: false });
     app.enableShutdownHooks();
     app.use(ggufRequestTimeouts(app.getHttpServer()));
+    app.use(createRequestContextMiddleware());
     app.use(createObservability({ service: 'api-gateway' }).middleware);
     app.use(sourceUploadConnection);
     app.use(browserSecurity);
@@ -114,7 +120,7 @@ async function bootstrap(): Promise<void> {
     });
 
     await app.listen(port, process.env.BIND_HOST || '127.0.0.1');
-    console.log(`[api-gateway] listening on :${port}`);
+    log.info('listening', { port });
 }
 
 void bootstrap();

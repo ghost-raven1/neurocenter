@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { createPool } from '../database/pool';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { projectDatabaseName } from '../rag/project-database-name';
 import { ragRequestHash } from '../../../shared/rag-index-contract.cjs';
 import { databaseLock, LIFECYCLE_LOCK, setupDatabaseLifecycle } from './lifecycle-schema';
@@ -90,7 +91,7 @@ export class DatabaseLifecycle implements OnModuleDestroy {
         if (!uuid(retirementId) || typeof projectId !== 'string' || !projectId || projectId.length > 200)
             throw new BadRequestException('Некорректное сохранённое хранилище.');
         const base = (process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/$/, '');
-        const response = await fetch(`${base}/internal/retired-rag/retirements/${retirementId}/authorize-preview`, {
+        const response = await internalFetch(`${base}/internal/retired-rag/retirements/${retirementId}/authorize-preview`, {
             method: 'POST',
             headers: {
                 'content-type': 'application/json',
@@ -258,7 +259,7 @@ export class DatabaseLifecycle implements OnModuleDestroy {
     }
     private async authorize(command: IPurgeCommand) {
         const base = (process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/$/, '');
-        const result = await fetch(`${base}/internal/retired-rag/purges/${command.jobId}/authorize`, {
+        const result = await internalFetch(`${base}/internal/retired-rag/purges/${command.jobId}/authorize`, {
             method: 'POST',
             headers: {
                 'content-type': 'application/json',

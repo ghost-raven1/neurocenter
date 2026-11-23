@@ -1,11 +1,11 @@
 import {
     BadRequestException,
     Injectable,
-    Logger,
     OnModuleDestroy,
     OnModuleInit,
     NotFoundException,
 } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
 
 import { CatalogDb } from './catalog-db';
 import {
@@ -47,7 +47,7 @@ import type { IAccessActor } from '../access/access.model';
  */
 @Injectable()
 export class CatalogService implements OnModuleInit, OnModuleDestroy {
-    private readonly logger = new Logger('CatalogService');
+    private readonly logger = createLogger('catalog-service');
     private readonly db: CatalogDb;
 
     /**
@@ -86,10 +86,9 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
     async onModuleInit(): Promise<void> {
         try {
             await this.db.setup();
-            this.logger.log('калалог projects схема готова');
+            this.logger.info('калалог projects схема готова');
         } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            this.logger.error(`не удалось инициализировать postgres (catalog): ${msg}`);
+            this.logger.error('не удалось инициализировать postgres (catalog)', { err: e });
             throw e;
         }
     }
@@ -183,7 +182,7 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
             createdNames.push(entry.project);
         }
 
-        this.logger.log(`импорт локальных проектов: +${created} уже ${existing} из ${total}`);
+        this.logger.info('импорт локальных проектов', { created, existing, total });
 
         return { created, existing, total, createdNames };
     }
@@ -388,9 +387,9 @@ export class CatalogService implements OnModuleInit, OnModuleDestroy {
 
         const result = await runAllBackups(labels, process.env.BACKUP_DIR, { confirm: () => this.db.recordBackup() });
         const fileSummary = result.files.map((f) => `${f.label}: ${f.file} (${f.sizeBytes} Б, ${f.method})`).join('; ');
-        const warnSummary = result.warnings?.length ? `; предупреждения: ${result.warnings.join('; ')}` : '';
+        const warnSummary = result.warnings?.length ? result.warnings.join('; ') : undefined;
 
-        this.logger.log(`Бэкап: ${fileSummary}${warnSummary}`);
+        this.logger.info('Бэкап', { files: fileSummary, warnings: warnSummary });
         void this.db
             .createOperation({
                 type: 'CATALOG',

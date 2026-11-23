@@ -4,6 +4,7 @@ import {
     ragWriteAdmissionUncertain,
     type TRagWriteAuthorizationPhase,
 } from '../../../shared/rag-write-authorization.cjs';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import type { IProjectRagContext } from './project-rag-context';
 
 /** Every first mutation asks Catalog afresh; grants are neither cached nor persisted for a later retry. */
@@ -14,7 +15,7 @@ export async function authorizeRagWrite(
     const base = (process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/+$/, '');
     let response: Response, body: unknown;
     try {
-        response = await fetch(base + '/internal/project-rag/write-authorize', {
+        response = await internalFetch(base + '/internal/project-rag/write-authorize', {
             method: 'POST',
             redirect: 'error',
             headers: {

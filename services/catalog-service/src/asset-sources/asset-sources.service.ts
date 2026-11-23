@@ -42,8 +42,11 @@ import type { PoolClient } from 'pg';
 import { AssetSourceArchiveUploads } from './source-archive-upload';
 import { sourceSupplyViews } from './source-supply-view';
 import { readBundledCatalog } from '../../../shared/bundled-catalog.cjs';
+import { createLogger } from '../../../shared/logging.cjs';
+import { withRequestContext } from '../../../shared/request-context.cjs';
 import { readCatalogRebuildState } from '../package-build/catalog-rebuild-state';
 
+const log = createLogger('catalog-service');
 const uuid = (value: unknown): value is string =>
     typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 /** Один серверный source pipeline: metadata → exact plan → проверенная supply → native publication. */
@@ -146,30 +149,38 @@ export class AssetSourcesService implements OnModuleInit, OnApplicationShutdown 
         this.worker = new AssetImportWorker(this.pool, this.jobs, this.sources, this.blobs, this.runtime);
         this.worker.kick();
         // R9 (12.8): сверка описи с хранилищем не блокирует старт и не останавливает сервис при недоступном источнике.
-        void this.blobs
-            .selfHeal(this.sourceAbort.signal)
-            .then((report) => {
-                this.selfHealState = { phase: 'complete', report };
-                if (report.pending.length) {
-                    for (const item of report.pending)
-                        console.warn(
-                            `[catalog-service] self-heal: файл поставки ${item.sha256} недоступен — ${item.reason}.`,
-                        );
-                    console.warn(
-                        `[catalog-service] self-heal: опись сверена (${report.checked} файлов), восстановлено ${report.restored.length}, недоступно ${report.pending.length}.`,
-                    );
-                } else {
-                    console.log(
-                        `[catalog-service] self-heal: опись поставки подтверждена (${report.intact + report.restored.length}/${report.checked}), восстановлено ${report.restored.length}.`,
-                    );
-                }
-            })
-            .catch((error: unknown) => {
-                if ((error as Error)?.name === 'AbortError') return;
-                const message = error instanceof Error ? error.message : String(error);
-                this.selfHealState = { phase: 'failed', error: message };
-                console.error('[catalog-service] self-heal: сверка хранилища поставки не завершена: ' + message);
-            });
+        // AD-O2: фоновая работа — jobId в поле requestId.
+        void withRequestContext('job-asset-self-heal', () =>
+            this.blobs
+                .selfHeal(this.sourceAbort.signal)
+                .then((report) => {
+                    this.selfHealState = { phase: 'complete', report };
+                    if (report.pending.length) {
+                        for (const item of report.pending)
+                            log.warn('self-heal: файл поставки недоступен', {
+                                sha256: item.sha256,
+                                reason: item.reason,
+                            });
+                        log.warn('self-heal: опись сверена', {
+                            checked: report.checked,
+                            restored: report.restored.length,
+                            pending: report.pending.length,
+                        });
+                    } else {
+                        log.info('self-heal: опись поставки подтверждена', {
+                            intact: report.intact + report.restored.length,
+                            checked: report.checked,
+                            restored: report.restored.length,
+                        });
+                    }
+                })
+                .catch((error: unknown) => {
+                    if ((error as Error)?.name === 'AbortError') return;
+                    const message = error instanceof Error ? error.message : String(error);
+                    this.selfHealState = { phase: 'failed', error: message };
+                    log.error('self-heal: сверка хранилища поставки не завершена', { err: error });
+                }),
+        );
         this.timer = setInterval(() => {
             void this.prepareSources()
                 .finally(() => {

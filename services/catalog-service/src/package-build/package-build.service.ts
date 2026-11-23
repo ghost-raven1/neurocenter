@@ -22,8 +22,9 @@ import {
     OnModuleInit,
     ServiceUnavailableException,
     BadRequestException,
-    Logger,
 } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
+import { internalFetch, withRequestContext } from '../../../shared/request-context.cjs';
 import { createRequire } from 'node:module';
 import type { ToolAsset, SkillAsset } from '@neurocenter/asset-contract';
 import { validateAsset } from '@neurocenter/asset-contract';
@@ -110,7 +111,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         'package-build',
     );
     private readonly repository = new PackageBuildRepository(this.pool, (client) => this.discardLease(client));
-    private readonly logger = new Logger('PackageBuildService');
+    private readonly logger = createLogger('catalog-service');
     private lease?: PoolClient;
     private releaseLease?: (destroy?: boolean) => void;
     private recovering?: Promise<void>;
@@ -193,9 +194,12 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                     },
                 },
             });
-            if (this.lease) void this.rebuild.tick();
+            // AD-O2: фоновая работа (queue + job-lease) — jobId в поле requestId.
+            // Координатор фиксирован к моменту планирования (создаётся один раз выше).
+            const rebuild = this.rebuild;
+            if (this.lease) void withRequestContext('job-catalog-rebuild', () => rebuild.tick());
             this.rebuildTimer = setInterval(() => {
-                if (this.lease && !this.stopping) void this.rebuild?.tick();
+                if (this.lease && !this.stopping) void withRequestContext('job-catalog-rebuild', () => rebuild.tick());
             }, 5000);
             this.rebuildTimer.unref();
         }
@@ -1159,7 +1163,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
                     discard: (client) => this.discardLease(client),
                 });
             });
-            await fetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
+            await internalFetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1305,7 +1309,7 @@ export class PackageBuildService implements OnModuleInit, OnModuleDestroy {
         );
     }
     private async notifySkillPublication() {
-        await fetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
+        await internalFetch((process.env.API_GATEWAY_URL || 'http://localhost:4000') + '/internal/events', {
             method: 'POST',
             headers: {
                 'content-type': 'application/json',

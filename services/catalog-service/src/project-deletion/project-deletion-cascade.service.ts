@@ -4,6 +4,7 @@ import { access, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { Pool } from 'pg';
 import { createPool } from '../database/pool';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { RetiredRagService } from '../retired-rag/retired-rag.service';
 import { backupDirectory } from '../backups/backup-policy';
 import { chatObjectDigest } from '../model-chat/chat-object-storage';
@@ -296,7 +297,7 @@ export class ProjectDeletionCascadeService implements OnModuleInit, OnModuleDest
     private async stepSkills(projectId: string, actor: string): Promise<IDeletionDomainReceipt> {
         let response: Response;
         try {
-            response = await fetch(this.skillsUrl + '/internal/project-skills/delete', {
+            response = await internalFetch(this.skillsUrl + '/internal/project-skills/delete', {
                 method: 'POST',
                 headers: {
                     'content-type': 'application/json',

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { createPool } from '../database/pool';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { RagDb } from './rag-db';
 import { reserveCapacity, recordCapacityQueue } from '../../../shared/capacity.cjs';
 import { DatabaseLifecycle } from '../retired-databases/database-lifecycle';
@@ -76,7 +77,7 @@ export class ProjectDatabases implements OnModuleInit, OnModuleDestroy {
     /** Получает только проверенные серверные ID, не используя локальные пути клиента. */
     async projects(): Promise<IProjectRef[]> {
         const base = (process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/$/, '');
-        const response = await fetch(`${base}/internal/access/projects`, {
+        const response = await internalFetch(`${base}/internal/access/projects`, {
             headers: { 'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '' },
             signal: AbortSignal.timeout(8000),
         });

@@ -1,4 +1,7 @@
 import { CATCH_ALL_PATH, CATCH_ALL_ROW, matchPolicy } from './route-policy';
+import { createLogger } from '../../../shared/logging.cjs';
+
+const log = createLogger('api-gateway');
 
 /**
  * AD-19 (entry 10): shadowing-диагностика. Таблица entry 8 (route-policy.ts) читается
@@ -61,8 +64,11 @@ export function shadowingIncident(method: string, path: string): string | undefi
     if (row.kind !== 'route' || row === CATCH_ALL_ROW) return undefined;
     if (!API_VARIANT_PREFIXES.some((prefix) => row.path.startsWith(prefix))) return undefined;
     const expected = EXPECTED_CONTROLLERS[row.path] ?? `нет записи для ${row.path}`;
-    console.error(
-        `[api-gateway] shadowing: route=${String(method || 'GET').toUpperCase()} ${path} pattern=${CATCH_ALL_PATH} expected=${expected}`,
-    );
+    log.error('shadowing incident', {
+        route: String(method || 'GET').toUpperCase(),
+        path,
+        pattern: CATCH_ALL_PATH,
+        expected,
+    });
     return expected;
 }

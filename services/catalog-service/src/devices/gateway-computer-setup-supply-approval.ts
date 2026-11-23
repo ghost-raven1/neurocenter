@@ -1,5 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { isDeepStrictEqual } from 'node:util';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { normalizeOpenCodeInstallSupply, type IOpenCodeInstallSupply } from '../../../shared/opencode-cli-install.cjs';
 import { ComputerSetupSupplyApproval } from './computer-setup-supply-approval';
 
@@ -13,7 +14,7 @@ export class GatewayComputerSetupSupplyApproval extends ComputerSetupSupplyAppro
                 token = process.env.NEUROCENTER_INTERNAL_TOKEN;
             if (!token) throw Error();
             const bounded = signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000);
-            const response = await fetch(
+            const response = await internalFetch(
                 this.base + '/internal/bridge/opencode-cli-supply/' + encodeURIComponent(supply.target),
                 {
                     headers: { 'x-neurocenter-internal': token },

@@ -1,4 +1,5 @@
 import { HttpException, ServiceUnavailableException } from '@nestjs/common';
+import { internalFetch } from '../../../shared/request-context.cjs';
 
 /** Availability is distinct from an unconfirmed successful response and keeps the existing HTTP 503 contract. */
 export class ProjectRagUnavailable extends ServiceUnavailableException {}
@@ -20,7 +21,7 @@ export class ProjectRagClient {
         const cancelled = () => requestSignal.aborted && requestSignal.reason?.name !== 'TimeoutError';
         let response: Response;
         try {
-            response = await fetch(url.href, {
+            response = await internalFetch(url.href, {
                 method: body === undefined ? 'GET' : 'POST',
                 headers: {
                     'content-type': 'application/json',

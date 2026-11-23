@@ -4,6 +4,8 @@ import {
     ForbiddenException,
     ServiceUnavailableException,
 } from '@nestjs/common';
+import { createLogger } from '../../../shared/logging.cjs';
+import { withRequestContext } from '../../../shared/request-context.cjs';
 import { randomUUID, createHash } from 'node:crypto';
 import type { Request } from 'express';
 import { requireFeaturesEnabled } from '../features/require-feature-enabled';
@@ -35,6 +37,7 @@ import type {
     TProjectChatTransport,
 } from './project-chat.interfaces';
 
+const log = createLogger('catalog-service');
 const safeFailure = (error: unknown): string =>
     error instanceof BadRequestException ||
     error instanceof ConflictException ||
@@ -162,7 +165,8 @@ export class ProjectChatRunner {
                 signal = AbortSignal.any([abort.signal, AbortSignal.timeout(14 * 60 * 1000)]);
             this.active.set(job.source.id, abort);
             try {
-                await this.execute(job, signal);
+                // AD-O2: фоновая работа (job) — jobId в поле requestId.
+                await withRequestContext('job-chat-' + job.source.id, () => this.execute(job, signal));
             } catch (error) {
                 await this.fail(
                     job,
@@ -509,7 +513,7 @@ export class ProjectChatRunner {
             ])
         ).rows[0];
         if (!target || !target.agent_ids.includes(agentId)) {
-            console.error('[project-chat] shared context skipped: no access to target room ' + share.roomId);
+            log.error('shared context skipped: no access to target room', { roomId: share.roomId });
             return;
         }
         const currentRoomId = room.id ?? DEFAULT_PROJECT_CHAT_ROOM,
@@ -534,7 +538,7 @@ export class ProjectChatRunner {
                     )
                 ).rows[0];
                 if (!ref || ref.status !== 'done' || !['user', 'agent', 'summary'].includes(ref.kind)) {
-                    console.error('[project-chat] shared context skipped: unknown or unpublished source ' + item.ref);
+                    log.error('shared context skipped: unknown or unpublished source', { ref: item.ref });
                     continue;
                 }
                 const refRoom = (
@@ -544,22 +548,18 @@ export class ProjectChatRunner {
                     )
                 ).rows[0];
                 if (!refRoom || !refRoom.agent_ids.includes(agentId)) {
-                    console.error('[project-chat] shared context skipped: no access to the source room of ' + item.ref);
+                    log.error('shared context skipped: no access to the source room', { ref: item.ref });
                     continue;
                 }
                 if (refRoom.visibility === 'PRIVATE' && target.visibility !== 'PRIVATE') {
-                    console.error(
-                        '[project-chat] shared context skipped: a private source must not enter a public room (FR-403)',
-                    );
+                    log.error('shared context skipped: a private source must not enter a public room (FR-403)');
                     continue;
                 }
                 refMessageId = ref.id;
                 sourceRoomId = ref.room_id;
                 sourceGeneration = ref.generation;
             } else if (room.visibility === 'PRIVATE' && target.visibility !== 'PRIVATE') {
-                console.error(
-                    '[project-chat] shared context skipped: a private source must not enter a public room (FR-403)',
-                );
+                log.error('shared context skipped: a private source must not enter a public room (FR-403)');
                 continue;
             }
             const itemId = randomUUID(),
@@ -636,10 +636,7 @@ export class ProjectChatRunner {
                 [target] = await this.inference.resolve(req, job.projectId, room, [to.agentId], db);
             } catch (error) {
                 // The agent is no longer available; the published answer stands, the connection is skipped.
-                console.error(
-                    '[project-chat] handover connection skipped: ' +
-                        String(error instanceof Error ? error.message : error),
-                );
+                log.error('handover connection skipped', { err: error });
                 target = undefined;
             }
             if (target) connected.push({ target, handover: to, from });

@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import type { ITextAdmission } from '../../../shared/project-text-knowledge.cjs';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import type { ITextActor } from './text-values';
 
 /** Fresh Catalog authorization runs inside the locked transaction, immediately before its first mutation. */
@@ -13,7 +14,7 @@ export async function authorizeTextUpload(value: {
     const base = (process.env.CATALOG_SERVICE_URL || 'http://localhost:4100').replace(/\/+$/, '');
     let response: Response, body: unknown;
     try {
-        response = await fetch(base + '/internal/project-text/authorize', {
+        response = await internalFetch(base + '/internal/project-text/authorize', {
             method: 'POST',
             redirect: 'error',
             headers: {

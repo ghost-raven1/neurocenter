@@ -6,7 +6,10 @@ import {
     VERIFICATION_FAILURE_ACTIONS,
     VERIFICATION_FAILURE_CODES,
 } from '../../../shared/agent-result-verification.cjs';
+import { createLogger } from '../../../shared/logging.cjs';
 import { MainMethodPreparationError, prepareMainMethod, type IPreparedMainMethod } from './method-preparation';
+
+const log = createLogger('catalog-service');
 
 /**
  * FR-305 runtime seam: runs a background task in `root` and produces the universal verified result
@@ -349,7 +352,7 @@ export class OpenCodeAgentRuntime implements IAgentRuntime {
                 // A pinned prerequisite is missing or mismatched: fail-closed before execution, with a
                 // fixed classifier (the named MainMethodPreparationError code; never raw error text).
                 if (error instanceof MainMethodPreparationError)
-                    console.error(JSON.stringify({ event: 'method-preparation-failed', code: error.code }));
+                    log.error('method-preparation-failed', { code: error.code });
                 return {
                     protocol: AGENT_RESULT_VERIFICATION_PROTOCOL,
                     state: 'failed',

@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { internalFetch } from '../../../shared/request-context.cjs';
 import { createPool } from '../database/pool';
 import { CatalogService } from '../catalog/catalog.service';
 import { AccessDb } from '../access/access-db';
@@ -515,7 +516,7 @@ export class RetiredRagService implements OnModuleInit, OnModuleDestroy {
         const base = (process.env.RAG_SERVICE_URL || 'http://localhost:4300').replace(/\/$/, '');
         let result: Response;
         try {
-            result = await fetch(`${base}/internal/retired-rag/${route}`, {
+            result = await internalFetch(`${base}/internal/retired-rag/${route}`, {
                 method: body === undefined ? 'GET' : 'POST',
                 headers: {
                     'x-neurocenter-internal': process.env.NEUROCENTER_INTERNAL_TOKEN || '',
