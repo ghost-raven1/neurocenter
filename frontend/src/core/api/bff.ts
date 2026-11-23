@@ -6,6 +6,7 @@ import type {
     IAuditEvent,
     IBackupStatus,
     IBundlePackage,
+    IErrorEvent,
     ILocalProjectsImportResult,
     IOperationActionResult,
     IOperationDetail,
@@ -173,6 +174,7 @@ const bffApi: IBffApi = {
             )
             .then((r) => r.data),
     listAudit: async (params) => base.get<IPage<IAuditEvent>>('/api/audit', { params }).then((r) => r.data),
+    listErrors: async (params) => base.get<IPage<IErrorEvent>>('/api/errors', { params }).then((r) => r.data),
     getStorage: async () => base.get<IStorageSummary>('/api/maintenance/storage').then((r) => r.data),
     getBackup: async () => base.get<IBackupStatus>('/api/maintenance/backup').then((r) => r.data),
     backupNow: async () => base.post('/api/maintenance/backup').then(() => undefined),

@@ -137,6 +137,9 @@ export const ROUTE_POLICY: readonly IRouteRow[] = [
     { kind: 'route', path: '/internal/system-role-mcp/execute', allowed: ['POST'], timeoutMs: 45000, maxResponseBytes: 8 * MIB },
     { kind: 'route', path: '/internal/system-role-mcp/close', allowed: ['POST'] },
     { kind: 'route', path: '/internal/events', allowed: ['POST'] },
+    // AD-O5 (6.11): client-репорт ошибок — public, rate-limit в nginx (zone errors_client);
+    // тело ≤ 16 KiB (stackHint ≤ 4 КБ + allowlist-поля), доставка в каталог — 5 s.
+    { kind: 'route', path: '/errors/client', allowed: ['POST'], timeoutMs: 15000, maxBodyBytes: 16 * KIB },
     // Пост-создание (вне NestJS-модулей): доки GET/HEAD only; socket.io — WS, бюджеты не применимы.
     { kind: 'route', path: '/docs', allowed: ['GET', 'HEAD'], postCreate: true },
     { kind: 'route', path: '/socket.io', allowed: ['WS'], postCreate: true },

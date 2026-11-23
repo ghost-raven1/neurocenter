@@ -173,6 +173,21 @@ test('Token-exchange: отдельная nginx-зона на /auth/callback (OQ3
     assert.ok(callback, 'nginx: location = /auth/callback');
 });
 
+test('AD-O5 (6.11): client-репорт — отдельная nginx-зона errors_client 10r/m + 429', () => {
+    assert.ok(
+        /limit_req_zone\s+\$binary_remote_addr\s+zone=errors_client:\d+m\s+rate=10r\/m;/.test(nginxTemplate),
+        'nginx: limit_req_zone errors_client 10r/m per IP',
+    );
+    const client = locations.find((location) => location.kind === 'exact' && location.matcher === '/api/errors/client');
+    assert.ok(client, 'nginx: location = /api/errors/client (exact — раньше prefix /api/)');
+    // В exact-блоке нет вложенных фигурных скобок: директивы ищутся по тексту локации.
+    const clientBlock = /location\s+=\s+\/api\/errors\/client\s*\{([\s\S]*?)\}/.exec(nginxTemplate)?.[1] ?? '';
+    assert.match(clientBlock, /limit_req\s+zone=errors_client\s+burst=\d+\s+nodelay;/, 'nginx: limit_req zone=errors_client burst nodelay');
+    assert.match(clientBlock, /limit_req_status\s+429;/, 'nginx: limit_req_status 429 (всплеск = 429, репорт отбрасывается)');
+    assert.match(clientBlock, /proxy_pass\s+http:\/\/api-gateway:4000;/, 'nginx: прокидка в api-gateway');
+    assert.match(clientBlock, /proxy_set_header\s+X-Request-ID\s+\$request_id;/, 'nginx: correlation X-Request-ID');
+});
+
 test('Body-цепочка nginx → gateway → catalog не растёт к центру; 40MiB проходит всю цепь', () => {
     // nginx: server-level client_max_body_size (dedicated 8g на archive — только шире).
     const serverBody = nginxTemplate.match(/client_max_body_size\s+([^\s;]+);\s*\n/);

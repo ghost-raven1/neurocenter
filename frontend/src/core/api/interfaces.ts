@@ -351,6 +351,30 @@ export interface IAuditListParams {
     size: number;
 }
 
+/** Событие error-store (AD-O5): только safe-поля (AD-O8). */
+export interface IErrorEvent {
+    id: string;
+    service: string;
+    ts: string;
+    level: 'error' | 'critical';
+    requestId: string | null;
+    /** Фиксированный классификатор, не произвольный текст. */
+    message: string;
+    /** Кадры + имена без значений (≤ 4 КБ). */
+    stackHint: string | null;
+}
+
+/** Фильтры списка error-событий (GET /api/errors). */
+export interface IErrorListParams {
+    service?: string;
+    requestId?: string;
+    level?: 'error' | 'critical';
+    /** Период: число с суффиксом h или d (например, 24h). */
+    period?: string;
+    page: number;
+    size: number;
+}
+
 /** Сводка по хранилищу. */
 export interface IStorageSummary {
     totalBytesUsed: number;

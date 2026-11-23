@@ -20,6 +20,7 @@ const sections: Record<string, { title: string; group: TNavigationGroupKey | nul
     assets: { title: 'Поставка', group: 'resources' },
     maintenance: { title: 'Обслуживание', group: 'management' },
     audit: { title: 'История действий', group: 'management' },
+    error: { title: 'Ошибки', group: 'management' },
     'model-usage': { title: 'Использование моделей', group: 'management' },
     access: { title: 'Участники и доступ', group: 'management' },
     settings: { title: 'Настройки', group: 'management' },

@@ -3,6 +3,7 @@ import { Alert, Button, Card, Empty, Input, List, Pagination, Select, Space, Tab
 import type { ColumnsType } from 'antd/es/table';
 import { FC, useEffect, useMemo, useRef, useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useLocation } from 'react-router-dom';
 
 import { PageHeading } from '../../common/components/PageHeading';
 import AccessibleDrawer from '../../common/components/AccessibleDrawer';
@@ -34,9 +35,11 @@ const OUTCOME_OPTIONS = [
 /** История сохранённых операций без обещания полного аудита всех действий системы. */
 const Audit: FC = () => {
     const dispatch = useAppDispatch();
+    const location = useLocation();
     const { list, page, size, total, loading, error, loadedPage } = useSelector((state: TRootState) => state.audit);
     const [outcome, setOutcome] = useState('all');
-    const [search, setSearch] = useState('');
+    // AD-O5 (6.11): переход из модуля «Ошибки» по requestId — поиск заранее заполнен.
+    const [search, setSearch] = useState(() => new URLSearchParams(location.search).get('search') ?? '');
     const [selected, setSelected] = useState<IAuditEvent | null>(null);
     const filtersActive = Boolean(search.trim()) || outcome !== 'all';
     const currentList = loadedPage === page ? list : [];

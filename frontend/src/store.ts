@@ -4,6 +4,7 @@ import userBlockReducer from './features/UserBlock/redux/reducers';
 import operationsReducer from './modules/Operations/redux/reducers';
 import accessReducer from './modules/Access/redux/reducers';
 import auditReducer from './modules/Audit/redux/reducers';
+import errorsReducer from './modules/Error/redux/reducers';
 import maintenanceReducer from './modules/Maintenance/redux/reducers';
 import projectsReducer from './modules/Projects/redux/reducers';
 import ragReducer from './modules/Rag/redux/reducers';
@@ -17,6 +18,7 @@ const rootReducer = combineReducers({
     rag: ragReducer,
     maintenance: maintenanceReducer,
     audit: auditReducer,
+    errors: errorsReducer,
     access: accessReducer,
 });
 

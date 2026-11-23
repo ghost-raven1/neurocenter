@@ -14,6 +14,26 @@ let currentOwner: () => unknown = () => undefined;
 const requestOwners = new WeakMap<AxiosRequestConfig, unknown>();
 
 /**
+ * AD-O1/O2: последний X-Request-ID из ответа gateway (nginx $request_id) —
+ * correlation для client-репортов ошибок (6.11). Только заголовок-safe значения.
+ */
+const REQUEST_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,126}[a-z0-9]$/i;
+let lastRequestId: string | null = null;
+
+/**
+ * Возвращает последний увиденный X-Request-ID (null — ответы ещё не приходили).
+ *
+ * @returns {string | null}
+ */
+export const getLastRequestId = (): string | null => lastRequestId;
+
+const captureRequestId = (value: unknown): void => {
+    if (typeof value === 'string' && REQUEST_ID_PATTERN.test(value)) {
+        lastRequestId = value;
+    }
+};
+
+/**
  * Регистрирует обработчик 401 и читатель текущего владельца без зависимости API от Redux.
  *
  * @param {TUnauthorizedHandler} handler - колбэк обработки 401
@@ -44,8 +64,12 @@ instance.interceptors.request.use(
 );
 
 instance.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        captureRequestId(response.headers['x-request-id']);
+        return response;
+    },
     (error: AxiosError) => {
+        captureRequestId(error.response?.headers['x-request-id']);
         if (
             error.response?.status === 401 &&
             error.config &&
