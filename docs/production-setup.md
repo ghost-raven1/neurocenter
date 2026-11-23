@@ -96,6 +96,64 @@ Docker volumes production-стека: PostgreSQL, Markdown-скиллы, сер�
 
 [Расписание и контроль свежести](maintenance-schedule.md), [S3-доставка](external-backups.md) и [физический admission](capacity-admission.md) реализованы. До допуска нужно подключить независимое внешнее хранилище и системный таймер, обеспечить внешний retention и подтвердить согласованные RPO/RTO репетицией на целевом объёме. Конфигурация/секреты и TLS требуют отдельного закрытого хранения. Локальные папки сотрудников и их LanceDB резервируются отдельно.
 
+## Канал алертов (AD-O6, ep6 entry 13)
+
+Алерты Prometheus доставляются оператору через **file-sink** (HITL-решение оператора): alertmanager (compose, backend-сеть) → webhook → **host-receiver** (systemd-сервис на хосте) → запись в `/var/log/neurocenter/alerts.jsonl` + journald.
+
+**«Доставлено» = запись в файл/journal с меткой времени** (readiness-критерий, `docs/implementation-readiness.md` P0-RES). alertmanager UI — диагностика, НЕ канал; **файл правил без работающего канала = не доставлено**. Resolve-события (снятие алерта) доставляются так же — строка с `"status":"resolved"`.
+
+Механика:
+
+- `deploy/production/monitoring/alertmanager.yml` — route (`group_by [alertname, severity]`, `group_wait 30s`, `group_interval 5m`, `repeat_interval 4h`) + receiver `neurocenter-file-sink` (webhook `http://host.docker.internal:9111/alerts`).
+- `scripts/production/alert-receiver.mjs` — HTTP-сервер без зависимостей: `POST /alerts` (JSONL 0600, каталог 0700, fail-fast на старте если каталог не writable), `GET /metrics` (`neurocenter_alert_receiver_up`, `neurocenter_alerts_received_total{status}`, `neurocenter_edge_cert_days_to_expiry` — AD-OP-7, gauge пересчитывается из `CERT_PATH` при каждом scrape, нет файла → `NaN`), `GET /ready`.
+- `deploy/production/alert-receiver.service` — systemd: `User=neurocenter-operator` (тот же, что у stack-watchdog), `Restart=always`, `UMask=0077`.
+- Адрес хоста: у compose-паттерна нет host networking — `extra_hosts: host.docker.internal:host-gateway` добавлен сервисам alertmanager и prometheus (резолвится в IP шлюза backend-моста). Порт 9111 согласован в трёх местах: `ALERT_RECEIVER_PORT` (юнит), `webhook_url` (alertmanager.yml), job `alert-receiver` (prometheus.yml).
+- Новые правила (ep6 entry 13) в `neurocenter-alerts.yml`: `NeurocenterStackDown` (ни один сервис не жив, 2m, critical), `NeurocenterErrorCritical` (critical-события error-store за 5m, warning), `NeurocenterCertExpiry` (<14d, warning) / `NeurocenterCertExpiryCritical` (<7d, critical), `NeurocenterAlertReceiverDown` (канал down, 2m, critical).
+- Детект «канал down» — по `up{job="alert-receiver"} == 0` (scrape-уровень): с гибелью процесса gauge `neurocenter_alert_receiver_up` из Prometheus исчезает, и «gauge == 0» не сработал бы никогда.
+- Retention `alerts.jsonl` — 30 дней (алерты редкие; logrotate на хосте):
+
+  ```
+  /var/log/neurocenter/alerts.jsonl {
+      rotate 30
+      daily
+      compress
+      missingok
+      notifempty
+      copytruncate
+  }
+  ```
+
+Установка на хосте (один раз): скопировать юнит в `/etc/systemd/system/`, в `CERT_PATH` подставить актуальное значение `TLS_CERT_FILE` из production `.env` (edge-сертификат frontend), затем `systemctl daemon-reload && systemctl enable --now neurocenter-alert-receiver`. Проверка: `curl -s localhost:9111/ready` → `ready`, `journalctl -u neurocenter-alert-receiver`.
+
+Как проверить доставку: `tail /var/log/neurocenter/alerts.jsonl` (строка = `{ts, source:"alertmanager", status, alertname, severity, labels, annotations, …}`) и/или `journalctl -u neurocenter-alert-receiver` (строка `[alert-receiver] firing <AlertName> severity=… service=…`). Grep по имени алерта: `grep NeurocenterDiskSpaceLow /var/log/neurocenter/alerts.jsonl`. Снятие: после восстановления условия alertmanager шлёт resolve-событие — в файле появляется строка с тем же alertname и `"status":"resolved"` (через ~5m, resolve-timeout alertmanager v0.30+ фиксирован).
+
+Как расширить канал (email/telegram/webhook-2 — OQ-2, не P0): новый named receiver в `receivers` + ветка в `route` (matcher по severity/alertname) — см. комментарий-секцию «РАСШИРЕНИЕ» в `alertmanager.yml`; file-sink остаётся базовым каналом, новые дублируют доставку.
+
+Валидность конфигов (локальные образы, egress не нужен):
+
+```sh
+# alertmanager.yml (amtool из образа; флага --check в alertmanager нет):
+docker run --rm --entrypoint /bin/amtool -v $PWD/deploy/production/monitoring:/etc/alertmanager \
+  prom/alertmanager:v0.32.1 check-config /etc/alertmanager/alertmanager.yml
+# правила + fixture (promtool из образа; test-файл один, rule_files внутри):
+docker run --rm --entrypoint /bin/promtool \
+  -v $PWD/deploy/production/monitoring:/etc/prometheus -v $PWD/scripts/test:/fixtures \
+  prom/prometheus@sha256:3b9b2a15d376334da8c286d995777d3b9315aa666d2311170ada6059a517b74f \
+  test rules /fixtures/alert-rules.fixture.yaml
+```
+
+### HITL-приёмка 6.15: «вызвать → доставлено → снято»
+
+Пошаговая приёмка на живом production-стеке (оператор). Критерий: условие вызвано → в `alerts.jsonl`/journal есть строка с временем → условие снято → есть resolve-строка.
+
+1. **Disk low** (`NeurocenterDiskSpaceLow`, critical): найти физический том, на котором живут данные стека (`df -h /var/lib/docker` на хосте); заполнить резерв: `dd if=/dev/zero of=/var/lib/docker/filler-nc bs=1M count=<N>` до free < 1GiB (том capacity-collector). Проверка: `grep NeurocenterDiskSpaceLow alerts.jsonl` (строка firing, ≤ 1m + group_wait 30s). Снятие: `rm filler-nc` → resolve-строка.
+2. **Service down** (`NeurocenterServiceUnavailable`, critical, 1m): `docker compose -f compose.production.yml -p neurocenter-production stop <сервис>` (например, skills-service). Проверка: grep по имени (строка с `service`/`instance` labels). Снятие: `… start <сервис>` → resolve.
+3. **Stack down** (`NeurocenterStackDown`, critical, 2m): остановить все 6 app-сервисов job="neurocenter" (`docker compose … stop` по каждому; мониторинг не трогаем — иначе некому доставлять). Проверка: grep `NeurocenterStackDown` (один алерт — group_by). Снятие: `… start` всех → resolve.
+4. **Канал down** (`NeurocenterAlertReceiverDown`, critical, 2m): `systemctl stop neurocenter-alert-receiver`. Проверка: grep (2m). Снятие: `systemctl start neurocenter-alert-receiver` → resolve.
+5. **Queue** (`NeurocenterRagQueueGrowing`, warning) и **error critical** (`NeurocenterErrorCritical`, warning): на живом стеке безопасного вызова нет (queue — штатная нагрузка; critical-ошибка — штатный сбой) — принимаются fixture'ом: `promtool test rules` (сценарии 3/5 в `alert-rules.fixture.yaml`) + строчка в доке.
+6. **Cert expiry** (`NeurocenterCertExpiry`/`Critical`): live-проверка текущего срока — `curl -s localhost:9111/metrics | grep days_to_expiry` и `openssl x509 -in <TLS_CERT_FILE> -noout -checkend 2592000` (30 дней, см. `secret-rotation.md`); пороговые значения (14d/7d) принимаются fixture'ом (сценарий 4/5). Ротация при истечении — по runbook `secret-rotation.md` (frontend пересоздаётся, gauge обновляется при следующем scrape без перезапуска receiver).
+7. **Grouping** (ожидаемо): при п.3 в файле одна строка `NeurocenterStackDown` (не 6) + 6 строк `NeurocenterServiceUnavailable` — оператор видит масштаб по labels.
+
 ## Доказательства и границы
 
 Автотест `node scripts/test/production-stack.mjs --build` сам создаёт тестовый TLS через OpenSSL, приватную конфигурацию и уникальный Compose-проект. Используются отдельные volumes, loopback-порты и тестовый Blitz. После прогона удаляются только собственные контейнеры и volumes; логи по умолчанию сохраняются в `.run/production-stage-1`. Тест не использует production-реквизиты и не изменяет рабочие данные локального стенда. Метку образов задаёт `NEUROCENTER_TEST_RELEASE`, каталог свидетельств — `NEUROCENTER_TEST_EVIDENCE`; для уже собранных образов флаг `--build` не нужен. В сетях, где build-контейнер не резолвит внешние имена (закрытый наружный DNS, недоступный из контейнера локальный stub-resolver), фиксация хостов: `NEUROCENTER_BUILD_HOSTS=host:ip,host:ip` — переменная добавляет `extra_hosts` каждому build-сервису в генерируемый Compose-override (apt-зеркала, PGDG, npm-реестры); без переменной override не меняется. Авторизация доверенного реестра (`NPM_REGISTRY_AUTH_B64`) и корпоративный CA (`NEUROCENTER_BUILD_CA_SHA256`/`NEUROCENTER_BUILD_CA_NAME`, [механизм](docker-build-ca.md)) — стандартные build-арги образов, в доверенной сети обязательны. Текущий код и приёмка разделены в [описании реализации](current-implementation.md) и [реестре готовности](implementation-readiness.md). [Этап 0.9.0](reliable-installation-0.9-2026-10-18.md) содержит исторические результаты для своих образов; [четвёртый этап](production-stage-4-2026-10-17.md) сохранён как история; [первый этап](production-stage-1-2026-10-17.md) сохранён как история.

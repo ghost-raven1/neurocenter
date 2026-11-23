@@ -95,6 +95,7 @@ const expectedFiles = [
     'scripts/test/verifier-tls.test.mjs',
     'scripts/test/mcp-host-route-shadowing.test.mjs',
     'scripts/test/redaction-drift.test.mjs',
+    'scripts/test/alert-receiver.test.mjs',
 ].sort();
 const exists = (file) =>
     fs.access(file).then(

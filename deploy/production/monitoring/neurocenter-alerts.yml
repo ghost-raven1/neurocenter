@@ -67,3 +67,58 @@ groups:
           severity: critical
         annotations:
           summary: 'Статус внешних копий не обновляется; свежесть резервирования неизвестна'
+  # AD-O6/AD-OP-7 (ep6 entry 13): правила, привязанные к каналу доставки (alertmanager.yml)
+  # и host-метрикам (job alert-receiver — systemd host-receiver на хосте). 9 базовых выше —
+  # ратификация, не переписываются; только добавление.
+  - name: neurocenter-alerting
+    rules:
+      # Целый стек мёртв: ни один target job="neurocenter" не up (2m — эскалация над
+      # ServiceUnavailable 1m). absent(up{job} == 1), а не count(up{job}) == 0 из плана:
+      # (1) с static_configs серия up ВСЕГДА существует (6 target'ов) — при всех down
+      # count(up{job}) == 6, литеральное выражение слепое; (2) count() по пустому вектору
+      # возвращает ПУСТОЙ вектор (а не 0), так и count(up==1) == 0 никогда не сработает.
+      # absent() срабатывает и при полном down, и при исчезновении job (slapping scrape-конфига).
+      - alert: NeurocenterStackDown
+        expr: absent(up{job="neurocenter"} == 1)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Ни один сервис Нейроцентра не жив (стек мёртв)'
+      # entry 6.10 (AD-O5): critical-события error-store за 5m → сигнал (warning —
+      # порог HITL: наличие, не частота).
+      - alert: NeurocenterErrorCritical
+        expr: increase(neurocenter_error_events_total{level="critical"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Критические error-события в error-store за последние 5 минут'
+      # AD-OP-7: edge-сертификат — gauge host-receiver (job alert-receiver).
+      # Файл сертификата отсутствует → gauge NaN → сравнение не срабатывает (канал жив,
+      # сертификат неизвестен — это видно в /metrics вручную, ложных алертов нет).
+      - alert: NeurocenterCertExpiry
+        expr: neurocenter_edge_cert_days_to_expiry < 14
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Меньше 14 дней до истечения edge-сертификата'
+      - alert: NeurocenterCertExpiryCritical
+        expr: neurocenter_edge_cert_days_to_expiry < 7
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Меньше 7 дней до истечения edge-сертификата'
+      # Канал доставки down. Детект — up со scrape'а job="alert-receiver", а не
+      # gauge neurocenter_alert_receiver_up == 0 из плана: с гибелью процесса gauge
+      # исчезает из Prometheus, и «== 0» не сработает никогда (missing ≠ 0). up==0
+      # срабатывает при падении receiver, закрытом порту и сломанном DNS host-gateway.
+      - alert: NeurocenterAlertReceiverDown
+        expr: up{job="alert-receiver"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Канал алертов (host-receiver) недоступен — алерты не доставляются'

@@ -1,0 +1,24 @@
+[Unit]
+Description=Neurocenter alert delivery channel (AD-O6, ep6 entry 13): alertmanager webhook -> alerts.jsonl + journal
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=neurocenter-operator
+WorkingDirectory=/opt/neurocenter
+# Путь alerts.jsonl совпадает с --alert-file stack-watchdog (deploy/production/watchdog).
+Environment=ALERTS_FILE=/var/log/neurocenter/alerts.jsonl
+# CERT_PATH — актуальное значение TLS_CERT_FILE из /srv/neurocenter/config/.env
+# (edge-сертификат frontend; операторские файлы, путь задаётся при configure).
+# Если файл отсутствует, receiver жив (receiver_up=1), а gauge days-to-expiry = NaN.
+Environment=CERT_PATH=/srv/neurocenter/config/tls/edge-cert.pem
+# Порт обязан совпадать с webhook_url в alertmanager.yml и job alert-receiver в prometheus.yml.
+Environment=ALERT_RECEIVER_PORT=9111
+ExecStart=/usr/bin/node /opt/neurocenter/scripts/production/alert-receiver.mjs
+UMask=0077
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

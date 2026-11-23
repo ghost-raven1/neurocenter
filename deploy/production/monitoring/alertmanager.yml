@@ -1,11 +1,64 @@
-# AD-O6: alertmanager — compose-сервис (entry 12). Канал доставки и полный route — entry 13
-# (alerting: alertmanager.yml + правила + доставляющий канал, AD-O6/OP-7/OP-8). Здесь placeholder:
-# минимальный валидный конфиг, чтобы compose-сервис стартовал и отдавал /-/healthy до entry 13.
+# AD-O6 (ep6 entry 13): канал доставки алертов — FILE-SINK (HITL-решение оператора).
+#
+# «Доставлено» = запись в /var/log/neurocenter/alerts.jsonl + journald (readiness-критерий,
+# docs/implementation-readiness.md P0-RES: «файл Prometheus rules не является доставленным alert»).
+# alertmanager UI — диагностика, НЕ канал.
+#
+# Механика: alertmanager (compose, backend-сеть) → webhook POST /alerts → host-receiver
+# (systemd-сервис alert-receiver.service на хосте, User=neurocenter-operator,
+# scripts/production/alert-receiver.mjs) → строка JSONL + journald.
+#
+# Адрес хоста: host-receiver — хостовый systemd-сервис, а не контейнер. У compose-паттерна
+# нет host networking, поэтому используется host-gateway: extra_hosts
+# `host.docker.internal:host-gateway` у сервисов alertmanager и prometheus в
+# compose.production.yml резолвится в IP шлюза backend-моста; хостовый слушатель 9111
+# достижим через него. Порт 9111 обязан совпадать с ALERT_RECEIVER_PORT в
+# alert-receiver.service (и с job alert-receiver в prometheus.yml).
+#
+# Группировка: group_by [alertname, severity] — N мёртвых сервисов = одна группа
+# NeurocenterServiceUnavailable (не N алертов), оператор видит «5 сервисов» в labels.
+# resolve-события (снятие алерта) доставляются: send_resolved у receiver + фиксированный
+# resolve-timeout alertmanager v0.30+ (5m, опция resolve_timeout из конфигов удалена).
 route:
-  receiver: 'default'
+  receiver: 'neurocenter-file-sink'
   group_by: [alertname, severity]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+
 receivers:
-  - name: 'default'
+  - name: 'neurocenter-file-sink'
+    webhook_configs:
+      - url: 'http://host.docker.internal:9111/alerts'
+        send_resolved: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# РАСШИРЕНИЕ: новые receivers (email / telegram / webhook-2)
+#
+# Канал file-sink остаётся базовым (readiness-критерий «доставлено» = файл/journal);
+# будущие каналы добавляются БЕЗ переписывания конфига:
+#
+# 1. Новый named receiver в секции `receivers`:
+#      - name: 'neurocenter-email'
+#        email_configs:
+#          - to: 'operator@example.test'
+#            send_resolved: true
+#      (telegram — как webhook_configs на URL бота-хост-скрипта, как file-sink)
+#
+# 2. Ветка route: alertmanager пробует `routes` сверху вниз, первая подходящая побеждает;
+#    без веток — всё уходит в базовый receiver выше:
+#      route:
+#        receiver: 'neurocenter-file-sink'
+#        group_by: [alertname, severity]
+#        ...
+#        routes:
+#          - matchers: [severity="critical"]
+#            receiver: 'neurocenter-email'
+#            repeat_interval: 1h
+#
+# OQ-2: email/telegram — не P0 (закрытый контур, SMTP отсутствует); отдельная задача.
+# Валидность (флаг --check в alertmanager нет; конфиг проверяет amtool из того же образа):
+#   docker run --rm --entrypoint /bin/amtool \
+#     -v $PWD/deploy/production/monitoring:/etc/alertmanager \
+#     prom/alertmanager:v0.32.1 check-config /etc/alertmanager/alertmanager.yml
+# ─────────────────────────────────────────────────────────────────────────────
