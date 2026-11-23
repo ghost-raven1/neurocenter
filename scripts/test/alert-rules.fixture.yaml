@@ -1,0 +1,162 @@
+# promtool test rules — новые правила neurocenter-alerts.yml (ep6 entry 13, AD-O6/AD-OP-7).
+# Запуск (образы локальные, egress не нужен; prom/prometheus = v3.0.0 из compose,
+# promtool лежит в /bin/promtool):
+#   docker run --rm --entrypoint /bin/promtool \
+#     -v $PWD/deploy/production/monitoring:/etc/prometheus \
+#     -v $PWD/scripts/test:/fixtures \
+#     prom/prometheus@sha256:3b9b2a15d376334da8c286d995777d3b9315aa666d2311170ada6059a517b74f \
+#     test rules /fixtures/alert-rules.fixture.yaml
+# rule_files — ВНУТРИ fixture (принимается только один аргумент — test-файл).
+# 9 базовых правил не переписываются (ратификация); fixture проверяет новые + sanity базового
+# ServiceUnavailable (consumer job="neurocenter" жив) + resolve-сценарии.
+# exp_annotations обязателен ТОЧНО (promtool сверяет аннотации целиком).
+evaluation_interval: 1m
+
+rule_files:
+  - /etc/prometheus/neurocenter-alerts.yml
+
+tests:
+  # 1) Stack down: все 6 target'ов job="neurocenter" down (up=0) → NeurocenterStackDown
+  #    через for 2m (critical). Живой аналог: стоп стека (HITL-ранбук).
+  - interval: 1m
+    input_series:
+      - series: 'up{job="neurocenter",instance="oauth2-bridge:22222",service="oauth2-bridge"}'
+        values: '0 0 0'
+      - series: 'up{job="neurocenter",instance="api-gateway:4000",service="api-gateway"}'
+        values: '0 0 0'
+      - series: 'up{job="neurocenter",instance="catalog-service:4100",service="catalog-service"}'
+        values: '0 0 0'
+      - series: 'up{job="neurocenter",instance="skills-service:4200",service="skills-service"}'
+        values: '0 0 0'
+      - series: 'up{job="neurocenter",instance="rag-sync-service:4300",service="rag-sync-service"}'
+        values: '0 0 0'
+      - series: 'up{job="neurocenter",instance="feature-flags-service:4400",service="feature-flags-service"}'
+        values: '0 0 0'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NeurocenterStackDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: Ни один сервис Нейроцентра не жив (стек мёртв)
+
+  # 2) Одиночный сервис down (остальные живы) → ServiceUnavailable (базовое, for 1m)
+  #    БЕЗ StackDown; поднятие в 2m → resolve к 4m.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="neurocenter",instance="feature-flags-service:4400",service="feature-flags-service"}'
+        values: '0 0 1 1'
+      - series: 'up{job="neurocenter",instance="api-gateway:4000",service="api-gateway"}'
+        values: '1 1 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: NeurocenterServiceUnavailable
+        exp_alerts:
+          - exp_labels:
+              job: neurocenter
+              instance: feature-flags-service:4400
+              service: feature-flags-service
+              severity: critical
+            exp_annotations:
+              summary: Сервис Нейроцентра недоступен для сбора метрик
+      - eval_time: 1m
+        alertname: NeurocenterStackDown
+        exp_alerts: []
+      # resolve: сервис поднят (up=1 с 2m) → снятие к 4m.
+      - eval_time: 4m
+        alertname: NeurocenterServiceUnavailable
+        exp_alerts: []
+
+  # 3) Error critical (entry 6.10): счётчик critical-событий растёт →
+  #    NeurocenterErrorCritical (for 0m, warning); остановка роста → resolve за окном 5m.
+  - interval: 1m
+    input_series:
+      - series: 'neurocenter_error_events_total{job="neurocenter",instance="api-gateway:4000",service="api-gateway",level="critical"}'
+        values: '0+1x6'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: NeurocenterErrorCritical
+        exp_alerts:
+          - exp_labels:
+              job: neurocenter
+              instance: api-gateway:4000
+              service: api-gateway
+              level: critical
+              severity: warning
+            exp_annotations:
+              summary: Критические error-события в error-store за последние 5 минут
+      - eval_time: 11m
+        alertname: NeurocenterErrorCritical
+        exp_alerts: []
+
+  # 4) Cert expiry (gauge host-receiver): 10 дней → warning <14; critical <7 не активно.
+  - interval: 1m
+    input_series:
+      - series: 'neurocenter_edge_cert_days_to_expiry{job="alert-receiver",instance="host.docker.internal:9111"}'
+        values: '10 10 10'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: NeurocenterCertExpiry
+        exp_alerts:
+          - exp_labels:
+              job: alert-receiver
+              instance: host.docker.internal:9111
+              severity: warning
+            exp_annotations:
+              summary: Меньше 14 дней до истечения edge-сертификата
+      - eval_time: 1m
+        alertname: NeurocenterCertExpiryCritical
+        exp_alerts: []
+
+  # 5) Cert expiry critical + resolve: 5 дней → warning и critical; ротация (40 дней) → снятие.
+  - interval: 1m
+    input_series:
+      - series: 'neurocenter_edge_cert_days_to_expiry{job="alert-receiver",instance="host.docker.internal:9111"}'
+        values: '5 5 5 40 40 40'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: NeurocenterCertExpiry
+        exp_alerts:
+          - exp_labels:
+              job: alert-receiver
+              instance: host.docker.internal:9111
+              severity: warning
+            exp_annotations:
+              summary: Меньше 14 дней до истечения edge-сертификата
+      - eval_time: 1m
+        alertname: NeurocenterCertExpiryCritical
+        exp_alerts:
+          - exp_labels:
+              job: alert-receiver
+              instance: host.docker.internal:9111
+              severity: critical
+            exp_annotations:
+              summary: Меньше 7 дней до истечения edge-сертификата
+      # resolve после ротации сертификата (40 дней).
+      - eval_time: 4m
+        alertname: NeurocenterCertExpiry
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: NeurocenterCertExpiryCritical
+        exp_alerts: []
+
+  # 6) Receiver down: up{job="alert-receiver"} == 0 → NeurocenterAlertReceiverDown (for 2m,
+  #    critical); поднят (up=1 с 3m) → resolve к 4m.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="alert-receiver",instance="host.docker.internal:9111"}'
+        values: '0 0 0 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NeurocenterAlertReceiverDown
+        exp_alerts:
+          - exp_labels:
+              job: alert-receiver
+              instance: host.docker.internal:9111
+              severity: critical
+            exp_annotations:
+              summary: Канал алертов (host-receiver) недоступен — алерты не доставляются
+      - eval_time: 4m
+        alertname: NeurocenterAlertReceiverDown
+        exp_alerts: []

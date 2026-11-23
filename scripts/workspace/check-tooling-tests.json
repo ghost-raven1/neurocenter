@@ -7,6 +7,7 @@
     "scripts/agent-kit/test/live-preflight.test.mjs",
     "scripts/agent-kit/test/role-contracts.test.mjs",
     "scripts/agent-kit/test/role-evals.test.mjs",
+    "scripts/test/alert-receiver.test.mjs",
     "scripts/test/background-agent-crash-resilience.test.mjs",
     "scripts/test/background-agent-server.test.mjs",
     "scripts/test/bmad-openspec-main-runtime.test.mjs",

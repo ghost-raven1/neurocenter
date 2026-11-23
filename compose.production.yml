@@ -462,6 +462,8 @@ services:
   # (9090 только internal, доступ оператора — ssh-tunnel / docker exec, документ в production-setup.md).
   # Scrape через metrics_token (deploy/production/monitoring/prometheus.yml, credentials_file /run/secrets/metrics_token).
   # State volume prometheus-data (named, tsdb) — DR-бандл AD-OP-2; digest-pin образа — часть release manifest (AD-OP-2).
+  # AD-O6 (entry 13): host-gateway — job alert-receiver scrape'ит host-receiver (системный сервис
+  # на хосте, не контейнер); host.docker.internal резолвится в IP шлюза backend-моста.
   prometheus:
     <<: *service
     image: prom/prometheus:v3.0.0@sha256:3b9b2a15d376334da8c286d995777d3b9315aa666d2311170ada6059a517b74f
@@ -470,6 +472,7 @@ services:
     pids_limit: 512
     # AD-OP-6 (entry 2): USER образа nobody (65534) — ратификация дефолта внешнего образа.
     user: 65534
+    extra_hosts: ['host.docker.internal:host-gateway']
     command:
       [
         --config.file=/etc/prometheus/prometheus.yml,
@@ -489,7 +492,10 @@ services:
       start_period: 20s
 
   # AD-O6: alertmanager — compose-сервис в backend-сети; порты наружу НЕ публикуются (9093 internal).
-  # Канал доставки (webhook/email) и route — конфиг entry 13 (alertmanager.yml placeholder до entry 13).
+  # Канал доставки (entry 13, HITL: FILE-SINK): webhook → host-receiver (системный сервис на
+  # хосте, deploy/production/alert-receiver.service) → /var/log/neurocenter/alerts.jsonl + journal.
+  # host-gateway: webhook_url host.docker.internal:9111 в alertmanager.yml — адрес хостового
+  # receiver'а (host networking у compose-паттерна нет; extra_hosts → IP шлюза backend-моста).
   # State volume alertmanager-data (named); digest-pin — часть release manifest (AD-OP-2).
   alertmanager:
     <<: *service
@@ -499,6 +505,9 @@ services:
     pids_limit: 128
     # AD-OP-6 (entry 2): USER образа nobody (65534) — ратификация дефолта внешнего образа.
     user: 65534
+    # AD-O6 (entry 13): host-receiver живёт на хосте, а не в compose — webhook уходит через
+    # host-gateway (см. комментарий сервиса и deploy/production/monitoring/alertmanager.yml).
+    extra_hosts: ['host.docker.internal:host-gateway']
     command:
       [
         --config.file=/etc/alertmanager/alertmanager.yml,
