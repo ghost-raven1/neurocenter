@@ -68,6 +68,10 @@ node scripts/production/setup.mjs up --directory /srv/neurocenter/config
 
 - production `.env` — обычный файл с ровно одной `NEUROCENTER_RELEASE` (меткой релиза),
   `NEUROCENTER_CONFIG_DIR` — каталог закрытых конфигов (0700), `NEUROCENTER_HOST` — наружный адрес edge.
+- **До `up`** — операторское провижининг автономного пакета фонового агента в том
+  `background-agent-runtime` (лэйаут/пин/sha256 — `docs/production-setup.md`
+  §«Автономный пакет фонового агента»): без пакета background-agent не проходит healthcheck
+  (fail-fast, FR-305) и `up --wait` не зелёный.
 - `up` — БД-миграции (catalog/flags/RAG-base), проверка места, запуск с ожиданием readiness.
   Первый запуск — `seed` (bootstrap-администратор).
 - Артефакт 1.2: SHA HEAD + timestamp commit из `release-manifest.json`, `docker compose ps` — все сервисы Up.

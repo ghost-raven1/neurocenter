@@ -29,6 +29,54 @@ drift-тестов 6.6/6.7).
 Артефакт S: вывод `node scripts/test/res-obs-sweep.mjs` (отчёт выше — актуальный на момент live-прогона;
 перепрогнать перед приёмкой).
 
+## Stage 2 — развёртывание production-стека (2026-11-23/24)
+
+### 2.1. Окружение стенда (документированные отклонения, не дефекты репо)
+
+| # | Отклонение | Причина | Реализация |
+|---|-----------|---------|-----------|
+| E1 | Сборка образов — внешний build-драйвер, не `setup.mjs build` | docker-bridge egress на корпоративный npm-реестр закрыт (no sudo, организационное управление сетью) | `/tmp/opencode/res-01-build.mjs`: `docker buildx build --network=host` + staged corporate CA (`docker/build-ca/ca-dev-bundle.pem`) + `NPM_REGISTRY_AUTH_B64`; manifest — те же функции release-manifest.mjs |
+| E2 | Forward-прокси на 172.17.0.1:3128 (user-space) | daemon инжектит `*_PROXY=http://172.17.0.1:3128` в каждый контейнер; закрытый bridge-egress ломает runtime-запросы | `/tmp/opencode/res-01-proxy.mjs` (жизненный для rebuild и контейнеров с egress) |
+| E3 | Schema check/migrate — raw `docker run` вместо `compose run` | Compose v5.6.0 на хосте: `compose run` без `--read-only`/`--network` | Те же hardening-флаги (`--read-only --memory 256m --pids-limit 64 --cap-drop ALL --security-opt no-new-privileges`), тот же network `neurocenter-res01_backend`, env + secret-mounts из `compose config --format json` |
+| E4 | Строковые `user` в compose.production.yml | Compose v5.6.0 строго валидирует каждый `-f` файл до merge (числовой user падает на `compose config`) | Фикс 65e9e2a6 (база, не overlay); целевые хосты с compose v2 — совместимо |
+
+### 2.2. Дефекты, обнаруженные при развёртывании (все 6 предшествуют epic-res-obs; баг-тикеты 17–22)
+
+| # | Дефект | Root cause | Обнаружен | Статус |
+|---|--------|-----------|-----------|--------|
+| D1 (тикет 17) | frontend-сборка падает: nginx pid-sed | alpine `nginx:1.30.6` содержит `pid /run/nginx.pid;` (паттерн искал `/var/run/...`) | build 7/7, 11-23 | FIXED 6ce92dde |
+| D2 (тикет 18) | `compose config` падает на числовых user | Compose v5.6.0 per-file strict validation до merge | stack-up, 11-23 | FIXED 65e9e2a6 |
+| D3 (тикет 19) | schema-migrations: stale `/app/dist/...` | repo-лейаут d658006f (код в `/repo/services/<svc>/dist/`) | stack-up, 11-23 | FIXED 3eb6d1ea |
+| D4 (тикет 20) | capacity-collector unhealthy → `up --wait` блокирует стек | AD-OP-6 (94f1a647) user 1000 + `cap_add DAC_OVERRIDE`: для non-root капабилити НЕ попадают в effective (у node нет file-капабилити, no-new-privileges) → CapEff=0 → EACCES `pg_wal` (700, uid 999) → snapshot `wal:available=false` | stack-up, 11-23 | FIXED 110775a8 (ратификация user "0", прецедент model-runtime; харнес capacity-collector-stack.mjs гоняет collector как root — протестированный дизайн) |
+| D5 (тикет 21) | catalog-service crash loop: `UnknownDependenciesException (ModelsService, ?) — argument Function at index [1]` | 17162a26 (agt-07 B4, 11-16): `import type { PgBackgroundAgentStore }` — type-only импорт стирается tsc, `design:paramtypes` = `[ModelsService, Function]`; catalog.module.ts store КОРРЕКТНО провайдит | stack-up, 11-24 | FIXED 56a6a552 (value import + комментарий; локальный nest build: метадата несёт класс; image rebuild) |
+| D6 (тикет 22) | background-agent crash loop: `startup-failed ENGINE — runtime.json не найден` | 17162a26: НАМЕРЕННЫЙ fail-fast (пакет operator-provisioned), НО операторский шаг провижининга отсутствует во всех доках → чистый production-стек не становится healthy | stack-up, 11-24 | FIXED (доки): production-setup.md §«Автономный пакет фонового агента» + res-01-acceptance.md §1.2; стендовый stand-in пакета (2.4) |
+
+**E2E-археология (почему D5/D6 не обнаружены раньше):** production-stack e2e (26/26) не гонялся на
+agt-коде. Единственное evidence — `/home/.../projects/neurocenter/.run/production-stage-1/`
+(checkedAt 2026-11-16T11:39:29Z, main checkout 2d25c293) — образы тегом `verify-20261017`
+(старые, от эпика TRUST-01); agt-07 B4 (17162a26) смёржен 11-16 15:48 — на fresh-стеке не проверялся.
+
+### 2.3. Транзитный инцидент model-runtime (не дефект)
+
+ollama 30 мин crash-loop'ил с `open /root/.ollama/id_ed25519: permission denied` — гонка первичной
+инициализации named volume `model-weights` (владение _data восстановилось; ключ id_ed25519 создан
+и персистентен в томе, subsequent restarts healthy). Статус: healthy, `ollama list` 200.
+
+### 2.4. Стендовые фиксиры (environment, не production-код)
+
+| Фиксюр | Назначение | Детали |
+|--------|-----------|--------|
+| Fixture TLS (`/tmp/opencode/nc-res01-fixture/tls.{crt,key}`) | приёмок через 18443 (443 MITM host-AV KESL) | key 0444 (nginx uid 1000 читает); `NODE_EXTRA_CA_CERTS` для драйверов |
+| Acceptance overlay (`/tmp/opencode/compose.res01-acceptance.yml`) | порты 18xxx, bridge-CA, blitz-fixture alias | не часть репо |
+| (г1) overlay (`/tmp/opencode/compose.res01-g1.yml`) | 1GiB tmpfs вместо `projects`-тома capacity-collector | хост 219G free — физическое заполнение <1GiB невозможно; tmpfs.size=1073741824 → обе ветви expr `NeurocenterDiskSpaceLow` |
+| Stand-in автономного пакета (том `background-agent-runtime`) | background-agent healthy без реального движка | `bin/opencode-probe` (stub, при запуске — явный отказ exit 1) + `runtime.json` с ЕГО реальным sha256 и пином 1.14.48; ассерт реального кода образа: `ENGINE OK 1.14.48 ab1b8b9da994…`; e2e-хук крэша (блок е) срабатывает до запуска движка — реальный бинарь в приёмке не исполняется |
+
+### 2.5. Итог stage 2
+
+Стек: 16/16 (после rebuild каталог-образа и seed пакета — см. §2.2 D5/D6). Schema: catalog 64 /
+feature-flags 1 / rag 5 applied, `schema-initialization.json` state=schema-ready.
+Bootstrap-admin seeded. Model-key asserted. Дальше — блоки live-приёмки.
+
 ## Блоки live-приёмки
 
 | Блок | Условие | Действие (ранбук) | Ожидаемый | Артефакт | Verdict |
