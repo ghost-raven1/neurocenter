@@ -2,7 +2,7 @@
 # title: Ресурсы и наблюдаемость (P0-RES)
 # covers: R1, R7, R9, R10, R11
 # baseline_revision: 4097fdc35bd78dbebf44bec1b026b46663a005e2
-# next_id = 23
+# next_id = 24
 # entries 17-22: баг-тикеты RES-01 stage 2 (production-stack up на чистом стенде 2026-11-23).
 # Правило entry 15: любой red = баг-тикет. Все 6 дефектов ПРЕДШЕСТВУЮТ epic-res-obs
 # (agt-07 B4 17162a26 2026-11-16 / res-obs/2 94f1a647 2026-11-23); production-stack e2e 26/26
@@ -244,8 +244,19 @@ id = 22
 type = "story"
 title = "BUG/DOC (RES-01 stage 2): отсутствует операторский шаг провижининга автономного пакета фонового агента (fresh-стек не проходит up --wait)"
 description = "RES-01 stage 2 (2026-11-23, чистый production-стек): background-agent в crash loop — {\"event\":\"startup-failed\",\"code\":\"ENGINE\",\"message\":\"Автономный пакет фонового агента недоступен: runtime.json не найден или повреждён.\"}. Это НАМЕРЕННЫЙ fail-fast (engine.ts: «The root of the operator-provisioned autonomous package … Missing/blank → explicit startup failure»; healthcheck --check тоже assert-ит движок) — НО ни в docs/production-setup.md, ни в docs/res-01-acceptance.md, ни в других доках нет шага провижининга: как оператор кладёт пакет (том background-agent-runtime → /app/background-agent-runtime:ro; лэйаут bin/opencode-probe + runtime.json {probeEngine:{file,version,sha256}}; пин OpenCode 1.14.48; sha256 = hash бинаря; BACKGROUND_AGENT_RUNTIME_ROOT). На чистом production-стенде стек НЕТ не станет healthy (up --wait блокируется) — production-контракт сломан документационным разрывом (код — по дизайну; код-фикс НЕ требуется — решение RES-01: стэн-заменитель пакета как стендовый фиксюр, категория fixture-TLS; e2e-хук крэша BACKGROUND_AGENT_E2E_CRASH_DISPATCH срабатывает до запуска движка, реальный бинарь в блоке (е) не нужен). Дефект предшествует res-obs (17162a26, 2026-11-16). Фикс (требование): (1) docs/production-setup.md + runbook: операторский шаг — источник пакета (релизный архив OpenCode 1.14.48), лэйаут тома, проверка sha256, порядок: пакет ДО up --wait; (2) RES-01-protocol.md: стендовый стэн-заменитель (dummy bin/opencode-probe + runtime.json с его реальным sha256 и версией пина) задокументирован как environment-fixture."
-verify = "production-setup.md/res-01-acceptance.md содержат шаг провижининга (том, лэйаут, пин, sha256, порядок); чистый стенд С провижинированным пакетом: up --wait → 16/16 healthy; блок (е) RES-01 исполним."
+verify = "production-setup.md/res-01-acceptance.md содержат шаг провижининга (том, лэйаут, пин, sha256, порядок); чистый стенд С провижинированным пакетом: up --wait → 15/15 healthy; блок (е) RES-01 исполним."
 covers = ["R7"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 23
+type = "story"
+title = "BUG (RES-01 stage 2, FIXED env 2026-11-24): shared model-weights volume — first-mount ownership race (catalog uid 1000 vs ollama root) → fail-closed assertServiceVolumes crash loop"
+description = "RES-01 stage 2 (2026-11-24, после фикса D5): catalog-service снова в crash loop, но уже НЕ DI — log: crash.unhandledRejection err:{name:\"Error\"} (message маскамируется epic-правилом, raw невидим). Raw-ошибка поймана одноразовым контейнером с ранним unhandledRejection-хуком (полный compose-env + secrets + volumes из compose config): Error: [catalog-service] владельцы writable-томов (AD-OP-6): каталог /data/models принадлежит uid=0, сервис работает от uid=1000 ... at assertServiceVolumes (shared/volume-ownership.cjs:54) at bootstrap (main.js). Root cause: том model-weights шарится на КОРНЕ двумя сервисами с разными uid — catalog-service (uid 1000, MODEL_STORAGE_PATH=/data/models, MODEL_HOSTING_ENABLED=true) и model-runtime/ollama (root, /root/.ollama; образ ollama НЕ содержит /root/.ollama — каталог создаётся рантаймом). Race первого mount на fresh-стеке: каталог-образ catalog /data/models = 755 1000:1000 (с подкаталогами models/, projects/), у ollama каталога в образе нет — whoever mounts first выигрывает owner корня; на стенде выиграл ollama → корень 755 root:root → assertServiceVolumes (fail-closed по дизайну, AD-OP-6/OQ-2, production-only) → crash loop, детерминированно неисправимо без внешнего chown. Доки покрывают только «старые root-owned тома (до non-root-миграции)», fresh-stack-гонку первого запуска не покрывают. Defect предшествует res-obs (model-weights sharing — модельный эпик + AD-OP-6). Фикс на стенде (санкционирован production-setup.md AD-OP-6: «одноразовый chown uid=1000 через привилегированный контейнер по явному решению»): chown 1000:1000 корня model-weights через scratch-контейнер (ollama root не затронут — root bypass DAC; assert проверяет только корень, не рекурсию; содержимое ollama id_ed25519 600 root:root / models/ осталось root-owned — catalog его не трогает). После: up -d --wait exit 0, все healthy. Фикс (требование для репо): (1) production-setup.md — операторский шаг провижининга владельства model-weights (chown 1000:1000 корня ДО первого up) — та же категория, что D6-пакет агента; (2) либо compose/design-гарантия: гарантировать первый mount catalog'ом (зависимость model-runtime от catalog-service не подходит — модель нужна catalog; реалистичный вариант — док-шаг). Примечание: GGUF-import-путь (catalog пишет в MODEL_STORAGE_PATH) при root-owned подкаталоге models/ (ollama) будет EACCES для uid 1000 — на стенде GGUF не грузятся (minimal profile, CPU-only), но дизайн-вопрос о subpath-разделении остаётся (в verify)."
+verify = "fresh-стек с провижинированным владельством model-weights (1000:1000 корень): up -d --wait exit 0, все 14 healthcheck-сервисов healthy (+blitz-fixture up); catalog не падает в assertServiceVolumes; ollama healthy и записывает в том (id_ed25519/models — root не затронут chown корня). GGUF-import-путь: док-заметка о subpath-конфликте models/."
+covers = ["R1", "R11"]
 after = []
 hitl = false
 risk = "medium"
