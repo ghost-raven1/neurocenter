@@ -2,7 +2,11 @@
 # title: Ресурсы и наблюдаемость (P0-RES)
 # covers: R1, R7, R9, R10, R11
 # baseline_revision: 4097fdc35bd78dbebf44bec1b026b46663a005e2
-# next_id = 17
+# next_id = 23
+# entries 17-22: баг-тикеты RES-01 stage 2 (production-stack up на чистом стенде 2026-11-23).
+# Правило entry 15: любой red = баг-тикет. Все 6 дефектов ПРЕДШЕСТВУЮТ epic-res-obs
+# (agt-07 B4 17162a26 2026-11-16 / res-obs/2 94f1a647 2026-11-23); production-stack e2e 26/26
+# не гонялся на agt-коде (evidence .run/production-stage-1 = образы verify-20261017, TRUST-01).
 
 [[entry]]
 id = 1
@@ -176,6 +180,72 @@ title = "Remote-model inference: upstream error visibility (worker-логи + er
 description = "Рут-причина 5+ hosting-RAG embedding-сбоев (qwen3-embedding-4b): endpoint отклоняет явный `dimensions` (400 'does not support matryoshka representation') при request_dimensions=true, но сбой НЕДИАГНОСТИРУЕМ — тело/статус upstream-отказа нигде не логируется и не доходит до completion. Отчёт с доказательствами: docs/reports/rag-embedding-400-root-cause-2026-11-12.md. (1) Сервер (remote-model-client.ts:338-351): на non-OK ЧИТАТЬ тело ответа (кап ~2 КиБ) и писать warn-лог: model id + route + HTTP status + тело (редектированный — без key); классификация: 4xx (кроме 401/403/429) = новый kind 'rejected' (не 'unavailable'), RemoteModelError несёт status:number. (2) Сообщение к устройству (device-embedding.service.ts / RemoteConnectionService.infer): 503 с upstream-КОДОМ, фиксированная safe-формулировка (AD-19: без чужого тела) — 'Удалённый API отклонил запрос (HTTP 400). Проверьте настройки подключения модели.' (3) Device-сторона (relay.ts:69-74 + worker/completions): server status + message пишутся в worker-лог; результат задания (completion) получает поле с HTTP-кодом (без тела) — оператор видит код, а не только generic-текст. (4) Регрессионные тесты: fake-upstream 400 c телом → warn-лог содержит status+тело+model id; completion несёт код; 401/403/429 сохраняют прежнюю классификацию. (5) Документация: runbook/заметка к модели — matryoshka-сервинги (qwen3-embedding-4b) требуют request_dimensions=false; включение = гарантированный 400. Операционный факт: dev-конфиг уже request_dimensions=false (rev 5, verified)."
 verify = "Fake-upstream 400 c телом: warn-лог catalog-service содержит model id + route + 400 + тело (без key); RemoteModelError.kind='rejected', status=400; 503 к устройству несёт '(HTTP 400)'; completion-результат несёт код; worker-лог device содержит status+message; 401/403/429 — прежние классификации (тесты); root-сьют + vitest без деградации."
 covers = ["R10", "R7"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 17
+type = "story"
+title = "BUG (RES-01 stage 2, FIXED 6ce92dde): frontend Dockerfile — sed pid-паттерн не покрывал alpine /run/nginx.pid"
+description = "RES-01 stage 2 (сборка на стенде, 2026-11-23): nginx:1.30.6-alpine содержит `pid /run/nginx.pid;` (а не `/var/run/nginx.pid` — /var/run symlink), grep-safeguard в frontend/Dockerfile падал на сборке. Паттерн расширен: s|^pid[[:space:]]\\+(/var/)?/run/nginx\\.pid;|pid /var/cache/nginx/nginx.pid;|. Фикс в 6ce92dde; сборка 7/7 green."
+verify = "docker build frontend/Dockerfile green на alpine-базе; pid — writable-путь /var/cache/nginx (non-root, 6.1)."
+covers = ["R11"]
+after = []
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 18
+type = "story"
+title = "BUG (RES-01 stage 2, FIXED 65e9e2a6): compose user обязан быть строкой — Compose v5.6.0 strict per-file validation"
+description = "RES-01 stage 2 (2026-11-23): Compose v5.6.0 валидирует КАЖДЫЙ -f файл ОТДЕЛЬНО до merge — числовой user (1000/65534/0) в compose.production.yml не поправить overlay-ом (база падает на `compose config`, overlay не доходит до merge). 15 строк → строковые user: \"1000\"/\"65534\"/\"0\". Диагностика: compose config шлёт ОДНУ рандомную ошибку за прогон (поиск по имени сервиса валидно не показывал картину). Фикс в 65e9e2a6; drift 23/23 green. Примечание: целевые production-хосты с compose v2 числовой user принимали — регрессия обнаружена только на стенде с v5."
+verify = "compose config green на Compose v5.6.0; compose-drift.test.mjs 23/23; значения user в модели окружения совпадают."
+covers = ["R11"]
+after = []
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 19
+type = "story"
+title = "BUG (RES-01 stage 2, FIXED 3eb6d1ea): schema-migrations — stale-путь /app/dist после repo-лейаута d658006f"
+description = "RES-01 stage 2 (2026-11-23): inspectSchemaManifests (scripts/production/schema-migrations.mjs) использовал /app/dist/database/migrate.cli.js — stale-путь после repo-лейаута d658006f (app-код в /repo/services/<svc>/dist/, WORKDIR там же). Фикс: /repo/services/${service}/dist/database/migrate.cli.js. up-путь (runSchemaCommands) не задет — идёт через compose run SERVICE с relative-путем. Фикс в 3eb6d1ea; schema-проверка 16/16 green (catalog 64 / ff 1 / rag 5)."
+verify = "schema check/migrate через raw docker run (стендовая девиация compose v5 — compose run без --read-only/--network): ready=true, applied 64/1/5; schema-migrations-тесты green."
+covers = ["R1"]
+after = []
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 20
+type = "story"
+title = "BUG (RES-01 stage 2, FIXED 110775a8): capacity-collector user 1000 + DAC_OVERRIDE неэффективен для non-root → stek не healthy"
+description = "RES-01 stage 2 (2026-11-23): AD-OP-6 (res-obs/2, 94f1a647) поставил capacity-collector на user 1000 с rатифицированным cap_add DAC_OVERRIDE, предполагая bypass 700-каталога postgres (uid 999). НЕТ: для non-root-процесса капабилити из bounding set НЕ попадают в effective (у node бинаря нет file-капабилити, no-new-privileges запрещает их получение) — CapEff=0 даже у PID 1 (доказано docker-run пробом). EACCES на /volumes/postgres/pg_wal → snapshot wal:available=false → healthcheck --check «Сведения о физических томах недоступны» → up --wait блокировал весь стек. Репозиторный харнес capacity-collector-stack.mjs гоняет collector ИМЕННО как root — ратифицированный дизайн. Фикс: user \"0\" (прецедент model-runtime, external-note), сервис исключён из non-root-списка APP_SERVICES в resource-limits-invariant.test.mjs с обоснованием; environment-model.json + docs/capacity-admission.md обновлены. Фикс в 110775a8; 37/37 (drift+invariant+non-root) + харнес 5/5 + живой healthcheck healthy."
+verify = "capacity-collector healthy на живом стеке; snapshot: все 7 ресурсов available; drift/invariant/non-root тесты green; харнес 5/5."
+covers = ["R11"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 21
+type = "story"
+title = "BUG (RES-01 stage 2): catalog-service Nest DI crash loop — import type стирает design:paramtypes (agt-07 B4)"
+description = "RES-01 stage 2 (2026-11-23, чистый production-стек): catalog-service в crash loop — UnknownDependenciesException: Nest can't resolve dependencies of the BackgroundAgentService (ModelsService, ?) — argument Function at index [1]. Root cause: 17162a26 (agt-07 B4, 2026-11-16) — services/catalog-service/src/background-agent/service.ts:10 `import type { PgBackgroundAgentStore }`: type-only импорт стирается tsc, emitDecoratorMetadata эмитит design:paramtypes [ModelsService, Function]; catalog.module.ts:254-258 store КОРРЕКТНО провайдит (value import + useFactory) — сломана только метадата. Доказано контролируемым tsc-промом. Production-stack e2e (26/26) на agt-коде не гонялся (evidence .run/production-stage-1: checkedAt 2026-11-16T11:39Z, образы verify-20261017 от TRUST-01, main checkout 2d25c293) — дефект не обнаружен. Фикс: value import (+ комментарий), локальный nest build верифицирован: design:paramtypes [ModelsService, pg_store_1.PgBackgroundAgentStore]. Rebuild каталог-образа (общий с background-agent/database-init/bootstrap-admin/capacity-collector) + recreate; schema receipt в безопасности (state=schema-ready → prepareSchemaInitialization ранний return без re-binding). Статус: fix применён, image rebuild выполняется."
+verify = "Каталог healthy на fresh-стеке (up --wait 16/16); design:paramtypes несёт класс store (не Function); Nest стартует без UnknownDependenciesException; catalog-тесты без деградации."
+covers = ["R1", "R7"]
+after = []
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 22
+type = "story"
+title = "BUG/DOC (RES-01 stage 2): отсутствует операторский шаг провижининга автономного пакета фонового агента (fresh-стек не проходит up --wait)"
+description = "RES-01 stage 2 (2026-11-23, чистый production-стек): background-agent в crash loop — {\"event\":\"startup-failed\",\"code\":\"ENGINE\",\"message\":\"Автономный пакет фонового агента недоступен: runtime.json не найден или повреждён.\"}. Это НАМЕРЕННЫЙ fail-fast (engine.ts: «The root of the operator-provisioned autonomous package … Missing/blank → explicit startup failure»; healthcheck --check тоже assert-ит движок) — НО ни в docs/production-setup.md, ни в docs/res-01-acceptance.md, ни в других доках нет шага провижининга: как оператор кладёт пакет (том background-agent-runtime → /app/background-agent-runtime:ro; лэйаут bin/opencode-probe + runtime.json {probeEngine:{file,version,sha256}}; пин OpenCode 1.14.48; sha256 = hash бинаря; BACKGROUND_AGENT_RUNTIME_ROOT). На чистом production-стенде стек НЕТ не станет healthy (up --wait блокируется) — production-контракт сломан документационным разрывом (код — по дизайну; код-фикс НЕ требуется — решение RES-01: стэн-заменитель пакета как стендовый фиксюр, категория fixture-TLS; e2e-хук крэша BACKGROUND_AGENT_E2E_CRASH_DISPATCH срабатывает до запуска движка, реальный бинарь в блоке (е) не нужен). Дефект предшествует res-obs (17162a26, 2026-11-16). Фикс (требование): (1) docs/production-setup.md + runbook: операторский шаг — источник пакета (релизный архив OpenCode 1.14.48), лэйаут тома, проверка sha256, порядок: пакет ДО up --wait; (2) RES-01-protocol.md: стендовый стэн-заменитель (dummy bin/opencode-probe + runtime.json с его реальным sha256 и версией пина) задокументирован как environment-fixture."
+verify = "production-setup.md/res-01-acceptance.md содержат шаг провижининга (том, лэйаут, пин, sha256, порядок); чистый стенд С провижинированным пакетом: up --wait → 16/16 healthy; блок (е) RES-01 исполним."
+covers = ["R7"]
 after = []
 hitl = false
 risk = "medium"

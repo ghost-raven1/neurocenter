@@ -7,7 +7,10 @@ import { ProjectChatPolicy } from '../project-chat/project-chat.policy';
 import { projectChatUuid } from '../project-chat/project-chat.validation';
 import { BACKGROUND_AGENT_OPENCODE_VERSION } from './engine';
 import { backgroundAgentJobPayload, type IBackgroundAgentJobInput } from './jobs';
-import type { PgBackgroundAgentStore } from './pg-store';
+// Value import (не import type): emitDecoratorMetadata требует референс класса в
+// design:paramtypes — type-only импорт стирается, и Nest получает Function (RES-01 stage-2,
+// bug-тикет: catalog-service DI crash loop на fresh-стеке).
+import { PgBackgroundAgentStore } from './pg-store';
 
 export interface IBackgroundAgentStartReceipt {
     requestKey: string;
