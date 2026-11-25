@@ -1,6 +1,7 @@
 # RES-01 — протокол e2e-приёмки P0-RES
 
-- **Статус:** НЕ ВЫПОЛНЕН (live-приёмка — HITL, оркестратор/оператор). Скелет зафиксирован тикетом 6.15 (static-часть).
+- **Статус:** **ВЫПОЛНЕН — GO** (stage 3, повтор 2026-11-25 на repo-фиксах, 8/8 green;
+  история: stage 2, 2026-11-24 — NO-GO 7/8, red=д).
 - **База:** production-стек `compose.production.yml` (7 application-образов), образы release-manifest,
   closed-contour (`--pull never`), 7 базовых образов с digest'ами — `docs/res-01-acceptance.md` §1.
 - **Ранбук:** `docs/res-01-acceptance.md`. **Критерий GO:** 8/8 блоков green, любой red = баг-тикет
@@ -106,12 +107,143 @@ Bootstrap-admin seeded. Model-key asserted. Дальше — блоки live-п�
 Дополнительно (г): формат `alerts.jsonl` и resolve-строки — `res-01-e2e.mjs --blocks alerts --expect …`;
 grouping: при 6 down — **одна** строка `NeurocenterStackDown` + 6 строк `NeurocenterServiceUnavailable`.
 
+## Stage 3 — повтор RES-01 на repo-фиксах (2026-11-25)
+
+### 3.0. Repo-фиксы (путь к GO: «любой red → баг-тикет → фикс → повтор полный»)
+
+| Тикет | Дефект | Фикс (репо, не стенд) | Коммит |
+|-------|--------|----------------------|--------|
+| 24 (D8) | e2e-драйвер correlation непроходим для 2xx (nginx перезаписывает client-id; gateway/service не логят success) | Драйвер читает id из nginx access-лога (AD-O2); endToEnd-критерий = nginx; unit-тест D8; self-contained compose logs: `NEURO_E2E_COMPOSE_ENV_FILE` → `--env-file` (env живёт в .env стенда, не в shell) | 2feb49d3 + 8c7de0e9 |
+| 25 (D9) | prometheus.yml без `alerting:` → канал AD-O6 мёртв | `alerting: alertmanagers [alertmanager:9093]` в deploy/production/monitoring/prometheus.yml | 2feb49d3 |
+| 26 (D10) | capacity-снапшот root:root 0600 нечитаем сервисами uid 1000 | publishCapacity: снапшот 0644 + каталог 0755; повтор 11-25 поймал EPERM-регресс (D14) на персистентном томе: чужой 0755-каталог + cap_drop ALL без CAP_FOWNER → безусловный chmod падал EPERM каждые 15s и ронял весь publish → снапшот застаревал → snapshot_available=0 → CapacityUnavailable + fail-closed гейт → chmod только если `(mode & 0o055) != 0o055` | 2feb49d3 + 1f6e70ca |
+| 27 (D11) | quota-delivery requestKey (camelCase) vs request_key (snake_case) → ВСЕ delivery 400, used всегда 0 | Контракт каталога: `request_key` (rag-sync + skills, parseQuotaUsageInput + schema) | 2feb49d3 |
+| 28 (D12) | FR-305 start-маршрут background-agent не в RBAC-матрице gateway → 403 для всех | access-policy allowProjectChat: маршрут добавлен | 2feb49d3 |
+| 29 (D13) | GET /api/errors не в access-policy → 403, crash-события невидимы оператору | access-policy allowRequest: GET /api/errors (только Главный админ, read) | 2feb49d3 |
+
+Сборка: образы `res-obs-20261125` (build4/5); 6+3 сервисов redeploy'нуты с production-топологией
+из репо; stand-фикситуры D9 (prometheus-копия) и D10 (collector user overlay) УДАЛЕНЫ из
+acceptance overlay — повторяется именно репо-код. D14 (EPERM publishCapacity) обнаружен
+повтором 11-25, диагностирован и зафиксирован 1f6e70ca, live-верифицирован: снапшот
+915B 0644 root:root, `snapshot_available=1` у всех 3 потребителей, CapacityUnavailable
+firing 03:55:41.698Z (окно EPERM) → resolved 04:40:41.675Z (после redeploy с фиксом).
+
+### 3.1. Повтор блоков (на фиксированных образах, 2026-11-25)
+
+- **а1 — quota: GREEN** (рерун 04:37–04:43Z): sync#1 201 (30804→30805, rev 88→89) +
+  seal 201 `complete=true` (rev 90); PATCH `retentionBytesLimit=1MiB` 200 (ответ уже несёт
+  `retentionBytesUsed: 704` — T27 delivery ЖИВАЯ; 11-24 было used=0); sync#2 → 503
+  `upstream-error` (AD-19 маска; 11-24 тот же envelope принимался GREEN) + server-side
+  `[quota-guard] quota rejection dimension=retention reason=exceeded used=704
+  limit=1048576 estimate=16777216` (16MiB-floor оценки) + метрика
+  `neurocenter_quota_rejections_total{retention,exceeded}=75`; данные целы 30805.
+  **T27 доказан SQL:** `project_quota_usage.retention.used_bytes=704` = Σ
+  `project_quota_usage_requests.delta_bytes` (repro-snake +1234 / repro-undo −1234 /
+  intent:b3441526 +352 / intent:c35b0407 +352).
+- **а2 — two-tier: GREEN** (рерун 04:47Z): revisions 7→8→9; 3 docs ACCEPTED под docs=16 →
+  **400 REJECTED** под docs=2 (без рестарта) → граница 2 docs 201 → ceiling 300 400;
+  audit-строки 89a7d693→rev8, 045c8b51→rev9 (04:47:58Z).
+- **а3 — hardening: GREEN** (рерун): catalog/skills/rag-sync node/256, background-agent
+  node/256, capacity-collector root/32, api-gateway node/128, prometheus nobody/512
+  (+cap_drop по сервисам) — сверено с environment-model.
+- **а4 — fork-стресс: GREEN** (рерун 04:55–05:10Z): pids.max=256 (cgroup v2 подтверждён);
+  2-бомба пики 232/256 и 253/256, 3-бомба 245/256; **EAGAIN зафиксирован**
+  (`sh: 0: Cannot fork`, dash exit 2) — динамика: dash reap'ит bg-детей лениво →
+  zombie-осцилляция 12→138→191→201→256 → транзитно 256 → EAGAIN; одиночная runbook-бомба
+  детерминированно НЕ насыщает (97/256 — совпадает с заметкой 11-24); контейнер пережил
+  всё (Up healthy, /ready 200); хост не затронут (PIDs 522–538, load 4.4–10.6 естественный,
+  нет OOM/kill). RLIMIT_NPROC unlimited, memory 38/512MiB, PidMode private, pid_max
+  4194304 — исключены. `docker top` сегодня работает (11-24 был сломан).
+- **б — нагрузка: GREEN** (рерун 05:16:42–05:28:30Z, 11 мин, driver res-01-b.mjs):
+  200 chat-msg (198×201 + 2×503), **232 148 embeddings**, sustained 11 мин.
+  RSS: утечек НЕТ — все сервисы флат под нагрузкой (catalog 113–115M ±0.5%, rag 218–241M,
+  api 306–321M ±1%, skills 38–39M, ba 40–41M; пик drain rag 292M) и **освободили рабочую
+  область post-load** (rag 292→114M, api 308→218M, catalog 114→98M, ba 77→41M;
+  api-gateway V8 high-water масштабируется с пропускной способностью: +2.5GB payload
+  г2-прогона → 339M при нулевой нагрузке — flat при постоянном темпе, не утечка).
+  CRASHES 0; postgres RestartCount=0, Up 41ч (тот же контейнер, StartedAt 2026-11-23T12:44),
+  pg-RSS 913M — независимая проверка (баг драйвера имени `postgres-1-1` — тот же, что 11-24).
+  WAL 896→1008M (сегменты рикалцировались mid-run: 896→784→1008). pid 12/12 всё окно.
+  5xx 36/1492 + 2 chat-503 = ТОЛЬКО истинное capacity с причиной в диагностике:
+  catalog pg-pool (max 10/scope, 5s; 34× «timeout exceeded when trying to connect») →
+  18×500 rag/sync; ProjectRagUnavailable «Сервис индексов недоступен. Результат записи
+  будет проверен перед повтором» (project-rag-client.ts, timeout/abort на rag-sync) →
+  11×503 rag/sync; 2×503 rag/manifest «Каталог не подтвердил активный индекс проекта»;
+  2×503 chat = access-decision-вызов gateway→catalog упал (proxy.service.ts:254–266 →
+  503 «Не удалось проверить доступ к ресурсу.»; без error-лога — AD-19). p95: chat 1056ms,
+  rag 4497ms (ожидание в 8-слотовой очереди под перегрузкой — ожидание, не деградация).
+  Наблюдение (не дефект): quota-delivery best-effort без ретрая (project-quota-usage.ts:63–67) —
+  6 delivery упали на те же pg-pool 500 под нагрузкой; механизм (а1) при штатной работе
+  доказан, 16MiB-floor estimate доминирует enforcement.
+- **в — scrape: GREEN** (рерун e2e после env-file-фикса): 6/6 up=1.
+- **д — correlation: GREEN** (рерун e2e 8c7de0e9): nginx `$request_id` из access-лога,
+  endToEnd-критерий = nginx (успешный запрос не логируется gateway/service — зафиксировано).
+- **е (красный хвост): GREEN** (рерун): T29 `GET /api/errors` 200 total=794 (7 crash-строк
+  e-crash 11-24 видны: 6× «process crashed» + 1× «dead-lettered»); T28
+  `POST …/background-agent` → **201** {requestKey, state:pending} (было 403 для всех).
+- **ж — аудит: GREEN** (рерун 04:52Z): PKCE blitz-fixture → CAS rev 9→10 → audit-строка
+  `runtime.limits.update` (security:1d580c85…, 2026-11-25T04:52:40.596Z).
+- **з — health: GREEN** (рерун e2e): up 200 /ready; /health 404 на gateway.
+- **г3 — service: GREEN** (live 11-25, production-топология): ServiceUnavailable pair
+  firing 03:59:41.672Z → resolved 04:04:41.665Z (skills stop/start, alertmanager-канал
+  репо-фикса t25).
+- **г4 — stale-backup: GREEN (firing; resolve stand-limited по ранбуку)**:
+  `NeurocenterExternalBackupOverdue` firing 2026-11-25T03:28:41.913Z (catalog-service:4100) —
+  состояние стенда без внешней S3; resolve невозможен на стенде (то же, что 11-24).
+- **г2 — queue: GREEN** (2 итерации):
+  - итерация 1 (в составе блока б, 05:20:42–05:27:46Z): 22w/22p batch 100–200 →
+    pending 3–14, просадки ≤8 (05:23:30=8, 05:24:00=3, 05:26:30=5 — for:5m сбросился 3×)
+    — алерт не сработал; механизм задокументирован: capacity-5xx (pg-pool) → 1s-sleep
+    воркеров → просадки. 11-24 та же конфигурация держала pending 10–14 (везение фазы).
+  - итерация 2 (детерминированное давление, res-01-g2.mjs, 05:33:43–05:48:19Z,
+    14 мин, batch 400+jitter, чистое queue-давление без chat): pending >8 непрерывно
+    **770s** (10s-сэмплинг, 0 просадок ≤8 после 30s ramp; 10–15) → **firing**
+    ts=2026-11-25T05:40:41.676Z (startsAt 05:40:11.657, for:5m; instance
+    rag-sync-service:4300, queue=rag) → load off 05:48:19 → endsAt 05:48:11.657 →
+    **resolved** ts=2026-11-25T05:50:41.702Z. 1060/1060 syncs 201 (441 129 chunks,
+    p50=10.1s p95=13.3s — 400-chunk-батчи; 5xx = 0: длинный sync держит воркеров в
+    очереди, pg-pool не насыщается так, как при коротких батчах).
+- **г1 — disk: GREEN** (рерун, 1G tmpfs-станд-том, overlay как 11-24; 3 итерации):
+  - итерация 1 (05:51–06:01Z) — не зачтён (стенд, не репо): `.env` стенда несло
+    устаревшее `NEUROCENTER_RELEASE='res-obs-20261123'` (утренний redeploy шёл с
+    явным override, .env не обновляли) → драйвер пере-создал collector на старом
+    образе (pre-t26 publishCapacity: снапшот 0600 root:root) → потребители uid 1000
+    EACCES → `snapshot_available=0` с 05:52:00, `free_bytes` не рендерился → expr
+    не оценивался. Инцидент ЧЕСТНО зафиксирован репо-alert-каналом (t25):
+    CapacityUnavailable firing 05:53:41.721Z ×3 → resolved 06:13:41.711Z ×3 (после
+    восстановления 06:05Z: force-recreate с NEUROCENTER_RELEASE=res-obs-20261125,
+    снапшот 0644, 3/3 snapshot_available=1). Урок зафиксирован (quirk 6b3e683c):
+    на этом стенде — явный release-override в env compose-вызова + сверка image
+    контейнера до/после recreate.
+  - итерация 2 (06:14–06:22Z) — GREEN по правилу, 2/3 инстанса: fill 950M
+    (root, gotcha `mode:1777`=decimal) → freeBytes=77594624 → **firing**
+    06:16:42.001Z (catalog) / 06:16:42.008Z (skills) → rm 06:16:42 → **resolved**
+    06:21:41.780/781Z (×2). rag-sync: expr TRUE 06:15:30–06:17:00 (метрика
+    77594624), но его for:1m-фаза запаздывала (scrape-offset) и rm драйвера пришёлся
+    в её хвост — racing драйвера, не продукт.
+  - итерация 3 (06:25–06:33Z) — чистый 3×3: fill 950M → freeBytes=77594624 →
+    **firing** 06:28:11.740Z (catalog) / 06:28:11.743Z (rag-sync) /
+    06:28:11.743Z (skills) (startsAt 06:28:11.657, for:1m; resource=projects,
+    severity=critical) → rm только после firing всех 3 (06:28:32) → **resolved**
+    06:33:11.678Z (catalog) / 06:33:11.681Z (rag-sync) / 06:33:11.681Z (skills)
+    (endsAt 06:29:11.657, group_interval 5m). Стенд восстановлен: collector на
+    res-obs-20261125, MemLimit=128m, Tmpfs=null, снапшот 0644,
+    projects ≈490G total / ≈210G free.
+
+### 3.2. Вердикт Stage 3
+
+**GO**: 8/8 блоков green на фиксированных образах (production-топология из репо,
+stand-фикситуры D9/D10 удалены). Красный 11-24 (д) закрыт repo-фиксами 2feb49d3+8c7de0e9
+и рераном GREEN. Дефекты D8–D13 закрыты в репо (тикеты 24–29 → FIXED); D14 (EPERM
+publishCapacity, пойман повтором) закрыт 1f6e70ca. Known-defect ff:4400 (flagged,
+вне скоупа) — без изменений.
+
 ## GO / NO-GO
 
-- **Verdict: NO-GO** (2026-11-24, stage-2 live-приёмка выполнена полностью).
-- Итог: S-статика 64/1/5 + live 8/8 блоков выполнены — **7/8 GREEN** (а a1–a4, б, в,
-  г г1–г4, ж, з; е — crash-механизм GREEN), **1/8 RED** (д).
-- **RED: д (correlation)** — D8, тикет 24: e2e-драйвер непроходим для 2xx (требует
+- **Verdict: GO** (2026-11-25, stage 3 — повтор на repo-фиксах: 8/8 green; §Stage 3).
+- **Verdict: NO-GO** (2026-11-24, stage-2 live-приёмка выполнена полностью; история).
+- **11-24 (stage 2) — история:** S-статика 64/1/5 + live 8/8 блоков выполнены —
+  **7/8 GREEN** (а a1–a4, б, в, г г1–г4, ж, з; е — crash-механизм GREEN), **1/8 RED** (д).
+- **RED 11-24: д (correlation)** — D8, тикет 24: e2e-драйвер непроходим для 2xx (требует
   gateway-строку, которую успешный запрос не даёт, и гребёт client-id, который nginx
   перезаписывает). Дефект драйвера, не продукта — но по правилу протокола любой red → NO-GO.
 - **Открытые дефекты, зафиксированные на GREEN-блоках (тикет открыт, сам блок green):**
@@ -121,13 +253,16 @@ grouping: при 6 down — **одна** строка `NeurocenterStackDown` + 6
   D11 (тикет 27: quota-delivery requestKey/request_key mismatch — accounting мёртв,
   fail-closed intact).
 - NO-GO по правилу: «любой red → баг-тикет → фикс → повтор RES-01 (полный)».
-- **Путь к GO:** repo-фиксы (не стенд) тикетов 24 (e2e-драйвер), 25 (alerting-секция
-  prometheus), 26 (snapshot 0644 + non-root-покрытие харнеса), 27 (request_key),
-  28 (RBAC-маршрут FR-305), 29 (access-policy /api/errors) → повтор RES-01 полный.
+- **Путь к GO (выполнен 2026-11-25, §Stage 3):** repo-фиксы (не стенд) тикетов
+  24 (e2e-драйвер), 25 (alerting-секция prometheus), 26 (snapshot 0644 + non-root-
+  покрытие харнеса), 27 (request_key), 28 (RBAC-маршрут FR-305), 29 (access-policy
+  /api/errors) → повтор RES-01 полный → GO.
 - Known-defect (вне скоупа, flagged): ff:4400 (frontend `/health` 404 — error-body-policy 3/7).
-- Дефекты стенда D1–D13 = тикеты 17–29: 17–22 fixed в репо (6ce92dde…110775a8, сборка
-  7/7), 23 (D7) env-фикс, 24 (D8) open-driver, 25 (D9) stand-fixed, 26 (D10) stand-fixed,
-  27 (D11) open, 28 (D12) open, 29 (D13) open.
+- Дефекты стенда D1–D14 = тикеты 17–29 + D14: 17–23 fixed в репо (6ce92dde…110775a8,
+  7/7; D7 — env-фикс), 24 (D8) FIXED 2feb49d3+8c7de0e9, 25 (D9) FIXED 2feb49d3,
+  26 (D10) FIXED 2feb49d3, 27 (D11) FIXED 2feb49d3, 28 (D12) FIXED 2feb49d3,
+  29 (D13) FIXED 2feb49d3, D14 (EPERM publishCapacity, пойман повтором 11-25)
+  FIXED 1f6e70ca.
 
 ## Ссылки
 
