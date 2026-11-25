@@ -204,3 +204,12 @@ context:
 2. `node scripts/test/release-candidate-e2e.test.mjs --candidate <sha> --tag <rel> --manifest <path> --host-variant B` (все фазы; драйвер сам ждёт load < 8 перед тяжёлыми шагами).
 3. При прерывании — перезапуск `--phase <невыполненные>` (раздел ранбука «Возобновление прерванного прогона»).
 4. H4: интерпретация F6-отчёта → GO/NO-GO REL-01.
+
+## Progress (2026-11-25)
+
+**H1 (кандидат + freeze-тег) — ВЫПОЛНЕНО** (делегировано оператором, «Продолжай» ×2 после явных запросов на мерж):
+- Мерж `nc-res-merge` → `main` выполнен агентом: FF `62e0ef8d..0b3beda3`; точка отката = `62e0ef8d`.
+- **Кандидат = `0b3beda316addd9f95d59cd219f40f70eb864621`** (HEAD main; включает epic-res-obs 30/30, epic-devices refined, 1.14 done).
+- **Freeze-тег `rel-20261125`** (annotated, создан на кандидате, пушен) — имя = будущее значение `NEUROCENTER_RELEASE`; дата-конвенция (как `res-obs-20261125`), semver v0.11.0 не предрешён (package.json 0.10.1; оператор может переименовать до H2 — тогда пересоздать тег и переписать `--tag`).
+- Ожидают (не блокируются мержем, блокируются load): H2 — кандидат-конфиг (fixture-SSO) + `setup.mjs configure/build` → манифест; F1–F6 live (driver сам ждёт load < 8); H4 — GO/NO-GO (HITL).
+- Стенд res01 восстановлен после рестартов сервера (2026-11-25 ~16:35): alert-receiver :9111 + embed-standin :9173 перезапущены **setsid-детached** (переживают рестарты opencode-server; pipeline верифицирован synthetic-POST → запись в `~/.nc-res01/alerts.jsonl`); proxy :3128 жив (setsid с 11-23).
