@@ -28,6 +28,9 @@
 //   NEURO_E2E_CORRELATION_PATH (опц.) — путь запроса (default /ready)
 //   NEURO_E2E_CORRELATION_TICKET (опц.) — ticket для проверки маски m/:ticket
 //   NEURO_E2E_COMPOSE_PROJECT (опц.) — compose-проект для docker logs (default neurocenter-production)
+//   NEURO_E2E_COMPOSE_ENV_FILE (опц.) — путь к .env для `compose logs` (интерполяция
+//                    required-переменных, напр. NEUROCENTER_RELEASE; без него на live-стенде
+//                    correlation не найдёт сервисов и/nginx-логи)
 //
 // Чистое ядро (parse/evaluate) экспортируется и покрывается unit-тестом
 // res-01-e2e.test.mjs (node:test, fixture HTTP-сервер, НЕ live-зависимый).
@@ -67,6 +70,7 @@ export function parseArgs(argv, env = process.env) {
         correlationPath: env.NEURO_E2E_CORRELATION_PATH || '/ready',
         correlationTicket: env.NEURO_E2E_CORRELATION_TICKET || '',
         composeProject: env.NEURO_E2E_COMPOSE_PROJECT || 'neurocenter-production',
+        composeEnvFile: env.NEURO_E2E_COMPOSE_ENV_FILE || '',
     };
     for (let i = 0; i < argv.length; i += 1) {
         const a = argv[i];
@@ -459,7 +463,10 @@ async function runHealth({ apiBase, readyTargets }) {
 }
 
 // (д) correlation: запрос через nginx + grep логов (docker compose logs).
-function dockerComposeLogs(workdir, project = 'neurocenter-production') {
+// envFile (NEURO_E2E_COMPOSE_ENV_FILE): compose нужно интерполировать ${NEUROCENTER_RELEASE} и
+// прочие required-переменные, чтобы разрешить сервисы; без env-файла `compose logs` не находит
+// ни одного сервиса (live-стенд хранит их в отдельном .env, не в shell-окружении).
+function dockerComposeLogs(workdir, project = 'neurocenter-production', envFile = '') {
     return new Promise((resolve) => {
         const chunks = [];
         let done = false;
@@ -469,7 +476,10 @@ function dockerComposeLogs(workdir, project = 'neurocenter-production') {
             resolve({ code, text: chunks.join('') });
         };
         try {
-            const child = spawn('docker', ['compose', '-f', 'compose.production.yml', '-p', project, 'logs', '--no-color', '--tail', '2000'], {
+            const composeArgs = ['compose', '-f', 'compose.production.yml', '-p', project];
+            if (envFile) composeArgs.push('--env-file', envFile);
+            composeArgs.push('logs', '--no-color', '--tail', '2000');
+            const child = spawn('docker', composeArgs, {
                 cwd: workdir,
             });
             child.stdout.on('data', (d) => chunks.push(d));
@@ -483,7 +493,7 @@ function dockerComposeLogs(workdir, project = 'neurocenter-production') {
     });
 }
 
-async function runCorrelation({ apiBase, correlationId, correlationPath, correlationTicket, composeProject }) {
+async function runCorrelation({ apiBase, correlationId, correlationPath, correlationTicket, composeProject, composeEnvFile }) {
     const api = apiBase.replace(/\/$/, '');
     const requestId = correlationId || genRequestId();
     const lines = ['  requestId=' + requestId + ' path=' + correlationPath];
@@ -498,7 +508,7 @@ async function runCorrelation({ apiBase, correlationId, correlationPath, correla
     }
     lines.push('  HTTP-статус запроса: ' + reqStatus);
     // Логи (docker compose logs) → поиск нашего запроса в access-логе nginx.
-    const logs = await dockerComposeLogs(root, composeProject);
+    const logs = await dockerComposeLogs(root, composeProject, composeEnvFile);
     if (logs.code === 127) {
         return { block: 'correlation', status: 'hitl', lines: [...lines, '  docker недоступен — correlation требует live-стека (HITL): пробуйте вручную, см. ранбук'] };
     }
@@ -633,7 +643,7 @@ async function main() {
         for (const b of args.blocks) {
             if (b === 'scrape') results.push(await runScrape(args.prom));
             else if (b === 'health') results.push(await runHealth({ apiBase: args.api, readyTargets: args.readyTargets }));
-            else if (b === 'correlation') results.push(await runCorrelation({ apiBase: args.api, correlationId: args.correlationId, correlationPath: args.correlationPath, correlationTicket: args.correlationTicket, composeProject: args.composeProject }));
+            else if (b === 'correlation') results.push(await runCorrelation({ apiBase: args.api, correlationId: args.correlationId, correlationPath: args.correlationPath, correlationTicket: args.correlationTicket, composeProject: args.composeProject, composeEnvFile: args.composeEnvFile }));
             else if (b === 'alerts') results.push(await runAlerts({ alertsFile: args.alertsFile, expectedNames: args.expect }));
         }
     }
