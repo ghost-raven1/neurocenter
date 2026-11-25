@@ -3,7 +3,7 @@ title: 'Hardening: non-root USER во всех 7 app-образах (AD-OP-6)'
 type: 'feature'
 ticket: '1'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '4097fdc35bd78dbebf44bec1b026b46663a005e2'
 route: 'full'
 route_source: 'auto'

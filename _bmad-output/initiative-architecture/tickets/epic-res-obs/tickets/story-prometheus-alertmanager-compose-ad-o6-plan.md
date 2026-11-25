@@ -3,7 +3,7 @@ title: 'prometheus + alertmanager: compose-сервисы 12→14 + модель
 type: 'feature'
 ticket: '12'
 created: '2026-11-09'
-status: in-progress
+status: done
 baseline_revision: '4097fdc35bd78dbebf44bec1b026b46663a005e2'
 route: 'full'
 route_source: 'auto'

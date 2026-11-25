@@ -6,7 +6,7 @@ covers: [R1, R7, R9, R10, R11]
 sources: [_bmad-output/initiative-architecture/prd-neurocenter/prd-neurocenter.md]
 companions: [_bmad-output/initiative-architecture/architecture-observability/architecture-observability.md, _bmad-output/initiative-architecture/architecture-operational/architecture-operational.md, _bmad-output/initiative-architecture/architecture-runtime-trust/architecture-runtime-trust.md]
 after: [epic-release-baseline, epic-data]
-refined: false
+refined: true
 risk: high
 ---
 

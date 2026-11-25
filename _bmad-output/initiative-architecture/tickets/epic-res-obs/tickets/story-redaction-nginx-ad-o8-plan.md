@@ -3,7 +3,7 @@ title: 'Redaction: allowlist error-полей + nginx m/:ticket (AD-O8)'
 type: 'feature'
 ticket: '7'
 created: '2026-11-09'
-status: ready-for-dev
+status: done
 baseline_revision: '4097fdc35bd78dbebf44bec1b026b46663a005e2'
 route: 'full'
 route_source: 'auto'

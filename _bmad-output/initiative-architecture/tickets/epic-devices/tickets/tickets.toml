@@ -1,0 +1,134 @@
+# Сторис эпика epic-devices. Порядок таблиц = порядок сборки.
+# next_id = 13
+
+[[entry]]
+id = 1
+type = "story"
+title = "Кандидат 0.9.29: freeze build ID + SHA + манифест (tracer)"
+description = "Замораживает нового bridge-кандидата для матрицы P0-NAT: версия mcp/neurocenter-asset-sync → 0.9.29; воспроизводимая сборка на текущем хосте (linux-x64, Node 24: npm ci --include=optional → run build → scripts/package-bridge-runtime.mjs); точный архив + build ID + SHA-256; манифест кандидата (версия, buildId, SHA, target, checkedAt, опись исполняемых компонентов) в docs/reports/. Все последующие сторис эпика собираются и принимаются против этого единственного точного кандидата (readiness: «восемь полных отчётов точного кандидата»). Исторические матрицы/отчёты 0.9.3/0.9.4 не изменяются."
+verify = "Архив кандидата 0.9.29 с build ID и SHA-256 зафиксирован в манифесте; повторная сборка того же commit даёт идентичный SHA архива."
+covers = ["R5"]
+after = []
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "linux-x64: полный 8-пунктный native-чеклист (точный кандидат)"
+description = "Полная нативная приёмка точного кандидата 0.9.29 на текущем хосте (Astra Linux glibc 2.36 x86_64, X11, Node 24) — 8 отдельных случаев: (1) чистая установка без системных Node/npm, правильная архитектура, SHA/доверие, отказ повреждённого архива без замены программы; (2) регистрация существующего JSONC, комментарии/другие MCP сохранены, второй запуск не дублирует; (3) подключение через реальную площадку, выбор/отмена папки, Unicode/пробелы, запреты чужих каталогов, восстановление привязок после restart; (4) обновление с предыдущего архива — настройки/привязки/учётные данные сохранены, повтор идемпотентен; (5) сбой обновления/регистрации → восстановление согласованного локального комплекта, несовместимый downgrade отклонён; (6) мастер параметров MCP — секрет локально, корректная ревизия, отмена/ошибка не портят прежнее; (7) реальный stdio MCP + skill/plugin/remote-runtime по заявленному набору; (8) timeout/закрытие родителя/отмена/авария worker → все дочерние процессы завершены. Отчёт к точному архиву: native:true, OS security unchanged:true, журналы без секретов."
+verify = "Отчёт linux-x64 к точному кандидату 0.9.29: 8/8 случаев passed, native:true, OS security unchanged:true, квитанции всех установок, данные не потеряны."
+covers = ["R1", "R2", "R3", "R5"]
+after = [1]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Windows: нативный PowerShell-runner для install.ps1"
+description = "PowerShell-runner, эквивалент scripts/test/bridge-native-installer.mjs (который поддерживает только Bash/macOS/Linux): исполняет 8-пунктный чеклист для install.ps1 на изолированном Windows-профиле, сохраняет отдельные журналы, выпускает отчёт в формате p0-external-acceptance.md (cases, результаты, failure reason, native:true, OS security unchanged:true). Написание и юнит-тесты runner — на dev-хосте (Windows не требуется); исполнение на реальном Windows — в 7.11. Штатная разрешающая политика PowerShell задокументирована (установка доверенного скрипта без постоянного bypass)."
+verify = "Runner проходит тесты репо (dry-run/мок): все 8 случаев в правильном порядке, формат отчёта совпадает с шаблоном p0-external-acceptance.md."
+covers = ["R5"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Windows: job-helper x64/arm64 + штатная политика (автоматизация + docs)"
+description = "Автоматизация сборки Windows job-helper (scripts/build-windows-job-helper.ps1, Native Tools for Visual Studio) для архитектур x64 и arm64: команда сборки, SHA helper'а в манифест кандидата, задокументированная штатная политика ОС (ExecutionPolicy), при которой доверенный скрипт устанавливается без постоянного bypass. Code-signing — только если сертификат существует (отдельная follow-up-сторис; Assumption: сначала unsigned + задокументированная политика)."
+verify = "Команда сборки helper x64/arm64 отработала на доступном Windows (SHA в манифесте кандидата) либо зафиксирована как HITL-шаг с точным runbook; политика задокументирована в docs/bridge-installers.md."
+covers = ["R5"]
+after = [1]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "FR-706: version gate opencode — декларация + проверка + явная ошибка"
+description = "Комплект проекта декларирует поддерживаемые версии opencode (поле каталога/манифеста — единый источник); мост определяет фактическую версию opencode на устройстве; версия вне диапазона — без тихой установки: явная ошибка + actionable следующий шаг (обновить до поддерживаемой / установить совместимую версию), NFR-3. Совместимая версия — установка без ошибки. Тесты: декларация в манифесте, определение фактической версии, mismatch-путь (отказ + сообщение со следующим шагом), compatible-путь."
+verify = "Несовместимая версия → установка/обновление отклонено явной ошибкой с actionable следующим шагом (лог/скриншот); версия в диапазоне → штатная установка. Юнит-тесты mismatch/compatible-путей зелёные."
+covers = ["R4"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "UJ-3: полезный MCP-вызов с нового устройства (e2e-сценарий)"
+description = "Сценарий UJ-3 как записан в PRD: чистая установка на принятой цели (7.2) → pairing → привязка папки → полезный MCP-вызов инструмента проекта с нового устройства за минуты без оператора; квитанция каждого шага; повтор idempotent. Сценарий фиксируется (скрипт + шаблон отчёта) и переиспользуется в закрывающей приёмке 7.12."
+verify = "Сценарий пройден на цели linux-x64: новое устройство выполнило полезный MCP-вызов без оператора; квитанции и idempotent-повтор подтверждены."
+covers = ["R6", "R2"]
+after = [2]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "darwin-arm64: 8-пунктный native-чеклист (Mac на M-чипе)"
+description = "Полная нативная приёмка точного кандидата 0.9.29 на реальном Mac (M1/M2+, Node 24): 8 отдельных случаев по p0-external-acceptance.md; отчёт к точному архиву (build ID + SHA), native:true, OS security unchanged:true, журналы без секретов. Частичные 0.9.3/0.9.4-результаты не суммируются с новым прогоном (C3)."
+verify = "Отчёт darwin-arm64 к точному кандидату 0.9.29: 8/8 случаев, native:true, OS security unchanged:true."
+covers = ["R1", "R2", "R3", "R5"]
+after = [1]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 8
+type = "story"
+title = "darwin-x64: 8-пунктный native-чеклист (Intel Mac, local RAG unsupported)"
+description = "Полная нативная приёмка точного кандидата 0.9.29 на реальном Intel Mac (Node 24): 8 отдельных случаев; локальная RAG на darwin-x64 сейчас unsupported — ограничение записано явно в отчёте, а не обходится (C4; кейс LanceDB отдельно)."
+verify = "Отчёт darwin-x64 к точному кандидату 0.9.29: 8/8 случаев (limitation local RAG явно указан), native:true, OS security unchanged:true."
+covers = ["R1", "R2", "R3", "R5"]
+after = [1]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "linux-arm64 + linux-arm64-musl: 8-пунктный чеклист (ARM64 Linux)"
+description = "Полная нативная приёмка точного кандидата 0.9.29 на реальном ARM64 Linux-железе (Node 24, графическая сессия): отдельные отчёты для glibc-цели (linux-arm64) и musl-цели (linux-arm64-musl — musl-дистрибутив/userland на той же или соответствующей машине); 8 отдельных случаев на каждую цель; имена целей матрицы моста, не контракты runtime-assets (C5)."
+verify = "Два отчёта к точному кандидату 0.9.29 (linux-arm64, linux-arm64-musl): 8/8 случаев каждый, native:true, OS security unchanged:true."
+covers = ["R1", "R2", "R3", "R5"]
+after = [1]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 10
+type = "story"
+title = "linux-x64-musl: 8-пунктный native-чеклист"
+description = "Полная нативная приёмка точного кандидата 0.9.29 на x64 Linux musl (Alpine или эквивалент, Node 24, графическая сессия): 8 отдельных случаев; отчёт с native:true и OS security unchanged:true."
+verify = "Отчёт linux-x64-musl к точному кандидату 0.9.29: 8/8 случаев, native:true, OS security unchanged:true."
+covers = ["R1", "R2", "R3", "R5"]
+after = [1]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 11
+type = "story"
+title = "windows-x64 + windows-arm64: 8-пунктный чеклист (реальный Windows, Job Objects)"
+description = "Полная нативная приёмка точного кандидата 0.9.29 на реальных Windows-машинах (x64 и ARM64) через PowerShell-runner (7.3): 8 отдельных случаев на каждую архитектуру, job-helper нужной архитектуры (7.4), случай 8 — завершение всех дочерних процессов проверяется через Job Objects, штатная политика PowerShell, отдельные журналы."
+verify = "Два отчёта к точному кандидату 0.9.29 (windows-x64, windows-arm64): 8/8 случаев каждый (Job Objects проверены), native:true, OS security unchanged:true."
+covers = ["R1", "R2", "R3", "R5"]
+after = [1, 3, 4]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 12
+type = "story"
+title = "P0-NAT closing e2e: allEightAccepted (8/8 полных отчётов точного кандидата)"
+description = "Закрывающая приёмка: сверка, что 8 отдельных полных отчётов существуют для ОДНОГО точного кандидата (архив + build ID + SHA), каждый с native:true и OS security unchanged:true; повтор UJ-3-сценария (7.6); readiness P0-NAT обновляется до принятого; в новой машинной матрице (отдельный файл, старые не изменяются) заявлено allEightAccepted:true."
+verify = "allEightAccepted:true для точного кандидата 0.9.29 в новой машинной матрице; 8/8 отчётов ссылаются на один архив/SHA; UJ-3 повтор пройден; docs/implementation-readiness.md P0-NAT — принято."
+covers = ["R5", "R6"]
+after = [2, 6, 7, 8, 9, 10, 11]
+hitl = true
+risk = "high"
