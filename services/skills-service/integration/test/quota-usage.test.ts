@@ -84,7 +84,7 @@ describe('Доставка учёта quota в catalog (best-effort)', () => {
         const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
         expect(url).toBe('http://catalog:4100/internal/projects/p1/quota-usage');
         expect(init.headers).toEqual({ 'content-type': 'application/json', 'x-neurocenter-internal': 'token-1' });
-        expect(JSON.parse(String(init.body))).toEqual({ dimension: 'current', deltaBytes: 128, requestKey: record().requestKey });
+        expect(JSON.parse(String(init.body))).toEqual({ dimension: 'current', deltaBytes: 128, request_key: record().requestKey });
     });
 
     it('ошибка доставки не пробрасывается наружу', async () => {

@@ -138,6 +138,8 @@ export function allowRequest(claims: IAccessClaims, activeRole: string, request:
     if (route.startsWith('/api/maintenance') || route === '/api/audit') {
         return main;
     }
+    // AD-O5 (res-obs 6.10): чтение error-событий — только Главный админ (GET; POST — только /internal/error-events).
+    if (route === '/api/errors') return main && read;
     if (route === '/api/model-usage')
         return read && ['Главный админ', 'Админ проекта', 'Разработчик'].includes(activeRole);
     if (route === '/api/runtime-limits') return read;
@@ -294,6 +296,7 @@ function allowProjectChat(level: number, verb: string, suffix: string): boolean 
     return (
         verb === 'POST' &&
         level >= 2 &&
-        (suffix === 'team-chat/messages' || /^team-chat\/messages\/[a-f0-9-]{36}\/(retry|cancel)$/.test(suffix))
+        (suffix === 'team-chat/messages' ||
+            /^team-chat\/messages\/[a-f0-9-]{36}\/(retry|cancel|background-agent)$/.test(suffix))
     );
 }

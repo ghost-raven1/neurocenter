@@ -119,7 +119,7 @@ export async function deliverSkillQuotaUsage(
                 {
                     method: 'POST',
                     headers: { 'content-type': 'application/json', 'x-neurocenter-internal': token },
-                    body: JSON.stringify({ dimension: 'current', deltaBytes: record.deltaBytes, requestKey: record.requestKey }),
+                    body: JSON.stringify({ dimension: 'current', deltaBytes: record.deltaBytes, request_key: record.requestKey }),
                 },
             );
             if (!response.ok) {

@@ -27,6 +27,7 @@
 //   NEURO_E2E_CORRELATION_ID (опц.) — id для correlation (иначе генерируется)
 //   NEURO_E2E_CORRELATION_PATH (опц.) — путь запроса (default /ready)
 //   NEURO_E2E_CORRELATION_TICKET (опц.) — ticket для проверки маски m/:ticket
+//   NEURO_E2E_COMPOSE_PROJECT (опц.) — compose-проект для docker logs (default neurocenter-production)
 //
 // Чистое ядро (parse/evaluate) экспортируется и покрывается unit-тестом
 // res-01-e2e.test.mjs (node:test, fixture HTTP-сервер, НЕ live-зависимый).
@@ -65,6 +66,7 @@ export function parseArgs(argv, env = process.env) {
         correlationId: env.NEURO_E2E_CORRELATION_ID || '',
         correlationPath: env.NEURO_E2E_CORRELATION_PATH || '/ready',
         correlationTicket: env.NEURO_E2E_CORRELATION_TICKET || '',
+        composeProject: env.NEURO_E2E_COMPOSE_PROJECT || 'neurocenter-production',
     };
     for (let i = 0; i < argv.length; i += 1) {
         const a = argv[i];
@@ -238,7 +240,11 @@ export function correlationEvaluate(input) {
         '  gateway: ' + (gateway ? 'id есть' : 'id НЕТ'),
         '  service: ' + (service ? 'id есть' : 'id НЕТ (ожидается, если запрос дошёл до сервиса)'),
     ];
-    const endToEnd = nginx && gateway;
+    // D8/тикет 24: nginx — единственный слой, который ВСЕГДА пишет запись о запросе (access-лог).
+    // gateway/service пишут только error/warn (не success-логи): для 2xx downstream-записей нет,
+    // поэтому сквозной id верифицируется по nginx-краю; downstream-слой (если залогил) — bonus
+    // ниже + покрывается блоками е (crash) и ж (audit). Критерий: id в nginx-крае.
+    const endToEnd = nginx;
     let ticketLeaked = false;
     let ticketMasked = false;
     if (input.ticket) {
@@ -453,7 +459,7 @@ async function runHealth({ apiBase, readyTargets }) {
 }
 
 // (д) correlation: запрос через nginx + grep логов (docker compose logs).
-function dockerComposeLogs(workdir) {
+function dockerComposeLogs(workdir, project = 'neurocenter-production') {
     return new Promise((resolve) => {
         const chunks = [];
         let done = false;
@@ -463,7 +469,7 @@ function dockerComposeLogs(workdir) {
             resolve({ code, text: chunks.join('') });
         };
         try {
-            const child = spawn('docker', ['compose', '-f', 'compose.production.yml', '-p', 'neurocenter-production', 'logs', '--no-color', '--tail', '2000'], {
+            const child = spawn('docker', ['compose', '-f', 'compose.production.yml', '-p', project, 'logs', '--no-color', '--tail', '2000'], {
                 cwd: workdir,
             });
             child.stdout.on('data', (d) => chunks.push(d));
@@ -477,7 +483,7 @@ function dockerComposeLogs(workdir) {
     });
 }
 
-async function runCorrelation({ apiBase, correlationId, correlationPath, correlationTicket }) {
+async function runCorrelation({ apiBase, correlationId, correlationPath, correlationTicket, composeProject }) {
     const api = apiBase.replace(/\/$/, '');
     const requestId = correlationId || genRequestId();
     const lines = ['  requestId=' + requestId + ' path=' + correlationPath];
@@ -491,20 +497,52 @@ async function runCorrelation({ apiBase, correlationId, correlationPath, correla
         return { block: 'correlation', status: 'red', lines: [...lines, '  запрос через nginx не удался: ' + String((error && error.message) || error)] };
     }
     lines.push('  HTTP-статус запроса: ' + reqStatus);
-    // Логи (docker compose logs) → фильтр по requestId.
-    const logs = await dockerComposeLogs(root);
+    // Логи (docker compose logs) → поиск нашего запроса в access-логе nginx.
+    const logs = await dockerComposeLogs(root, composeProject);
     if (logs.code === 127) {
         return { block: 'correlation', status: 'hitl', lines: [...lines, '  docker недоступен — correlation требует live-стека (HITL): пробуйте вручную, см. ранбук'] };
     }
     const allLines = logs.text.split('\n');
-    const hit = allLines.filter((l) => l.includes(requestId));
+    // D8/тикет 24: nginx перезаписывает клиентский X-Request-ID своим $request_id (AD-O2),
+    // поэтому клиентский id в логах не найти. Нашу строку ищем в access-логе по пути
+    // (log_format neurocenter = JSON: {"requestId","path",...}; путь mcp-host/m/:ticket
+    // маскируется map $masked_uri → /api/mcp-host/m/REDACTED, AD-O8), берём последнюю;
+    // effective id — nginx'овский из этой строки, а не клиентский.
+    const candidatePaths = [correlationPath];
+    if (correlationPath.startsWith('/api/mcp-host/m/')) candidatePaths.push('/api/mcp-host/m/REDACTED');
+    let accessLine = null;
+    for (const l of allLines) {
+        const p = nginxAccessPath(l);
+        if (p !== null && candidatePaths.includes(p)) accessLine = l;
+    }
+    let effectiveId = requestId;
+    if (accessLine) {
+        const nginxId = nginxAccessRequestId(accessLine);
+        if (nginxId) {
+            effectiveId = nginxId;
+            if (nginxId !== requestId) lines.push('  nginx переопределил id (AD-O2): в логах ' + nginxId + ' (клиентский id не ищем)');
+        }
+    } else {
+        lines.push('  строка запроса (path=' + correlationPath + ') в access-логе nginx не найдена — остаёмся на клиентском id');
+    }
+    const hit = allLines.filter((l) => l.includes(effectiveId));
     // Прикидка слоёв по префиксу/ключевым словам (nginx: "requestId", gateway/service: service=...).
     const nginx = hit.filter((l) => /"requestId"|requestId=/.test(l) && !/service=/.test(l));
     const gateway = hit.filter((l) => /api-gateway|gateway/i.test(l));
     const service = hit.filter((l) => /catalog-service|skills-service|rag-sync-service|feature-flags-service|oauth2-bridge/i.test(l));
-    const ev = correlationEvaluate({ requestId, logs: { nginx: nginx.length ? nginx : hit, gateway, service }, ticket: correlationTicket || undefined });
+    const ev = correlationEvaluate({ requestId: effectiveId, logs: { nginx: nginx.length ? nginx : hit, gateway, service }, ticket: correlationTicket || undefined });
     lines.push(...ev.lines);
     return { block: 'correlation', status: ev.status, lines };
+}
+
+// D8/тикет 24: поля JSON-строки nginx access-лога (log_format neurocenter).
+function nginxAccessRequestId(line) {
+    const m = String(line).match(/"requestId"\s*:\s*"([0-9a-fA-F]{32})"/);
+    return m ? m[1] : null;
+}
+function nginxAccessPath(line) {
+    const m = String(line).match(/"path"\s*:\s*"([^"]*)"/);
+    return m ? m[1] : null;
 }
 
 // nginx $request_id — 32 hex (без дефисов); совместимо с isRequestId (6.6).
@@ -595,7 +633,7 @@ async function main() {
         for (const b of args.blocks) {
             if (b === 'scrape') results.push(await runScrape(args.prom));
             else if (b === 'health') results.push(await runHealth({ apiBase: args.api, readyTargets: args.readyTargets }));
-            else if (b === 'correlation') results.push(await runCorrelation({ apiBase: args.api, correlationId: args.correlationId, correlationPath: args.correlationPath, correlationTicket: args.correlationTicket }));
+            else if (b === 'correlation') results.push(await runCorrelation({ apiBase: args.api, correlationId: args.correlationId, correlationPath: args.correlationPath, correlationTicket: args.correlationTicket, composeProject: args.composeProject }));
             else if (b === 'alerts') results.push(await runAlerts({ alertsFile: args.alertsFile, expectedNames: args.expect }));
         }
     }

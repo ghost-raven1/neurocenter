@@ -35,7 +35,7 @@ describe('deliverRagQuotaUsage', () => {
         expect(JSON.parse(String(init.body))).toEqual({
             dimension: 'retention',
             deltaBytes: 4096,
-            requestKey: 'intent:abc',
+            request_key: 'intent:abc',
         });
     });
 

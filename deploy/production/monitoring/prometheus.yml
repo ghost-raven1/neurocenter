@@ -7,6 +7,14 @@ global:
 rule_files:
   - /etc/prometheus/neurocenter-alerts.yml
 
+# AD-O6 (ep6 entry 13): проводка prometheus → alertmanager (compose-сервис в backend-сети).
+# Без секции alerting prometheus не пушит алерты в AM (D9/тикет 25: канал AD-O6 был мёртв).
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
 scrape_configs:
   - job_name: neurocenter
     metrics_path: /metrics

@@ -129,9 +129,15 @@ async function collectCapacity({ root = '/volumes', now = Date.now } = {}) {
 }
 async function publishCapacity(value) {
     const temporary = destination + '.' + process.pid + '.partial';
-    await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
+    const dir = path.dirname(destination);
+    await fs.mkdir(dir, { recursive: true });
+    // D10/тикет 26: потребители (catalog/skills/rag-sync, uid 1000) маунтят /capacity:ro —
+    // каталог должен быть r-x, файл r (снапшот = цифры ёмкости, не секретный материал).
+    // chmod, а не mode в mkdir: при recursive mkdir mode не применяется к уже созданному
+    // каталогу (например, 0700 от раннего запуска старого образа).
+    await fs.chmod(dir, 0o755);
     try {
-        await fs.writeFile(temporary, JSON.stringify(value) + '\n', { flag: 'wx', mode: 0o600, flush: true });
+        await fs.writeFile(temporary, JSON.stringify(value) + '\n', { flag: 'wx', mode: 0o644, flush: true });
         await fs.rename(temporary, destination);
     } finally {
         await fs.rm(temporary, { force: true });

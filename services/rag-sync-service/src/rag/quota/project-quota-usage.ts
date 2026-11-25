@@ -58,7 +58,7 @@ export async function deliverRagQuotaUsage(
             const response = await fetchImpl(`${base}/internal/projects/${encodeURIComponent(record.projectId)}/quota-usage`, {
                 method: 'POST',
                 headers: { 'content-type': 'application/json', 'x-neurocenter-internal': token },
-                body: JSON.stringify({ dimension: 'retention', deltaBytes: record.deltaBytes, requestKey: record.requestKey }),
+                body: JSON.stringify({ dimension: 'retention', deltaBytes: record.deltaBytes, request_key: record.requestKey }),
             });
             if (!response.ok) {
                 warn(

@@ -184,6 +184,17 @@ test('correlationEvaluate: нет id в nginx → red', () => {
     assert.equal(ev.endToEnd, false);
 });
 
+test('correlationEvaluate: D8 — id только в nginx (2xx: success-логи gateway/service отсутствуют) → green', () => {
+    const id = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
+    const ev = correlationEvaluate({
+        requestId: id,
+        logs: { nginx: ['{"time":"2026-11-24T00:00:00.000Z","requestId":"' + id + '","method":"GET","path":"/ready","status":200,"duration":0.001}'], gateway: [], service: [] },
+    });
+    assert.equal(ev.status, 'green');
+    assert.equal(ev.endToEnd, true);
+    assert.equal(ev.serviceSeen, false);
+});
+
 test('correlationEvaluate: сырой ticket в логах → red (CRIT)', () => {
     const id = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
     const ticket = 'eyJhbGciOiJub25lIn0.c2VjcmV0';
