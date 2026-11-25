@@ -507,7 +507,10 @@ async function bringUpProductionStack() {
         },
         path.join(directory, 'config'),
     );
-    live.directory = config.directory;
+    // live.directory = корень fixture-проекта: composeArgs читает <dir>/config/.env и
+    // секреты из <dir>/config/secrets — configureProduction же пишет прямо в destination
+    // (<dir>/config), поэтому корень = родитель config-каталога (D15: первый live-прогон 2026-11-25).
+    live.directory = path.dirname(config.directory);
     live.ca = await readFile(path.join(directory, 'tls.crt'));
     // AD-5: секрет хоста mcp-host (HMAC билетов) — fixture-генерация configuration.mjs;
     // driver использует его ТОЛЬКО для подделки валидно-подписанных негативных билетов.
