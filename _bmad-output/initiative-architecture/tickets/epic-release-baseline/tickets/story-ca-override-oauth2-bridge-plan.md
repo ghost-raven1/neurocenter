@@ -3,7 +3,7 @@ title: 'Баг: oauth2-bridge — тот же env_file-override корпорат
 type: 'bugfix'
 ticket: '14'
 created: '2026-11-13'
-status: in-progress
+status: done
 baseline_revision: 'd51c49b05da8b4b68096ff3e7d6ab78d6b688559'
 route: 'auto'
 route_source: 'auto'
@@ -106,3 +106,6 @@ node --test scripts/test/compose-drift.test.mjs scripts/test/production-stack.mj
 - Свежий старт стека и полный корневой сьют — вне узкой верификации тикета (граница: oauth2-bridge контейнер не пересоздавать; живой стек healthy).
 
 **Следующий шаг:** при заморозке кандидата (1.13 REL-01) фикс попадает в release-базу main автоматически; при включении SSO в dev-стек — live-проверка edge-case 1.
+## Closure (2026-11-25, по подтверждению оператора)
+
+**Статус: DONE.** Фикс в main (c20f4704), live-верифицирован (env + CA-файл в живом контейнере), drift/production-тесты зелёные. **Residual:** edge-case 1 (SSO включён, bridge → корп-TLS IdP, handshake) не доказан — SSO в dev off (AD-OP-5 interim); к проверке при первом включении SSO в dev-стек (live-проверка handshake, read-only).
