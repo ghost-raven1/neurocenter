@@ -135,7 +135,17 @@ async function publishCapacity(value) {
     // каталог должен быть r-x, файл r (снапшот = цифры ёмкости, не секретный материал).
     // chmod, а не mode в mkdir: при recursive mkdir mode не применяется к уже созданному
     // каталогу (например, 0700 от раннего запуска старого образа).
-    await fs.chmod(dir, 0o755);
+    // Повтор RES-01: коллектор гоняется root'ом с cap_drop:[ALL]+cap_add:[DAC_OVERRIDE]
+    // (нет CAP_FOWNER) — безусловный chmod чужого каталога (например, 0755 node:node,
+    // оставшийся после миграции с эпохи, когда коллектор был node:node) бросает EPERM
+    // и роняет весь publish, хотя каталог уже даёт потребителям r-x. chmod нужен только
+    // тогда, когда каталог ещё не предоставляет другим r-x; если он нужен, а сделать
+    // его нельзя (чужой владелец, нет CAP_FOWNER), publish обязан упасть явно —
+    // потребители реально не смогут читать снапшот.
+    const dirStat = await fs.stat(dir);
+    if ((dirStat.mode & 0o055) !== 0o055) {
+        await fs.chmod(dir, 0o755);
+    }
     try {
         await fs.writeFile(temporary, JSON.stringify(value) + '\n', { flag: 'wx', mode: 0o644, flush: true });
         await fs.rename(temporary, destination);
