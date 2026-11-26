@@ -44,7 +44,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { randomUUID, createHash, createHmac } from 'node:crypto';
-import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, rm, chmod } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
 import https from 'node:https';
 import { configureProduction, composeEnvironment } from '../production/configuration.mjs';
@@ -494,6 +494,11 @@ async function bringUpProductionStack() {
         'subjectAltName=DNS:panel.test,DNS:blitz.test,IP:127.0.0.1',
     ]);
     if (cert.status !== 0) throw new Error('Для тестового TLS нужен openssl');
+    // Compose file-secret = bind-mount host-файла (права хоста сохраняются в контейнере).
+    // Frontend non-root (user 1000, AD-OP-6) обязан читать tls_key — конвенция продукта
+    // для secret-файлов: 0444 (SECRET_FILE_MODE, configuration.mjs). openssl даёт 0600.
+    await chmod(path.join(directory, 'tls.key'), 0o444);
+    await chmod(path.join(directory, 'tls.crt'), 0o444);
     const config = await configureProduction(
         {
             panelUrl: 'https://panel.test',

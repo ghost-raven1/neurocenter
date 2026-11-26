@@ -20,7 +20,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 // фиксированное сообщение), а не транспортным exception (stack/hostname:port).
 const PASSTHROUGH_ALLOWLIST = {
     'services/api-gateway/src/bridge/bridge.controller.ts': 'FeatureFlagError (feature-client.cjs)',
-    'services/api-gateway/src/features/research-mcp/research-mcp.controller.ts': 'FeatureFlagError (feature-client.cjs)',
+    'services/api-gateway/src/features/research-mcp/research-mcp.controller.ts':
+        'FeatureFlagError (feature-client.cjs)',
     'services/catalog-service/src/background-agent/background-agent.cli.ts':
         '2 точки: BackgroundEngineError (startup-failed, engine.ts — фиксированные доменные сообщения pin/sha256-валидации) + BackgroundCrashError (crash-exit, resilience.ts — фиксированное CRASH_SAFE_MESSAGE); stderr JSON-лог, не транспорт',
     'services/catalog-service/src/features/require-feature-enabled.ts': 'FeatureFlagError (feature-client.cjs)',
@@ -110,7 +111,10 @@ const makeRes = () => ({
 
 /** ProxyService со stub'ами DI; upstream — ответ http.request либо функция-бросатель. */
 function makeService(upstream, auth = AUTH) {
-    const configService = { get: () => undefined };
+    // CATALOG_SERVICE_URL — compose DNS-имя: url-binding в логе несёт host:port (AD-19/AD-O1).
+    const configService = {
+        get: (key) => (key === 'CATALOG_SERVICE_URL' ? 'http://catalog-service:4100' : undefined),
+    };
     const authGuard = { authenticate: async () => ({ ...auth }) };
     const live = { mutation() {}, bridge() {}, sections() {} };
     const service = new ProxyService(configService, authGuard, live);
@@ -123,14 +127,23 @@ function makeService(upstream, auth = AUTH) {
 
 const reqFor = (method, p, body) => ({ method, path: p, headers: {}, query: {}, body, aborted: false });
 
+// AD-O1 (5eb4a8fb): логи — JSON lines в stdout через shared/logging.cjs (не console.error).
 async function withLogCapture(fn) {
     const lines = [];
-    const original = console.error;
-    console.error = (...args) => lines.push(args.join(' '));
+    const original = process.stdout.write;
+    process.stdout.write = (chunk, encoding, callback) => {
+        const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+        for (const line of text.split('\n')) {
+            if (line.trim()) lines.push(line);
+        }
+        if (typeof encoding === 'function') return encoding(true);
+        if (typeof callback === 'function') return callback();
+        return true;
+    };
     try {
         await fn();
     } finally {
-        console.error = original;
+        process.stdout.write = original;
     }
     return lines;
 }
@@ -150,7 +163,10 @@ test('UPSTREAM_5XX: upstream 5xx → статус сохранён, body фик�
         message: 'Сервис временно недоступен. Повторите позже.',
     });
     assert.ok(!JSON.stringify(res.body).includes('catalog-service'), 'hostname:port не обязан уходить в body клиента');
-    assert.ok(logs.some((line) => line.includes('catalog-service:4100')), 'hostname:port обязан остаться в server-логе');
+    assert.ok(
+        logs.some((line) => line.includes('catalog-service:4100')),
+        'hostname:port обязан остаться в server-логе',
+    );
 });
 
 test('DOMAIN_4XX: upstream 4xx с доменным текстом (allowlist) передаётся как есть', async () => {
@@ -180,7 +196,10 @@ test('PASSTHROUGH_GONE: axios ECONNREFUSED → 502 фикс, hostname:port то�
         message: 'Сервис временно недоступен. Повторите позже.',
     });
     assert.ok(!JSON.stringify(res.body).includes('4100'), 'hostname:port не обязан уходить в body клиента');
-    assert.ok(logs.some((line) => line.includes('catalog-service:4100')), 'hostname:port обязан остаться в server-логе');
+    assert.ok(
+        logs.some((line) => line.includes('catalog-service:4100')),
+        'hostname:port обязан остаться в server-логе',
+    );
 });
 
 test('OQ1: axios timeout → 504 фикс (client retry по 502/504 отсутствует)', async () => {
@@ -205,16 +224,17 @@ test('device-channel: upstream 5xx → фиксированный body (секр
         data: { message: 'pg: connection refused password=secret' },
     });
     const res = makeRes();
-    const logs = await withLogCapture(() =>
-        service.forward(reqFor('POST', '/api/device-channel/heartbeat', {}), res),
-    );
+    const logs = await withLogCapture(() => service.forward(reqFor('POST', '/api/device-channel/heartbeat', {}), res));
     assert.equal(res.statusCode, 500, 'статус upstream обязан сохраниться');
     assert.deepEqual(res.body, {
         code: 'upstream-error',
         message: 'Сервис временно недоступен. Повторите позже.',
     });
     assert.ok(!JSON.stringify(res.body).includes('secret'), 'внутренние детали не обязаны уходить в body клиента');
-    assert.ok(logs.some((line) => line.includes('device-channel')), 'инцидент обязан остаться в server-логе');
+    assert.ok(
+        logs.some((line) => line.includes('device-channel')),
+        'инцидент обязан остаться в server-логе',
+    );
 });
 
 test('SDK_SPAWN: errMsg — инфраструктурные ошибки → фикс user-safe, доменный текст проходит', async () => {
@@ -235,7 +255,7 @@ test('SDK_SPAWN: errMsg — инфраструктурные ошибки → ф
     const missing = new Error("ENOENT: no such file or directory, open '/home/user/.local/bin/opencode'");
     missing.code = 'ENOENT';
     assert.equal(errMsg(missing), 'Файл или папка недоступны на этом компьютере. Проверьте доступ и повторите.');
-    assert.ok(!errMsg(missing).includes('/home/user'), 'пути ФС не обязаны уходить в результат tool\'а');
+    assert.ok(!errMsg(missing).includes('/home/user'), "пути ФС не обязаны уходить в результат tool'а");
     const refused = new Error('connect ECONNREFUSED catalog-service:4100');
     refused.code = 'ECONNREFUSED';
     assert.equal(errMsg(refused), 'Соединение с сервисом не установлено. Повторите позже.');

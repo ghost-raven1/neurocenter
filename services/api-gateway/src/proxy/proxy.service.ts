@@ -201,6 +201,7 @@ export class ProxyService {
             return;
         }
 
+        let upstreamUrl: string | undefined;
         try {
             const payload = req.body as Record<string, unknown> | undefined;
             if (auth.deviceId && (req.headers['x-neurocenter-job-id'] || req.headers['x-neurocenter-job-lease'])) {
@@ -397,6 +398,7 @@ export class ProxyService {
                 params: req.query,
                 data: req.body,
             };
+            upstreamUrl = upstreamRequest.url;
             const upstream = inference
                 ? await forwardModelInference(this.http, upstreamRequest, req, res)
                 : method === 'POST' && supplyPath === TOOL_IMPORT_ROUTE
@@ -448,7 +450,13 @@ export class ProxyService {
             // AD-19: транспортные ошибки upstream — фиксированный body; hostname:port и детали
             // — только в server-лог. timeout — 504, соединение/DNS — 502.
             const timeout = isTransportTimeout(error);
-            log.error('proxy error', { err: error, timeout });
+            // url — скалярный binding (AD-O1): host:port upstream-а в логе, как в 5xx-пути;
+            // err.message (AD-O8) сюда не уходит — только allowlist name/code/causeCode.
+            log.error('proxy error', {
+                ...(upstreamUrl !== undefined ? { url: upstreamUrl } : {}),
+                err: error,
+                timeout,
+            });
             res.status(timeout ? 504 : 502).json(timeout ? UPSTREAM_TIMEOUT : UPSTREAM_UNAVAILABLE);
         }
     }
@@ -695,7 +703,8 @@ export class ProxyService {
                 if (open()) res.status(response.status).json(response.data === '' ? null : response.data);
             } catch (error) {
                 log.error('device-channel embedding error', { err: error });
-                if (open()) res.status(502).json({ code: 'upstream-unavailable', message: 'Сервис подключений недоступен.' });
+                if (open())
+                    res.status(502).json({ code: 'upstream-unavailable', message: 'Сервис подключений недоступен.' });
                 else timeoutReply();
             }
         } finally {
